@@ -132,5 +132,4 @@ MIT License
 
 ## 作者
 - **劉 双 (Liu Shuang)**  
-  株式会社ソフトロード / SoftRoad Inc.  
   [GitHub](https://github.com/liushuang393)
