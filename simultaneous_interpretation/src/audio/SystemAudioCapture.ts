@@ -16,6 +16,7 @@
  */
 
 import { Logger, LogLevel } from '../utils/Logger';
+import '../types/electron';
 
 const logger = new Logger({ level: LogLevel.INFO });
 
@@ -86,11 +87,14 @@ export class SystemAudioCapture {
      * @returns 音声ソース一覧
      */
     public async getAvailableSources(): Promise<SystemAudioSource[]> {
-        if (this.isElectron && window.electronAPI) {
+        if (this.isElectron && globalThis.window?.electronAPI) {
             // Electron 環境
             try {
-                const sources = await window.electronAPI.getAudioSources(['window', 'screen']);
-                return sources.map((source) => ({
+                const electronAPI = globalThis.window.electronAPI as unknown as {
+                    getAudioSources: (types: string[]) => Promise<Array<{ id: string; name: string; type: string; thumbnail?: string }>>;
+                };
+                const sources = await electronAPI.getAudioSources(['window', 'screen']);
+                return sources.map((source: { id: string; name: string; type: string; thumbnail?: string }) => ({
                     id: source.id,
                     name: source.name,
                     type: source.type as 'window' | 'screen' | 'browser',
@@ -100,16 +104,15 @@ export class SystemAudioCapture {
                 logger.error('Failed to get Electron audio sources', error);
                 return [];
             }
-        } else {
-            // ブラウザ環境
-            return [
-                {
-                    id: 'browser-display',
-                    name: 'Screen/Window Audio',
-                    type: 'browser'
-                }
-            ];
         }
+        // ブラウザ環境
+        return [
+            {
+                id: 'browser-display',
+                name: 'Screen/Window Audio',
+                type: 'browser'
+            }
+        ];
     }
 
     /**
@@ -118,10 +121,13 @@ export class SystemAudioCapture {
      * @returns 会議アプリソース
      */
     public async detectMeetingApps(): Promise<SystemAudioSource[]> {
-        if (this.isElectron && window.electronAPI) {
+        if (this.isElectron && globalThis.window?.electronAPI) {
             try {
-                const sources = await window.electronAPI.detectMeetingApps();
-                return sources.map((source) => ({
+                const electronAPI = globalThis.window.electronAPI as unknown as {
+                    detectMeetingApps: () => Promise<Array<{ id: string; name: string; type: string; thumbnail?: string }>>;
+                };
+                const sources = await electronAPI.detectMeetingApps();
+                return sources.map((source: { id: string; name: string; type: string; thumbnail?: string }) => ({
                     id: source.id,
                     name: source.name,
                     type: source.type as 'window' | 'screen' | 'browser',
@@ -131,9 +137,8 @@ export class SystemAudioCapture {
                 logger.error('Failed to detect meeting apps', error);
                 return [];
             }
-        } else {
-            return [];
         }
+        return [];
     }
 
     /**
@@ -162,11 +167,14 @@ export class SystemAudioCapture {
     private async captureElectronAudio(sourceId: string): Promise<MediaStream> {
         try {
             // ソース ID を検証
-            if (!window.electronAPI) {
+            if (!globalThis.window?.electronAPI) {
                 throw new Error('Electron API is not available');
             }
 
-            const isValid = await window.electronAPI.validateSourceId(sourceId);
+            const electronAPI = globalThis.window.electronAPI as unknown as {
+                validateSourceId: (sourceId: string) => Promise<boolean>;
+            };
+            const isValid = await electronAPI.validateSourceId(sourceId);
             if (!isValid) {
                 throw new Error('Invalid source ID');
             }

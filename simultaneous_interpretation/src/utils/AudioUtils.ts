@@ -19,7 +19,7 @@ export class AudioUtils {
         const bytes = new Uint8Array(buffer);
         let binary = '';
         for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
+            binary += String.fromCharCode(bytes[i]!);
         }
         return btoa(binary);
     }
@@ -43,12 +43,12 @@ export class AudioUtils {
         const buffer = new ArrayBuffer(float32Array.length * 2);
         const view = new DataView(buffer);
         let offset = 0;
-        
+
         for (let i = 0; i < float32Array.length; i++, offset += 2) {
-            const s = Math.max(-1, Math.min(1, float32Array[i]));
+            const s = Math.max(-1, Math.min(1, float32Array[i]!));
             view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
         }
-        
+
         return buffer;
     }
 
@@ -88,16 +88,16 @@ export class AudioUtils {
      */
     static normalizeAudio(samples: Float32Array): Float32Array {
         const max = Math.max(...Array.from(samples).map(Math.abs));
-        
+
         if (max === 0) {
             return samples;
         }
-        
+
         const normalized = new Float32Array(samples.length);
         for (let i = 0; i < samples.length; i++) {
-            normalized[i] = samples[i] / max;
+            normalized[i] = samples[i]! / max;
         }
-        
+
         return normalized;
     }
 
@@ -107,7 +107,7 @@ export class AudioUtils {
     static calculateRMS(samples: Float32Array): number {
         let sum = 0;
         for (let i = 0; i < samples.length; i++) {
-            sum += samples[i] * samples[i];
+            sum += samples[i]! * samples[i]!;
         }
         return Math.sqrt(sum / samples.length);
     }
@@ -118,7 +118,7 @@ export class AudioUtils {
     static calculatePeak(samples: Float32Array): number {
         let peak = 0;
         for (let i = 0; i < samples.length; i++) {
-            const abs = Math.abs(samples[i]);
+            const abs = Math.abs(samples[i]!);
             if (abs > peak) {
                 peak = abs;
             }
@@ -145,12 +145,12 @@ export class AudioUtils {
         let end = samples.length - 1;
 
         // 開始位置を検索
-        while (start < samples.length && Math.abs(samples[start]) < threshold) {
+        while (start < samples.length && Math.abs(samples[start]!) < threshold) {
             start++;
         }
 
         // 終了位置を検索
-        while (end > start && Math.abs(samples[end]) < threshold) {
+        while (end > start && Math.abs(samples[end]!) < threshold) {
             end--;
         }
 
@@ -169,13 +169,13 @@ export class AudioUtils {
 
         // フェードイン
         for (let i = 0; i < Math.min(fadeInSamples, samples.length); i++) {
-            result[i] *= i / fadeInSamples;
+            result[i]! *= i / fadeInSamples;
         }
 
         // フェードアウト
         const fadeOutStart = samples.length - fadeOutSamples;
         for (let i = fadeOutStart; i < samples.length; i++) {
-            result[i] *= (samples.length - i) / fadeOutSamples;
+            result[i]! *= (samples.length - i) / fadeOutSamples;
         }
 
         return result;

@@ -9,13 +9,17 @@
  * @version 2.0.0
  */
 
-import { AudioProcessor } from './AudioProcessor';
-import {
-    IEncoderProcessor,
-    AudioData,
-    AudioProcessingResult,
-    AudioFormat
-} from '../interfaces/IAudioPipeline';
+import { AudioProcessor, type AudioProcessingResult } from './AudioProcessor';
+import type { AudioData } from '../interfaces/ICoreTypes';
+
+/**
+ * 音声フォーマット列挙型
+ */
+export enum AudioFormat {
+    PCM16 = 'pcm16',
+    PCM32 = 'pcm32',
+    FLOAT32 = 'float32'
+}
 
 /**
  * エンコーダー設定
@@ -30,7 +34,8 @@ export interface EncoderConfig {
 /**
  * エンコーダープロセッサー
  */
-export class EncoderProcessor extends AudioProcessor implements IEncoderProcessor {
+export class EncoderProcessor extends AudioProcessor {
+    readonly name = 'EncoderProcessor';
     private config: EncoderConfig;
 
     constructor(config: EncoderConfig) {
@@ -83,14 +88,14 @@ export class EncoderProcessor extends AudioProcessor implements IEncoderProcesso
      */
     private encodePCM16(samples: Float32Array): Float32Array {
         const output = new Float32Array(samples.length);
-        
+
         for (let i = 0; i < samples.length; i++) {
             // Float32 (-1.0 ~ 1.0) を Int16 (-32768 ~ 32767) に変換
-            let s = Math.max(-1, Math.min(1, samples[i]));
+            let s = Math.max(-1, Math.min(1, samples[i]!));
             s = s < 0 ? s * 32768 : s * 32767;
             output[i] = Math.floor(s);
         }
-        
+
         return output;
     }
 
@@ -99,14 +104,14 @@ export class EncoderProcessor extends AudioProcessor implements IEncoderProcesso
      */
     private encodePCM32(samples: Float32Array): Float32Array {
         const output = new Float32Array(samples.length);
-        
+
         for (let i = 0; i < samples.length; i++) {
             // Float32 (-1.0 ~ 1.0) を Int32 に変換
-            let s = Math.max(-1, Math.min(1, samples[i]));
+            let s = Math.max(-1, Math.min(1, samples[i]!));
             s = s < 0 ? s * 2147483648 : s * 2147483647;
             output[i] = Math.floor(s);
         }
-        
+
         return output;
     }
 
@@ -119,8 +124,11 @@ export class EncoderProcessor extends AudioProcessor implements IEncoderProcesso
                 return this.encodePCM16ToArrayBuffer(samples);
             case AudioFormat.PCM32:
                 return this.encodePCM32ToArrayBuffer(samples);
-            case AudioFormat.FLOAT32:
-                return samples.buffer;
+            case AudioFormat.FLOAT32: {
+                // Float32Array の buffer をコピーして ArrayBuffer として返す
+                const buffer = samples.buffer;
+                return buffer instanceof ArrayBuffer ? buffer.slice(0) : new ArrayBuffer(0);
+            }
             default:
                 throw new Error(`Unsupported format: ${this.config.format}`);
         }
@@ -132,13 +140,13 @@ export class EncoderProcessor extends AudioProcessor implements IEncoderProcesso
     private encodePCM16ToArrayBuffer(samples: Float32Array): ArrayBuffer {
         const buffer = new ArrayBuffer(samples.length * 2);
         const view = new DataView(buffer);
-        
+
         for (let i = 0; i < samples.length; i++) {
-            let s = Math.max(-1, Math.min(1, samples[i]));
+            let s = Math.max(-1, Math.min(1, samples[i]!));
             s = s < 0 ? s * 32768 : s * 32767;
             view.setInt16(i * 2, Math.floor(s), true); // little-endian
         }
-        
+
         return buffer;
     }
 
@@ -148,13 +156,13 @@ export class EncoderProcessor extends AudioProcessor implements IEncoderProcesso
     private encodePCM32ToArrayBuffer(samples: Float32Array): ArrayBuffer {
         const buffer = new ArrayBuffer(samples.length * 4);
         const view = new DataView(buffer);
-        
+
         for (let i = 0; i < samples.length; i++) {
-            let s = Math.max(-1, Math.min(1, samples[i]));
+            let s = Math.max(-1, Math.min(1, samples[i]!));
             s = s < 0 ? s * 2147483648 : s * 2147483647;
             view.setInt32(i * 4, Math.floor(s), true); // little-endian
         }
-        
+
         return buffer;
     }
 

@@ -40,7 +40,7 @@ export class BrowserWebSocketAdapter extends WebSocketAdapter implements IBrowse
 
         return new Promise((resolve, reject) => {
             try {
-                if (!this.config.apiKey) {
+                if (!this.config || !this.config.apiKey) {
                     throw new Error('APIキーが設定されていません');
                 }
 

@@ -9,13 +9,8 @@
  * @version 2.0.0
  */
 
-import { AudioProcessor } from './AudioProcessor';
-import {
-    IVADProcessor,
-    AudioData,
-    AudioProcessingResult,
-    VADResult
-} from '../interfaces/IAudioPipeline';
+import { AudioProcessor, type AudioProcessingResult } from './AudioProcessor';
+import type { AudioData } from '../interfaces/ICoreTypes';
 
 /**
  * VAD 設定
@@ -34,15 +29,28 @@ export interface VADConfig {
 }
 
 /**
+ * VAD 結果
+ */
+export interface VADResult {
+    /** 音声が検出されたか */
+    isSpeaking: boolean;
+    /** 信頼度スコア (0-1) */
+    confidence: number;
+    /** エネルギーレベル */
+    energy: number;
+    /** タイムスタンプ (ms) */
+    timestamp: number;
+}
+
+/**
  * VAD プロセッサー
  */
-export class VADProcessor extends AudioProcessor implements IVADProcessor {
+export class VADProcessor extends AudioProcessor {
+    readonly name = 'VADProcessor';
     private config: VADConfig;
     private isSpeaking = false;
     private speechStartTime = 0;
     private lastSpeechTime = 0;
-    private audioBuffer: Float32Array[] = [];
-    private readonly maxBufferSize = 100;
 
     constructor(config?: Partial<VADConfig>) {
         super();
@@ -88,7 +96,7 @@ export class VADProcessor extends AudioProcessor implements IVADProcessor {
 
             // 無音の場合はスキップ
             return {
-                data: input,
+                audio: input,
                 success: true,
                 metadata: { skipped: true, reason: 'silence' }
             };
@@ -119,9 +127,9 @@ export class VADProcessor extends AudioProcessor implements IVADProcessor {
 
         return {
             isSpeaking: isSpeaking || isDebounced,
-            confidence: Math.min(rms / this.config.threshold, 1.0),
+            confidence: Math.min(rms / this.config.threshold, 1),
             energy: rms,
-            timestamp: input.timestamp
+            timestamp: Date.now()
         };
     }
 
@@ -131,7 +139,7 @@ export class VADProcessor extends AudioProcessor implements IVADProcessor {
     private calculateRMS(samples: Float32Array): number {
         let sum = 0;
         for (let i = 0; i < samples.length; i++) {
-            sum += samples[i] * samples[i];
+            sum += samples[i]! * samples[i]!;
         }
         return Math.sqrt(sum / samples.length);
     }
@@ -171,9 +179,7 @@ export class VADProcessor extends AudioProcessor implements IVADProcessor {
     /**
      * プロセッサーを破棄
      */
-    async dispose(): Promise<void> {
-        this.audioBuffer = [];
+    override async dispose(): Promise<void> {
         await super.dispose();
     }
 }
-

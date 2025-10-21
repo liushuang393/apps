@@ -157,7 +157,7 @@ export class LatencyOptimizer {
     /**
      * チャンクサイズを計算
      */
-    private calculateChunkSize(totalSize: number): number {
+    private calculateChunkSize(_totalSize: number): number {
         // サンプリングレート 24kHz, PCM16 (2 bytes) を想定
         const sampleRate = 24000;
         const bytesPerSample = 2;

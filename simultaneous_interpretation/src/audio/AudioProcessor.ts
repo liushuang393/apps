@@ -8,17 +8,47 @@
  * @version 2.0.0
  */
 
-import {
-    IAudioProcessor,
-    AudioData,
-    AudioProcessingResult,
-    AudioFormat
-} from '../interfaces/IAudioPipeline';
+import type { AudioData } from '../interfaces/ICoreTypes';
+
+/**
+ * 音声処理結果
+ */
+export interface AudioProcessingResult {
+    /** 処理済み音声データ */
+    audio: AudioData;
+    /** 処理が成功したか */
+    success: boolean;
+    /** エラーメッセージ (失敗時) */
+    error?: string;
+    /** メタデータ */
+    metadata?: Record<string, unknown>;
+}
+
+/**
+ * 音声プロセッサーインターフェース
+ */
+export interface IAudioProcessor {
+    /** プロセッサー名 */
+    readonly name: string;
+    /** 音声データを処理 */
+    process(input: AudioData): Promise<AudioProcessingResult>;
+    /** プロセッサーを初期化 */
+    initialize(): Promise<void>;
+    /** プロセッサーを破棄 */
+    dispose(): Promise<void>;
+    /** 有効/無効を設定 */
+    setEnabled(enabled: boolean): void;
+    /** 有効かどうか */
+    isEnabled(): boolean;
+    /** 次のプロセッサーを設定 */
+    setNext(processor: IAudioProcessor | null): void;
+}
 
 /**
  * 音声プロセッサー基底クラス
  */
 export abstract class AudioProcessor implements IAudioProcessor {
+    abstract readonly name: string;
     protected enabled = true;
     protected nextProcessor: IAudioProcessor | null = null;
 
@@ -58,7 +88,7 @@ export abstract class AudioProcessor implements IAudioProcessor {
     /**
      * 次のプロセッサーを設定
      */
-    setNext(processor: IAudioProcessor): void {
+    setNext(processor: IAudioProcessor | null): void {
         this.nextProcessor = processor;
     }
 
@@ -69,10 +99,10 @@ export abstract class AudioProcessor implements IAudioProcessor {
         if (this.nextProcessor) {
             return await this.nextProcessor.process(input);
         }
-        
+
         // 最後のプロセッサーの場合
         return {
-            data: input,
+            audio: input,
             success: true
         };
     }
@@ -82,11 +112,10 @@ export abstract class AudioProcessor implements IAudioProcessor {
      */
     protected createErrorResult(error: Error): AudioProcessingResult {
         return {
-            data: {
+            audio: {
                 samples: new Float32Array(0),
                 sampleRate: 0,
-                channels: 1,
-                timestamp: Date.now()
+                channels: 1
             },
             success: false,
             error: error.message

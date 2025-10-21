@@ -23,6 +23,61 @@ import { ElectronAudioCapture } from './audioCapture';
 import { initializeRealtimeWebSocket, cleanupRealtimeWebSocket } from './realtimeWebSocket';
 
 /**
+ * .env から環境変数を読み込み、未設定の値を補完する
+ */
+function loadEnvironmentVariables(): void {
+    const candidates = [
+        path.resolve(process.cwd(), '.env'),
+        path.resolve(__dirname, '..', '..', '.env')
+    ];
+
+    for (const envPath of candidates) {
+        if (!fs.existsSync(envPath)) {
+            continue;
+        }
+
+        try {
+            const content = fs.readFileSync(envPath, 'utf-8');
+            const lines = content.split(/\r?\n/);
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+
+                if (!line || line.startsWith('#')) {
+                    continue;
+                }
+
+                const separatorIndex = line.indexOf('=');
+                if (separatorIndex <= 0) {
+                    continue;
+                }
+
+                const key = line.slice(0, separatorIndex).trim();
+                let value = line.slice(separatorIndex + 1).trim();
+
+                if (
+                    (value.startsWith('"') && value.endsWith('"')) ||
+                    (value.startsWith("'") && value.endsWith("'"))
+                ) {
+                    value = value.slice(1, -1);
+                }
+
+                if (!process.env[key]) {
+                    process.env[key] = value;
+                }
+            }
+
+            console.log(`[Env] Loaded environment variables from ${envPath}`);
+            break;
+        } catch (error) {
+            console.error('[Env] Failed to load .env file:', error);
+        }
+    }
+}
+
+loadEnvironmentVariables();
+
+/**
  * メインウィンドウ
  */
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -434,7 +489,7 @@ function registerIPCHandlers(): void {
                 `${errors.join('\n')}\n\n` +
                 `.env ファイルに以下の設定を追加してください:\n` +
                 `OPENAI_REALTIME_MODEL=gpt-realtime-2025-08-28\n` +
-                `OPENAI_CHAT_MODEL=gpt-4o`;
+                `OPENAI_CHAT_MODEL=gpt-5-2025-08-07`;
 
             console.error('[Main]', errorMessage);
             throw new Error(errorMessage);

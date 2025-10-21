@@ -9,12 +9,8 @@
  * @version 2.0.0
  */
 
-import { AudioProcessor } from './AudioProcessor';
-import {
-    IResamplerProcessor,
-    AudioData,
-    AudioProcessingResult
-} from '../interfaces/IAudioPipeline';
+import { AudioProcessor, type AudioProcessingResult } from './AudioProcessor';
+import type { AudioData } from '../interfaces/ICoreTypes';
 
 /**
  * リサンプラー設定
@@ -29,7 +25,8 @@ export interface ResamplerConfig {
 /**
  * リサンプラープロセッサー
  */
-export class ResamplerProcessor extends AudioProcessor implements IResamplerProcessor {
+export class ResamplerProcessor extends AudioProcessor {
+    readonly name = 'ResamplerProcessor';
     private config: ResamplerConfig;
 
     constructor(config: ResamplerConfig) {
@@ -61,8 +58,7 @@ export class ResamplerProcessor extends AudioProcessor implements IResamplerProc
             const output: AudioData = {
                 samples: resampled,
                 sampleRate: this.config.targetSampleRate,
-                channels: input.channels,
-                timestamp: input.timestamp
+                channels: input.channels
             };
 
             return await this.processNext(output);
@@ -82,7 +78,6 @@ export class ResamplerProcessor extends AudioProcessor implements IResamplerProc
     ): Float32Array {
         const ratio = sourceSampleRate / targetSampleRate;
         const outputLength = Math.floor(input.length / ratio);
-        const output = new Float32Array(outputLength);
 
         switch (this.config.quality) {
             case 'high':
@@ -104,12 +99,12 @@ export class ResamplerProcessor extends AudioProcessor implements IResamplerProc
         outputLength: number
     ): Float32Array {
         const output = new Float32Array(outputLength);
-        
+
         for (let i = 0; i < outputLength; i++) {
             const sourceIndex = Math.round(i * ratio);
-            output[i] = input[Math.min(sourceIndex, input.length - 1)];
+            output[i] = input[Math.min(sourceIndex, input.length - 1)]!;
         }
-        
+
         return output;
     }
 
@@ -122,16 +117,16 @@ export class ResamplerProcessor extends AudioProcessor implements IResamplerProc
         outputLength: number
     ): Float32Array {
         const output = new Float32Array(outputLength);
-        
+
         for (let i = 0; i < outputLength; i++) {
             const sourceIndex = i * ratio;
             const index0 = Math.floor(sourceIndex);
             const index1 = Math.min(index0 + 1, input.length - 1);
             const fraction = sourceIndex - index0;
-            
-            output[i] = input[index0] * (1 - fraction) + input[index1] * fraction;
+
+            output[i] = input[index0]! * (1 - fraction) + input[index1]! * fraction;
         }
-        
+
         return output;
     }
 
@@ -144,22 +139,22 @@ export class ResamplerProcessor extends AudioProcessor implements IResamplerProc
         outputLength: number
     ): Float32Array {
         const output = new Float32Array(outputLength);
-        
+
         for (let i = 0; i < outputLength; i++) {
             const sourceIndex = i * ratio;
             const index = Math.floor(sourceIndex);
             const fraction = sourceIndex - index;
-            
+
             // 4点を取得
-            const p0 = input[Math.max(index - 1, 0)];
-            const p1 = input[index];
-            const p2 = input[Math.min(index + 1, input.length - 1)];
-            const p3 = input[Math.min(index + 2, input.length - 1)];
-            
+            const p0 = input[Math.max(index - 1, 0)]!;
+            const p1 = input[index]!;
+            const p2 = input[Math.min(index + 1, input.length - 1)]!;
+            const p3 = input[Math.min(index + 2, input.length - 1)]!;
+
             // Catmull-Rom スプライン補間
             output[i] = this.cubicInterpolate(p0, p1, p2, p3, fraction);
         }
-        
+
         return output;
     }
 

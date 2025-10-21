@@ -116,7 +116,7 @@ export class ElectronWebSocketAdapter extends WebSocketAdapter implements IElect
     /**
      * 接続を切断
      */
-    async disconnect(code = 1000, reason = 'Normal closure'): Promise<void> {
+    async disconnect(_code = 1000, _reason = 'Normal closure'): Promise<void> {
         if (!this.electronAPI || this.state === WebSocketState.DISCONNECTED) {
             return;
         }

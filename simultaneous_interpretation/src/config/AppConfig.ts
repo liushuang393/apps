@@ -150,27 +150,27 @@ export class AppConfig {
             const errors: string[] = [];
 
             // Realtime モデル（必須）
-            if (process.env.OPENAI_REALTIME_MODEL) {
-                this.API.REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL;
+            if (process.env['OPENAI_REALTIME_MODEL']) {
+                this.API.REALTIME_MODEL = process.env['OPENAI_REALTIME_MODEL'];
             } else {
                 errors.push('OPENAI_REALTIME_MODEL が設定されていません');
             }
 
             // Chat モデル（必須）
-            if (process.env.OPENAI_CHAT_MODEL) {
-                this.API.CHAT_MODEL = process.env.OPENAI_CHAT_MODEL;
+            if (process.env['OPENAI_CHAT_MODEL']) {
+                this.API.CHAT_MODEL = process.env['OPENAI_CHAT_MODEL'];
             } else {
                 errors.push('OPENAI_CHAT_MODEL が設定されていません');
             }
 
             // Realtime URL（オプション、デフォルト値あり）
-            if (process.env.OPENAI_REALTIME_URL) {
-                this.API.REALTIME_URL = process.env.OPENAI_REALTIME_URL;
+            if (process.env['OPENAI_REALTIME_URL']) {
+                this.API.REALTIME_URL = process.env['OPENAI_REALTIME_URL'];
             }
 
             // デバッグモード（オプション）
-            if (process.env.DEBUG_MODE) {
-                this.DEBUG_MODE = process.env.DEBUG_MODE === 'true';
+            if (process.env['DEBUG_MODE']) {
+                this.DEBUG_MODE = process.env['DEBUG_MODE'] === 'true';
             }
 
             // エラーがある場合は例外を投げる
@@ -194,7 +194,7 @@ export class AppConfig {
 
         // API キーチェック（ブラウザ環境では不要）
         if (typeof window === 'undefined') {
-            if (!process.env.OPENAI_API_KEY) {
+            if (!process.env['OPENAI_API_KEY']) {
                 errors.push('OPENAI_API_KEY is not set');
             }
         }
@@ -226,7 +226,7 @@ export class AppConfig {
         this.DEBUG_MODE = false;
         this.AUDIO_PRESET = 'BALANCED';
         this.API.REALTIME_MODEL = 'gpt-realtime-2025-08-28';
-        this.API.CHAT_MODEL = 'gpt-4o';
+        this.API.CHAT_MODEL = 'gpt-5-2025-08-07';
     }
 }
 

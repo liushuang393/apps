@@ -33,7 +33,7 @@ export const CONFIG = {
         //    - API: /v1/chat/completions
         //    - 例: gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5-turbo
         //    - ⚠️ Realtime APIモデルは使用不可
-        CHAT_MODEL: 'gpt-4o',
+        CHAT_MODEL: 'gpt-5-2025-08-07',
         TIMEOUT: 30000
     },
     // 音声設定プリセット（4つの方案から選択）

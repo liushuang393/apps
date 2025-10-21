@@ -199,9 +199,6 @@ transcriptId: 1234567890
 `.env` ファイルで各処理のモデルを個別に設定可能：
 
 ```bash
-# 音声認識モデル（固定値）
-OPENAI_SPEECH_RECOGNITION_MODEL=gpt-4o-transcribe
-
 # 文本翻訳モデル（Chat Completions API対応モデル）
 # 推奨: gpt-4o, gpt-4-turbo, gpt-3.5-turbo
 # ⚠️ Realtime APIモデル（gpt-realtime-xxx）は使用不可
@@ -219,11 +216,13 @@ OPENAI_VOICE_TO_VOICE_MODEL=gpt-realtime-2025-08-28
 
 ### 📋 プロジェクト文書
 詳細なプロジェクト情報は [`docs/`](./docs/) フォルダを参照してください：
+- **[ENGINEERING_RULES.md](./docs/ENGINEERING_RULES.md)** - 🔥 **エンジニアリング規則** (開発者必読)
 - **[README.md](./docs/README.md)** - プロジェクト概要と機能説明
 - **[GETTING_STARTED.md](./docs/GETTING_STARTED.md)** - クイックスタートガイド
 - **[SETUP_GUIDE.md](./docs/SETUP_GUIDE.md)** - 詳細なセットアップ手順
 - **[API_KEY_SETUP_CHECKLIST.md](./docs/API_KEY_SETUP_CHECKLIST.md)** - API キー設定チェックリスト
 - **[EXTENSION_INSTALL.md](./docs/EXTENSION_INSTALL.md)** - ブラウザ拡張機能のインストール方法
+- **[USAGE_GUIDE.md](./docs/USAGE_GUIDE.md)** - 使用ガイド
 - **[PROJECT_SUMMARY.md](./docs/PROJECT_SUMMARY.md)** - プロジェクト総括
 - **[TEST_REPORT.md](./docs/TEST_REPORT.md)** - テスト結果レポート
 - **[VERIFICATION_CHECKLIST.md](./docs/VERIFICATION_CHECKLIST.md)** - 検証チェックリスト
@@ -258,7 +257,11 @@ OPENAI_VOICE_TO_VOICE_MODEL=gpt-realtime-2025-08-28
    |---------|------|-----------|
    | `npm run dev` | 🔥 **開発時最推奨** | コード変更時に自動再コンパイル・再起動 |
    | `npm start` | ⚡ クイック起動 | 開発版を素早く起動 |
+
+   | `npm run build:electron` | 🚀 Electron アプリのビルド | ビルドのみ（実行なし） |
    | `npm run electron:dev` | 🔧 開発モード実行 | 手動ビルド後に開発版を実行 |
+
+   
    | `npm run electron` | 🏭 本番モード実行 | 本番環境版をテスト |
    | `npm run build` | 📦 ビルドのみ | コンパイルのみ（実行なし） |
 

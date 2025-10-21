@@ -9,19 +9,40 @@
  */
 
 // 設定
-export * from './config';
+export { AppConfig, type AudioPresetName, type AudioPresetConfig, type VADSensitivityConfig, type VADModeConfig } from './config';
 
-// インターフェース
-export * from './interfaces';
+// インターフェース（IAudioPipeline.ts からのインターフェース定義）
+export type {
+    IAudioPipeline,
+    IVADProcessor,
+    IResamplerProcessor,
+    IEncoderProcessor
+} from './interfaces/IAudioPipeline';
+
+export type {
+    IWebSocketAdapter,
+    IConfigManager,
+    ITranslationService
+} from './interfaces';
+
+export type {
+    AudioData,
+    LanguageInfo
+} from './interfaces/ICoreTypes';
 
 // アダプター
 export * from './adapters';
 
 // サービス
-export * from './services';
+export { LatencyOptimizer } from './services';
 
-// 音声処理
-export * from './audio';
+// 音声処理（実装クラスとローカル型定義）
+export { AudioProcessor, type AudioProcessingResult, type IAudioProcessor } from './audio/AudioProcessor';
+export { VADProcessor, type VADConfig, type VADResult } from './audio/VADProcessor';
+export { ResamplerProcessor } from './audio/ResamplerProcessor';
+export { EncoderProcessor, AudioFormat } from './audio/EncoderProcessor';
+export { AudioPipeline, AudioPipelineBuilder } from './audio/AudioPipeline';
+export { SystemAudioCapture } from './audio/SystemAudioCapture';
 
 // ユーティリティ
 export * from './utils';

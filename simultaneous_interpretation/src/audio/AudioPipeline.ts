@@ -9,17 +9,13 @@
  * @version 2.0.0
  */
 
-import {
-    IAudioPipeline,
-    IAudioProcessor,
-    AudioData,
-    AudioProcessingResult
-} from '../interfaces/IAudioPipeline';
+import { type IAudioProcessor, type AudioProcessingResult } from './AudioProcessor';
+import type { AudioData } from '../interfaces/ICoreTypes';
 
 /**
  * 音声処理パイプライン
  */
-export class AudioPipeline implements IAudioPipeline {
+export class AudioPipeline {
     private processors: IAudioProcessor[] = [];
     private enabled = true;
 
@@ -34,8 +30,8 @@ export class AudioPipeline implements IAudioPipeline {
     /**
      * プロセッサーを削除
      */
-    removeProcessor(processor: IAudioProcessor): void {
-        const index = this.processors.indexOf(processor);
+    removeProcessor(name: string): void {
+        const index = this.processors.findIndex(p => p.name === name);
         if (index !== -1) {
             this.processors.splice(index, 1);
             this.rebuildChain();
@@ -62,17 +58,17 @@ export class AudioPipeline implements IAudioPipeline {
     async process(input: AudioData): Promise<AudioProcessingResult> {
         if (!this.enabled || this.processors.length === 0) {
             return {
-                data: input,
+                audio: input,
                 success: true
             };
         }
 
         try {
             // 最初のプロセッサーから処理を開始
-            return await this.processors[0].process(input);
+            return await this.processors[0]!.process(input);
         } catch (error) {
             return {
-                data: input,
+                audio: input,
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'
             };
@@ -118,12 +114,12 @@ export class AudioPipeline implements IAudioPipeline {
      */
     private rebuildChain(): void {
         for (let i = 0; i < this.processors.length - 1; i++) {
-            this.processors[i].setNext(this.processors[i + 1]);
+            this.processors[i]!.setNext(this.processors[i + 1]!);
         }
-        
+
         // 最後のプロセッサーは次がない
         if (this.processors.length > 0) {
-            this.processors[this.processors.length - 1].setNext(null as any);
+            this.processors[this.processors.length - 1]!.setNext(null as any);
         }
     }
 }
