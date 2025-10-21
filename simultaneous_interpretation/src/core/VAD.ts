@@ -1,14 +1,14 @@
 /**
  * VoiceTranslate Pro - Voice Activity Detector (VAD)
- * 
+ *
  * 目的: 音声の開始と終了を検出し、音声区間を識別する
- * 
+ *
  * 機能:
  * - エネルギーベースの音声検出
  * - 適応的閾値調整（キャリブレーション）
  * - ノイズフロア推定
  * - デバウンス処理（誤検出防止）
- * 
+ *
  * 注意点:
  * - 初期化後、約30サンプルでキャリブレーションを実施
  * - 環境ノイズに応じて閾値を自動調整
@@ -40,7 +40,7 @@ export interface VADAnalysisResult {
 
 /**
  * Voice Activity Detector クラス
- * 
+ *
  * エネルギーベースの音声検出を行い、音声の開始と終了を検出します。
  * 環境ノイズに応じて自動的に閾値を調整します。
  */
@@ -75,7 +75,7 @@ export class VoiceActivityDetector {
 
     /**
      * VoiceActivityDetector のコンストラクタ
-     * 
+     *
      * @param options - VAD設定オプション
      */
     constructor(options: VADOptions = {}) {
@@ -97,7 +97,7 @@ export class VoiceActivityDetector {
 
     /**
      * 音声データを分析し、音声検出を行う
-     * 
+     *
      * @param audioData - 分析する音声データ (Float32Array)
      * @returns VAD分析結果
      */
@@ -145,7 +145,7 @@ export class VoiceActivityDetector {
 
     /**
      * 音声データのエネルギーを計算
-     * 
+     *
      * @param data - 音声データ
      * @returns エネルギーレベル (RMS)
      */
@@ -156,11 +156,13 @@ export class VoiceActivityDetector {
 
     /**
      * 平滑化されたエネルギーを取得
-     * 
+     *
      * @returns 平滑化されたエネルギーレベル
      */
     private getSmoothedEnergy(): number {
-        if (this.energyHistory.length === 0) return 0;
+        if (this.energyHistory.length === 0) {
+            return 0;
+        }
         const sum = this.energyHistory.reduce((acc, val) => acc + val, 0);
         return sum / this.energyHistory.length;
     }
@@ -169,21 +171,25 @@ export class VoiceActivityDetector {
      * キャリブレーションを完了し、適応的閾値を設定
      */
     private completeCalibration(): void {
-        const mean = this.calibrationSamples.reduce((a, b) => a + b, 0) / this.calibrationSamples.length;
-        const variance = this.calibrationSamples.reduce((acc, val) =>
-            acc + Math.pow(val - mean, 2), 0) / this.calibrationSamples.length;
+        const mean =
+            this.calibrationSamples.reduce((a, b) => a + b, 0) / this.calibrationSamples.length;
+        const variance =
+            this.calibrationSamples.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) /
+            this.calibrationSamples.length;
         const stdDev = Math.sqrt(variance);
 
         this.noiseFloor = mean;
 
         // 適応閾値を計算（最小値を設定）
-        const calculatedThreshold = mean + (stdDev * 3);
+        const calculatedThreshold = mean + stdDev * 3;
         const minThreshold = 0.01; // 最小閾値（環境が静かすぎる場合の対策）
         this.adaptiveThreshold = Math.max(calculatedThreshold, minThreshold);
 
         this.isCalibrating = false;
 
-        console.log(`[VAD] Calibration complete - Noise: ${this.noiseFloor.toFixed(4)}, Calculated: ${calculatedThreshold.toFixed(4)}, Final Threshold: ${this.adaptiveThreshold.toFixed(4)}`);
+        console.info(
+            `[VAD] Calibration complete - Noise: ${this.noiseFloor.toFixed(4)}, Calculated: ${calculatedThreshold.toFixed(4)}, Final Threshold: ${this.adaptiveThreshold.toFixed(4)}`
+        );
     }
 
     /**
@@ -201,7 +207,7 @@ export class VoiceActivityDetector {
 
     /**
      * 現在の音声検出状態を取得
-     * 
+     *
      * @returns 音声検出中かどうか
      */
     getIsSpeaking(): boolean {
@@ -210,7 +216,7 @@ export class VoiceActivityDetector {
 
     /**
      * 現在の適応的閾値を取得
-     * 
+     *
      * @returns 適応的閾値
      */
     getAdaptiveThreshold(): number {
@@ -219,7 +225,7 @@ export class VoiceActivityDetector {
 
     /**
      * ノイズフロアを取得
-     * 
+     *
      * @returns ノイズフロア
      */
     getNoiseFloor(): number {
@@ -228,11 +234,10 @@ export class VoiceActivityDetector {
 
     /**
      * キャリブレーション中かどうかを取得
-     * 
+     *
      * @returns キャリブレーション中かどうか
      */
     getIsCalibrating(): boolean {
         return this.isCalibrating;
     }
 }
-

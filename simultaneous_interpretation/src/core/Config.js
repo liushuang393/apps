@@ -84,7 +84,7 @@ export const CONFIG = {
         // システム音声モード用（騒がしい環境：ブラウザ音声、会議、音楽）
         SYSTEM: {
             LOW: { threshold: 0.015, debounce: 500 },
-            MEDIUM: { threshold: 0.010, debounce: 350 },
+            MEDIUM: { threshold: 0.01, debounce: 350 },
             HIGH: { threshold: 0.006, debounce: 250 }
         }
     }
@@ -107,8 +107,7 @@ export function setAudioPreset(presetName) {
     if (!CONFIG.AUDIO_PRESETS[presetName]) {
         console.warn(`[Config] 無効なプリセット名: ${presetName}. BALANCED を使用します。`);
         CONFIG.AUDIO_PRESET = 'BALANCED';
-    }
-    else {
+    } else {
         CONFIG.AUDIO_PRESET = presetName;
     }
     return getAudioPreset();

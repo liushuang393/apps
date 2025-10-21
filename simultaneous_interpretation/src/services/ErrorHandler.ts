@@ -196,8 +196,12 @@ export class ErrorHandler {
         const message = error.message.toLowerCase();
 
         // ネットワークエラー
-        if (message.includes('network') || message.includes('connection') || 
-            message.includes('timeout') || message.includes('fetch')) {
+        if (
+            message.includes('network') ||
+            message.includes('connection') ||
+            message.includes('timeout') ||
+            message.includes('fetch')
+        ) {
             return new AppError({
                 code: 'NETWORK_ERROR',
                 message: error.message,
@@ -211,8 +215,12 @@ export class ErrorHandler {
         }
 
         // API エラー
-        if (message.includes('api') || message.includes('unauthorized') || 
-            message.includes('forbidden') || message.includes('rate limit')) {
+        if (
+            message.includes('api') ||
+            message.includes('unauthorized') ||
+            message.includes('forbidden') ||
+            message.includes('rate limit')
+        ) {
             return new AppError({
                 code: 'API_ERROR',
                 message: error.message,
@@ -226,23 +234,31 @@ export class ErrorHandler {
         }
 
         // 音声エラー
-        if (message.includes('audio') || message.includes('microphone') || 
-            message.includes('speaker') || message.includes('media')) {
+        if (
+            message.includes('audio') ||
+            message.includes('microphone') ||
+            message.includes('speaker') ||
+            message.includes('media')
+        ) {
             return new AppError({
                 code: 'AUDIO_ERROR',
                 message: error.message,
                 category: ErrorCategory.AUDIO,
                 severity: ErrorSeverity.ERROR,
                 recoveryStrategy: RecoveryStrategy.RESET,
-                userMessage: '音声デバイスにアクセスできません。マイクとスピーカーの設定を確認してください。',
+                userMessage:
+                    '音声デバイスにアクセスできません。マイクとスピーカーの設定を確認してください。',
                 details: error,
                 retryable: true
             });
         }
 
         // 設定エラー
-        if (message.includes('config') || message.includes('setting') || 
-            message.includes('invalid')) {
+        if (
+            message.includes('config') ||
+            message.includes('setting') ||
+            message.includes('invalid')
+        ) {
             return new AppError({
                 code: 'CONFIG_ERROR',
                 message: error.message,
@@ -272,21 +288,23 @@ export class ErrorHandler {
      * リカバリーを試行
      */
     private async attemptRecovery(error: AppError): Promise<boolean> {
-        console.log(`[ErrorHandler] Attempting recovery for ${error.code} using ${error.recoveryStrategy}`);
+        console.info(
+            `[ErrorHandler] Attempting recovery for ${error.code} using ${error.recoveryStrategy}`
+        );
 
         switch (error.recoveryStrategy) {
             case RecoveryStrategy.RETRY:
                 return await this.retryOperation(error);
-            
+
             case RecoveryStrategy.RECONNECT:
                 return await this.reconnect(error);
-            
+
             case RecoveryStrategy.RESET:
                 return await this.reset(error);
-            
+
             case RecoveryStrategy.FALLBACK:
                 return await this.fallback(error);
-            
+
             case RecoveryStrategy.NONE:
             case RecoveryStrategy.USER_ACTION:
             default:
@@ -299,7 +317,7 @@ export class ErrorHandler {
      */
     private async retryOperation(error: AppError): Promise<boolean> {
         // 実装は呼び出し元で行う
-        console.log(`[ErrorHandler] Retry strategy for ${error.code}`);
+        console.info(`[ErrorHandler] Retry strategy for ${error.code}`);
         return false;
     }
 
@@ -307,7 +325,7 @@ export class ErrorHandler {
      * 再接続
      */
     private async reconnect(error: AppError): Promise<boolean> {
-        console.log(`[ErrorHandler] Reconnect strategy for ${error.code}`);
+        console.info(`[ErrorHandler] Reconnect strategy for ${error.code}`);
         // WebSocket 再接続は WebSocketAdapter で処理される
         return true;
     }
@@ -316,7 +334,7 @@ export class ErrorHandler {
      * リセット
      */
     private async reset(error: AppError): Promise<boolean> {
-        console.log(`[ErrorHandler] Reset strategy for ${error.code}`);
+        console.info(`[ErrorHandler] Reset strategy for ${error.code}`);
         // 音声デバイスのリセットなど
         return false;
     }
@@ -325,7 +343,7 @@ export class ErrorHandler {
      * フォールバック
      */
     private async fallback(error: AppError): Promise<boolean> {
-        console.log(`[ErrorHandler] Fallback strategy for ${error.code}`);
+        console.info(`[ErrorHandler] Fallback strategy for ${error.code}`);
         // デフォルト設定の使用など
         return true;
     }
@@ -351,7 +369,7 @@ export class ErrorHandler {
             case ErrorSeverity.CRITICAL:
                 return console.error;
             default:
-                return console.log;
+                return console.info;
         }
     }
 
@@ -359,8 +377,7 @@ export class ErrorHandler {
      * ユーザーに通知すべきか
      */
     private shouldNotifyUser(error: AppError): boolean {
-        return error.severity === ErrorSeverity.ERROR || 
-               error.severity === ErrorSeverity.CRITICAL;
+        return error.severity === ErrorSeverity.ERROR || error.severity === ErrorSeverity.CRITICAL;
     }
 
     /**
@@ -370,13 +387,15 @@ export class ErrorHandler {
         // ブラウザ環境での通知
         if (typeof window !== 'undefined') {
             // カスタムイベントを発火
-            window.dispatchEvent(new CustomEvent('app-error', {
-                detail: {
-                    message: error.userMessage,
-                    severity: error.severity,
-                    code: error.code
-                }
-            }));
+            window.dispatchEvent(
+                new CustomEvent('app-error', {
+                    detail: {
+                        message: error.userMessage,
+                        severity: error.severity,
+                        code: error.code
+                    }
+                })
+            );
         }
     }
 
@@ -386,7 +405,7 @@ export class ErrorHandler {
     private async reportError(error: AppError): Promise<void> {
         // エラーレポートサービスに送信
         // 実装は環境に応じて
-        console.log('[ErrorHandler] Error reported:', error.code);
+        console.info('[ErrorHandler] Error reported:', error.code);
     }
 
     /**
@@ -394,7 +413,7 @@ export class ErrorHandler {
      */
     private addToHistory(error: AppError): void {
         this.errorHistory.push(error);
-        
+
         // 履歴サイズを制限
         if (this.errorHistory.length > this.maxHistorySize) {
             this.errorHistory.shift();
@@ -427,4 +446,3 @@ export class ErrorHandler {
  * グローバルエラーハンドラーインスタンス
  */
 export const globalErrorHandler = new ErrorHandler();
-

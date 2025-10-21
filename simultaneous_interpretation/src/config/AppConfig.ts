@@ -72,8 +72,8 @@ export class AppConfig {
      */
     static API = {
         REALTIME_URL: 'wss://api.openai.com/v1/realtime',
-        REALTIME_MODEL: 'gpt-realtime-2025-08-28',  // 参考値（環境変数で上書き必須）
-        CHAT_MODEL: 'gpt-4o',  // 参考値（環境変数で上書き必須）
+        REALTIME_MODEL: 'gpt-realtime-2025-08-28', // 参考値（環境変数で上書き必須）
+        CHAT_MODEL: 'gpt-4o', // 参考値（環境変数で上書き必須）
         TIMEOUT: 30000
     };
 
@@ -124,7 +124,7 @@ export class AppConfig {
         } as VADModeConfig,
         SYSTEM: {
             LOW: { threshold: 0.015, debounce: 500 },
-            MEDIUM: { threshold: 0.010, debounce: 350 },
+            MEDIUM: { threshold: 0.01, debounce: 350 },
             HIGH: { threshold: 0.006, debounce: 250 }
         } as VADModeConfig
     };
@@ -177,10 +177,10 @@ export class AppConfig {
             if (errors.length > 0) {
                 throw new Error(
                     `設定エラー: 必須の環境変数が設定されていません\n` +
-                    `${errors.join('\n')}\n\n` +
-                    `.env ファイルに以下の設定を追加してください:\n` +
-                    `OPENAI_REALTIME_MODEL=gpt-realtime-2025-08-28\n` +
-                    `OPENAI_CHAT_MODEL=gpt-4o`
+                        `${errors.join('\n')}\n\n` +
+                        `.env ファイルに以下の設定を追加してください:\n` +
+                        `OPENAI_REALTIME_MODEL=gpt-realtime-2025-08-28\n` +
+                        `OPENAI_CHAT_MODEL=gpt-4o`
                 );
             }
         }
@@ -232,4 +232,3 @@ export class AppConfig {
 
 // 環境変数から設定を読み込み
 AppConfig.loadFromEnv();
-

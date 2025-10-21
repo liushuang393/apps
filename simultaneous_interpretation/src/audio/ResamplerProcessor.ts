@@ -62,7 +62,6 @@ export class ResamplerProcessor extends AudioProcessor {
             };
 
             return await this.processNext(output);
-
         } catch (error) {
             return this.createErrorResult(error as Error);
         }
@@ -111,11 +110,7 @@ export class ResamplerProcessor extends AudioProcessor {
     /**
      * 線形補間
      */
-    private resampleLinear(
-        input: Float32Array,
-        ratio: number,
-        outputLength: number
-    ): Float32Array {
+    private resampleLinear(input: Float32Array, ratio: number, outputLength: number): Float32Array {
         const output = new Float32Array(outputLength);
 
         for (let i = 0; i < outputLength; i++) {
@@ -133,11 +128,7 @@ export class ResamplerProcessor extends AudioProcessor {
     /**
      * 3次補間
      */
-    private resampleCubic(
-        input: Float32Array,
-        ratio: number,
-        outputLength: number
-    ): Float32Array {
+    private resampleCubic(input: Float32Array, ratio: number, outputLength: number): Float32Array {
         const output = new Float32Array(outputLength);
 
         for (let i = 0; i < outputLength; i++) {
@@ -161,18 +152,12 @@ export class ResamplerProcessor extends AudioProcessor {
     /**
      * 3次補間計算
      */
-    private cubicInterpolate(
-        p0: number,
-        p1: number,
-        p2: number,
-        p3: number,
-        t: number
-    ): number {
+    private cubicInterpolate(p0: number, p1: number, p2: number, p3: number, t: number): number {
         const a0 = p3 - p2 - p0 + p1;
         const a1 = p0 - p1 - a0;
         const a2 = p2 - p0;
         const a3 = p1;
-        
+
         return a0 * t * t * t + a1 * t * t + a2 * t + a3;
     }
 
@@ -197,4 +182,3 @@ export class ResamplerProcessor extends AudioProcessor {
         this.config = { ...this.config, ...config };
     }
 }
-

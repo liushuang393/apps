@@ -1,6 +1,6 @@
 /**
  * VoiceTranslate Pro - Core Type Definitions
- * 
+ *
  * 目的: コアモジュールで使用する共通の型定義
  */
 
@@ -109,7 +109,7 @@ export interface WebSocketMessage {
     /** メッセージタイプ */
     type: string;
     /** メッセージデータ */
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 /**
@@ -125,7 +125,7 @@ export interface ResponseCreateRequest {
     /** 出力音声フォーマット */
     output_audio_format?: string;
     /** ツール */
-    tools?: any[];
+    tools?: unknown[];
     /** ツール選択 */
     tool_choice?: string;
     /** 温度 */
@@ -162,7 +162,7 @@ export interface SessionUpdateRequest {
             silence_duration_ms?: number;
         } | null;
         /** ツール */
-        tools?: any[];
+        tools?: unknown[];
         /** ツール選択 */
         tool_choice?: string;
         /** 温度 */
@@ -187,7 +187,7 @@ export interface AudioData {
 /**
  * ストレージキー
  */
-export type StorageKey = 
+export type StorageKey =
     | 'openai_api_key'
     | 'source_lang'
     | 'target_lang'
@@ -211,14 +211,14 @@ export interface IStorageAdapter {
      * @param key - キー
      * @param value - 値
      */
-    save(key: StorageKey, value: any): Promise<void>;
+    save(key: StorageKey, value: unknown): Promise<void>;
 
     /**
      * 値を読み込み
      * @param key - キー
      * @returns 値
      */
-    load(key: StorageKey): Promise<any>;
+    load(key: StorageKey): Promise<unknown>;
 
     /**
      * 値を削除
@@ -264,6 +264,5 @@ export interface IPlatformAdapter {
      * 音声ソースを検出
      * @returns 音声ソースのリスト
      */
-    detectAudioSources(): Promise<any[]>;
+    detectAudioSources(): Promise<unknown[]>;
 }
-

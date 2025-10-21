@@ -19,4 +19,3 @@ export * from './IWebSocketAdapter';
 
 // 設定管理インターフェース
 export * from './IConfigManager';
-

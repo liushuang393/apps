@@ -52,7 +52,7 @@
     "@typescript-eslint/parser": "^8.45.0",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "electron": "^38.2.0",
+    "electron": "^38.3.0",
     "electron-builder": "^26.0.12",
     "eslint": "^9.36.0",
     "eslint-config-prettier": "^10.1.8",

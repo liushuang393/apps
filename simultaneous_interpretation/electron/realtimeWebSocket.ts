@@ -61,7 +61,7 @@ export function initializeRealtimeWebSocket(): void {
             // Authorizationヘッダー付きでWebSocket作成
             activeWebSocket = new WebSocket(wsUrl, {
                 headers: {
-                    'Authorization': `Bearer ${config.apiKey}`,
+                    Authorization: `Bearer ${config.apiKey}`,
                     'OpenAI-Beta': 'realtime=v1'
                 }
             });
@@ -70,7 +70,6 @@ export function initializeRealtimeWebSocket(): void {
             setupWebSocketHandlers(activeWebSocket, BrowserWindow.fromWebContents(event.sender));
 
             return { success: true, message: '接続を開始しました' };
-
         } catch (error) {
             console.error('[Realtime WS] 接続エラー:', error);
             return {
@@ -90,7 +89,6 @@ export function initializeRealtimeWebSocket(): void {
             activeWebSocket.send(message);
             // ログ削除: 頻繁すぎるため
             return { success: true };
-
         } catch (error) {
             console.error('[Realtime WS] 送信エラー:', error);
             return {
@@ -109,7 +107,6 @@ export function initializeRealtimeWebSocket(): void {
                 console.log('[Realtime WS] 接続をクローズしました');
             }
             return { success: true };
-
         } catch (error) {
             console.error('[Realtime WS] クローズエラー:', error);
             return {
@@ -204,4 +201,3 @@ export function cleanupRealtimeWebSocket(): void {
         activeWebSocket = null;
     }
 }
-

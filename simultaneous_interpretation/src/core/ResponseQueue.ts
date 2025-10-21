@@ -58,7 +58,7 @@ export type SendMessageFunction = (message: any) => void;
 
 /**
  * ResponseQueue クラス
- * 
+ *
  * OpenAI Realtime APIのレスポンス管理を行うキュー。
  * 並発制御により、conversation_already_has_active_response エラーを防止します。
  */
@@ -88,7 +88,7 @@ export class ResponseQueue<T = any> {
         };
 
         // 生産者・消費者キュー
-        this.pendingQueue = [];    // 未送信のリクエスト（生産者が追加）
+        this.pendingQueue = []; // 未送信のリクエスト（生産者が追加）
         this.processingQueue = []; // 処理中のリクエスト（消費者が処理）
 
         // 統計情報
@@ -141,7 +141,7 @@ export class ResponseQueue<T = any> {
             this.stats.totalRequests++;
 
             if (this.config.debugMode) {
-                console.log('[ResponseQueue] 生産:', {
+                console.info('[ResponseQueue] 生産:', {
                     pending: this.pendingQueue.length,
                     processing: this.processingQueue.length
                 });
@@ -163,7 +163,7 @@ export class ResponseQueue<T = any> {
         // 処理中が既にある場合は何もしない（1つずつ処理）
         if (this.processingQueue.length > 0) {
             if (this.config.debugMode) {
-                console.log('[ResponseQueue] 処理中のリクエストがあるため待機:', {
+                console.info('[ResponseQueue] 処理中のリクエストがあるため待機:', {
                     processing: this.processingQueue.length
                 });
             }
@@ -173,14 +173,16 @@ export class ResponseQueue<T = any> {
         // 未送信キューが空の場合は何もしない
         if (this.pendingQueue.length === 0) {
             if (this.config.debugMode) {
-                console.log('[ResponseQueue] 未送信キューが空です');
+                console.info('[ResponseQueue] 未送信キューが空です');
             }
             return;
         }
 
         // 未送信キューから取り出す
         const item = this.pendingQueue.shift();
-        if (!item) return;
+        if (!item) {
+            return;
+        }
 
         // ✅ 重要: 処理中キューに追加してから送信
         // これにより、sendMessage()が同期的に実行されても、
@@ -188,7 +190,7 @@ export class ResponseQueue<T = any> {
         this.processingQueue.push(item);
 
         if (this.config.debugMode) {
-            console.log('[ResponseQueue] 消費開始:', {
+            console.info('[ResponseQueue] 消費開始:', {
                 pending: this.pendingQueue.length,
                 processing: this.processingQueue.length,
                 timestamp: Date.now()
@@ -205,7 +207,7 @@ export class ResponseQueue<T = any> {
             });
 
             if (this.config.debugMode) {
-                console.log('[ResponseQueue] リクエスト送信完了:', {
+                console.info('[ResponseQueue] リクエスト送信完了:', {
                     processing: this.processingQueue.length
                 });
             }
@@ -229,7 +231,7 @@ export class ResponseQueue<T = any> {
      */
     handleResponseCreated(responseId: string): void {
         if (this.config.debugMode) {
-            console.log('[ResponseQueue] レスポンス作成:', responseId);
+            console.info('[ResponseQueue] レスポンス作成:', responseId);
         }
     }
 
@@ -244,7 +246,7 @@ export class ResponseQueue<T = any> {
      */
     handleResponseDone(responseId: string): void {
         if (this.config.debugMode) {
-            console.log('[ResponseQueue] 消費完了:', responseId);
+            console.info('[ResponseQueue] 消費完了:', responseId);
         }
 
         // 処理中キューから取り出す
@@ -278,11 +280,14 @@ export class ResponseQueue<T = any> {
             errorMessage.includes('active response in progress');
 
         if (isActiveResponseError) {
-            console.warn('[ResponseQueue] Active response still in progress; waiting for response.done.', {
-                code: errorCode || 'N/A',
-                pending: this.pendingQueue.length,
-                processing: this.processingQueue.length
-            });
+            console.warn(
+                '[ResponseQueue] Active response still in progress; waiting for response.done.',
+                {
+                    code: errorCode || 'N/A',
+                    pending: this.pendingQueue.length,
+                    processing: this.processingQueue.length
+                }
+            );
 
             const item = this.processingQueue.shift();
             if (item && item.reject) {
@@ -310,11 +315,11 @@ export class ResponseQueue<T = any> {
      */
     clear(): void {
         if (this.config.debugMode) {
-            console.log('[ResponseQueue] キューをクリア');
+            console.info('[ResponseQueue] キューをクリア');
         }
 
         // すべてのリクエストを拒否
-        [...this.pendingQueue, ...this.processingQueue].forEach(item => {
+        [...this.pendingQueue, ...this.processingQueue].forEach((item) => {
             if (item.reject) {
                 item.reject(new Error('Queue cleared'));
             }
@@ -346,4 +351,3 @@ export class ResponseQueue<T = any> {
         return this.getStats();
     }
 }
-

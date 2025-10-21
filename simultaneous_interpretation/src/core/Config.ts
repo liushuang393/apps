@@ -132,7 +132,7 @@ export const CONFIG: AppConfig = {
         //    - 自動機能: 音声認識（whisper-1）、言語自動検出
         //    - 推奨: gpt-realtime-2025-08-28 (最新・最高品質)
         //    - 例: gpt-realtime-2025-08-28, gpt-4o-realtime-preview-2024-12-17
-        REALTIME_MODEL: 'gpt-realtime-2025-08-28',  // 参考値
+        REALTIME_MODEL: 'gpt-realtime-2025-08-28', // 参考値
 
         // 2. CHAT_MODEL: Chat Completions API用（言語検出、テキスト翻訳）
         //    - 環境変数: OPENAI_CHAT_MODEL（必須）
@@ -152,30 +152,30 @@ export const CONFIG: AppConfig = {
     AUDIO_PRESETS: {
         // 方案A: バランス型（推奨）
         BALANCED: {
-            BUFFER_SIZE: 6000,      // 250ms @ 24kHz
-            MIN_SPEECH_MS: 500,     // 最小音声長さ
-            VAD_DEBOUNCE: 400,      // VAD去抖動時間
+            BUFFER_SIZE: 6000, // 250ms @ 24kHz
+            MIN_SPEECH_MS: 500, // 最小音声長さ
+            VAD_DEBOUNCE: 400, // VAD去抖動時間
             DESCRIPTION: '精度と遅延のバランス - 推奨設定'
         },
         // 方案B: 高精度型
         AGGRESSIVE: {
-            BUFFER_SIZE: 8000,      // 333ms @ 24kHz
-            MIN_SPEECH_MS: 800,     // 最小音声長さ
-            VAD_DEBOUNCE: 500,      // VAD去抖動時間
+            BUFFER_SIZE: 8000, // 333ms @ 24kHz
+            MIN_SPEECH_MS: 800, // 最小音声長さ
+            VAD_DEBOUNCE: 500, // VAD去抖動時間
             DESCRIPTION: '最高精度、ネットワーク負荷最小 - 遅延やや大'
         },
         // 方案C: 低遅延型
         LOW_LATENCY: {
-            BUFFER_SIZE: 4800,      // 200ms @ 24kHz
-            MIN_SPEECH_MS: 400,     // 最小音声長さ
-            VAD_DEBOUNCE: 250,      // VAD去抖動時間
+            BUFFER_SIZE: 4800, // 200ms @ 24kHz
+            MIN_SPEECH_MS: 400, // 最小音声長さ
+            VAD_DEBOUNCE: 250, // VAD去抖動時間
             DESCRIPTION: '最低遅延 - VAD精度やや低'
         },
         // 方案D: Server VAD型
         SERVER_VAD: {
-            BUFFER_SIZE: 4800,      // 200ms @ 24kHz
-            MIN_SPEECH_MS: 0,       // Server VADに任せる
-            VAD_DEBOUNCE: 0,        // Client VAD無効
+            BUFFER_SIZE: 4800, // 200ms @ 24kHz
+            MIN_SPEECH_MS: 0, // Server VADに任せる
+            VAD_DEBOUNCE: 0, // Client VAD無効
             DESCRIPTION: 'OpenAI Server VAD使用 - 最高精度、ネットワーク負荷大'
         }
     },
@@ -196,7 +196,7 @@ export const CONFIG: AppConfig = {
         // システム音声モード用（騒がしい環境：ブラウザ音声、会議、音楽）
         SYSTEM: {
             LOW: { threshold: 0.015, debounce: 500 },
-            MEDIUM: { threshold: 0.010, debounce: 350 },
+            MEDIUM: { threshold: 0.01, debounce: 350 },
             HIGH: { threshold: 0.006, debounce: 250 }
         }
     }
@@ -204,7 +204,7 @@ export const CONFIG: AppConfig = {
 
 /**
  * 現在のプリセット設定を取得
- * 
+ *
  * @returns 現在選択されている音声プリセット設定
  */
 export function getAudioPreset(): AudioPresetConfig {
@@ -213,7 +213,7 @@ export function getAudioPreset(): AudioPresetConfig {
 
 /**
  * 音声プリセットを変更
- * 
+ *
  * @param presetName - 変更先のプリセット名
  * @returns 変更後のプリセット設定
  */
@@ -229,11 +229,10 @@ export function setAudioPreset(presetName: AudioPresetName): AudioPresetConfig {
 
 /**
  * デバッグモードを設定
- * 
+ *
  * @param enabled - デバッグモードを有効にするか
  */
 export function setDebugMode(enabled: boolean): void {
     CONFIG.DEBUG_MODE = enabled;
-    console.log(`[Config] デバッグモード: ${enabled ? '有効' : '無効'}`);
+    console.info(`[Config] デバッグモード: ${enabled ? '有効' : '無効'}`);
 }
-

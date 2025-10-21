@@ -25,17 +25,21 @@ interface ElectronAPI {
         apiKey: string;
         model: string;
     }) => Promise<{ success: boolean; message?: string }>;
-    
+
     realtimeWebSocketSend: (message: string) => Promise<{ success: boolean; message?: string }>;
-    
-    realtimeWebSocketSendBinary: (data: ArrayBuffer) => Promise<{ success: boolean; message?: string }>;
-    
+
+    realtimeWebSocketSendBinary: (
+        data: ArrayBuffer
+    ) => Promise<{ success: boolean; message?: string }>;
+
     realtimeWebSocketDisconnect: () => Promise<{ success: boolean; message?: string }>;
-    
+
     onRealtimeWebSocketMessage: (callback: (data: string) => void) => void;
-    
-    onRealtimeWebSocketError: (callback: (error: { code: string; message: string }) => void) => void;
-    
+
+    onRealtimeWebSocketError: (
+        callback: (error: { code: string; message: string }) => void
+    ) => void;
+
     onRealtimeWebSocketClose: (callback: (data: { code: number; reason: string }) => void) => void;
 }
 
@@ -51,7 +55,10 @@ declare global {
 /**
  * Electron WebSocket アダプター
  */
-export class ElectronWebSocketAdapter extends WebSocketAdapter implements IElectronWebSocketAdapter {
+export class ElectronWebSocketAdapter
+    extends WebSocketAdapter
+    implements IElectronWebSocketAdapter
+{
     private electronAPI: ElectronAPI | null = null;
     private readonly ipcChannel = 'realtime-websocket';
 
@@ -87,7 +94,7 @@ export class ElectronWebSocketAdapter extends WebSocketAdapter implements IElect
         }
 
         this.state = WebSocketState.CONNECTING;
-        console.log('[ElectronWebSocket] Connecting via IPC...');
+        console.info('[ElectronWebSocket] Connecting via IPC...');
 
         try {
             const result = await this.electronAPI!.realtimeWebSocketConnect({
@@ -101,7 +108,7 @@ export class ElectronWebSocketAdapter extends WebSocketAdapter implements IElect
             }
 
             // 接続成功は onOpen イベントで通知される
-            console.log('[ElectronWebSocket] Connection request sent');
+            console.info('[ElectronWebSocket] Connection request sent');
         } catch (error) {
             this.handleError({
                 code: 'CONNECTION_FAILED',
@@ -126,7 +133,7 @@ export class ElectronWebSocketAdapter extends WebSocketAdapter implements IElect
 
         try {
             const result = await this.electronAPI.realtimeWebSocketDisconnect();
-            
+
             if (!result.success) {
                 console.warn('[ElectronWebSocket] Disconnect warning:', result.message);
             }
@@ -246,4 +253,3 @@ export class ElectronWebSocketAdapter extends WebSocketAdapter implements IElect
         });
     }
 }
-

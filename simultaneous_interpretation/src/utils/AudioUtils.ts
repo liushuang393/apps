@@ -46,7 +46,7 @@ export class AudioUtils {
 
         for (let i = 0; i < float32Array.length; i++, offset += 2) {
             const s = Math.max(-1, Math.min(1, float32Array[i]!));
-            view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
         }
 
         return buffer;
@@ -58,12 +58,12 @@ export class AudioUtils {
     static pcm16ToFloat(buffer: ArrayBuffer): Float32Array {
         const view = new DataView(buffer);
         const float32 = new Float32Array(buffer.byteLength / 2);
-        
+
         for (let i = 0; i < float32.length; i++) {
             const int16 = view.getInt16(i * 2, true);
-            float32[i] = int16 / (int16 < 0 ? 0x8000 : 0x7FFF);
+            float32[i] = int16 / (int16 < 0 ? 0x8000 : 0x7fff);
         }
-        
+
         return float32;
     }
 
@@ -73,13 +73,13 @@ export class AudioUtils {
     static concatenateAudioBuffers(buffers: Float32Array[]): Float32Array {
         const totalLength = buffers.reduce((sum, buf) => sum + buf.length, 0);
         const result = new Float32Array(totalLength);
-        
+
         let offset = 0;
         for (const buffer of buffers) {
             result.set(buffer, offset);
             offset += buffer.length;
         }
-        
+
         return result;
     }
 
@@ -137,10 +137,7 @@ export class AudioUtils {
     /**
      * 音声データをトリミング（無音部分を削除）
      */
-    static trimSilence(
-        samples: Float32Array,
-        threshold = 0.01
-    ): Float32Array {
+    static trimSilence(samples: Float32Array, threshold = 0.01): Float32Array {
         let start = 0;
         let end = samples.length - 1;
 
@@ -181,4 +178,3 @@ export class AudioUtils {
         return result;
     }
 }
-

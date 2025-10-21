@@ -19,3 +19,7 @@ export * from './EncoderProcessor';
 // パイプライン
 export * from './AudioPipeline';
 
+// 仮想オーディオデバイス
+export * from './DeviceGuard';
+export * from './VirtualAudioDevice';
+export * from './MonitorPath';

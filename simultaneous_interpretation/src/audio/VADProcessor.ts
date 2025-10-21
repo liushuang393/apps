@@ -100,7 +100,6 @@ export class VADProcessor extends AudioProcessor {
                 success: true,
                 metadata: { skipped: true, reason: 'silence' }
             };
-
         } catch (error) {
             return this.createErrorResult(error as Error);
         }
@@ -112,16 +111,16 @@ export class VADProcessor extends AudioProcessor {
     detectVoiceActivity(input: AudioData): VADResult {
         // RMS (Root Mean Square) を計算
         const rms = this.calculateRMS(input.samples);
-        
+
         // 閾値と比較
         const isSpeaking = rms > this.config.threshold;
-        
+
         // デバウンス処理
         const now = Date.now();
         if (isSpeaking) {
             this.lastSpeechTime = now;
         }
-        
+
         const timeSinceLastSpeech = now - this.lastSpeechTime;
         const isDebounced = timeSinceLastSpeech < this.config.debounce;
 
@@ -150,7 +149,7 @@ export class VADProcessor extends AudioProcessor {
     private onSpeechStart(): void {
         this.isSpeaking = true;
         this.speechStartTime = Date.now();
-        console.log('[VAD] Speech started');
+        console.info('[VAD] Speech started');
     }
 
     /**
@@ -159,7 +158,7 @@ export class VADProcessor extends AudioProcessor {
     private onSpeechEnd(): void {
         this.isSpeaking = false;
         const duration = Date.now() - this.speechStartTime;
-        console.log(`[VAD] Speech ended (duration: ${duration}ms)`);
+        console.info(`[VAD] Speech ended (duration: ${duration}ms)`);
     }
 
     /**

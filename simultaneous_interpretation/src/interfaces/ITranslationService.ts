@@ -227,4 +227,3 @@ export interface IChatTranslationService extends ITranslationService {
      */
     translateBatch(texts: string[]): Promise<string[]>;
 }
-

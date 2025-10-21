@@ -34,12 +34,12 @@ export abstract class WebSocketAdapter implements IWebSocketAdapter {
     async initialize(config: WebSocketConfig, events?: WebSocketEvents): Promise<void> {
         this.config = config;
         this.events = events || {};
-        
+
         // デフォルト設定を適用
         if (!this.config.connectionTimeout) {
             this.config.connectionTimeout = 30000;
         }
-        
+
         if (!this.config.reconnect) {
             this.config.reconnect = {
                 enabled: true,
@@ -125,15 +125,17 @@ export abstract class WebSocketAdapter implements IWebSocketAdapter {
         }
 
         this.reconnectAttempts++;
-        
+
         // 指数バックオフ計算
         const delay = Math.min(
             initialDelay * Math.pow(backoffMultiplier, this.reconnectAttempts - 1),
             maxDelay
         );
 
-        console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`);
-        
+        console.info(
+            `[WebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`
+        );
+
         if (this.events.onReconnecting) {
             this.events.onReconnecting(this.reconnectAttempts);
         }
@@ -168,7 +170,7 @@ export abstract class WebSocketAdapter implements IWebSocketAdapter {
     protected handleError(error: WebSocketError): void {
         console.error('[WebSocket] Error:', error);
         this.state = WebSocketState.ERROR;
-        
+
         if (this.events.onError) {
             this.events.onError(error);
         }
@@ -192,11 +194,11 @@ export abstract class WebSocketAdapter implements IWebSocketAdapter {
      * 接続確立を処理
      */
     protected handleOpen(): void {
-        console.log('[WebSocket] Connection established');
+        console.info('[WebSocket] Connection established');
         this.state = WebSocketState.CONNECTED;
         this.reconnectAttempts = 0;
         this.stopReconnectTimer();
-        
+
         if (this.events.onOpen) {
             this.events.onOpen();
         }
@@ -206,9 +208,9 @@ export abstract class WebSocketAdapter implements IWebSocketAdapter {
      * 接続切断を処理
      */
     protected handleClose(code: number, reason: string): void {
-        console.log(`[WebSocket] Connection closed: ${code} - ${reason}`);
+        console.info(`[WebSocket] Connection closed: ${code} - ${reason}`);
         this.state = WebSocketState.DISCONNECTED;
-        
+
         if (this.events.onClose) {
             this.events.onClose(code, reason);
         }
@@ -240,7 +242,7 @@ export abstract class WebSocketAdapter implements IWebSocketAdapter {
         }
 
         const headers: Record<string, string> = {
-            'Authorization': `Bearer ${this.config.apiKey}`,
+            Authorization: `Bearer ${this.config.apiKey}`,
             'OpenAI-Beta': 'realtime=v1',
             ...this.config.headers
         };
@@ -248,4 +250,3 @@ export abstract class WebSocketAdapter implements IWebSocketAdapter {
         return headers;
     }
 }
-

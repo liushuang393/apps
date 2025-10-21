@@ -91,15 +91,21 @@ export class SystemAudioCapture {
             // Electron 環境
             try {
                 const electronAPI = globalThis.window.electronAPI as unknown as {
-                    getAudioSources: (types: string[]) => Promise<Array<{ id: string; name: string; type: string; thumbnail?: string }>>;
+                    getAudioSources: (
+                        types: string[]
+                    ) => Promise<
+                        Array<{ id: string; name: string; type: string; thumbnail?: string }>
+                    >;
                 };
                 const sources = await electronAPI.getAudioSources(['window', 'screen']);
-                return sources.map((source: { id: string; name: string; type: string; thumbnail?: string }) => ({
-                    id: source.id,
-                    name: source.name,
-                    type: source.type as 'window' | 'screen' | 'browser',
-                    ...(source.thumbnail !== undefined && { thumbnail: source.thumbnail })
-                }));
+                return sources.map(
+                    (source: { id: string; name: string; type: string; thumbnail?: string }) => ({
+                        id: source.id,
+                        name: source.name,
+                        type: source.type as 'window' | 'screen' | 'browser',
+                        ...(source.thumbnail !== undefined && { thumbnail: source.thumbnail })
+                    })
+                );
             } catch (error) {
                 logger.error('Failed to get Electron audio sources', error);
                 return [];
@@ -124,15 +130,19 @@ export class SystemAudioCapture {
         if (this.isElectron && globalThis.window?.electronAPI) {
             try {
                 const electronAPI = globalThis.window.electronAPI as unknown as {
-                    detectMeetingApps: () => Promise<Array<{ id: string; name: string; type: string; thumbnail?: string }>>;
+                    detectMeetingApps: () => Promise<
+                        Array<{ id: string; name: string; type: string; thumbnail?: string }>
+                    >;
                 };
                 const sources = await electronAPI.detectMeetingApps();
-                return sources.map((source: { id: string; name: string; type: string; thumbnail?: string }) => ({
-                    id: source.id,
-                    name: source.name,
-                    type: source.type as 'window' | 'screen' | 'browser',
-                    ...(source.thumbnail !== undefined && { thumbnail: source.thumbnail })
-                }));
+                return sources.map(
+                    (source: { id: string; name: string; type: string; thumbnail?: string }) => ({
+                        id: source.id,
+                        name: source.name,
+                        type: source.type as 'window' | 'screen' | 'browser',
+                        ...(source.thumbnail !== undefined && { thumbnail: source.thumbnail })
+                    })
+                );
             } catch (error) {
                 logger.error('Failed to detect meeting apps', error);
                 return [];

@@ -69,20 +69,21 @@ export class LatencyOptimizer {
             return false;
         }
 
-        console.log('[LatencyOptimizer] Preconnecting WebSocket...');
+        console.info('[LatencyOptimizer] Preconnecting WebSocket...');
 
         try {
             // タイムアウト付きで接続
             const connectPromise = this.wsAdapter.connect();
             const timeoutPromise = new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error('Preconnect timeout')), 
-                    this.config.preconnectTimeout);
+                setTimeout(
+                    () => reject(new Error('Preconnect timeout')),
+                    this.config.preconnectTimeout
+                );
             });
 
             await Promise.race([connectPromise, timeoutPromise]);
-            console.log('[LatencyOptimizer] WebSocket preconnected successfully');
+            console.info('[LatencyOptimizer] WebSocket preconnected successfully');
             return true;
-
         } catch (error) {
             console.warn('[LatencyOptimizer] Preconnect failed:', error);
             return false;
@@ -102,7 +103,7 @@ export class LatencyOptimizer {
         }
 
         this.streamingEnabled = true;
-        console.log('[LatencyOptimizer] Streaming started');
+        console.info('[LatencyOptimizer] Streaming started');
 
         // キューの処理を開始
         this.processAudioQueue();
@@ -114,7 +115,7 @@ export class LatencyOptimizer {
     async stopStreaming(): Promise<void> {
         this.streamingEnabled = false;
         this.audioQueue = [];
-        console.log('[LatencyOptimizer] Streaming stopped');
+        console.info('[LatencyOptimizer] Streaming stopped');
     }
 
     /**
@@ -162,7 +163,7 @@ export class LatencyOptimizer {
         const sampleRate = 24000;
         const bytesPerSample = 2;
         const bytesPerMs = (sampleRate * bytesPerSample) / 1000;
-        
+
         return Math.floor(this.config.chunkSizeMs * bytesPerMs);
     }
 
@@ -178,7 +179,7 @@ export class LatencyOptimizer {
 
         while (this.audioQueue.length > 0 && this.streamingEnabled) {
             const chunk = this.audioQueue.shift();
-            
+
             if (chunk && this.wsAdapter) {
                 try {
                     await this.wsAdapter.sendBinary(chunk);
@@ -221,8 +222,8 @@ export class LatencyOptimizer {
 
         // 非同期実行（Fire and Forget）
         fn()
-            .then(result => onSuccess?.(result))
-            .catch(error => onError?.(error));
+            .then((result) => onSuccess?.(result))
+            .catch((error) => onError?.(error));
     }
 
     /**
@@ -241,9 +242,7 @@ export class LatencyOptimizer {
 
         for (let i = 0; i < items.length; i += batchSize) {
             const batch = items.slice(i, i + batchSize);
-            const batchResults = await Promise.all(
-                batch.map(item => processor(item))
-            );
+            const batchResults = await Promise.all(batch.map((item) => processor(item)));
             results.push(...batchResults);
         }
 
@@ -256,14 +255,12 @@ export class LatencyOptimizer {
      * @description
      * 処理の遅延を測定
      */
-    async measureLatency<T>(
-        fn: () => Promise<T>
-    ): Promise<{ result: T; latency: number }> {
+    async measureLatency<T>(fn: () => Promise<T>): Promise<{ result: T; latency: number }> {
         const start = performance.now();
         const result = await fn();
         const latency = performance.now() - start;
 
-        console.log(`[LatencyOptimizer] Latency: ${latency.toFixed(2)}ms`);
+        console.info(`[LatencyOptimizer] Latency: ${latency.toFixed(2)}ms`);
 
         return { result, latency };
     }
@@ -272,7 +269,7 @@ export class LatencyOptimizer {
      * スリープ
      */
     private sleep(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     /**
@@ -317,4 +314,3 @@ export class LatencyOptimizer {
  * グローバル遅延最適化インスタンス
  */
 export const globalLatencyOptimizer = new LatencyOptimizer();
-

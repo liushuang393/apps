@@ -31,7 +31,7 @@ export class AudioPipeline {
      * プロセッサーを削除
      */
     removeProcessor(name: string): void {
-        const index = this.processors.findIndex(p => p.name === name);
+        const index = this.processors.findIndex((p) => p.name === name);
         if (index !== -1) {
             this.processors.splice(index, 1);
             this.rebuildChain();
@@ -157,4 +157,3 @@ export class AudioPipelineBuilder {
         return this.pipeline;
     }
 }
-

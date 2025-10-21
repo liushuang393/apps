@@ -27,14 +27,14 @@ export class CommonUtils {
      */
     static getLanguageName(code: string): string {
         const names: Record<string, string> = {
-            'ja': 'Japanese',
-            'en': 'English',
-            'zh': 'Chinese',
-            'ko': 'Korean',
-            'es': 'Spanish',
-            'fr': 'French',
-            'de': 'German',
-            'pt': 'Portuguese'
+            ja: 'Japanese',
+            en: 'English',
+            zh: 'Chinese',
+            ko: 'Korean',
+            es: 'Spanish',
+            fr: 'French',
+            de: 'German',
+            pt: 'Portuguese'
         };
         return names[code] || code;
     }
@@ -44,14 +44,14 @@ export class CommonUtils {
      */
     static getNativeLanguageName(code: string): string {
         const names: Record<string, string> = {
-            'ja': '日本語',
-            'en': 'English',
-            'zh': '中文',
-            'ko': '한국어',
-            'es': 'Español',
-            'fr': 'Français',
-            'de': 'Deutsch',
-            'pt': 'Português'
+            ja: '日本語',
+            en: 'English',
+            zh: '中文',
+            ko: '한국어',
+            es: 'Español',
+            fr: 'Français',
+            de: 'Deutsch',
+            pt: 'Português'
         };
         return names[code] || code;
     }
@@ -71,14 +71,14 @@ export class CommonUtils {
         wait: number
     ): (...args: Parameters<T>) => void {
         let timeout: NodeJS.Timeout | number | null = null;
-        
-        return function(this: any, ...args: Parameters<T>) {
+
+        return function (this: any, ...args: Parameters<T>) {
             const context = this;
-            
+
             if (timeout !== null) {
                 clearTimeout(timeout as number);
             }
-            
+
             timeout = setTimeout(() => {
                 func.apply(context, args);
             }, wait);
@@ -93,10 +93,10 @@ export class CommonUtils {
         limit: number
     ): (...args: Parameters<T>) => void {
         let inThrottle = false;
-        
-        return function(this: any, ...args: Parameters<T>) {
+
+        return function (this: any, ...args: Parameters<T>) {
             const context = this;
-            
+
             if (!inThrottle) {
                 func.apply(context, args);
                 inThrottle = true;
@@ -111,32 +111,28 @@ export class CommonUtils {
      * スリープ
      */
     static sleep(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     /**
      * リトライ実行
      */
-    static async retry<T>(
-        fn: () => Promise<T>,
-        maxAttempts = 3,
-        delay = 1000
-    ): Promise<T> {
+    static async retry<T>(fn: () => Promise<T>, maxAttempts = 3, delay = 1000): Promise<T> {
         let lastError: Error | null = null;
-        
+
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 return await fn();
             } catch (error) {
                 lastError = error as Error;
                 console.warn(`[Retry] Attempt ${attempt}/${maxAttempts} failed:`, error);
-                
+
                 if (attempt < maxAttempts) {
                     await this.sleep(delay * attempt);
                 }
             }
         }
-        
+
         throw lastError;
     }
 
@@ -151,7 +147,7 @@ export class CommonUtils {
         const timeout = new Promise<never>((_, reject) => {
             setTimeout(() => reject(new Error(timeoutError)), timeoutMs);
         });
-        
+
         return Promise.race([promise, timeout]);
     }
 
@@ -160,8 +156,8 @@ export class CommonUtils {
      */
     static generateUUID(): string {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-            const r = Math.random() * 16 | 0;
-            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            const r = (Math.random() * 16) | 0;
+            const v = c === 'x' ? r : (r & 0x3) | 0x8;
             return v.toString(16);
         });
     }
@@ -181,10 +177,16 @@ export class CommonUtils {
     /**
      * オブジェクトが空かチェック
      */
-    static isEmpty(obj: any): boolean {
-        if (obj == null) return true;
-        if (Array.isArray(obj) || typeof obj === 'string') return obj.length === 0;
-        if (typeof obj === 'object') return Object.keys(obj).length === 0;
+    static isEmpty(obj: unknown): boolean {
+        if (obj === null || obj === undefined) {
+            return true;
+        }
+        if (Array.isArray(obj) || typeof obj === 'string') {
+            return obj.length === 0;
+        }
+        if (typeof obj === 'object') {
+            return Object.keys(obj).length === 0;
+        }
         return false;
     }
 
@@ -203,21 +205,24 @@ export class CommonUtils {
      * ファイルサイズをフォーマット
      */
     static formatFileSize(bytes: number): string {
-        if (bytes === 0) return '0 Bytes';
-        
+        if (bytes === 0) {
+            return '0 Bytes';
+        }
+
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-        
-        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+
+        return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
     }
 
     /**
      * パーセンテージを計算
      */
     static calculatePercentage(value: number, total: number): number {
-        if (total === 0) return 0;
+        if (total === 0) {
+            return 0;
+        }
         return Math.round((value / total) * 100);
     }
 }
-

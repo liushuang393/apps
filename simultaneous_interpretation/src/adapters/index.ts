@@ -12,4 +12,3 @@
 export * from './WebSocketAdapter';
 export * from './BrowserWebSocketAdapter';
 export * from './ElectronWebSocketAdapter';
-

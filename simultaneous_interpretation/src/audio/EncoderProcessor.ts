@@ -61,7 +61,6 @@ export class EncoderProcessor extends AudioProcessor {
             };
 
             return await this.processNext(output);
-
         } catch (error) {
             return this.createErrorResult(error as Error);
         }
@@ -187,4 +186,3 @@ export class EncoderProcessor extends AudioProcessor {
         this.config = { ...this.config, ...config };
     }
 }
-

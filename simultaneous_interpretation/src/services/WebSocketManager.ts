@@ -391,7 +391,7 @@ export class WebSocketManager {
     public on(event: string, handler: (...args: unknown[]) => void): void {
         const eventKey =
             `on${event.charAt(0).toUpperCase()}${event.slice(1)}` as keyof EventHandlers;
-        
+
         // Record型として扱い、型安全性を保ちつつ代入
         (this.eventHandlers as Record<string, ((...args: unknown[]) => void) | undefined>)[
             eventKey
@@ -414,7 +414,7 @@ export class WebSocketManager {
     public off(event: string, handler: (...args: unknown[]) => void): void {
         const eventKey =
             `on${event.charAt(0).toUpperCase()}${event.slice(1)}` as keyof EventHandlers;
-        
+
         if (this.eventHandlers[eventKey] === handler) {
             delete this.eventHandlers[eventKey];
         }

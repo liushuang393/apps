@@ -1,15 +1,15 @@
 /**
  * AudioManager.ts
- * 
+ *
  * 目的: 音声入力・出力の管理
- * 
+ *
  * 機能:
  *   - 音声入力管理（マイク、システム音声）
  *   - AudioContext 管理
  *   - 音声再生管理
  *   - VAD 統合
  *   - 音声データ処理
- * 
+ *
  * 注意:
  *   - ブラウザ環境とElectron環境の両方に対応
  *   - AudioWorklet を優先使用、フォールバックで ScriptProcessorNode
@@ -40,79 +40,79 @@ export type AudioDataCallback = (audioData: Float32Array) => void;
 
 /**
  * AudioManager クラス
- * 
+ *
  * 目的: 音声入力・出力を管理
  */
 export class AudioManager {
     // AudioContext
     private audioContext: AudioContext | null = null;
     private outputAudioContext: AudioContext | null = null;
-    
+
     // MediaStream
     private mediaStream: MediaStream | null = null;
-    
+
     // Audio Nodes
     private audioSource: MediaStreamAudioSourceNode | null = null;
     private inputGainNode: GainNode | null = null;
     private workletNode: AudioWorkletNode | null = null;
     private processor: ScriptProcessorNode | null = null;
-    
+
     // VAD
     private vad: VoiceActivityDetector | null = null;
-    
+
     // 音声再生キュー
     private audioQueue: string[] = [];
     private playbackQueue: string[] = [];
     private isPlayingFromQueue: boolean = false;
-    
+
     // 設定
     private outputVolume: number = 2.0;
     private inputAudioOutputEnabled: boolean = true;
     private isPlayingAudio: boolean = false;
-    
+
     // コールバック
     private audioDataCallback: AudioDataCallback | null = null;
-    
+
     /**
      * VAD を設定
      */
     setVAD(vad: VoiceActivityDetector): void {
         this.vad = vad;
     }
-    
+
     /**
      * 音声データコールバックを設定
      */
     setAudioDataCallback(callback: AudioDataCallback): void {
         this.audioDataCallback = callback;
     }
-    
+
     /**
      * 出力音量を設定
      */
     setOutputVolume(volume: number): void {
         this.outputVolume = volume;
     }
-    
+
     /**
      * 入力音声出力を設定
      */
     setInputAudioOutputEnabled(enabled: boolean): void {
         this.inputAudioOutputEnabled = enabled;
-        
+
         // 録音中の場合、ゲインを更新
         if (this.inputGainNode) {
             this.inputGainNode.gain.value = enabled ? 1.0 : 0.0;
-            console.log('[AudioManager] 入力音声出力:', enabled ? 'ON' : 'OFF');
+            console.info('[AudioManager] 入力音声出力:', enabled ? 'ON' : 'OFF');
         }
     }
-    
+
     /**
      * マイクキャプチャを開始
      */
     async startMicrophoneCapture(constraints: AudioConstraints): Promise<void> {
-        console.log('[AudioManager] マイクキャプチャを開始...');
-        
+        console.info('[AudioManager] マイクキャプチャを開始...');
+
         const audioConstraints = {
             audio: {
                 channelCount: 1,
@@ -122,31 +122,35 @@ export class AudioManager {
                 autoGainControl: constraints.autoGainControl
             }
         };
-        
-        console.log('[AudioManager] マイクアクセス要求中...', audioConstraints);
-        
+
+        console.info('[AudioManager] マイクアクセス要求中...', audioConstraints);
+
         try {
             this.mediaStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
-            console.log('[AudioManager] マイクアクセス取得成功');
+            console.info('[AudioManager] マイクアクセス取得成功');
         } catch (error: any) {
             console.error('[AudioManager] マイクアクセス取得失敗:', error);
-            
+
             if (error.name === 'NotAllowedError') {
-                throw new Error('マイク権限が拒否されました。ブラウザの設定からマイクへのアクセスを許可してください。');
+                throw new Error(
+                    'マイク権限が拒否されました。ブラウザの設定からマイクへのアクセスを許可してください。'
+                );
             } else if (error.name === 'NotFoundError') {
-                throw new Error('マイクが見つかりません。マイクが接続されているか確認してください。');
+                throw new Error(
+                    'マイクが見つかりません。マイクが接続されているか確認してください。'
+                );
             } else {
                 throw error;
             }
         }
     }
-    
+
     /**
      * システム音声キャプチャを開始（ブラウザ環境）
      */
     async startBrowserSystemAudioCapture(): Promise<void> {
-        console.log('[AudioManager] ブラウザ環境でシステム音声をキャプチャ...');
-        
+        console.info('[AudioManager] ブラウザ環境でシステム音声をキャプチャ...');
+
         try {
             const stream = await (navigator.mediaDevices as any).getDisplayMedia({
                 video: true,
@@ -158,9 +162,9 @@ export class AudioManager {
                     autoGainControl: false
                 }
             });
-            
+
             this.mediaStream = stream;
-            
+
             // 音声トラックの監視
             const audioTracks = stream.getAudioTracks();
             if (audioTracks.length > 0) {
@@ -168,41 +172,44 @@ export class AudioManager {
                     console.error('[AudioManager] 音声トラックが停止しました');
                 });
             }
-            
-            console.log('[AudioManager] システム音声キャプチャ成功');
+
+            console.info('[AudioManager] システム音声キャプチャ成功');
         } catch (error) {
             console.error('[AudioManager] システム音声キャプチャ失敗:', error);
             throw new Error('システム音声のキャプチャに失敗しました');
         }
     }
-    
+
     /**
      * タブ音声キャプチャを開始（Chrome拡張機能）
      */
     async startTabAudioCapture(): Promise<void> {
-        console.log('[AudioManager] タブ音声キャプチャを開始...');
-        
+        console.info('[AudioManager] タブ音声キャプチャを開始...');
+
         try {
             // Chrome拡張機能のtabCaptureを使用
             const stream = await new Promise<MediaStream>((resolve, reject) => {
                 if (typeof chrome !== 'undefined' && chrome.tabCapture) {
-                    chrome.tabCapture.capture({
-                        audio: true,
-                        video: false
-                    }, (stream) => {
-                        if (stream) {
-                            resolve(stream);
-                        } else {
-                            reject(new Error('タブ音声のキャプチャに失敗しました'));
+                    chrome.tabCapture.capture(
+                        {
+                            audio: true,
+                            video: false
+                        },
+                        (stream) => {
+                            if (stream) {
+                                resolve(stream);
+                            } else {
+                                reject(new Error('タブ音声のキャプチャに失敗しました'));
+                            }
                         }
-                    });
+                    );
                 } else {
                     reject(new Error('chrome.tabCapture が利用できません'));
                 }
             });
-            
+
             this.mediaStream = stream;
-            
+
             // 音声トラックの監視
             const audioTracks = stream.getAudioTracks();
             if (audioTracks.length > 0 && audioTracks[0]) {
@@ -210,57 +217,59 @@ export class AudioManager {
                     console.error('[AudioManager] 音声トラックが停止しました');
                 });
             }
-            
-            console.log('[AudioManager] タブ音声キャプチャ成功');
+
+            console.info('[AudioManager] タブ音声キャプチャ成功');
         } catch (error) {
             console.error('[AudioManager] タブ音声キャプチャ失敗:', error);
             throw error;
         }
     }
-    
+
     /**
      * Electron環境でシステム音声キャプチャを開始
      */
     async startElectronSystemAudioCapture(sourceId?: string): Promise<void> {
-        console.log('[AudioManager] Electron環境でシステム音声をキャプチャ...');
-        
+        console.info('[AudioManager] Electron環境でシステム音声をキャプチャ...');
+
         const electronAPI = (window as any).electronAPI;
         if (!electronAPI) {
             throw new Error('Electron API が利用できません');
         }
-        
+
         try {
             const stream = await electronAPI.getSystemAudioStream(sourceId);
-            
+
             // 音声トラックがない場合は待機
             const audioTracks = stream.getAudioTracks();
             if (audioTracks.length === 0) {
-                console.warn('[AudioManager] 音声トラックがまだありません。音声が開始されるまで待機します。');
-                
+                console.warn(
+                    '[AudioManager] 音声トラックがまだありません。音声が開始されるまで待機します。'
+                );
+
                 // ストリーム全体を保存
                 this.mediaStream = stream;
-                
+
                 // 音声トラックが追加されたときのリスナーを設定
                 await new Promise<void>((resolve) => {
                     const checkInterval = setInterval(() => {
                         const tracks = stream.getAudioTracks();
                         if (tracks.length > 0) {
                             clearInterval(checkInterval);
-                            console.log('[AudioManager] 音声トラックが追加されました');
+                            console.info('[AudioManager] 音声トラックが追加されました');
                             resolve();
                         }
                     }, 100);
                 });
             } else {
                 this.mediaStream = stream;
-                console.log('[AudioManager] Electronシステム音声キャプチャ成功');
+                console.info('[AudioManager] Electronシステム音声キャプチャ成功');
             }
         } catch (error) {
             console.error('[AudioManager] Electronシステム音声キャプチャ失敗:', error);
             throw error;
         }
     }
-    
+
     /**
      * 音声処理をセットアップ
      */
@@ -268,32 +277,36 @@ export class AudioManager {
         if (!this.mediaStream) {
             throw new Error('MediaStream が初期化されていません');
         }
-        
-        console.log('[AudioManager] 音声処理をセットアップ中...');
-        
+
+        console.info('[AudioManager] 音声処理をセットアップ中...');
+
         // AudioContext設定
         this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
             sampleRate: CONFIG.AUDIO.SAMPLE_RATE
         });
-        
+
         // AudioContextがサスペンドされている場合、再開
         if (this.audioContext.state === 'suspended') {
-            console.log('[AudioManager] AudioContextがサスペンド状態です。再開します...');
+            console.info('[AudioManager] AudioContextがサスペンド状態です。再開します...');
             await this.audioContext.resume();
-            console.log('[AudioManager] AudioContext再開完了:', this.audioContext.state);
+            console.info('[AudioManager] AudioContext再開完了:', this.audioContext.state);
         }
-        
+
         // 音声トラックがあるか確認
         const audioTracks = this.mediaStream.getAudioTracks();
         if (audioTracks.length === 0) {
-            console.warn('[AudioManager] 音声トラックがまだありません。音声が開始されるまで待機します。');
-            
+            console.warn(
+                '[AudioManager] 音声トラックがまだありません。音声が開始されるまで待機します。'
+            );
+
             // 音声トラックが追加されるまで待機
             await new Promise<void>((resolve) => {
                 const checkAudioTrack = () => {
                     const tracks = this.mediaStream!.getAudioTracks();
                     if (tracks.length > 0) {
-                        console.log('[AudioManager] 音声トラックが検出されました。処理を開始します。');
+                        console.info(
+                            '[AudioManager] 音声トラックが検出されました。処理を開始します。'
+                        );
                         resolve();
                     } else {
                         setTimeout(checkAudioTrack, 100);
@@ -302,22 +315,25 @@ export class AudioManager {
                 checkAudioTrack();
             });
         }
-        
-        console.log('[AudioManager] 音声処理を開始...');
-        
+
+        console.info('[AudioManager] 音声処理を開始...');
+
         // MediaStreamSource を作成
         this.audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
-        
+
         // VADリセット
         if (this.vad) {
             this.vad.reset();
         }
-        
+
         try {
             // AudioWorklet を使用（推奨）
             await this.setupAudioWorklet();
         } catch (error) {
-            console.warn('[AudioManager] AudioWorklet使用失敗、ScriptProcessorNodeにフォールバック:', error);
+            console.warn(
+                '[AudioManager] AudioWorklet使用失敗、ScriptProcessorNodeにフォールバック:',
+                error
+            );
             // フォールバック: ScriptProcessorNode を使用
             this.setupScriptProcessor();
         }
@@ -335,10 +351,7 @@ export class AudioManager {
         await this.audioContext.audioWorklet.addModule('audio-processor-worklet.js');
 
         // AudioWorkletNode を作成
-        this.workletNode = new AudioWorkletNode(
-            this.audioContext,
-            'audio-processor-worklet'
-        );
+        this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor-worklet');
 
         // メッセージハンドラーを設定
         this.workletNode.port.onmessage = (event) => {
@@ -358,8 +371,11 @@ export class AudioManager {
         this.workletNode.connect(this.inputGainNode);
         this.inputGainNode.connect(this.audioContext.destination);
 
-        console.log('[AudioManager] AudioWorklet を使用して音声処理を開始しました（入力音声出力:',
-            this.inputAudioOutputEnabled ? 'ON' : 'OFF', ')');
+        console.info(
+            '[AudioManager] AudioWorklet を使用して音声処理を開始しました（入力音声出力:',
+            this.inputAudioOutputEnabled ? 'ON' : 'OFF',
+            ')'
+        );
     }
 
     /**
@@ -371,9 +387,7 @@ export class AudioManager {
         }
 
         const preset = getAudioPreset();
-        this.processor = this.audioContext.createScriptProcessor(
-            preset.BUFFER_SIZE, 1, 1
-        );
+        this.processor = this.audioContext.createScriptProcessor(preset.BUFFER_SIZE, 1, 1);
 
         // 音声データ処理
         this.processor.onaudioprocess = (event) => {
@@ -392,8 +406,11 @@ export class AudioManager {
         this.processor.connect(this.inputGainNode);
         this.inputGainNode.connect(this.audioContext.destination);
 
-        console.log('[AudioManager] ScriptProcessorNode を使用して音声処理を開始しました（入力音声出力:',
-            this.inputAudioOutputEnabled ? 'ON' : 'OFF', ')');
+        console.info(
+            '[AudioManager] ScriptProcessorNode を使用して音声処理を開始しました（入力音声出力:',
+            this.inputAudioOutputEnabled ? 'ON' : 'OFF',
+            ')'
+        );
     }
 
     /**
@@ -415,11 +432,11 @@ export class AudioManager {
      * 録音を停止
      */
     async stopRecording(): Promise<void> {
-        console.log('[AudioManager] 停止処理開始');
+        console.info('[AudioManager] 停止処理開始');
 
         // MediaStream を停止
         if (this.mediaStream) {
-            this.mediaStream.getTracks().forEach(track => track.stop());
+            this.mediaStream.getTracks().forEach((track) => track.stop());
             this.mediaStream = null;
         }
 
@@ -427,14 +444,14 @@ export class AudioManager {
         if (this.audioSource) {
             this.audioSource.disconnect();
             this.audioSource = null;
-            console.log('[AudioManager] MediaStreamSource をクリーンアップしました');
+            console.info('[AudioManager] MediaStreamSource をクリーンアップしました');
         }
 
         // GainNode のクリーンアップ
         if (this.inputGainNode) {
             this.inputGainNode.disconnect();
             this.inputGainNode = null;
-            console.log('[AudioManager] GainNode をクリーンアップしました');
+            console.info('[AudioManager] GainNode をクリーンアップしました');
         }
 
         // AudioWorkletNode のクリーンアップ
@@ -442,14 +459,14 @@ export class AudioManager {
             this.workletNode.port.postMessage({ type: 'stop' });
             this.workletNode.disconnect();
             this.workletNode = null;
-            console.log('[AudioManager] AudioWorkletNode をクリーンアップしました');
+            console.info('[AudioManager] AudioWorkletNode をクリーンアップしました');
         }
 
         // ScriptProcessorNode のクリーンアップ
         if (this.processor) {
             this.processor.disconnect();
             this.processor = null;
-            console.log('[AudioManager] ScriptProcessorNode をクリーンアップしました');
+            console.info('[AudioManager] ScriptProcessorNode をクリーンアップしました');
         }
 
         // AudioContext のクリーンアップ
@@ -458,7 +475,7 @@ export class AudioManager {
             this.audioContext = null;
         }
 
-        console.log('[AudioManager] 停止処理完了');
+        console.info('[AudioManager] 停止処理完了');
     }
 
     /**
@@ -473,7 +490,7 @@ export class AudioManager {
      */
     processAudioQueue(): void {
         if (this.audioQueue.length === 0) {
-            console.log('[AudioManager] 音声キューが空です');
+            console.info('[AudioManager] 音声キューが空です');
             return;
         }
 
@@ -484,7 +501,7 @@ export class AudioManager {
         // 再生キューに追加
         this.playbackQueue.push(combinedAudio);
 
-        console.log('[AudioManager] 音声を再生キューに追加:', {
+        console.info('[AudioManager] 音声を再生キューに追加:', {
             playbackQueueLength: this.playbackQueue.length,
             isPlayingFromQueue: this.isPlayingFromQueue
         });
@@ -500,7 +517,7 @@ export class AudioManager {
      */
     private playNextInQueue(): void {
         if (this.playbackQueue.length === 0) {
-            console.log('[AudioManager] 再生キューが空です');
+            console.info('[AudioManager] 再生キューが空です');
             this.isPlayingFromQueue = false;
             return;
         }
@@ -510,12 +527,12 @@ export class AudioManager {
         // キューから音声を取り出し
         const audioData = this.playbackQueue.shift()!;
 
-        console.log('[AudioManager] キューから音声を再生:', {
+        console.info('[AudioManager] キューから音声を再生:', {
             remainingInQueue: this.playbackQueue.length
         });
 
         // 音声を再生（await しない - 非同期で開始）
-        this.playAudio(audioData).catch(error => {
+        this.playAudio(audioData).catch((error) => {
             console.error('[AudioManager] 再生エラー:', error);
             // エラーが発生しても次の音声を再生
             this.playNextInQueue();
@@ -530,21 +547,22 @@ export class AudioManager {
             try {
                 // ループバック防止
                 if (this.isPlayingAudio) {
-                    console.log('[AudioManager] 音声再生中のため、入力音声をミュート');
+                    console.info('[AudioManager] 音声再生中のため、入力音声をミュート');
                 }
 
                 // 出力専用AudioContextが存在しない場合は作成
                 if (!this.outputAudioContext) {
-                    this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+                    this.outputAudioContext = new (window.AudioContext ||
+                        (window as any).webkitAudioContext)({
                         sampleRate: CONFIG.AUDIO.SAMPLE_RATE
                     });
-                    console.log('[AudioManager] 出力専用AudioContextを作成しました');
+                    console.info('[AudioManager] 出力専用AudioContextを作成しました');
                 }
 
                 // AudioContextがsuspended状態の場合はresume
                 if (this.outputAudioContext.state === 'suspended') {
                     await this.outputAudioContext.resume();
-                    console.log('[AudioManager] AudioContextをresumeしました');
+                    console.info('[AudioManager] AudioContextをresumeしました');
                 }
 
                 // Base64 → ArrayBuffer → Float32Array
@@ -582,7 +600,7 @@ export class AudioManager {
                 // 再生終了時にフラグをOFF
                 source.onended = () => {
                     this.isPlayingAudio = false;
-                    console.log('[AudioManager] 音声再生完了');
+                    console.info('[AudioManager] 音声再生完了');
 
                     // 次の音声を再生
                     this.playNextInQueue();
@@ -594,8 +612,7 @@ export class AudioManager {
                 this.isPlayingAudio = true;
                 source.start(0);
 
-                console.log('[AudioManager] 音声再生開始');
-
+                console.info('[AudioManager] 音声再生開始');
             } catch (error) {
                 console.error('[AudioManager] 音声再生エラー:', error);
                 this.isPlayingAudio = false;
@@ -611,6 +628,6 @@ export class AudioManager {
         this.audioQueue = [];
         this.playbackQueue = [];
         this.isPlayingFromQueue = false;
-        console.log('[AudioManager] 音声キューをクリアしました');
+        console.info('[AudioManager] 音声キューをクリアしました');
     }
 }

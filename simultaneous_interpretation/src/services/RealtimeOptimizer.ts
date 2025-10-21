@@ -22,8 +22,8 @@
  * 言語情報
  */
 export interface LanguageInfo {
-    code: string;      // 言語コード (例: 'en', 'ja', 'zh')
-    name: string;      // 言語名 (例: 'English', 'Japanese', '中文')
+    code: string; // 言語コード (例: 'en', 'ja', 'zh')
+    name: string; // 言語名 (例: 'English', 'Japanese', '中文')
     nativeName: string; // ネイティブ名 (例: 'English', '日本語', '中文')
 }
 
@@ -146,11 +146,7 @@ export class RealtimeOptimizer {
             preserveEmotion?: boolean;
         } = {}
     ): string {
-        const {
-            tone = 'professional',
-            pacing = 'normal',
-            preserveEmotion = true
-        } = options;
+        const { tone = 'professional', pacing = 'normal', preserveEmotion = true } = options;
 
         // トーンの説明
         const toneDescriptions = {
@@ -282,7 +278,7 @@ You (${targetLanguage.name}): "I'll report on the project progress. Currently, p
         const {
             sourceLanguage,
             targetLanguage,
-            voice = 'cedar',  // デフォルトは新しい cedar 音声
+            voice = 'cedar', // デフォルトは新しい cedar 音声
             enableAudioOutput = true,
             enableServerVAD = true,
             tone = 'professional',
@@ -297,11 +293,11 @@ You (${targetLanguage.name}): "I'll report on the project progress. Currently, p
             modalities: enableAudioOutput ? ['text', 'audio'] : ['text'],
 
             // 最適化されたプロンプト
-            instructions: this.generateOptimizedPrompt(
-                sourceLanguage,
-                targetLanguage,
-                { tone, pacing, preserveEmotion: true }
-            ),
+            instructions: this.generateOptimizedPrompt(sourceLanguage, targetLanguage, {
+                tone,
+                pacing,
+                preserveEmotion: true
+            }),
 
             // 音声タイプ
             voice: voice,
@@ -383,11 +379,10 @@ You (${targetLanguage.name}): "I'll report on the project progress. Currently, p
             },
             // システム音声用
             system: {
-                threshold: 0.010,
+                threshold: 0.01,
                 debounce: 350,
                 minSpeechMs: 500
             }
         }
     };
 }
-

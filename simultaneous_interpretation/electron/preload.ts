@@ -74,7 +74,11 @@ export interface ElectronAPI {
     /**
      * Realtime WebSocket 接続
      */
-    realtimeWebSocketConnect: (config: { url: string; apiKey: string; model: string }) => Promise<{ success: boolean; message?: string }>;
+    realtimeWebSocketConnect: (config: {
+        url: string;
+        apiKey: string;
+        model: string;
+    }) => Promise<{ success: boolean; message?: string }>;
 
     /**
      * Realtime WebSocket メッセージ送信

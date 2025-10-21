@@ -100,13 +100,10 @@ export class SecureStorageManager {
         const passwordBuffer = encoder.encode(password);
 
         // パスワードから鍵マテリアルを作成
-        const keyMaterial = await crypto.subtle.importKey(
-            'raw',
-            passwordBuffer,
-            'PBKDF2',
-            false,
-            ['deriveBits', 'deriveKey']
-        );
+        const keyMaterial = await crypto.subtle.importKey('raw', passwordBuffer, 'PBKDF2', false, [
+            'deriveBits',
+            'deriveKey'
+        ]);
 
         // PBKDF2 で鍵を導出
         return await crypto.subtle.deriveKey(
@@ -405,4 +402,3 @@ export class SecureStorageManager {
         }
     }
 }
-

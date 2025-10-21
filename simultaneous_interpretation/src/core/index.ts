@@ -1,6 +1,6 @@
 /**
  * VoiceTranslate Pro - Core Module Exports
- * 
+ *
  * 共有コアロジックのエクスポート
  */
 
@@ -31,11 +31,7 @@ export {
 } from './Utils';
 
 // VAD
-export {
-    VoiceActivityDetector,
-    type VADOptions,
-    type VADAnalysisResult
-} from './VAD';
+export { VoiceActivityDetector, type VADOptions, type VADAnalysisResult } from './VAD';
 
 // ResponseQueue
 export {
@@ -71,6 +67,4 @@ export {
 } from './UIManager';
 
 // VoiceTranslateCore
-export {
-    VoiceTranslateCore
-} from './VoiceTranslateCore';
+export { VoiceTranslateCore } from './VoiceTranslateCore';

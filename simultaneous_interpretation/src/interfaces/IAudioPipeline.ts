@@ -111,11 +111,7 @@ export interface IVADProcessor extends IAudioProcessor {
      *
      * @param config - VAD 設定
      */
-    updateConfig(config: {
-        threshold?: number;
-        debounce?: number;
-        minSpeechMs?: number;
-    }): void;
+    updateConfig(config: { threshold?: number; debounce?: number; minSpeechMs?: number }): void;
 }
 
 /**
@@ -163,10 +159,7 @@ export interface INoiseReductionProcessor extends IAudioProcessor {
      *
      * @param config - ノイズリダクション設定
      */
-    updateConfig(config: {
-        enabled?: boolean;
-        level?: number;
-    }): void;
+    updateConfig(config: { enabled?: boolean; level?: number }): void;
 }
 
 /**
@@ -281,4 +274,3 @@ export interface IAudioPlayer {
      */
     getVolume(): number;
 }
-

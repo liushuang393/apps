@@ -144,7 +144,9 @@ export class VoiceActivityDetector {
      * @returns 平滑化エネルギー
      */
     private getSmoothedEnergy(): number {
-        if (this.energyHistory.length === 0) return 0;
+        if (this.energyHistory.length === 0) {
+            return 0;
+        }
         const sum = this.energyHistory.reduce((acc, val) => acc + val, 0);
         return sum / this.energyHistory.length;
     }
@@ -156,16 +158,20 @@ export class VoiceActivityDetector {
      *   ノイズフロアと適応閾値を計算する
      */
     private completeCalibration(): void {
-        const mean = this.calibrationSamples.reduce((a, b) => a + b, 0) / this.calibrationSamples.length;
-        const variance = this.calibrationSamples.reduce((acc, val) =>
-            acc + Math.pow(val - mean, 2), 0) / this.calibrationSamples.length;
+        const mean =
+            this.calibrationSamples.reduce((a, b) => a + b, 0) / this.calibrationSamples.length;
+        const variance =
+            this.calibrationSamples.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) /
+            this.calibrationSamples.length;
         const stdDev = Math.sqrt(variance);
 
         this.noiseFloor = mean;
-        this.adaptiveThreshold = mean + (stdDev * 3);
+        this.adaptiveThreshold = mean + stdDev * 3;
         this.isCalibrating = false;
 
-        console.log(`[VAD] Calibration complete - Noise: ${this.noiseFloor.toFixed(4)}, Threshold: ${this.adaptiveThreshold.toFixed(4)}`);
+        console.log(
+            `[VAD] Calibration complete - Noise: ${this.noiseFloor.toFixed(4)}, Threshold: ${this.adaptiveThreshold.toFixed(4)}`
+        );
     }
 
     /**
@@ -203,4 +209,3 @@ export class VoiceActivityDetector {
         return this.isCalibrating;
     }
 }
-

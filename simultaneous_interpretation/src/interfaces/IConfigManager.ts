@@ -209,10 +209,7 @@ export interface IConfigManager {
      * @param callback - 変更時のコールバック
      * @returns 監視解除関数
      */
-    watch<T = unknown>(
-        key: string,
-        callback: (event: ConfigChangeEvent<T>) => void
-    ): () => void;
+    watch<T = unknown>(key: string, callback: (event: ConfigChangeEvent<T>) => void): () => void;
 
     /**
      * 設定をエクスポート
@@ -305,4 +302,3 @@ export interface IStorageProvider {
      */
     clear(): Promise<void>;
 }
-

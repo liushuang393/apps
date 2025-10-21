@@ -18,7 +18,16 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow, ipcMain, Tray, Menu, globalShortcut, shell, systemPreferences } from 'electron';
+import {
+    app,
+    BrowserWindow,
+    ipcMain,
+    Tray,
+    Menu,
+    globalShortcut,
+    shell,
+    systemPreferences
+} from 'electron';
 import { ElectronAudioCapture } from './audioCapture';
 import { initializeRealtimeWebSocket, cleanupRealtimeWebSocket } from './realtimeWebSocket';
 
@@ -139,25 +148,29 @@ function createMainWindow(): void {
     });
 
     // メディアアクセス権限のハンドラーを設定
-    mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-        console.log(`[Main] Permission requested: ${permission}`);
+    mainWindow.webContents.session.setPermissionRequestHandler(
+        (_webContents, permission, callback) => {
+            console.log(`[Main] Permission requested: ${permission}`);
 
-        // マイク、カメラ、画面キャプチャを自動許可
-        const allowedPermissions = ['media', 'microphone', 'camera', 'desktop-capturer'];
-        if (allowedPermissions.includes(permission)) {
-            console.log(`[Main] Permission granted: ${permission}`);
-            callback(true);
-        } else {
-            console.log(`[Main] Permission denied: ${permission}`);
-            callback(false);
+            // マイク、カメラ、画面キャプチャを自動許可
+            const allowedPermissions = ['media', 'microphone', 'camera', 'desktop-capturer'];
+            if (allowedPermissions.includes(permission)) {
+                console.log(`[Main] Permission granted: ${permission}`);
+                callback(true);
+            } else {
+                console.log(`[Main] Permission denied: ${permission}`);
+                callback(false);
+            }
         }
-    });
+    );
 
     // メディアアクセス権限チェック（macOS用）
     if (process.platform === 'darwin') {
         const micStatus = systemPreferences.getMediaAccessStatus('microphone');
         const screenStatus = systemPreferences.getMediaAccessStatus('screen');
-        console.log(`[Main] macOS Media Access - Microphone: ${micStatus}, Screen: ${screenStatus}`);
+        console.log(
+            `[Main] macOS Media Access - Microphone: ${micStatus}, Screen: ${screenStatus}`
+        );
 
         if (micStatus !== 'granted') {
             systemPreferences.askForMediaAccess('microphone');
@@ -446,10 +459,11 @@ function registerIPCHandlers(): void {
     // 環境変数からAPIキーを取得
     ipcMain.handle('get-env-api-key', async () => {
         // 複数の環境変数名をチェック
-        const apiKey = process.env['OPENAI_API_KEY']
-                    || process.env['OPENAI_REALTIME_API_KEY']
-                    || process.env['VOICETRANSLATE_API_KEY']
-                    || null;
+        const apiKey =
+            process.env['OPENAI_API_KEY'] ||
+            process.env['OPENAI_REALTIME_API_KEY'] ||
+            process.env['VOICETRANSLATE_API_KEY'] ||
+            null;
 
         if (apiKey) {
             console.log('[Main] API key loaded from environment:', apiKey.substring(0, 7) + '...');
@@ -480,7 +494,8 @@ function registerIPCHandlers(): void {
         }
 
         // Realtime URL（オプション、デフォルト値あり）
-        const realtimeUrl = process.env['OPENAI_REALTIME_URL'] || 'wss://api.openai.com/v1/realtime';
+        const realtimeUrl =
+            process.env['OPENAI_REALTIME_URL'] || 'wss://api.openai.com/v1/realtime';
 
         // エラーがある場合は例外を投げる
         if (errors.length > 0) {
@@ -584,7 +599,9 @@ async function requestMediaPermissions(): Promise<void> {
             const cameraStatus = systemPreferences.getMediaAccessStatus('camera');
             const screenStatus = systemPreferences.getMediaAccessStatus('screen');
 
-            console.log(`[Main] macOS permissions - Microphone: ${micStatus}, Camera: ${cameraStatus}, Screen: ${screenStatus}`);
+            console.log(
+                `[Main] macOS permissions - Microphone: ${micStatus}, Camera: ${cameraStatus}, Screen: ${screenStatus}`
+            );
 
             if (micStatus !== 'granted') {
                 console.log('[Main] Requesting microphone permission...');

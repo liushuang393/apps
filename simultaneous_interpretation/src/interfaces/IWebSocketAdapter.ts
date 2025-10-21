@@ -249,4 +249,3 @@ export interface IWebSocketManager {
      */
     dispose(): Promise<void>;
 }
-

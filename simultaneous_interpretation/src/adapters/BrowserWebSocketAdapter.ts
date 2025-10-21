@@ -36,7 +36,7 @@ export class BrowserWebSocketAdapter extends WebSocketAdapter implements IBrowse
         }
 
         this.state = WebSocketState.CONNECTING;
-        console.log('[BrowserWebSocket] Connecting to:', this.buildWebSocketUrl());
+        console.info('[BrowserWebSocket] Connecting to:', this.buildWebSocketUrl());
 
         return new Promise((resolve, reject) => {
             try {
@@ -87,7 +87,6 @@ export class BrowserWebSocketAdapter extends WebSocketAdapter implements IBrowse
                     clearTimeout(timeout);
                     this.handleClose(event.code, event.reason);
                 };
-
             } catch (error) {
                 this.handleError({
                     code: 'CONNECTION_FAILED',
@@ -247,10 +246,6 @@ export class BrowserWebSocketAdapter extends WebSocketAdapter implements IBrowse
         //   - 'realtime': ベースプロトコル
         //   - `openai-insecure-api-key.{API_KEY}`: ブラウザからの暫定的な認証手段
         //   - 'openai-beta.realtime-v1': Realtime API のベータバージョン指定
-        return [
-            'realtime',
-            `openai-insecure-api-key.${apiKey}`,
-            'openai-beta.realtime-v1'
-        ];
+        return ['realtime', `openai-insecure-api-key.${apiKey}`, 'openai-beta.realtime-v1'];
     }
 }
