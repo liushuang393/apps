@@ -1,0 +1,82 @@
+@echo off
+REM ===============================================
+REM VoiceTranslate Pro - 環境変数付き起動スクリプト
+REM ===============================================
+REM
+REM 使用方法:
+REM   1. このファイルを start-with-env.bat にコピー
+REM   2. 下記のAPIキーを実際のキーに置き換え
+REM   3. start-with-env.bat をダブルクリックして起動
+REM
+REM 注意:
+REM   - start-with-env.bat を .gitignore に追加してください
+REM   - APIキーは絶対にGitリポジトリにコミットしないでください
+REM
+REM ===============================================
+
+echo ===============================================
+echo VoiceTranslate Pro - Electron起動（環境変数設定）
+echo ===============================================
+echo.
+
+REM OpenAI APIキーを環境変数に設定
+REM ⚠️ 下記の YOUR_API_KEY_HERE を実際のAPIキーに置き換えてください
+set OPENAI_API_KEY=sk-proj-YOUR_API_KEY_HERE
+
+REM APIキーが設定されているか確認
+if "%OPENAI_API_KEY%"=="sk-proj-YOUR_API_KEY_HERE" (
+    echo [エラー] APIキーが設定されていません
+    echo.
+    echo 手順:
+    echo   1. このファイルをテキストエディタで開く
+    echo   2. "sk-proj-YOUR_API_KEY_HERE" を実際のAPIキーに置き換える
+    echo   3. ファイルを保存して再度実行
+    echo.
+    pause
+    exit /b 1
+)
+
+REM カレントディレクトリをスクリプトの場所に移動
+cd /d "%~dp0"
+
+echo APIキー設定: %OPENAI_API_KEY:~0,10%...
+echo.
+
+REM Node.js確認
+where node >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo [エラー] Node.jsが見つかりません
+    echo Node.jsをインストールしてください: https://nodejs.org/
+    pause
+    exit /b 1
+)
+
+REM 依存関係確認
+if not exist "node_modules\" (
+    echo [警告] node_modulesが見つかりません
+    echo npm installを実行します...
+    call npm install
+    if %ERRORLEVEL% NEQ 0 (
+        echo [エラー] npm install失敗
+        pause
+        exit /b 1
+    )
+)
+
+REM Electronアプリを起動
+echo Electronアプリを起動中...
+echo.
+call npm run electron
+
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [エラー] Electron起動失敗
+    pause
+    exit /b 1
+)
+
+echo.
+echo ===============================================
+echo Electronアプリを終了しました
+echo ===============================================
+

@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+build/
+out/
+*.js.map
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# API Keys and secrets
+config.json
+secrets.json
+*.key
+*.pem
+
+# Chrome extension package (too large for GitHub)
+*.crx
+
+# Environment startup scripts (contains API keys)
+start-with-env.bat
+start-with-env.sh
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Electron
+electron-builder.yml
+release/
+
+# Test
+*.test.js.snap
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+

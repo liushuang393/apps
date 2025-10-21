@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="OpenAI Realtime APIを使用した高精度リアルタイム音声翻訳システム">
+    <title>VoiceTranslate Pro - リアルタイム音声翻訳</title>
+    
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --primary-light: #60a5fa;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --dark: #0f172a;
+            --dark-secondary: #1e293b;
+            --dark-tertiary: #334155;
+            --light: #f8fafc;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #475569;
+            --shadow: rgba(0, 0, 0, 0.5);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: linear-gradient(135deg, var(--dark) 0%, var(--dark-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        /* ブラウザ拡張ポップアップ用サイズ設定 */
+        @media (max-width: 700px) {
+            body {
+                width: 100%;
+                min-width: 400px;
+                max-width: 600px;
+            }
+        }
+        
+        .app-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* ヘッダー */
+        .header {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .logo {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        
+        .app-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .app-version {
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--dark-tertiary);
+            padding: 4px 12px;
+            border-radius: 20px;
+            margin-left: 12px;
+        }
+        
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--dark-tertiary);
+            border-radius: 8px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+        }
+        
+        .status-dot.online { background: var(--success); animation: pulse 2s infinite; }
+        .status-dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
+        .status-dot.error { background: var(--danger); }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* メインレイアウト */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 24px;
+        }
+        
+        /* サイドバー */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .card {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid var(--border);
+        }
+        
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        
+        .form-input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        select.form-input {
+            cursor: pointer;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M10.293 3.293L6 7.586 1.707 3.293A1 1 0 00.293 4.707l5 5a1 1 0 001.414 0l5-5a1 1 0 10-1.414-1.414z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+            appearance: none;
+        }
+        
+        /* ボタン */
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-transform: none;
+            width: 100%;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+        
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+            background: #059669;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .btn-danger:hover:not(:disabled) {
+            background: #dc2626;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+        
+        .btn-group {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        
+        /* メインコンテンツ */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        /* 統計パネル */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+        
+        .stat-card {
+            background: rgba(30, 41, 59, 0.6);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid var(--border);
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .stat-value.success { color: var(--success); }
+        .stat-value.warning { color: var(--warning); }
+        .stat-value.info { color: var(--primary-light); }
+        
+        /* 音声ビジュアライザー */
+        .visualizer-container {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .visualizer-bars {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            height: 100%;
+        }
+        
+        .vis-bar {
+            width: 4px;
+            background: linear-gradient(to top, var(--primary), var(--primary-light));
+            border-radius: 2px;
+            transition: all 0.15s ease;
+            height: 20%;
+        }
+        
+        .vis-bar.active {
+            background: linear-gradient(to top, var(--success), #34d399);
+        }
+        
+        /* トランスクリプト */
+        .transcript-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            height: 400px;
+        }
+        
+        .transcript-box {
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .transcript-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .transcript-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            flex: 1;
+        }
+
+        .transcript-lang {
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--dark);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .clear-transcript-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .clear-transcript-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: var(--error);
+            color: var(--error);
+            transform: scale(1.1);
+        }
+
+        .clear-all-btn {
+            background: linear-gradient(135deg, var(--error) 0%, #dc2626 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .clear-all-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+        }
+
+        .clear-all-btn:active {
+            transform: translateY(0);
+        }
+        
+        .transcript-content {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .transcript-content::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .transcript-content::-webkit-scrollbar-track {
+            background: var(--dark);
+            border-radius: 3px;
+        }
+        
+        .transcript-content::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+        
+        .transcript-message {
+            margin-bottom: 12px;
+            padding: 12px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+            border-left: 3px solid var(--primary);
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .transcript-message.translation {
+            border-left-color: var(--success);
+        }
+        
+        .transcript-time {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        /* 設定パネル */
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--dark);
+            border-radius: 8px;
+        }
+        
+        .toggle-label {
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+        
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: var(--dark-tertiary);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .toggle-switch.active {
+            background: var(--primary);
+        }
+        
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.2s;
+        }
+        
+        .toggle-switch.active::after {
+            transform: translateX(20px);
+        }
+        
+        /* 通知 */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            min-width: 300px;
+            background: var(--dark-secondary);
+            border-radius: 8px;
+            padding: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 30px var(--shadow);
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        .notification.success {
+            border-left: 4px solid var(--success);
+        }
+        
+        .notification.error {
+            border-left: 4px solid var(--danger);
+        }
+        
+        .notification.warning {
+            border-left: 4px solid var(--warning);
+        }
+        
+        .notification-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .notification-message {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        /* レスポンシブ */
+        @media (max-width: 1024px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .transcript-container {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+
+            .transcript-box {
+                margin-bottom: 15px;
+            }
+        }
+        
+        @media (max-width: 640px) {
+            .app-container {
+                padding: 12px;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 12px;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .btn-group {
+                grid-template-columns: 1fr;
+            }
+            
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* ブラウザ拡張ポップアップ用スタイル（400-600px幅） */
+        @media (max-width: 700px) {
+            body {
+                min-height: auto;
+                overflow-y: auto;
+            }
+            
+            .app-container {
+                max-width: 100%;
+                padding: 16px;
+            }
+            
+            .header {
+                padding: 16px;
+                margin-bottom: 16px;
+                flex-direction: row;
+                justify-content: space-between;
+            }
+            
+            .logo {
+                width: 36px;
+                height: 36px;
+                font-size: 20px;
+            }
+            
+            .app-title {
+                font-size: 18px;
+            }
+            
+            .app-version {
+                display: none; /* ポップアップでは非表示 */
+            }
+            
+            .status-badge {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            
+            .main-layout {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            
+            .sidebar {
+                gap: 16px;
+            }
+            
+            .card {
+                padding: 16px;
+                border-radius: 12px;
+            }
+            
+            .card-title {
+                font-size: 14px;
+                margin-bottom: 12px;
+            }
+            
+            .form-group {
+                margin-bottom: 12px;
+            }
+            
+            .form-label {
+                font-size: 12px;
+                margin-bottom: 6px;
+            }
+            
+            .form-input {
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+            
+            .btn {
+                padding: 8px 16px;
+                font-size: 13px;
+            }
+            
+            .btn-group {
+                gap: 8px;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+            }
+            
+            .stat-card {
+                padding: 12px;
+            }
+            
+            .stat-label {
+                font-size: 11px;
+            }
+            
+            .stat-value {
+                font-size: 20px;
+            }
+            
+            .visualizer-container {
+                height: 60px;
+                border-radius: 8px;
+                padding: 8px;
+            }
+            
+            .transcript-container {
+                gap: 12px;
+            }
+            
+            .transcript-box {
+                border-radius: 8px;
+                padding: 12px;
+            }
+            
+            .transcript-header {
+                margin-bottom: 8px;
+                font-size: 12px;
+            }
+            
+            .transcript-content {
+                min-height: 120px;
+                max-height: 180px;
+                font-size: 13px;
+            }
+            
+            .settings-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            
+            .toggle-group {
+                padding: 10px;
+            }
+            
+            .toggle-label {
+                font-size: 12px;
+            }
+            
+            .empty-icon {
+                font-size: 32px;
+                margin-bottom: 8px;
+            }
+            
+            .empty-text {
+                font-size: 12px;
+            }
+        }
+        
+        /* 超コンパクト表示（ブラウザ拡張最小幅400px） */
+        @media (max-width: 450px) {
+            .app-container {
+                padding: 12px;
+            }
+            
+            .header {
+                padding: 12px;
+            }
+            
+            .header-title {
+                gap: 8px;
+            }
+            
+            .app-title {
+                font-size: 16px;
+            }
+            
+            .card {
+                padding: 12px;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            
+            .stat-card {
+                padding: 10px;
+            }
+            
+            .transcript-content {
+                min-height: 100px;
+                max-height: 150px;
+            }
+            
+            .visualizer-container {
+                height: 50px;
+            }
+        }
+        
+        /* ローディングスピナー */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--text-secondary);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* プログレスバー */
+        .progress-bar {
+            height: 3px;
+            background: var(--dark);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--primary-light));
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        /* ツールチップ */
+        .tooltip {
+            position: relative;
+        }
+        
+        .tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--dark);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            margin-bottom: 8px;
+            box-shadow: 0 4px 12px var(--shadow);
+            z-index: 1000;
+        }
+        
+        /* 空状態 */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        
+        .empty-text {
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- ヘッダー -->
+        <header class="header">
+            <div class="header-title">
+                <div class="logo">🎯</div>
+                <div>
+                    <h1 class="app-title">VoiceTranslate Pro</h1>
+                    <span class="app-version">v3.0 PRODUCTION</span>
+                </div>
+            </div>
+            <div class="status-badge">
+                <span class="status-dot" id="connectionStatus"></span>
+                <span id="connectionText">オフライン</span>
+            </div>
+        </header>
+        
+        <!-- メインレイアウト -->
+        <div class="main-layout">
+            <!-- サイドバー -->
+            <aside class="sidebar">
+                <!-- API設定 -->
+                <div class="card">
+                    <h2 class="card-title">
+                        <span>🔑</span>
+                        <span>API設定</span>
+                    </h2>
+                    <div class="form-group">
+                        <label class="form-label">OpenAI APIキー</label>
+                        <input type="password" id="apiKey" class="form-input" placeholder="sk-..." autocomplete="off">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="apiKeyProgress"></div>
+                        </div>
+                    </div>
+                    <button id="validateBtn" class="btn btn-primary">
+                        <span id="validateBtnText">APIキー検証</span>
+                    </button>
+                </div>
+                
+                <!-- 言語設定 -->
+                <div class="card">
+                    <h2 class="card-title">
+                        <span>🌐</span>
+                        <span>言語設定</span>
+                    </h2>
+                    <div class="form-group">
+                        <label class="form-label">入力言語（話す言語）</label>
+                        <select id="sourceLang" class="form-input">
+                            <option value="ja">日本語</option>
+                            <option value="en">English</option>
+                            <option value="zh">中文（普通話）</option>
+                            <option value="ko">한국어</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Français</option>
+                            <option value="de">Deutsch</option>
+                            <option value="pt">Português</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">出力言語（翻訳先）</label>
+                        <select id="targetLang" class="form-input">
+                            <option value="en">English</option>
+                            <option value="ja">日本語</option>
+                            <option value="zh">中文（普通話）</option>
+                            <option value="ko">한국어</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Français</option>
+                            <option value="de">Deutsch</option>
+                            <option value="pt">Português</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">音声タイプ</label>
+                        <select id="voiceType" class="form-input">
+                            <option value="alloy">Alloy（標準）</option>
+                            <option value="echo">Echo（男性的）</option>
+                            <option value="fable">Fable（温かい）</option>
+                            <option value="onyx">Onyx（深い）</option>
+                            <option value="nova">Nova（明るい）</option>
+                            <option value="shimmer">Shimmer（女性的）</option>
+                            <option value="marin">Marin（新・自然）</option>
+                            <option value="cedar">Cedar（新・プロフェッショナル）</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- 詳細設定 -->
+                <div class="card">
+                    <h2 class="card-title">
+                        <span>⚙️</span>
+                        <span>詳細設定</span>
+                    </h2>
+                    <div class="settings-grid">
+                        <div class="toggle-group">
+                            <span class="toggle-label">VAD有効</span>
+                            <div class="toggle-switch active" id="vadEnabled"></div>
+                        </div>
+                        <div class="toggle-group">
+                            <span class="toggle-label">ノイズ除去</span>
+                            <div class="toggle-switch active" id="noiseReduction"></div>
+                        </div>
+                        <div class="toggle-group">
+                            <span class="toggle-label">エコー除去</span>
+                            <div class="toggle-switch active" id="echoCancellation"></div>
+                        </div>
+                        <div class="toggle-group">
+                            <span class="toggle-label">自動ゲイン</span>
+                            <div class="toggle-switch active" id="autoGainControl"></div>
+                        </div>
+                        <div class="toggle-group">
+                            <span class="toggle-label">入力音声表示</span>
+                            <div class="toggle-switch active" id="showInputTranscript"></div>
+                        </div>
+                        <div class="toggle-group">
+                            <span class="toggle-label">翻訳結果表示</span>
+                            <div class="toggle-switch active" id="showOutputTranscript"></div>
+                        </div>
+                        <div class="toggle-group">
+                            <span class="toggle-label">翻訳音声出力</span>
+                            <div class="toggle-switch active" id="audioOutputEnabled"></div>
+                        </div>
+                        <div class="toggle-group">
+                            <span class="toggle-label">入力音声出力</span>
+                            <div class="toggle-switch active" id="inputAudioOutputEnabled"></div>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label class="form-label">VAD感度</label>
+                        <select id="vadSensitivity" class="form-input">
+                            <option value="low">低（騒音環境）</option>
+                            <option value="medium" selected>中（標準）</option>
+                            <option value="high">高（静音環境）</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- コントロール -->
+                <div class="card">
+                    <h2 class="card-title">
+                        <span>🎮</span>
+                        <span>コントロール</span>
+                    </h2>
+                    <div class="btn-group">
+                        <button id="connectBtn" class="btn btn-primary">
+                            <span>🔌</span>
+                            <span>接続</span>
+                        </button>
+                        <button id="disconnectBtn" class="btn btn-danger" disabled>
+                            <span>❌</span>
+                            <span>切断</span>
+                        </button>
+                    </div>
+
+                    <!-- 音声ソース選択 -->
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label class="form-label">
+                            <span>🎙️</span>
+                            <span>音声ソース</span>
+                        </label>
+                        <select id="audioSourceType" class="form-input">
+                            <option value="microphone">マイク（個人用）</option>
+                            <option value="system">システム音声（会議・ブラウザ）</option>
+                        </select>
+                    </div>
+
+                    <!-- システム音声ソース選択（初期非表示） -->
+                    <div id="systemAudioSourceGroup" class="form-group" style="display: none;">
+                        <label class="form-label">
+                            <span>🖥️</span>
+                            <span>キャプチャ対象</span>
+                        </label>
+                        <button id="detectSourcesBtn" class="btn btn-secondary" style="width: 100%; margin-bottom: 8px;">
+                            <span>🔍</span>
+                            <span>会議アプリを検出</span>
+                        </button>
+                        <select id="systemAudioSource" class="form-input">
+                            <option value="">ソースを選択...</option>
+                        </select>
+                    </div>
+
+                    <div class="btn-group" style="margin-top: 12px;">
+                        <button id="startBtn" class="btn btn-success" disabled>
+                            <span>🎤</span>
+                            <span>開始</span>
+                        </button>
+                        <button id="stopBtn" class="btn btn-danger" disabled>
+                            <span>⏹️</span>
+                            <span>停止</span>
+                        </button>
+                    </div>
+                </div>
+            </aside>
+            
+            <!-- メインコンテンツ -->
+            <main class="main-content">
+                <!-- 統計情報 -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">セッション時間</div>
+                        <div class="stat-value" id="sessionTime">00:00:00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">翻訳文字数</div>
+                        <div class="stat-value success" id="charCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">レイテンシ</div>
+                        <div class="stat-value warning" id="latency">-- ms</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">精度スコア</div>
+                        <div class="stat-value info" id="accuracy">--%</div>
+                    </div>
+                </div>
+                
+                <!-- ビジュアライザー -->
+                <div class="visualizer-container">
+                    <div class="visualizer-bars" id="visualizer">
+                        <!-- 動的に生成 -->
+                    </div>
+                </div>
+                
+                <!-- トランスクリプト -->
+                <div class="transcript-container">
+                    <!-- 1. 入力音声 -->
+                    <div class="transcript-box">
+                        <div class="transcript-header">
+                            <span class="transcript-title">📥 入力音声</span>
+                            <span class="transcript-lang" id="sourceLangDisplay">日本語</span>
+                            <button class="clear-transcript-btn" id="clearInputBtn" title="入力音声をクリア">🗑️</button>
+                        </div>
+                        <div class="transcript-content" id="inputTranscript">
+                            <div class="empty-state">
+                                <div class="empty-icon">🎤</div>
+                                <div class="empty-text">録音を開始すると、ここに音声認識結果が表示されます</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. 翻訳結果 (文本翻訳 + 音声出力) -->
+                    <div class="transcript-box">
+                        <div class="transcript-header">
+                            <span class="transcript-title">📤🔊 翻訳結果</span>
+                            <span class="transcript-lang" id="targetLangDisplay">English</span>
+                            <button class="clear-transcript-btn" id="clearOutputBtn" title="翻訳結果をクリア">🗑️</button>
+                        </div>
+                        <div class="transcript-content" id="outputTranscript">
+                            <div class="empty-state">
+                                <div class="empty-icon">🌐</div>
+                                <div class="empty-text">翻訳結果がここに表示されます</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 全体クリアボタン -->
+                <div style="text-align: center; margin-top: 16px;">
+                    <button class="clear-all-btn" id="clearAllBtn">
+                        🗑️ すべてクリア
+                    </button>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <!-- 通知コンテナ -->
+    <div class="notification" id="notification">
+        <div class="notification-title" id="notificationTitle"></div>
+        <div class="notification-message" id="notificationMessage"></div>
+    </div>
+    
+    <!-- SimpleQueue - 简化的队列管理（MQ方式） -->
+    <script src="src/SimpleQueue.js"></script>
+
+    <!-- VoiceTranslate Pro JavaScript -->
+    <script src="voicetranslate-pro.js"></script>
+
+
+</body>
+</html>
