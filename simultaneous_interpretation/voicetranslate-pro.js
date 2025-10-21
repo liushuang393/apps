@@ -229,11 +229,19 @@ class ResponseQueue {
                 processing: this.processingQueue.length
             });
 
+            // ✅ 修正: 処理中のアイテムを reject せず、ペンディングキューに戻す
             const item = this.processingQueue.shift();
-            if (item && item.reject) {
-                item.reject(error);
+            if (item) {
+                console.log('[ResponseQueue] リクエストをペンディングキューに戻します');
+                // ペンディングキューの先頭に戻す（優先処理）
+                this.pendingQueue.unshift(item);
+
+                // 一定時間後に再試行（500ms待機）
+                setTimeout(() => {
+                    console.log('[ResponseQueue] 再試行を開始します');
+                    this.consume();
+                }, 500);
             }
-            this.stats.failedRequests++;
 
             return;
         }
@@ -1511,8 +1519,8 @@ Even if you have translated many sentences, your role has NOT changed:
                         break;
                     }
 
-                    if (queueStatus.processingCount > 0) {
-                        console.warn('[Audio] キューに処理中のリクエストがあるため、スキップします', {
+                    if (queueStatus.processingCount > 0 || queueStatus.pendingCount > 0) {
+                        console.warn('[Audio] キューにリクエストがあるため、スキップします', {
                             processingCount: queueStatus.processingCount,
                             pendingCount: queueStatus.pendingCount
                         });
@@ -2326,6 +2334,7 @@ Even if you have translated many sentences, your role has NOT changed:
         this.state.isRecording = true;
         this.elements.startBtn.disabled = true;
         this.elements.stopBtn.disabled = false;
+        this.elements.disconnectBtn.disabled = true;
 
         const sourceTypeText = this.state.audioSourceType === 'system' ? 'システム音声' : 'マイク';
         this.updateStatus('recording', '録音中');
@@ -2498,20 +2507,33 @@ Even if you have translated many sentences, your role has NOT changed:
             const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
             const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
 
+            const queueStatus = this.responseQueue.getStatus();
             console.log('[Recording] レスポンス生成を要求（Server VAD無効）:', {
                 modalities: modalities,
                 audioOutputEnabled: audioOutputEnabled,
-                queueStatus: this.responseQueue.getStatus()
+                queueStatus: queueStatus
             });
 
-            this.responseQueue.enqueue({
-                modalities: modalities,
-                instructions: this.getInstructions()
-            }).then(() => {
-                console.log('[Recording] レスポンスリクエストをキューに追加しました');
-            }).catch(error => {
-                console.error('[Recording] レスポンスリクエスト失敗:', error);
-            });
+            if (this.activeResponseId) {
+                console.warn('[Recording] 前のレスポンスが処理中のため、新規レスポンスをスキップします', {
+                    activeResponseId: this.activeResponseId
+                });
+            } else if (queueStatus.processingCount > 0 || queueStatus.pendingCount > 0) {
+                console.warn('[Recording] レスポンスキューに処理中の項目があるため、新規リクエストをスキップします', queueStatus);
+            } else {
+                this.responseQueue.enqueue({
+                    modalities: modalities,
+                    instructions: this.getInstructions()
+                }).then(() => {
+                    console.log('[Recording] レスポンスリクエストをキューに追加しました');
+                }).catch(error => {
+                    if (error.message && error.message.includes('Previous response is still in progress')) {
+                        console.log('[Recording] 前のレスポンス処理中のためリクエストをスキップしました');
+                    } else {
+                        console.error('[Recording] レスポンスリクエスト失敗:', error);
+                    }
+                });
+            }
         } else if (isServerVadEnabled) {
             console.log('[Recording] Server VAD有効 - input_audio_buffer.committedイベントでレスポンス生成されます');
         }
@@ -2559,6 +2581,7 @@ Even if you have translated many sentences, your role has NOT changed:
         this.state.isRecording = false;
         this.elements.startBtn.disabled = false;
         this.elements.stopBtn.disabled = true;
+        this.elements.disconnectBtn.disabled = !this.state.isConnected;
 
         this.resetVisualizer();
 
@@ -2855,9 +2878,8 @@ Even if you have translated many sentences, your role has NOT changed:
                             role: 'user',
                             content: inputText
                         }
-                    ],
-                    temperature: 0.1,
-                    max_tokens: 50
+                    ]
+                    // temperature パラメータを削除（gpt-5-2025-08-07 はデフォルト値(1)のみサポート）
                 })
             });
 
@@ -2946,9 +2968,8 @@ Even if you have translated many sentences, your role has NOT changed:
                             role: 'user',
                             content: inputText
                         }
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 500
+                    ]
+                    // temperature パラメータを削除（gpt-5-2025-08-07 はデフォルト値(1)のみサポート）
                 })
             });
 
