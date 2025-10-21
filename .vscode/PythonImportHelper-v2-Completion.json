@@ -1,0 +1,266 @@
+[
+    {
+        "label": "annotations",
+        "importPath": "__future__",
+        "description": "__future__",
+        "isExtraImport": true,
+        "detail": "__future__",
+        "documentation": {}
+    },
+    {
+        "label": "argparse",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "argparse",
+        "description": "argparse",
+        "detail": "argparse",
+        "documentation": {}
+    },
+    {
+        "label": "datetime",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "datetime",
+        "description": "datetime",
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "logging",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "logging",
+        "description": "logging",
+        "detail": "logging",
+        "documentation": {}
+    },
+    {
+        "label": "os",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "os",
+        "description": "os",
+        "detail": "os",
+        "documentation": {}
+    },
+    {
+        "label": "sqlite3",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "sqlite3",
+        "description": "sqlite3",
+        "detail": "sqlite3",
+        "documentation": {}
+    },
+    {
+        "label": "sys",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "sys",
+        "description": "sys",
+        "detail": "sys",
+        "documentation": {}
+    },
+    {
+        "label": "dataclass",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "Iterable",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "List",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "pytz",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "pytz",
+        "description": "pytz",
+        "detail": "pytz",
+        "documentation": {}
+    },
+    {
+        "label": "isoparse",
+        "importPath": "dateutil.parser",
+        "description": "dateutil.parser",
+        "isExtraImport": true,
+        "detail": "dateutil.parser",
+        "documentation": {}
+    },
+    {
+        "label": "Event",
+        "kind": 6,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "class Event:\n    event_id: str\n    title: str\n    start: _dt.datetime\n    html_link: str\ndef fetch_events(\n    service, *, start_time: _dt.datetime, end_time: _dt.datetime, calendar_id: str = \"primary\"\n) -> List[Event]:\n    \"\"\"Fetch events from Google Calendar between `start_time` and `end_time`.\n    Returns a list of Event dataclasses.  If the service is None,",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "setup_logging",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def setup_logging(level: str) -> None:\n    \"\"\"Initialise logging.  Logs include ISO timestamps and log levels.\"\"\"\n    numeric_level = getattr(logging, level.upper(), None)\n    if not isinstance(numeric_level, int):\n        numeric_level = logging.INFO\n    logging.basicConfig(\n        level=numeric_level,\n        format=\"%(asctime)s [%(levelname)s] %(message)s\",\n        datefmt=\"%Y-%m-%dT%H:%M:%SZ\",\n    )",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "load_env_var",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def load_env_var(name: str, fallback: Optional[str] = None) -> Optional[str]:\n    \"\"\"Retrieve environment variable, falling back to given value.\"\"\"\n    value = os.getenv(name)\n    if value:\n        return value\n    return fallback\ndef is_valid_e164(number: str) -> bool:\n    \"\"\"Check if a phone number looks like a valid E.164 string (simple check).\"\"\"\n    return number.startswith(\"+\") and len(number) >= 8 and number[1:].isdigit()\ndef load_gcal_service(credentials_path: str = \"credentials.json\"):",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "is_valid_e164",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def is_valid_e164(number: str) -> bool:\n    \"\"\"Check if a phone number looks like a valid E.164 string (simple check).\"\"\"\n    return number.startswith(\"+\") and len(number) >= 8 and number[1:].isdigit()\ndef load_gcal_service(credentials_path: str = \"credentials.json\"):\n    \"\"\"Load the Google Calendar API service.\n    Returns a tuple `(service, creds)` or `(None, None)` if the API\n    client libraries are missing.\n    \"\"\"\n    if build is None:\n        logging.warning(",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "load_gcal_service",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def load_gcal_service(credentials_path: str = \"credentials.json\"):\n    \"\"\"Load the Google Calendar API service.\n    Returns a tuple `(service, creds)` or `(None, None)` if the API\n    client libraries are missing.\n    \"\"\"\n    if build is None:\n        logging.warning(\n            \"google-api-python-client not installed; cannot access Google Calendar.\"\n        )\n        return None, None",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "fetch_events",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def fetch_events(\n    service, *, start_time: _dt.datetime, end_time: _dt.datetime, calendar_id: str = \"primary\"\n) -> List[Event]:\n    \"\"\"Fetch events from Google Calendar between `start_time` and `end_time`.\n    Returns a list of Event dataclasses.  If the service is None,\n    returns an empty list.\n    \"\"\"\n    events: List[Event] = []\n    if service is None:\n        return events",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "ensure_db",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def ensure_db(db_path: str) -> sqlite3.Connection:\n    \"\"\"Open (or create) the SQLite DB and ensure the table exists.\"\"\"\n    conn = sqlite3.connect(db_path)\n    conn.execute(\n        \"\"\"\n        CREATE TABLE IF NOT EXISTS sent_events (\n            event_id TEXT NOT NULL,\n            event_start TEXT NOT NULL,\n            PRIMARY KEY (event_id, event_start)\n        )",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "has_been_sent",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def has_been_sent(conn: sqlite3.Connection, event: Event) -> bool:\n    \"\"\"Return True if this event/start combination has been sent previously.\"\"\"\n    cur = conn.execute(\n        \"SELECT 1 FROM sent_events WHERE event_id = ? AND event_start = ?\",\n        (event.event_id, event.start.isoformat()),\n    )\n    return cur.fetchone() is not None\ndef record_sent(conn: sqlite3.Connection, event: Event) -> None:\n    \"\"\"Record that an event reminder has been sent.\"\"\"\n    conn.execute(",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "record_sent",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def record_sent(conn: sqlite3.Connection, event: Event) -> None:\n    \"\"\"Record that an event reminder has been sent.\"\"\"\n    conn.execute(\n        \"INSERT OR IGNORE INTO sent_events(event_id, event_start) VALUES (?, ?)\",\n        (event.event_id, event.start.isoformat()),\n    )\n    conn.commit()\ndef format_line(event: Event, to_number: Optional[str]) -> str:\n    \"\"\"Format a single-line reminder message for an event.\"\"\"\n    local_start = event.start",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "format_line",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def format_line(event: Event, to_number: Optional[str]) -> str:\n    \"\"\"Format a single-line reminder message for an event.\"\"\"\n    local_start = event.start\n    start_str = local_start.strftime(\"%H:%M\")\n    recipient = to_number if to_number else \"固定電話（未設定）\"\n    return (\n        f\"電話リマインド（開始1時間前）: {start_str} {event.title} → 発信先: {recipient}\\n\"\n        f\"{event.html_link}\"\n    )\ndef send_sms_and_call(",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "send_sms_and_call",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def send_sms_and_call(\n    lines: Iterable[str], *, from_number: str, to_number: str, dry_run: bool = False\n) -> None:\n    \"\"\"Send SMS and make a call via Twilio.  Merges lines into a single SMS.\n    Only the first line will be spoken on the call.  If dry_run is True,\n    just log the messages.\n    \"\"\"\n    if not Client or dry_run:\n        for line in lines:\n            logging.info(f\"[DRY] Would send: {line}\")",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "process_reminders",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def process_reminders(\n    service,\n    *,\n    db_conn: sqlite3.Connection,\n    window_min: int,\n    window_max: int,\n    calendar_id: str,\n    from_number: str,\n    to_number: str,\n    tz_str: str,",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "run_tests",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def run_tests() -> int:\n    \"\"\"Run simple internal tests.\"\"\"\n    import tempfile\n    # Test E.164 validation\n    assert is_valid_e164(\"+123456789\"), \"Valid E.164 should be accepted\"\n    assert not is_valid_e164(\"1234567\"), \"Missing + should be invalid\"\n    # Test DB recording and duplicate prevention\n    with tempfile.NamedTemporaryFile() as tmp:\n        conn = ensure_db(tmp.name)\n        ev = Event(\"ev1\", \"Test\", _dt.datetime.now(pytz.utc), \"http://example.com\")",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "parse_args",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\"--window-min\", type=int, default=55, help=\"Minimum minutes ahead to check events\")\n    parser.add_argument(\"--window-max\", type=int, default=65, help=\"Maximum minutes ahead to check events\")\n    parser.add_argument(\"--from-number\", dest=\"from_number\", help=\"Twilio from number (overrides env)\")\n    parser.add_argument(\"--to-number\", dest=\"to_number\", help=\"Recipient number (overrides env)\")\n    parser.add_argument(\"--calendar-id\", default=None, help=\"Google Calendar ID (default primary)\")\n    parser.add_argument(\"--db\", default=DEFAULT_DB_PATH, help=\"SQLite DB file to store sent events\")\n    parser.add_argument(\"--tz\", default=None, help=\"Timezone (e.g. Asia/Tokyo)\")\n    parser.add_argument(\"--log-level\", default=\"INFO\", help=\"Logging level\")",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "main",
+        "kind": 2,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "def main(argv: Optional[List[str]] = None) -> int:\n    args = parse_args(argv)\n    if args.run_tests:\n        return run_tests()\n    setup_logging(args.log_level)\n    # Load environment variables (fallback values)\n    from_num = args.from_number or load_env_var(\"TWILIO_FROM_NUMBER\") or \"\"\n    to_num = args.to_number or load_env_var(\"TWILIO_TO_NUMBER\") or from_num\n    if not from_num:\n        logging.error(\"Twilio from number is required. Set via --from-number or TWILIO_FROM_NUMBER.\")",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "DEFAULT_DB_PATH",
+        "kind": 5,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "DEFAULT_DB_PATH = \"sent_events.db\"\n# Google Calendar API scopes (readonly suffices)\nSCOPES = [\"https://www.googleapis.com/auth/calendar.readonly\"]\ndef setup_logging(level: str) -> None:\n    \"\"\"Initialise logging.  Logs include ISO timestamps and log levels.\"\"\"\n    numeric_level = getattr(logging, level.upper(), None)\n    if not isinstance(numeric_level, int):\n        numeric_level = logging.INFO\n    logging.basicConfig(\n        level=numeric_level,",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    },
+    {
+        "label": "SCOPES",
+        "kind": 5,
+        "importPath": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "description": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "peekOfCode": "SCOPES = [\"https://www.googleapis.com/auth/calendar.readonly\"]\ndef setup_logging(level: str) -> None:\n    \"\"\"Initialise logging.  Logs include ISO timestamps and log levels.\"\"\"\n    numeric_level = getattr(logging, level.upper(), None)\n    if not isinstance(numeric_level, int):\n        numeric_level = logging.INFO\n    logging.basicConfig(\n        level=numeric_level,\n        format=\"%(asctime)s [%(levelname)s] %(message)s\",\n        datefmt=\"%Y-%m-%dT%H:%M:%SZ\",",
+        "detail": "gcal_twilio_reminder.gcal_twilio_reminder",
+        "documentation": {}
+    }
+]
