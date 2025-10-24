@@ -1,0 +1,533 @@
+---
+description: 非同期処理、Promise、async/await のパターンとベストプラクティス
+globs: src/**/*.ts,electron/**/*.ts
+---
+# 非同期処理パターンルール
+
+## 基本原則
+
+### 1. async/await を優先
+```typescript
+// ✅ 推奨: async/await
+async function processAudio(data: Float32Array): Promise<AudioData> {
+    try {
+        const resampled = await this.resample(data);
+        const encoded = await this.encode(resampled);
+        return encoded;
+    } catch (error) {
+        throw new Error(`Audio processing failed: ${error}`);
+    }
+}
+
+// ❌ 避ける: Promise チェーン
+function processAudio(data: Float32Array): Promise<AudioData> {
+    return this.resample(data)
+        .then(resampled => this.encode(resampled))
+        .catch(error => {
+            throw new Error(`Audio processing failed: ${error}`);
+        });
+}
+```
+
+### 2. Promise コンストラクタのアンチパターン回避
+```typescript
+// ❌ アンチパターン: async in Promise constructor
+async function playAudio(base64Audio: string): Promise<void> {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const buffer = await this.decodeAudio(base64Audio);
+            await this.play(buffer);
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+// ✅ 正しい実装
+async function playAudio(base64Audio: string): Promise<void> {
+    const buffer = await this.decodeAudio(base64Audio);
+    await this.play(buffer);
+}
+```
+
+### 3. エラーハンドリング必須
+```typescript
+// ✅ try-catch で囲む
+async function connect(apiKey: string): Promise<void> {
+    try {
+        await this.validateApiKey(apiKey);
+        await this.establishConnection(apiKey);
+    } catch (error) {
+        throw new Error(`Connection failed: ${error.message}`);
+    }
+}
+
+// ❌ エラーハンドリングなし
+async function connect(apiKey: string): Promise<void> {
+    await this.validateApiKey(apiKey);
+    await this.establishConnection(apiKey);
+}
+```
+
+## Promise パターン
+
+### 1. 並列実行（Promise.all）
+```typescript
+// ✅ 独立した非同期処理は並列実行
+async function initializeServices(): Promise<void> {
+    try {
+        await Promise.all([
+            this.audioManager.initialize(),
+            this.wsManager.connect(this.apiKey),
+            this.uiManager.initialize()
+        ]);
+    } catch (error) {
+        throw new Error(`Service initialization failed: ${error}`);
+    }
+}
+
+// ❌ 直列実行（不必要に遅い）
+async function initializeServices(): Promise<void> {
+    await this.audioManager.initialize();
+    await this.wsManager.connect(this.apiKey);
+    await this.uiManager.initialize();
+}
+```
+
+### 2. レース（Promise.race）
+```typescript
+// タイムアウト付き接続
+async function connectWithTimeout(apiKey: string, timeoutMs: number): Promise<void> {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Connection timeout')), timeoutMs);
+    });
+    
+    await Promise.race([
+        this.wsManager.connect(apiKey),
+        timeoutPromise
+    ]);
+}
+```
+
+### 3. 部分的な失敗を許容（Promise.allSettled）
+```typescript
+// すべての結果を取得（一部失敗しても続行）
+async function loadMultipleSources(sourceIds: string[]): Promise<AudioSourceInfo[]> {
+    const results = await Promise.allSettled(
+        sourceIds.map(id => this.loadSource(id))
+    );
+    
+    return results
+        .filter((result): result is PromiseFulfilledResult<AudioSourceInfo> => 
+            result.status === 'fulfilled'
+        )
+        .map(result => result.value);
+}
+```
+
+## 非同期キュー管理
+
+### ResponseQueue ([src/core/ResponseQueue.ts](mdc:src/core/ResponseQueue.ts))
+
+```typescript
+/**
+ * Promise ベースの非同期キュー
+ */
+export class ResponseQueue<T> {
+    private queue: Array<{
+        request: T;
+        resolve: (value: string) => void;
+        reject: (reason?: Error) => void;
+        timestamp: number;
+    }> = [];
+    
+    /**
+     * リクエストをキューに追加
+     * @returns Promise<string> - レスポンスID
+     */
+    enqueue(request: T): Promise<string> {
+        return new Promise((resolve, reject) => {
+            this.queue.push({
+                request,
+                resolve,
+                reject,
+                timestamp: Date.now()
+            });
+        });
+    }
+    
+    /**
+     * レスポンスを処理
+     */
+    dequeue(responseId: string): void {
+        const item = this.queue.shift();
+        if (item) {
+            item.resolve(responseId);
+        }
+    }
+    
+    /**
+     * タイムアウト処理
+     */
+    checkTimeout(timeoutMs: number): void {
+        const now = Date.now();
+        
+        this.queue = this.queue.filter(item => {
+            const elapsed = now - item.timestamp;
+            
+            if (elapsed > timeoutMs) {
+                item.reject(new Error('Request timeout'));
+                return false;
+            }
+            
+            return true;
+        });
+    }
+}
+```
+
+### 使用例
+
+```typescript
+// リクエスト送信
+const responsePromise = this.responseQueue.enqueue(audioData);
+
+// WebSocket でレスポンスID受信
+wsManager.setMessageHandlers({
+    onResponseCreated: (responseId) => {
+        this.responseQueue.dequeue(responseId);
+    }
+});
+
+// レスポンス待機
+try {
+    const responseId = await responsePromise;
+    console.log('Response received:', responseId);
+} catch (error) {
+    console.error('Request failed:', error);
+}
+```
+
+## イベント駆動非同期処理
+
+### EventEmitter パターン（推奨）
+
+```typescript
+import { EventEmitter } from 'events';
+
+/**
+ * WebSocket マネージャー（イベントエミッター）
+ */
+export class WebSocketManager extends EventEmitter {
+    private ws: WebSocket | null = null;
+    
+    async connect(apiKey: string): Promise<void> {
+        this.ws = new WebSocket(url);
+        
+        this.ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            
+            // イベント発火
+            this.emit(message.type, message);
+        };
+    }
+}
+
+// 使用例
+wsManager.on('response.audio.delta', (message) => {
+    this.audioManager.enqueueAudio(message.delta);
+});
+
+wsManager.on('error', (error) => {
+    console.error('WebSocket error:', error);
+});
+```
+
+### コールバックパターン
+
+```typescript
+/**
+ * VAD コールバック
+ */
+interface VADCallbacks {
+    onSpeechStart?: () => void;
+    onSpeechEnd?: () => void;
+}
+
+const vad = new VoiceActivityDetector({
+    threshold: 0.01,
+    debounceTime: 300,
+    onSpeechStart: () => {
+        console.log('Speech started');
+        this.startBuffering();
+    },
+    onSpeechEnd: () => {
+        console.log('Speech ended');
+        this.flushBuffer();
+    }
+});
+```
+
+## タイマー管理
+
+### 1. setTimeout のクリーンアップ
+
+```typescript
+class VoiceTranslateCore {
+    private timers: {
+        sessionTime?: number;
+        [key: string]: number | undefined;
+    } = {};
+    
+    startSessionTimer(): void {
+        // 既存のタイマーをクリア
+        if (this.timers.sessionTime) {
+            clearInterval(this.timers.sessionTime);
+        }
+        
+        // 新しいタイマーを開始
+        this.timers.sessionTime = window.setInterval(() => {
+            this.updateSessionTime();
+        }, 1000);
+    }
+    
+    stopSessionTimer(): void {
+        if (this.timers.sessionTime) {
+            clearInterval(this.timers.sessionTime);
+            this.timers.sessionTime = undefined;
+        }
+    }
+    
+    // クリーンアップ
+    dispose(): void {
+        Object.values(this.timers).forEach(timerId => {
+            if (timerId) {
+                clearInterval(timerId);
+            }
+        });
+        this.timers = {};
+    }
+}
+```
+
+### 2. デバウンス処理
+
+```typescript
+/**
+ * デバウンス関数
+ */
+function debounce<T extends (...args: Parameters<T>) => void>(
+    func: T,
+    delayMs: number
+): (...args: Parameters<T>) => void {
+    let timeoutId: number | undefined;
+    
+    return function debounced(...args: Parameters<T>): void {
+        if (timeoutId !== undefined) {
+            clearTimeout(timeoutId);
+        }
+        
+        timeoutId = window.setTimeout(() => {
+            func(...args);
+            timeoutId = undefined;
+        }, delayMs);
+    };
+}
+
+// 使用例
+const debouncedFlush = debounce(() => this.flushBuffer(), 300);
+
+// 音声検出時に呼び出し
+vad.on('speechEnd', debouncedFlush);
+```
+
+### 3. スロットル処理
+
+```typescript
+/**
+ * スロットル関数
+ */
+function throttle<T extends (...args: Parameters<T>) => void>(
+    func: T,
+    intervalMs: number
+): (...args: Parameters<T>) => void {
+    let lastCall = 0;
+    
+    return function throttled(...args: Parameters<T>): void {
+        const now = Date.now();
+        
+        if (now - lastCall >= intervalMs) {
+            func(...args);
+            lastCall = now;
+        }
+    };
+}
+
+// 使用例: 100ms ごとに1回だけ送信
+const throttledSend = throttle((data: string) => {
+    this.wsManager.sendAudioData(data);
+}, 100);
+```
+
+## 非同期初期化パターン
+
+### VoiceTranslateCore の初期化
+
+```typescript
+export class VoiceTranslateCore {
+    /**
+     * 初期化（非同期）
+     */
+    async init(): Promise<void> {
+        try {
+            // 1. DOM要素取得
+            this.elements = this.getDOMElements();
+            
+            // 2. イベントリスナー設定
+            this.setupEventListeners();
+            
+            // 3. 環境変数から API キー読み込み
+            await this.loadApiKeyFromEnv();
+            
+            // 4. マイク権限チェック
+            await this.checkMicrophonePermission();
+            
+            // 5. UI初期化
+            this.uiManager.init(this.elements);
+            
+            console.info('[VoiceTranslateCore] 初期化完了');
+        } catch (error) {
+            console.error('[VoiceTranslateCore] 初期化エラー:', error);
+            throw error;
+        }
+    }
+}
+
+// アプリケーション起動時
+(async () => {
+    try {
+        const app = new VoiceTranslateCore();
+        await app.init();
+    } catch (error) {
+        console.error('Application failed to start:', error);
+    }
+})();
+```
+
+## メモリリーク防止
+
+### 1. リスナー削除
+
+```typescript
+class AudioManager {
+    private boundHandleAudioProcess: ((event: AudioProcessingEvent) => void) | null = null;
+    
+    async startRecording(): Promise<void> {
+        // バインド済みの関数を保存
+        this.boundHandleAudioProcess = this.handleAudioProcess.bind(this);
+        this.processor!.addEventListener('audioprocess', this.boundHandleAudioProcess);
+    }
+    
+    async stopRecording(): Promise<void> {
+        // リスナー削除
+        if (this.processor && this.boundHandleAudioProcess) {
+            this.processor.removeEventListener('audioprocess', this.boundHandleAudioProcess);
+            this.boundHandleAudioProcess = null;
+        }
+    }
+}
+```
+
+### 2. WeakMap 使用
+
+```typescript
+// ✅ WeakMap を使用（自動GC）
+class AudioContextManager {
+    private contexts = new WeakMap<Element, AudioContext>();
+    
+    getContext(element: Element): AudioContext {
+        let context = this.contexts.get(element);
+        
+        if (!context) {
+            context = new AudioContext();
+            this.contexts.set(element, context);
+        }
+        
+        return context;
+    }
+}
+```
+
+## テスト
+
+### 非同期テスト
+
+```typescript
+describe('WebSocketManager', () => {
+    it('should connect within timeout', async () => {
+        const wsManager = new WebSocketManager();
+        const apiKey = 'sk-test';
+        
+        await expect(wsManager.connect(apiKey)).resolves.not.toThrow();
+    }, 10000);  // タイムアウト: 10秒
+    
+    it('should handle connection timeout', async () => {
+        const wsManager = new WebSocketManager();
+        const apiKey = 'sk-slow';
+        
+        // タイムアウトエラーを期待
+        await expect(
+            wsManager.connectWithTimeout(apiKey, 1000)
+        ).rejects.toThrow('Connection timeout');
+    });
+});
+```
+
+### Promise のモック
+
+```typescript
+describe('AudioManager', () => {
+    it('should retry on temporary failure', async () => {
+        const audioManager = new AudioManager();
+        
+        // 最初は失敗、2回目は成功
+        jest.spyOn(navigator.mediaDevices, 'getUserMedia')
+            .mockRejectedValueOnce(new Error('Temporary failure'))
+            .mockResolvedValueOnce(mockMediaStream);
+        
+        await expect(audioManager.startMicrophoneCapture({}))
+            .resolves.not.toThrow();
+    });
+});
+```
+
+## デバッグ
+
+### Promise チェーン追跡
+
+```typescript
+// デバッグ用の Promise ラッパー
+function traced<T>(promise: Promise<T>, label: string): Promise<T> {
+    console.log(`[Promise Start] ${label}`);
+    
+    return promise
+        .then(result => {
+            console.log(`[Promise Success] ${label}`, result);
+            return result;
+        })
+        .catch(error => {
+            console.error(`[Promise Error] ${label}`, error);
+            throw error;
+        });
+}
+
+// 使用例
+await traced(this.wsManager.connect(apiKey), 'WebSocket接続');
+```
+
+## 参考資料
+
+- Promise: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise
+- async/await: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function
+- EventEmitter: https://nodejs.org/api/events.html

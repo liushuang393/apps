@@ -18,6 +18,21 @@
 import { CONFIG, getAudioPreset } from './Config';
 import { VoiceActivityDetector } from './VAD';
 import * as Utils from './Utils';
+import type { ElectronAPI } from '../types/electron';
+
+type DisplayMediaDevices = MediaDevices & {
+    getDisplayMedia?: (constraints?: DisplayMediaStreamOptions) => Promise<MediaStream>;
+};
+
+type ElectronSystemAudioAPI = {
+    getSystemAudioStream: (sourceId?: string) => Promise<MediaStream>;
+};
+
+const isElectronSystemAudioAPI = (
+    api: ElectronAPI | undefined
+): api is ElectronAPI & ElectronSystemAudioAPI => {
+    return typeof (api as ElectronSystemAudioAPI | undefined)?.getSystemAudioStream === 'function';
+};
 
 /**
  * 音声ソースタイプ
@@ -72,6 +87,19 @@ export class AudioManager {
 
     // コールバック
     private audioDataCallback: AudioDataCallback | null = null;
+
+    private getAudioContextConstructor(): typeof AudioContext {
+        if (typeof window === 'undefined') {
+            throw new Error('AudioContext is not available in this environment');
+        }
+
+        const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext;
+        if (!AudioContextCtor) {
+            throw new Error('AudioContext is not supported by this browser');
+        }
+
+        return AudioContextCtor;
+    }
 
     /**
      * VAD を設定
@@ -128,19 +156,19 @@ export class AudioManager {
         try {
             this.mediaStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
             console.info('[AudioManager] マイクアクセス取得成功');
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('[AudioManager] マイクアクセス取得失敗:', error);
 
-            if (error.name === 'NotAllowedError') {
+            if (error instanceof DOMException && error.name === 'NotAllowedError') {
                 throw new Error(
                     'マイク権限が拒否されました。ブラウザの設定からマイクへのアクセスを許可してください。'
                 );
-            } else if (error.name === 'NotFoundError') {
+            } else if (error instanceof DOMException && error.name === 'NotFoundError') {
                 throw new Error(
                     'マイクが見つかりません。マイクが接続されているか確認してください。'
                 );
             } else {
-                throw error;
+                throw error instanceof Error ? error : new Error('マイクアクセスに失敗しました');
             }
         }
     }
@@ -152,7 +180,12 @@ export class AudioManager {
         console.info('[AudioManager] ブラウザ環境でシステム音声をキャプチャ...');
 
         try {
-            const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+            const mediaDevices = navigator.mediaDevices as DisplayMediaDevices;
+            if (!mediaDevices.getDisplayMedia) {
+                throw new Error('このブラウザはシステム音声キャプチャに対応していません');
+            }
+
+            const stream = await mediaDevices.getDisplayMedia({
                 video: true,
                 audio: {
                     channelCount: 1,
@@ -167,11 +200,14 @@ export class AudioManager {
 
             // 音声トラックの監視
             const audioTracks = stream.getAudioTracks();
-            if (audioTracks.length > 0) {
-                audioTracks[0].addEventListener('ended', () => {
+        if (audioTracks.length > 0) {
+            const [audioTrack] = audioTracks;
+            if (audioTrack) {
+                audioTrack.addEventListener('ended', () => {
                     console.error('[AudioManager] 音声トラックが停止しました');
                 });
             }
+        }
 
             console.info('[AudioManager] システム音声キャプチャ成功');
         } catch (error) {
@@ -231,8 +267,8 @@ export class AudioManager {
     async startElectronSystemAudioCapture(sourceId?: string): Promise<void> {
         console.info('[AudioManager] Electron環境でシステム音声をキャプチャ...');
 
-        const electronAPI = (window as any).electronAPI;
-        if (!electronAPI) {
+        const electronAPI = window.electronAPI;
+        if (!isElectronSystemAudioAPI(electronAPI)) {
             throw new Error('Electron API が利用できません');
         }
 
@@ -281,7 +317,8 @@ export class AudioManager {
         console.info('[AudioManager] 音声処理をセットアップ中...');
 
         // AudioContext設定
-        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+        const AudioContextCtor = this.getAudioContextConstructor();
+        this.audioContext = new AudioContextCtor({
             sampleRate: CONFIG.AUDIO.SAMPLE_RATE
         });
 
@@ -552,8 +589,8 @@ export class AudioManager {
 
                 // 出力専用AudioContextが存在しない場合は作成
                 if (!this.outputAudioContext) {
-                    this.outputAudioContext = new (window.AudioContext ||
-                        (window as any).webkitAudioContext)({
+                    const AudioContextCtor = this.getAudioContextConstructor();
+                    this.outputAudioContext = new AudioContextCtor({
                         sampleRate: CONFIG.AUDIO.SAMPLE_RATE
                     });
                     console.info('[AudioManager] 出力専用AudioContextを作成しました');

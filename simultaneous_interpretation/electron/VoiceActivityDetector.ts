@@ -169,7 +169,7 @@ export class VoiceActivityDetector {
         this.adaptiveThreshold = mean + stdDev * 3;
         this.isCalibrating = false;
 
-        console.log(
+        console.info(
             `[VAD] Calibration complete - Noise: ${this.noiseFloor.toFixed(4)}, Threshold: ${this.adaptiveThreshold.toFixed(4)}`
         );
     }

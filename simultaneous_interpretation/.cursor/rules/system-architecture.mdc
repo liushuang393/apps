@@ -1,0 +1,257 @@
+---
+alwaysApply: true
+---
+# 同時通訳システム アーキテクチャルール
+
+## システム概要
+
+本システムは **リアルタイム音声翻訳システム** で、以下の機能を提供：
+
+### 主要機能
+1. **音声入力監視**
+   - マイク音声の監視と翻訳
+   - 個人使用向け
+   
+2. **システム音声監視**
+   - ブラウザ音声の監視
+   - Teams/Zoom 会議音声の監視
+   - 翻訳結果をテキスト+音声で出力
+
+## 実行モード
+
+### 1. ローカルスタンドアロン実行（HTML + JavaScript）
+- **ファイル**: [teams-realtime-translator.html](mdc:teams-realtime-translator.html)
+- **スクリプト**: [voicetranslate-pro.js](mdc:voicetranslate-pro.js)
+- **用途**: ブラウザで直接開いて使用
+- **環境**: ブラウザのみ（Chrome/Edge推奨）
+
+### 2. Electron デスクトップアプリ実行
+- **メインプロセス**: [electron/main.ts](mdc:electron/main.ts)
+- **プリロード**: [electron/preload.ts](mdc:electron/preload.ts)
+- **レンダラー**: [teams-realtime-translator.html](mdc:teams-realtime-translator.html)
+- **起動**: `npm run electron:dev` または `npm run dev`
+- **用途**: デスクトップアプリとして実行、システム音声キャプチャが可能
+
+### 3. ブラウザ拡張機能実行
+- **マニフェスト**: [manifest.json](mdc:manifest.json)
+- **バックグラウンド**: [browser-extension/src/background.ts](mdc:browser-extension/src/background.ts)
+- **ポップアップ**: [browser-extension/src/popup.ts](mdc:browser-extension/src/popup.ts)
+- **用途**: Chrome 拡張機能として実行
+
+## アーキテクチャ
+
+### 3層構造
+
+```
+┌─────────────────────────────────────────┐
+│   Electron Main Process (Node.js)       │
+│   - システムリソースアクセス              │
+│   - 音声キャプチャ (desktopCapturer)    │
+│   - 環境変数管理                         │
+└─────────────────────────────────────────┘
+              ↕ IPC通信
+┌─────────────────────────────────────────┐
+│   Renderer Process (Browser)             │
+│   - UI管理 (HTML/CSS/JS)                 │
+│   - 音声処理 (Web Audio API)             │
+│   - VAD (音声活性検出)                   │
+└─────────────────────────────────────────┘
+              ↕ WebSocket (WSS)
+┌─────────────────────────────────────────┐
+│   OpenAI Realtime API                    │
+│   - 音声認識 (Whisper)                   │
+│   - 翻訳 (GPT-4o)                        │
+│   - 音声合成 (TTS)                       │
+└─────────────────────────────────────────┘
+```
+
+### コアモジュール
+
+#### 1. VoiceTranslateCore ([src/core/VoiceTranslateCore.ts](mdc:src/core/VoiceTranslateCore.ts))
+- **責務**: アプリケーション全体の統括
+- **依存**: AudioManager, WebSocketManager, UIManager, ResponseQueue
+- **状態管理**: AppState（接続状態、録音状態、言語設定等）
+
+#### 2. AudioManager ([src/core/AudioManager.ts](mdc:src/core/AudioManager.ts))
+- **責務**: 音声入力・出力管理
+- **機能**:
+  - マイク音声キャプチャ
+  - システム音声キャプチャ（Electron環境）
+  - ブラウザ音声キャプチャ（displayMedia API）
+  - AudioContext管理
+  - 音声再生キュー管理
+- **VAD統合**: VoiceActivityDetector と連携
+
+#### 3. WebSocketManager ([src/core/WebSocketManager.ts](mdc:src/core/WebSocketManager.ts))
+- **責務**: OpenAI Realtime API との WebSocket 接続管理
+- **機能**:
+  - WebSocket 接続/切断
+  - セッション作成/更新
+  - 認証処理（Electron: Authorization Header, Browser: sec-websocket-protocol）
+  - メッセージ送受信
+  - エラーハンドリング
+
+#### 4. UIManager ([src/core/UIManager.ts](mdc:src/core/UIManager.ts))
+- **責務**: UI更新とユーザーインタラクション
+- **機能**: ステータス表示、トランスクリプト表示、通知
+
+#### 5. ResponseQueue ([src/core/ResponseQueue.ts](mdc:src/core/ResponseQueue.ts))
+- **責務**: 翻訳レスポンスのキュー管理
+- **パターン**: Promise ベースの非同期処理
+
+### 音声処理パイプライン
+
+[src/audio/AudioPipeline.ts](mdc:src/audio/AudioPipeline.ts) を中心とした責任の連鎖パターン：
+
+```
+AudioInput → VADProcessor → ResamplerProcessor → EncoderProcessor → WebSocket
+```
+
+#### 主要プロセッサー
+1. **VADProcessor** ([src/audio/VADProcessor.ts](mdc:src/audio/VADProcessor.ts))
+   - 音声活性検出
+   - ノイズフィルタリング
+   
+2. **ResamplerProcessor** ([src/audio/ResamplerProcessor.ts](mdc:src/audio/ResamplerProcessor.ts))
+   - サンプリングレート変換（24kHz）
+   
+3. **EncoderProcessor** ([src/audio/EncoderProcessor.ts](mdc:src/audio/EncoderProcessor.ts))
+   - PCM16エンコード
+   - Base64変換
+
+### Electron 専用モジュール
+
+#### 1. audioCapture.ts ([electron/audioCapture.ts](mdc:electron/audioCapture.ts))
+- **責務**: システム音声ソースの列挙とキャプチャ
+- **API**: desktopCapturer
+- **検出対象**: Teams, Zoom, Google Meet, Chrome, Edge等
+
+#### 2. VoiceActivityDetector.ts ([electron/VoiceActivityDetector.ts](mdc:electron/VoiceActivityDetector.ts))
+- **責務**: 音声エネルギー分析
+- **機能**: キャリブレーション、適応的閾値、デバウンス処理
+
+#### 3. realtimeWebSocket.ts ([electron/realtimeWebSocket.ts](mdc:electron/realtimeWebSocket.ts))
+- **責務**: Electron環境での WebSocket 管理
+- **特徴**: Authorization Header による認証
+
+## 非同期処理パターン
+
+### Promise ベース
+- **AudioManager**: すべての音声操作は async/await
+- **WebSocketManager**: 接続・切断は Promise 返却
+- **ResponseQueue**: enqueue() が Promise<string> を返す
+
+### イベント駆動
+- **WebSocket イベント**:
+  - `session.updated`
+  - `conversation.item.created`
+  - `response.audio_transcript.delta`
+  - `response.audio.delta`
+  - `response.done`
+
+### タイマー管理
+- **VoiceTranslateCore.timers**: セッション時間計測
+- **ResponseQueue**: タイムアウト管理
+- **VAD**: デバウンスタイマー
+
+## 依存関係
+
+### モジュール依存グラフ
+
+```
+src/config/AppConfig.ts
+    ↓
+src/core/Config.ts
+    ↓
+src/core/VoiceTranslateCore.ts
+    ├─→ AudioManager
+    ├─→ WebSocketManager
+    ├─→ UIManager
+    └─→ ResponseQueue
+```
+
+### 外部依存
+- **OpenAI Realtime API**: WebSocket (wss://api.openai.com/v1/realtime)
+- **Web Audio API**: AudioContext, MediaRecorder, AudioWorklet
+- **Electron API**: desktopCapturer, ipcMain, ipcRenderer
+- **Browser API**: MediaDevices, getDisplayMedia
+
+## 設定管理
+
+### 環境変数 (.env)
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_REALTIME_MODEL=gpt-realtime-2025-08-28
+OPENAI_TRANSLATION_MODEL=gpt-5-2025-08-07
+OPENAI_VOICE_TO_VOICE_MODEL=gpt-realtime-2025-08-28
+```
+
+### 設定フロー
+```
+.env → electron/main.ts (loadEnvironmentVariables)
+    ↓ IPC: get-env-config
+src/config/AppConfig.ts → src/core/Config.ts
+    ↓
+各モジュールで CONFIG を参照
+```
+
+## テスト構造
+
+### Jest 設定 ([jest.config.js](mdc:jest.config.js))
+- **環境**: jsdom
+- **カバレッジ**: 50% 以上
+- **対象**: src/**/*.ts
+
+### テストファイル
+- **場所**: tests/core/*.test.ts
+- **コアモジュールテスト**:
+  - AudioManager.test.ts
+  - WebSocketManager.test.ts
+  - VAD.test.ts
+  - Config.test.ts
+  - ResponseQueue.test.ts
+
+## ビルド構成
+
+### TypeScript 設定
+- **tsconfig.json**: コアモジュール (src → dist)
+- **tsconfig.electron.json**: Electron (electron → dist/electron)
+- **browser-extension/tsconfig.json**: 拡張機能
+
+### ビルドコマンド
+```bash
+npm run build:core       # src → dist
+npm run build:electron   # electron → dist/electron
+npm run build:extension  # browser-extension → browser-extension/dist
+npm run build:all        # すべてビルド
+```
+
+## セキュリティ
+
+### API キー管理
+- **暗号化**: AES-256-GCM（計画中）
+- **保存**: 環境変数（.env）
+- **通信**: TLS/WSS のみ
+
+### データ保護
+- 音声データ: メモリ内のみ、ディスク保存なし
+- ログ: 個人情報除外
+
+## パフォーマンス
+
+### 音声処理
+- **バッファサイズ**: 4800-8000 samples (200-333ms @ 24kHz)
+- **VAD デバウンス**: 250-500ms
+- **送信頻度**: 100ms ごと (10回/秒)
+
+### メモリ管理
+- 音声バッファ: 循環バッファ
+- トランスクリプト: 最大100件
+- WebSocket: 自動再接続
+
+## 参考ドキュメント
+
+- **アーキテクチャ**: [docs/ARCHITECTURE.md](mdc:docs/ARCHITECTURE.md)
+- **詳細設計**: [design/DETAILED_DESIGN.md](mdc:design/DETAILED_DESIGN.md)
+- **プロジェクト計画**: [design/PROJECT_PLAN.md](mdc:design/PROJECT_PLAN.md)
+- **セットアップガイド**: [docs/SETUP_GUIDE.md](mdc:docs/SETUP_GUIDE.md)

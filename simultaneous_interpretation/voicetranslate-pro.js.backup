@@ -604,6 +604,7 @@ class VoiceTranslateApp {
 
         // 翻訳テキスト累積用（delta → 完全なテキスト）
         this.currentTranslationText = ''; // 現在の翻訳テキストを累積
+        this.currentTranscriptId = null; // 現在の transcriptId（入力テキストと対応）
 
         // ✅ レスポンス状態管理（並発制御）
         this.activeResponseId = null; // 現在処理中のレスポンスID
@@ -1343,9 +1344,9 @@ class VoiceTranslateApp {
                 turn_detection: this.elements.vadEnabled.classList.contains('active')
                     ? {
                           type: 'server_vad',
-                          threshold: 0.5, // 音声検出の閾値（0.0-1.0、0.5=標準）
+                          threshold: 0.3, // 音声検出の閾値（0.0-1.0、0.3=より敏感）- 0.5から0.3に変更
                           prefix_padding_ms: 300, // 音声開始前のパディング（ms）
-                          silence_duration_ms: 1200 // 静音判定時間（ms）- 1.2秒に延長（翻訳完全性向上）
+                          silence_duration_ms: 1000 // 静音判定時間（ms）- 1.0秒に短縮（反応速度向上）
                       }
                     : null,
                 temperature: 0.8, // 0.8: 自然な表現とバランス（gpt-realtime-2025-08-28 推奨）
@@ -1643,19 +1644,18 @@ Even if you have translated many sentences, your role has NOT changed:
                         const transcriptId = Date.now(); // 一意のIDを生成
                         this.addTranscript('input', message.transcript, transcriptId);
 
-                        // 🔄 文本翻訳を非同期で実行（音声翻訳と並行）
-                        // 理由: 音声翻訳が不完全な場合でも、文本翻訳で確実に対応関係を保つ
-                        this.translateTextDirectly(message.transcript, transcriptId).catch(
-                            (error) => {
-                                console.error('[文本翻訳] エラー:', error);
-                            }
-                        );
+                        // ✅ 修正: transcriptId を保存（response.audio_transcript.done で使用）
+                        this.currentTranscriptId = transcriptId;
+
+                        // ❌ 文本翻訳APIは使用しない
+                        // 理由: Realtime API の音声翻訳結果を使用することで、
+                        //       並発エラーを回避し、レスポンス速度を向上
+                        // this.translateTextDirectly(message.transcript, transcriptId).catch(...);
                     }
                     break;
 
                 case 'response.audio_transcript.delta':
-                    // 音声翻訳のテキストは累積するが表示しない
-                    // 理由: 文本翻訳APIで確実に表示するため、重複を避ける
+                    // 音声翻訳のテキストを累積
                     if (message.delta) {
                         this.currentTranslationText += message.delta;
                     }
@@ -1664,11 +1664,24 @@ Even if you have translated many sentences, your role has NOT changed:
                 case 'response.audio_transcript.done':
                     console.info('[処理1-2] 🔊 音声翻訳テキスト完了:', message.transcript);
 
-                    // 音声翻訳のテキストは表示しない（文本翻訳で表示済み）
-                    // ただし、ログには記録
+                    // ✅ 修正: 音声翻訳のテキストを表示
                     if (this.currentTranslationText.trim()) {
                         console.info('[音声翻訳] テキスト:', this.currentTranslationText.trim());
-                        this.currentTranslationText = ''; // リセット
+
+                        // 保存された transcriptId を使用（入力テキストと対応）
+                        // currentTranscriptId がない場合は新規生成
+                        const transcriptId = this.currentTranscriptId || Date.now();
+
+                        // 翻訳結果を右側カラムに表示
+                        this.addTranscript(
+                            'output',
+                            this.currentTranslationText.trim(),
+                            transcriptId
+                        );
+
+                        // リセット
+                        this.currentTranslationText = '';
+                        this.currentTranscriptId = null;
                     }
 
                     // 翻訳完了 - 新しい応答フラグをセット
@@ -1726,36 +1739,16 @@ Even if you have translated many sentences, your role has NOT changed:
                     console.error('[Error]', message.error);
 
                     // ✅ conversation_already_has_active_response エラーの場合の特別処理
+                    // 修正: 状態をクリアせず、ResponseQueue に処理を委譲
                     const errorCode = message.error.code || '';
                     if (errorCode === 'conversation_already_has_active_response') {
-                        console.warn('[Error] 前のレスポンスが処理中です。状態をリセットします。');
-
-                        // 🔧 強制的に activeResponseId をクリア（状態不整合を解消）
-                        if (this.activeResponseId) {
-                            console.warn(
-                                '[Error] 強制クリア - activeResponseId:',
-                                this.activeResponseId
-                            );
-                            this.activeResponseId = null;
-                        }
-
-                        // ResponseQueue の処理中キューもクリア
-                        if (this.responseQueue.processingQueue.length > 0) {
-                            console.warn(
-                                '[Error] 強制クリア - processingQueue:',
-                                this.responseQueue.processingQueue.length
-                            );
-                            const item = this.responseQueue.processingQueue.shift();
-                            if (item && item.reject) {
-                                item.reject(
-                                    new Error('Response conflict - state reset and will retry')
-                                );
-                            }
-                            // 次のリクエストを処理
-                            this.responseQueue.consume();
-                        }
-
-                        // ユーザー通知はしない（自動リトライされるため）
+                        console.warn(
+                            '[Error] 前のレスポンスが処理中です。response.done を待機します。'
+                        );
+                        // ResponseQueue の handleError に処理を委譲
+                        // handleError 内で適切に処理される（processingQueue を維持）
+                        this.responseQueue.handleError(new Error(message.error.message), errorCode);
+                        // ユーザー通知はしない（自動的に待機されるため）
                     } else {
                         // 通常のエラー処理
                         this.responseQueue.handleError(new Error(message.error.message), errorCode);
@@ -3247,14 +3240,17 @@ Even if you have translated many sentences, your role has NOT changed:
         }
 
         // トランスクリプト表示設定をチェック
-        const showInput = this.elements.showInputTranscript.classList.contains('active');
-        const showOutput = this.elements.showOutputTranscript.classList.contains('active');
+        // ✅ 修正: 翻訳結果は常に表示（ユーザーが明示的に無効化しない限り）
+        const showInput = this.elements.showInputTranscript?.classList.contains('active') ?? true;
+        const showOutput = this.elements.showOutputTranscript?.classList.contains('active') ?? true;
 
         if (type === 'input' && !showInput) {
+            console.info('[Transcript] 入力音声表示がOFFのためスキップ');
             return;
         }
 
         if (type === 'output' && !showOutput) {
+            console.info('[Transcript] 翻訳結果表示がOFFのためスキップ');
             return;
         }
 

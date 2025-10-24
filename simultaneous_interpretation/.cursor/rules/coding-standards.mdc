@@ -1,0 +1,423 @@
+---
+alwaysApply: true
+---
+# コーディング規範（必須）
+
+## A. 基本ルール
+
+### 1. コメント記述規則
+すべての関数・クラスに以下の形式で日本語コメントを記載：
+
+```typescript
+/**
+ * 関数/クラスの目的
+ *
+ * @description
+ * 詳細な説明（必要に応じて）
+ *
+ * @param paramName - パラメータの説明
+ * @returns 戻り値の説明
+ *
+ * @throws ErrorType - エラー条件の説明
+ *
+ * @example
+ * ```typescript
+ * // 使用例
+ * ```
+ *
+ * @author VoiceTranslate Pro Team
+ * @version バージョン番号
+ */
+```
+
+### 2. 文字コード規則
+- **ソースコードファイル**: UTF-8（BOMなし）
+- **README・ドキュメント**: UTF-8（BOM付き可）
+
+### 3. 品質基準
+- **デモレベル禁止**: 成果物は実行可能で専門的な品質必須
+- **不明点の明示**: 推測禁止、不明な場合は「不明」と明示
+- **実行手順必須**: すべての成果物に実行手順を含める
+
+## B. TypeScript 規則
+
+### 1. 型安全性
+```typescript
+// ❌ 禁止
+let data: any;
+function process(input: any): any { }
+// @ts-ignore を使用しない
+
+// ✅ 推奨
+interface AudioData {
+    samples: Float32Array;
+    sampleRate: number;
+}
+function process(input: AudioData): Promise<AudioData> { }
+```
+
+### 2. null/undefined チェック
+```typescript
+// ❌ 禁止
+if (value) { }
+
+// ✅ 推奨
+if (value !== null && value !== undefined) { }
+// または
+if (value != null) { }  // nullとundefinedの両方をチェック
+```
+
+### 3. 型エクスポート
+```typescript
+// ✅ 型とインターフェースは type キーワードでエクスポート
+export type { AudioData, LanguageInfo } from './interfaces/ICoreTypes';
+export type { IAudioPipeline, IVADProcessor } from './interfaces/IAudioPipeline';
+```
+
+## C. 静的解析
+
+### 1. ESLint
+- **エラー 0 必須**
+- **警告を無視しない**
+- 実行: `npm run lint`
+
+### 2. TypeScript コンパイラ
+- **tsc エラー 0 必須**
+- `tsconfig.json` の strict モード有効
+- 実行: `npm run type-check`
+
+### 3. 品質チェック
+```bash
+# すべての品質チェックを実行
+npm run quality
+# = type-check + lint + format:check
+```
+
+## D. 禁止事項
+
+### 1. デバッグコード
+```typescript
+// ❌ 禁止
+console.log('debug info');
+System.out.println('debug');
+alert('test');
+
+// ✅ 推奨（必要な場合）
+import { Logger } from './utils/Logger';
+Logger.debug('Processed audio data', { sampleRate, channels });
+```
+
+### 2. ハードコード
+```typescript
+// ❌ 禁止
+const apiKey = 'sk-1234567890';
+const url = 'https://api.openai.com/v1/realtime';
+
+// ✅ 推奨
+import { CONFIG } from './core/Config';
+const apiKey = CONFIG.API.KEY;
+const url = CONFIG.API.REALTIME_URL;
+```
+
+### 3. マジックナンバー
+```typescript
+// ❌ 禁止
+if (energy > 0.01) { }
+setTimeout(callback, 300);
+
+// ✅ 推奨
+const VAD_ENERGY_THRESHOLD = 0.01;
+const VAD_DEBOUNCE_MS = 300;
+
+if (energy > VAD_ENERGY_THRESHOLD) { }
+setTimeout(callback, VAD_DEBOUNCE_MS);
+```
+
+## E. 非同期処理
+
+### 1. Promise 使用
+```typescript
+// ✅ async/await を使用
+async function startRecording(): Promise<void> {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        await this.audioManager.startMicrophoneCapture(stream);
+    } catch (error) {
+        throw new Error(`Failed to start recording: ${error}`);
+    }
+}
+
+// ❌ then/catch チェーンは避ける
+function startRecording(): Promise<void> {
+    return navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => this.audioManager.startMicrophoneCapture(stream))
+        .catch(error => { throw new Error(`Failed: ${error}`); });
+}
+```
+
+### 2. Promise アンチパターン回避
+```typescript
+// ❌ Promise constructor antipattern
+async playAudio(base64Audio: string): Promise<void> {
+    return new Promise(async (resolve, reject) => {  // ❌ async in Promise constructor
+        // ...
+    });
+}
+
+// ✅ 正しい実装
+async playAudio(base64Audio: string): Promise<void> {
+    try {
+        // 直接 async 処理を実行
+        const audioData = await this.decodeAudio(base64Audio);
+        await this.play(audioData);
+    } catch (error) {
+        throw new Error(`Playback failed: ${error}`);
+    }
+}
+```
+
+## F. エラーハンドリング
+
+### 1. カスタムエラークラス
+```typescript
+// ✅ 専用エラークラスを定義
+export class AudioCaptureError extends Error {
+    constructor(message: string, public readonly cause?: Error) {
+        super(message);
+        this.name = 'AudioCaptureError';
+    }
+}
+
+// 使用例
+if (!stream.getAudioTracks().length) {
+    throw new AudioCaptureError('No audio tracks found in stream');
+}
+```
+
+### 2. エラーメッセージ
+```typescript
+// ❌ 不十分
+throw new Error('Error occurred');
+
+// ✅ 詳細な説明
+throw new AudioCaptureError(
+    `Failed to capture audio from source ${sourceId}: ${error.message}`,
+    error
+);
+```
+
+## G. メモリ管理
+
+### 1. リソース解放
+```typescript
+async dispose(): Promise<void> {
+    // AudioContext を停止
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+        await this.audioContext.close();
+    }
+    
+    // MediaStream を停止
+    if (this.mediaStream) {
+        this.mediaStream.getTracks().forEach(track => track.stop());
+        this.mediaStream = null;
+    }
+    
+    // イベントリスナー削除
+    this.removeAllListeners();
+}
+```
+
+### 2. 循環参照回避
+```typescript
+// ✅ WeakMap を使用
+private audioContexts = new WeakMap<Element, AudioContext>();
+
+// ✅ null 代入でクリア
+this.audioManager = null;
+this.wsManager = null;
+```
+
+## H. テスト
+
+### 1. テストカバレッジ
+- **目標**: 各モジュール 80% 以上
+- **最低**: 50% 以上（jest.config.js）
+
+### 2. テストファイル命名
+```
+tests/
+  core/
+    AudioManager.test.ts
+    WebSocketManager.test.ts
+    VAD.test.ts
+```
+
+### 3. テスト構造
+```typescript
+describe('AudioManager', () => {
+    describe('startMicrophoneCapture', () => {
+        it('should start capturing from microphone', async () => {
+            // Arrange
+            const constraints = { echoCancellation: true };
+            
+            // Act
+            await audioManager.startMicrophoneCapture(constraints);
+            
+            // Assert
+            expect(audioManager.isRecording()).toBe(true);
+        });
+        
+        it('should throw error if no microphone access', async () => {
+            // Arrange
+            jest.spyOn(navigator.mediaDevices, 'getUserMedia')
+                .mockRejectedValue(new Error('Permission denied'));
+            
+            // Act & Assert
+            await expect(audioManager.startMicrophoneCapture({}))
+                .rejects.toThrow('Permission denied');
+        });
+    });
+});
+```
+
+## I. パフォーマンス
+
+### 1. 音声処理最適化
+```typescript
+// ✅ 循環バッファ使用
+private audioBuffer: Float32Array;
+private bufferIndex: number = 0;
+
+appendAudio(data: Float32Array): void {
+    for (let i = 0; i < data.length; i++) {
+        this.audioBuffer[this.bufferIndex] = data[i]!;
+        this.bufferIndex = (this.bufferIndex + 1) % this.audioBuffer.length;
+    }
+}
+```
+
+### 2. イベントリスナーの最適化
+```typescript
+// ❌ 毎回新しい関数を作成
+element.addEventListener('click', () => this.handleClick());
+
+// ✅ バインド済みの関数を使用
+this.boundHandleClick = this.handleClick.bind(this);
+element.addEventListener('click', this.boundHandleClick);
+```
+
+## J. ドキュメント
+
+### 1. README.md 必須項目
+- プロジェクト概要
+- システム要件
+- インストール手順
+- 実行方法
+- 設定方法
+- トラブルシューティング
+
+### 2. コード内ドキュメント
+```typescript
+/**
+ * 音声活性検出器
+ *
+ * 目的:
+ *   音声エネルギーを分析して、音声活動を検出する
+ *
+ * 注意:
+ *   - キャリブレーション期間（最初の30サンプル）は常に false を返す
+ *   - 適応的閾値を使用してノイズフロアに対応
+ *
+ * @example
+ * ```typescript
+ * const vad = new VoiceActivityDetector({
+ *     threshold: 0.01,
+ *     debounceTime: 300,
+ *     onSpeechStart: () => console.log('Speech started'),
+ *     onSpeechEnd: () => console.log('Speech ended')
+ * });
+ * 
+ * const result = vad.analyze(audioData);
+ * if (result.isSpeaking) {
+ *     // 音声処理
+ * }
+ * ```
+ */
+export class VoiceActivityDetector {
+    // ...
+}
+```
+
+## K. 拒否テンプレート
+
+品質規則を満たさない要求に対する標準応答：
+
+```
+品質規則を満たさないため、実装を中止します。
+
+以下の情報を提示してください：
+1. 実行環境（OS、ブラウザ、Node.js バージョン）
+2. 適用するルール・規範
+3. 依存パッケージのバージョン
+4. 実行手順（ステップバイステップ）
+
+これらの情報を提供いただければ、品質規則に準拠した実装を行います。
+```
+
+## L. ファイル構造
+
+### プロジェクト構造
+参照: [.cursor/rules/system-architecture.mdc](mdc:.cursor/rules/system-architecture.mdc)
+
+### モジュール依存
+```
+src/
+  config/
+    AppConfig.ts       # 設定管理
+  core/
+    VoiceTranslateCore.ts  # アプリケーション統括
+    AudioManager.ts        # 音声入出力管理
+    WebSocketManager.ts    # WebSocket接続管理
+    UIManager.ts           # UI管理
+    ResponseQueue.ts       # レスポンスキュー
+  audio/
+    AudioPipeline.ts       # 音声処理パイプライン
+    VADProcessor.ts        # VAD処理
+    ResamplerProcessor.ts  # リサンプリング
+    EncoderProcessor.ts    # エンコード
+  interfaces/
+    *.ts                   # TypeScript インターフェース定義
+  utils/
+    *.ts                   # ユーティリティ関数
+```
+
+## M. Git コミットメッセージ
+
+### 形式
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+### Type
+- `feat`: 新機能
+- `fix`: バグ修正
+- `docs`: ドキュメント
+- `style`: フォーマット
+- `refactor`: リファクタリング
+- `test`: テスト追加
+- `chore`: ビルド・ツール
+
+### 例
+```
+feat(audio): VAD adaptive threshold implementation
+
+- Add noise floor calibration
+- Implement adaptive threshold adjustment
+- Add debounce timer for speech detection
+
+Closes #123
+```

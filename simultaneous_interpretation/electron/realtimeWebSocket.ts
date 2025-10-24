@@ -36,12 +36,12 @@ let activeWebSocket: WebSocket | null = null;
  *   IPCハンドラーを登録してrenderer processからの要求を処理
  */
 export function initializeRealtimeWebSocket(): void {
-    console.log('[Realtime WS] Initializing WebSocket handlers');
+    console.info('[Realtime WS] Initializing WebSocket handlers');
 
     // WebSocket接続を確立
     ipcMain.handle('realtime-ws-connect', async (event, config: WebSocketConfig) => {
         try {
-            console.log('[Realtime WS] 接続要求を受信:', {
+            console.info('[Realtime WS] 接続要求を受信:', {
                 url: config.url,
                 model: config.model,
                 apiKey: config.apiKey ? `${config.apiKey.substring(0, 7)}...` : 'なし'
@@ -49,14 +49,14 @@ export function initializeRealtimeWebSocket(): void {
 
             // 既存の接続をクリーンアップ
             if (activeWebSocket) {
-                console.log('[Realtime WS] 既存の接続をクローズ');
+                console.info('[Realtime WS] 既存の接続をクローズ');
                 activeWebSocket.close();
                 activeWebSocket = null;
             }
 
             // WebSocket URL構築
             const wsUrl = `${config.url}?model=${config.model}`;
-            console.log('[Realtime WS] 接続URL:', wsUrl);
+            console.info('[Realtime WS] 接続URL:', wsUrl);
 
             // Authorizationヘッダー付きでWebSocket作成
             activeWebSocket = new WebSocket(wsUrl, {
@@ -104,7 +104,7 @@ export function initializeRealtimeWebSocket(): void {
             if (activeWebSocket) {
                 activeWebSocket.close();
                 activeWebSocket = null;
-                console.log('[Realtime WS] 接続をクローズしました');
+                console.info('[Realtime WS] 接続をクローズしました');
             }
             return { success: true };
         } catch (error) {
@@ -150,7 +150,7 @@ function setupWebSocketHandlers(ws: WebSocket, window: BrowserWindow | null): vo
 
     // 接続成功
     ws.on('open', () => {
-        console.log('[Realtime WS] WebSocket接続成功');
+        console.info('[Realtime WS] WebSocket接続成功');
         window.webContents.send('realtime-ws-open');
     });
 
@@ -176,7 +176,7 @@ function setupWebSocketHandlers(ws: WebSocket, window: BrowserWindow | null): vo
 
     // 接続クローズ
     ws.on('close', (code: number, reason: Buffer) => {
-        console.log('[Realtime WS] WebSocket接続終了:', {
+        console.info('[Realtime WS] WebSocket接続終了:', {
             code,
             reason: reason.toString()
         });
@@ -196,7 +196,7 @@ function setupWebSocketHandlers(ws: WebSocket, window: BrowserWindow | null): vo
  */
 export function cleanupRealtimeWebSocket(): void {
     if (activeWebSocket) {
-        console.log('[Realtime WS] クリーンアップ: 接続をクローズ');
+        console.info('[Realtime WS] クリーンアップ: 接続をクローズ');
         activeWebSocket.close();
         activeWebSocket = null;
     }

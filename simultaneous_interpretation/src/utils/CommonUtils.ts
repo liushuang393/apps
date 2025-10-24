@@ -66,17 +66,17 @@ export class CommonUtils {
     /**
      * デバウンス関数
      */
-    static debounce<T extends (...args: any[]) => any>(
+    static debounce<T extends (...args: unknown[]) => unknown>(
         func: T,
         wait: number
     ): (...args: Parameters<T>) => void {
-        let timeout: NodeJS.Timeout | number | null = null;
+        let timeout: ReturnType<typeof setTimeout> | null = null;
 
-        return function (this: any, ...args: Parameters<T>) {
+        return function (this: ThisParameterType<T>, ...args: Parameters<T>) {
             const context = this;
 
             if (timeout !== null) {
-                clearTimeout(timeout as number);
+                clearTimeout(timeout);
             }
 
             timeout = setTimeout(() => {
@@ -88,13 +88,13 @@ export class CommonUtils {
     /**
      * スロットル関数
      */
-    static throttle<T extends (...args: any[]) => any>(
+    static throttle<T extends (...args: unknown[]) => unknown>(
         func: T,
         limit: number
     ): (...args: Parameters<T>) => void {
         let inThrottle = false;
 
-        return function (this: any, ...args: Parameters<T>) {
+        return function (this: ThisParameterType<T>, ...args: Parameters<T>) {
             const context = this;
 
             if (!inThrottle) {

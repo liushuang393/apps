@@ -119,7 +119,7 @@ export class AudioPipeline {
 
         // 最後のプロセッサーは次がない
         if (this.processors.length > 0) {
-            this.processors[this.processors.length - 1]!.setNext(null as any);
+            this.processors[this.processors.length - 1]!.setNext(null);
         }
     }
 }

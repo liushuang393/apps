@@ -1,0 +1,445 @@
+---
+description: OpenAI Realtime API との WebSocket 通信に関するルール
+globs: src/core/WebSocketManager.ts,electron/realtimeWebSocket.ts,src/adapters/**
+---
+# WebSocket & OpenAI Realtime API ルール
+
+## OpenAI Realtime API 概要
+
+### エンドポイント
+```
+wss://api.openai.com/v1/realtime?model=<model-name>
+```
+
+### 使用モデル
+```env
+OPENAI_REALTIME_MODEL=gpt-realtime-2025-08-28
+OPENAI_VOICE_TO_VOICE_MODEL=gpt-realtime-2025-08-28
+OPENAI_TRANSLATION_MODEL=gpt-5-2025-08-07
+```
+
+**注意**: `OPENAI_TRANSLATION_MODEL` は Chat Completions API 用で、Realtime API とは別。
+
+## 認証方式
+
+### Electron 環境 (推奨)
+```typescript
+// Authorization Header を使用
+const headers = {
+    'Authorization': `Bearer ${apiKey}`,
+    'OpenAI-Beta': 'realtime=v1'
+};
+
+// Electron IPC 経由で接続
+await window.electronAPI.connectRealtimeWebSocket(apiKey, model);
+```
+
+### ブラウザ環境
+```typescript
+// sec-websocket-protocol を使用（Header設定不可のため）
+const protocols = [
+    'realtime',
+    `openai-beta.realtime-v1`,
+    `openai-insecure-api-key.${apiKey}`
+];
+
+const ws = new WebSocket(url, protocols);
+```
+
+**セキュリティ注意**: ブラウザ環境では API キーが露出するため、Electron 環境推奨。
+
+## WebSocketManager ([src/core/WebSocketManager.ts](mdc:src/core/WebSocketManager.ts))
+
+### 接続フロー
+
+```typescript
+async connect(apiKey: string): Promise<void> {
+    // 1. 環境判定
+    if (this.isElectronEnvironment()) {
+        await this.connectElectron();
+    } else {
+        await this.connectBrowser();
+    }
+    
+    // 2. イベントハンドラー設定
+    this.setupEventHandlers();
+    
+    // 3. 接続タイムアウト設定
+    this.connectionTimeout = window.setTimeout(() => {
+        if (!this.isConnected) {
+            throw new Error('Connection timeout');
+        }
+    }, 10000);
+}
+```
+
+### セッション設定
+
+```typescript
+async updateSession(config: SessionConfig): Promise<void> {
+    const message = {
+        type: 'session.update',
+        session: {
+            modalities: ['text', 'audio'],
+            instructions: config.instructions,
+            voice: config.voiceType,
+            input_audio_format: 'pcm16',
+            output_audio_format: 'pcm16',
+            input_audio_transcription: {
+                model: 'whisper-1'
+            },
+            turn_detection: config.vadEnabled ? {
+                type: 'server_vad',
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 500
+            } : null
+        }
+    };
+    
+    this.send(message);
+}
+```
+
+## イベント処理
+
+### イベントタイプ
+
+#### 1. セッション関連
+- `session.created`: セッション作成完了
+- `session.updated`: セッション更新完了
+
+#### 2. 会話関連
+- `conversation.item.created`: アイテム追加
+- `conversation.item.input_audio_transcription.completed`: 入力音声文字起こし完了
+
+#### 3. レスポンス関連（音声翻訳）
+- `response.created`: レスポンス開始
+- `response.output_item.added`: 出力アイテム追加
+- `response.audio_transcript.delta`: 翻訳テキストの差分（ストリーミング）
+- `response.audio_transcript.done`: 翻訳テキスト完了
+- `response.audio.delta`: 音声データの差分（ストリーミング）
+- `response.audio.done`: 音声データ完了
+- `response.done`: レスポンス完了
+
+#### 4. エラー関連
+- `error`: エラー発生
+
+### イベントハンドラー実装
+
+```typescript
+interface WebSocketMessageHandlers {
+    onSessionUpdated?: (session: unknown) => void;
+    onInputTranscription?: (transcript: string) => void;
+    onAudioTranscriptDelta?: (delta: string) => void;
+    onAudioTranscriptDone?: (transcript: string) => void;
+    onAudioDelta?: (delta: string) => void;
+    onAudioDone?: () => void;
+    onError?: (error: Error, code?: string) => void;
+}
+
+// 使用例
+wsManager.setMessageHandlers({
+    onInputTranscription: (transcript) => {
+        // 入力音声の文字起こし結果を表示
+        this.uiManager.appendInputTranscript(transcript);
+    },
+    onAudioTranscriptDelta: (delta) => {
+        // 翻訳テキストをストリーミング表示
+        this.currentTranslationText += delta;
+        this.uiManager.updateOutputTranscript(this.currentTranslationText);
+    },
+    onAudioDelta: (delta) => {
+        // 音声データをキューに追加
+        this.audioManager.enqueueAudio(delta);
+    },
+    onAudioDone: () => {
+        // 翻訳音声再生開始
+        this.audioManager.processQueue();
+        this.currentTranslationText = '';
+    }
+});
+```
+
+## メッセージ送信
+
+### 音声データ送信
+
+```typescript
+sendAudioData(audioData: string): void {
+    const message = {
+        type: 'input_audio_buffer.append',
+        audio: audioData  // Base64エンコード済みPCM16
+    };
+    
+    this.send(message);
+}
+
+commitAudioBuffer(): void {
+    const message = {
+        type: 'input_audio_buffer.commit'
+    };
+    
+    this.send(message);
+}
+```
+
+### レスポンス生成トリガー
+
+```typescript
+createResponse(): void {
+    const message = {
+        type: 'response.create',
+        response: {
+            modalities: ['text', 'audio'],
+            instructions: this.sessionConfig.instructions
+        }
+    };
+    
+    this.send(message);
+}
+```
+
+## エラーハンドリング
+
+### エラータイプ
+
+```typescript
+interface RealtimeAPIError {
+    type: 'error';
+    error: {
+        type: string;     // 'invalid_request_error', 'server_error', etc.
+        code: string;     // 'invalid_api_key', 'rate_limit_exceeded', etc.
+        message: string;
+        param?: string;
+    };
+}
+```
+
+### エラー処理
+
+```typescript
+private handleError(error: RealtimeAPIError): void {
+    const { type, code, message } = error.error;
+    
+    if (code === 'invalid_api_key') {
+        throw new Error('API キーが無効です');
+    } else if (code === 'rate_limit_exceeded') {
+        // レート制限: 再接続遅延
+        setTimeout(() => this.reconnect(), 5000);
+    } else if (type === 'server_error') {
+        // サーバーエラー: 再接続試行
+        this.reconnect();
+    } else {
+        throw new Error(`Realtime API エラー [${code}]: ${message}`);
+    }
+}
+```
+
+## 再接続戦略
+
+### エクスポネンシャルバックオフ
+
+```typescript
+private reconnectAttempts = 0;
+private readonly maxReconnectAttempts = 5;
+
+private async reconnect(): Promise<void> {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        throw new Error('最大再接続試行回数を超えました');
+    }
+    
+    this.reconnectAttempts++;
+    
+    // 2^n * 1000ms (最大30秒)
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    
+    console.info(`[WebSocketManager] ${delay}ms後に再接続を試行します (${this.reconnectAttempts}回目)`);
+    
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    try {
+        await this.connect(this.apiKey);
+        this.reconnectAttempts = 0;  // 成功したらリセット
+    } catch (error) {
+        console.error('[WebSocketManager] 再接続失敗:', error);
+        await this.reconnect();  // 再帰的に再試行
+    }
+}
+```
+
+## 音声データフォーマット
+
+### 入力音声 (送信)
+
+```typescript
+// PCM16, 24kHz, モノラル, Base64エンコード
+interface AudioInput {
+    format: 'pcm16';
+    sampleRate: 24000;
+    channels: 1;
+    encoding: 'base64';
+}
+
+// Float32Array → PCM16 → Base64
+function encodeAudio(float32Data: Float32Array): string {
+    const pcm16 = new Int16Array(float32Data.length);
+    
+    for (let i = 0; i < float32Data.length; i++) {
+        // Float32 [-1, 1] → Int16 [-32768, 32767]
+        const sample = Math.max(-1, Math.min(1, float32Data[i]!));
+        pcm16[i] = Math.floor(sample * 0x7FFF);
+    }
+    
+    return btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+}
+```
+
+### 出力音声 (受信)
+
+```typescript
+// Base64 → AudioBuffer
+async decodeAudio(base64Audio: string): Promise<AudioBuffer> {
+    const audioData = this.base64ToArrayBuffer(base64Audio);
+    return await this.audioContext.decodeAudioData(audioData);
+}
+
+private base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    return bytes.buffer;
+}
+```
+
+## パフォーマンス最適化
+
+### バッチ送信
+
+```typescript
+// ❌ 避ける: 1サンプルごとに送信
+audioData.forEach(sample => this.sendAudioData(sample));
+
+// ✅ 推奨: バッファリングして一括送信
+const BATCH_SIZE = 4800;  // 200ms @ 24kHz
+let buffer: Float32Array[] = [];
+
+function appendAudio(data: Float32Array): void {
+    buffer.push(data);
+    
+    const totalLength = buffer.reduce((sum, arr) => sum + arr.length, 0);
+    
+    if (totalLength >= BATCH_SIZE) {
+        const combined = new Float32Array(totalLength);
+        let offset = 0;
+        
+        buffer.forEach(arr => {
+            combined.set(arr, offset);
+            offset += arr.length;
+        });
+        
+        this.sendAudioData(encodeAudio(combined));
+        buffer = [];
+    }
+}
+```
+
+### 接続プール（将来実装）
+
+```typescript
+// 複数の WebSocket 接続を管理して負荷分散
+class WebSocketPool {
+    private connections: WebSocketManager[] = [];
+    private currentIndex = 0;
+    
+    async getConnection(): Promise<WebSocketManager> {
+        const connection = this.connections[this.currentIndex];
+        this.currentIndex = (this.currentIndex + 1) % this.connections.length;
+        return connection!;
+    }
+}
+```
+
+## テスト
+
+### WebSocketManager テスト例
+
+```typescript
+describe('WebSocketManager', () => {
+    let wsManager: WebSocketManager;
+    
+    beforeEach(() => {
+        wsManager = new WebSocketManager();
+    });
+    
+    afterEach(async () => {
+        await wsManager.disconnect();
+    });
+    
+    it('should connect successfully with valid API key', async () => {
+        const apiKey = process.env.OPENAI_API_KEY!;
+        
+        await expect(wsManager.connect(apiKey)).resolves.not.toThrow();
+        expect(wsManager.getConnectionStatus()).toBe('connected');
+    });
+    
+    it('should handle invalid API key error', async () => {
+        const invalidKey = 'sk-invalid';
+        
+        await expect(wsManager.connect(invalidKey))
+            .rejects.toThrow('API キーが無効です');
+    });
+    
+    it('should receive session.created event', async () => {
+        const apiKey = process.env.OPENAI_API_KEY!;
+        
+        const sessionPromise = new Promise(resolve => {
+            wsManager.setMessageHandlers({
+                onSessionUpdated: resolve
+            });
+        });
+        
+        await wsManager.connect(apiKey);
+        await expect(sessionPromise).resolves.toBeDefined();
+    });
+});
+```
+
+## デバッグ
+
+### WebSocket トラフィック監視
+
+```typescript
+// 送信メッセージをログ
+private send(message: object): void {
+    const jsonMessage = JSON.stringify(message);
+    
+    if (process.env.NODE_ENV === 'development') {
+        console.debug('[WebSocket →]', message);
+    }
+    
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(jsonMessage);
+    }
+}
+
+// 受信メッセージをログ
+private onMessage(event: MessageEvent): void {
+    const message = JSON.parse(event.data);
+    
+    if (process.env.NODE_ENV === 'development') {
+        console.debug('[WebSocket ←]', message);
+    }
+    
+    this.handleMessage(message);
+}
+```
+
+## 参考資料
+
+- OpenAI Realtime API Documentation: https://platform.openai.com/docs/guides/realtime
+- WebSocket API: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket

@@ -17,6 +17,7 @@
 
 import { CONFIG } from './Config';
 import type { VoiceType } from '../interfaces/ICoreTypes';
+import type { ElectronAPI } from '../types/electron';
 
 /**
  * セッション設定
@@ -34,7 +35,7 @@ export interface SessionConfig {
  * WebSocket メッセージハンドラー
  */
 export interface WebSocketMessageHandlers {
-    onSessionUpdated?: (session: any) => void;
+    onSessionUpdated?: (session: unknown) => void;
     onAudioBufferCommitted?: () => void;
     onSpeechStarted?: () => void;
     onSpeechStopped?: () => void;
@@ -65,11 +66,19 @@ export class WebSocketManager {
     private connectionTimeout: number | null = null;
     private messageHandlers: WebSocketMessageHandlers = {};
 
+    private getElectronAPI(): ElectronAPI | undefined {
+        if (typeof window === 'undefined') {
+            return undefined;
+        }
+
+        return window.electronAPI;
+    }
+
     /**
      * Electron 環境かどうかを判定
      */
     private isElectronEnvironment(): boolean {
-        return typeof window !== 'undefined' && !!(window as any).electronAPI;
+        return this.getElectronAPI() !== undefined;
     }
 
     /**
@@ -125,10 +134,13 @@ export class WebSocketManager {
     private async connectElectron(): Promise<void> {
         console.info('[WebSocketManager] Electron環境: mainプロセス経由で接続');
 
-        const electronAPI = (window as any).electronAPI;
+        const electronAPI = this.getElectronAPI();
+        if (!electronAPI) {
+            throw new Error('Electron API が利用できません');
+        }
 
         // IPC イベントリスナーを設定
-        this.setupElectronHandlers();
+        this.setupElectronHandlers(electronAPI);
 
         // WebSocket 接続を要求
         const result = await electronAPI.realtimeWebSocketConnect({
@@ -179,24 +191,26 @@ export class WebSocketManager {
     /**
      * Electron IPC ハンドラーを設定
      */
-    private setupElectronHandlers(): void {
-        const electronAPI = (window as any).electronAPI;
-
-        electronAPI.onRealtimeWebSocketOpen(() => {
+    private setupElectronHandlers(electronAPI: ElectronAPI): void {
+        electronAPI.on('realtime-ws-open', () => {
             console.info('[WebSocketManager] Electron WebSocket接続成功');
             this.handleOpen();
         });
 
-        electronAPI.onRealtimeWebSocketMessage((data: string) => {
-            this.handleMessage({ data } as MessageEvent);
+        electronAPI.on('realtime-ws-message', (data: unknown) => {
+            if (typeof data === 'string') {
+                this.handleMessage({ data } as MessageEvent);
+            } else {
+                console.warn('[WebSocketManager] 予期しないメッセージ形式を受信しました');
+            }
         });
 
-        electronAPI.onRealtimeWebSocketError((error: any) => {
+        electronAPI.on('realtime-ws-error', (error: unknown) => {
             console.error('[WebSocketManager] Electron WebSocketエラー:', error);
             this.handleError(error);
         });
 
-        electronAPI.onRealtimeWebSocketClose((event: any) => {
+        electronAPI.on('realtime-ws-close', (event: unknown) => {
             console.info('[WebSocketManager] Electron WebSocket接続終了');
             this.handleClose(event);
         });
@@ -212,8 +226,10 @@ export class WebSocketManager {
         }
 
         if (this.isElectronEnvironment()) {
-            const electronAPI = (window as any).electronAPI;
-            await electronAPI.realtimeWebSocketClose();
+            const electronAPI = this.getElectronAPI();
+            if (electronAPI) {
+                await electronAPI.realtimeWebSocketClose();
+            }
         } else if (this.ws) {
             this.ws.close();
             this.ws = null;
@@ -226,14 +242,24 @@ export class WebSocketManager {
     /**
      * メッセージ送信
      */
-    sendMessage(message: any): void {
+    sendMessage(message: Record<string, unknown>): void {
         if (this.isElectronEnvironment()) {
-            const electronAPI = (window as any).electronAPI;
-            electronAPI.realtimeWebSocketSend(JSON.stringify(message)).then((result: any) => {
-                if (!result.success) {
-                    console.error('[WebSocketManager] Electron送信エラー:', result.message);
-                }
-            });
+            const electronAPI = this.getElectronAPI();
+            if (!electronAPI) {
+                console.warn('[WebSocketManager] Electron APIが利用できません');
+                return;
+            }
+
+            electronAPI
+                .realtimeWebSocketSend(JSON.stringify(message))
+                .then((result) => {
+                    if (!result.success) {
+                        console.error('[WebSocketManager] Electron送信エラー:', result.message);
+                    }
+                })
+                .catch((error) => {
+                    console.error('[WebSocketManager] Electron送信例外:', error);
+                });
         } else if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(message));
         } else {
@@ -280,21 +306,24 @@ export class WebSocketManager {
      * セッション更新
      */
     updateSession(config: Partial<SessionConfig>): void {
-        const session: any = {
+        const sessionUpdate: {
+            type: 'session.update';
+            session: Record<string, unknown>;
+        } = {
             type: 'session.update',
             session: {}
         };
 
         if (config.voiceType !== undefined) {
-            session.session.voice = config.voiceType;
+            sessionUpdate.session['voice'] = config.voiceType;
         }
 
         if (config.instructions !== undefined) {
-            session.session.instructions = config.instructions;
+            sessionUpdate.session['instructions'] = config.instructions;
         }
 
         if (config.vadEnabled !== undefined) {
-            session.session.turn_detection = config.vadEnabled
+            sessionUpdate.session['turn_detection'] = config.vadEnabled
                 ? {
                       type: 'server_vad',
                       threshold: 0.5,
@@ -304,8 +333,8 @@ export class WebSocketManager {
                 : null;
         }
 
-        console.info('[WebSocketManager] セッション更新:', session);
-        this.sendMessage(session);
+        console.info('[WebSocketManager] セッション更新:', sessionUpdate);
+        this.sendMessage(sessionUpdate);
     }
 
     /**
@@ -326,16 +355,20 @@ export class WebSocketManager {
      */
     private handleMessage(event: MessageEvent): void {
         try {
-            const message = JSON.parse(event.data);
+            const message = JSON.parse(event.data) as {
+                type?: string;
+                [key: string]: unknown;
+            };
+
+            const messageType = typeof message.type === 'string' ? message.type : '';
 
             if (CONFIG.DEBUG_MODE) {
-                console.info('[WebSocketManager] Message:', message.type, message);
+                console.info('[WebSocketManager] Message:', messageType, message);
             }
 
-            // メッセージタイプに応じてハンドラーを呼び出し
-            switch (message.type) {
+            switch (messageType) {
                 case 'session.updated':
-                    this.messageHandlers.onSessionUpdated?.(message.session);
+                    this.messageHandlers.onSessionUpdated?.(message['session']);
                     break;
                 case 'input_audio_buffer.committed':
                     this.messageHandlers.onAudioBufferCommitted?.();
@@ -346,33 +379,67 @@ export class WebSocketManager {
                 case 'input_audio_buffer.speech_stopped':
                     this.messageHandlers.onSpeechStopped?.();
                     break;
-                case 'conversation.item.input_audio_transcription.completed':
-                    this.messageHandlers.onInputTranscription?.(message.transcript);
+                case 'conversation.item.input_audio_transcription.completed': {
+                    const transcript = message['transcript'];
+                    if (typeof transcript === 'string') {
+                        this.messageHandlers.onInputTranscription?.(transcript);
+                    }
                     break;
-                case 'response.audio_transcript.delta':
-                    this.messageHandlers.onAudioTranscriptDelta?.(message.delta);
+                }
+                case 'response.audio_transcript.delta': {
+                    const delta = message['delta'];
+                    if (typeof delta === 'string') {
+                        this.messageHandlers.onAudioTranscriptDelta?.(delta);
+                    }
                     break;
-                case 'response.audio_transcript.done':
-                    this.messageHandlers.onAudioTranscriptDone?.(message.transcript);
+                }
+                case 'response.audio_transcript.done': {
+                    const transcript = message['transcript'];
+                    if (typeof transcript === 'string') {
+                        this.messageHandlers.onAudioTranscriptDone?.(transcript);
+                    }
                     break;
-                case 'response.audio.delta':
-                    this.messageHandlers.onAudioDelta?.(message.delta);
+                }
+                case 'response.audio.delta': {
+                    const delta = message['delta'];
+                    if (typeof delta === 'string') {
+                        this.messageHandlers.onAudioDelta?.(delta);
+                    }
                     break;
+                }
                 case 'response.audio.done':
                     this.messageHandlers.onAudioDone?.();
                     break;
-                case 'response.created':
-                    this.messageHandlers.onResponseCreated?.(message.response.id);
+                case 'response.created': {
+                    const response = message['response'] as { id?: string } | undefined;
+                    if (response?.id) {
+                        this.messageHandlers.onResponseCreated?.(response.id);
+                    }
                     break;
-                case 'response.done':
-                    this.messageHandlers.onResponseDone?.(message.response.id);
+                }
+                case 'response.done': {
+                    const response = message['response'] as { id?: string } | undefined;
+                    if (response?.id) {
+                        this.messageHandlers.onResponseDone?.(response.id);
+                    }
                     break;
-                case 'error':
-                    const errorCode = message.error.code || '';
-                    this.messageHandlers.onError?.(new Error(message.error.message), errorCode);
+                }
+                case 'error': {
+                    const errorPayload = message['error'] as
+                        | { message?: string; code?: string }
+                        | undefined;
+                    if (errorPayload?.message) {
+                        this.messageHandlers.onError?.(
+                            new Error(errorPayload.message),
+                            errorPayload.code ?? ''
+                        );
+                    } else {
+                        this.messageHandlers.onError?.(new Error('不明なエラーが発生しました'));
+                    }
                     break;
+                }
                 default:
-                    console.info('[WebSocketManager] 未処理のメッセージタイプ:', message.type);
+                    console.info('[WebSocketManager] 未処理のメッセージタイプ:', messageType);
             }
         } catch (error) {
             console.error('[WebSocketManager] メッセージ解析エラー:', error);
@@ -382,7 +449,7 @@ export class WebSocketManager {
     /**
      * WebSocket エラーハンドラー
      */
-    private handleError(error: any): void {
+    private handleError(error: unknown): void {
         console.error('[WebSocketManager] WebSocketエラー:', error);
         this.messageHandlers.onError?.(new Error('WebSocket接続エラー'));
     }
@@ -390,10 +457,15 @@ export class WebSocketManager {
     /**
      * WebSocket 切断ハンドラー
      */
-    private handleClose(event: any): void {
-        const code = event?.code || 1005;
-        const reason = event?.reason || '';
-        const wasClean = event?.wasClean !== undefined ? event.wasClean : true;
+    private handleClose(event: unknown): void {
+        const eventObject =
+            typeof event === 'object' && event !== null
+                ? (event as { code?: number; reason?: string; wasClean?: boolean })
+                : {};
+
+        const code = typeof eventObject.code === 'number' ? eventObject.code : 1005;
+        const reason = typeof eventObject.reason === 'string' ? eventObject.reason : '';
+        const wasClean = typeof eventObject.wasClean === 'boolean' ? eventObject.wasClean : true;
 
         console.info('[WebSocketManager] 接続終了:', { code, reason, wasClean });
 

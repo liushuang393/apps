@@ -14,6 +14,14 @@
 
 import { AudioDeviceInfo } from './DeviceGuard';
 
+type SinkableAudioElement = HTMLAudioElement & {
+    setSinkId: (sinkId: string) => Promise<void>;
+};
+
+const isSinkableAudioElement = (element: HTMLAudioElement): element is SinkableAudioElement => {
+    return typeof (element as SinkableAudioElement).setSinkId === 'function';
+};
+
 /**
  * モニターモード
  */
@@ -124,8 +132,12 @@ export class MonitorPath {
         }
 
         // 出力デバイスを設定
-        if (this.config.outputDevice && 'setSinkId' in this.audioElement) {
-            (this.audioElement as any)
+        if (
+            this.config.outputDevice &&
+            this.audioElement &&
+            isSinkableAudioElement(this.audioElement)
+        ) {
+            this.audioElement
                 .setSinkId(this.config.outputDevice.id)
                 .then(() => {
                     console.info(
@@ -170,9 +182,9 @@ export class MonitorPath {
         if (
             this.config.mode === 'monitor' &&
             this.audioElement &&
-            'setSinkId' in this.audioElement
+            isSinkableAudioElement(this.audioElement)
         ) {
-            (this.audioElement as any)
+            this.audioElement
                 .setSinkId(device.id)
                 .then(() => {
                     console.info('[MonitorPath] 出力デバイス切り替え完了:', device.name);

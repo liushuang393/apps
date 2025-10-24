@@ -91,6 +91,55 @@ export interface ElectronAPI {
      * ソース ID を検証
      */
     validateSourceId: (sourceId: string) => Promise<boolean>;
+
+    /**
+     * 音声トラックの有無を確認
+     */
+    checkAudioTrack: (sourceId: string) => Promise<boolean>;
+
+    /**
+     * Realtime WebSocket 接続
+     */
+    realtimeWebSocketConnect: (config: {
+        url: string;
+        apiKey: string;
+        model: string;
+    }) => Promise<{ success: boolean; message?: string }>;
+
+    /**
+     * Realtime WebSocket メッセージ送信
+     */
+    realtimeWebSocketSend: (message: string) => Promise<{ success: boolean; message?: string }>;
+
+    /**
+     * Realtime WebSocket 切断
+     */
+    realtimeWebSocketClose: () => Promise<{ success: boolean; message?: string }>;
+
+    /**
+     * Realtime WebSocket 状態取得
+     */
+    realtimeWebSocketState: () => Promise<{ state: string; readyState: number }>;
+
+    /**
+     * 環境変数からAPIキーを取得
+     */
+    getEnvApiKey: () => Promise<string | null>;
+
+    /**
+     * 環境変数からモデル設定を取得
+     */
+    getEnvConfig: () => Promise<{
+        speechRecognitionModel: string;
+        translationModel: string;
+        voiceToVoiceModel: string;
+        realtimeUrl: string;
+    }>;
+
+    /**
+     * システム音声ストリームを取得（Electron専用）
+     */
+    getSystemAudioStream?: (sourceId?: string) => Promise<MediaStream>;
 }
 
 /**

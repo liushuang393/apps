@@ -1,571 +1,18 @@
-﻿// ====================
-// VoiceTranslate Pro - Browser Extension
-// ====================
-
-// ====================
-// ResponseQueue - レスポンスキュー管理
-// ====================
 /**
- * ResponseQueue - 生産者・消費者パターンによるキュー管理
+ * VoiceTranslate Pro 2.0 - メインアプリケーション
  *
- * 設計思想:
- *   - 生産者: enqueue()でリクエストをキューに追加(来たら入れるだけ)
- *   - 消費者: handleResponseDone()で消費完了を通知(完了したら次を処理)
- *   - フラグ不要: キューの状態のみで制御
+ * 依存モジュール:
+ *   - voicetranslate-utils.js: ResponseQueue, VoiceActivityDetector, CONFIG, AudioUtils
  *
- * 使用方法:
- *   queue.enqueue(request);              // 生産者: リクエストを追加
- *   queue.handleResponseDone(id);        // 消費者: 処理完了を通知
+ * 注意:
+ *   このファイルを読み込む前に voicetranslate-utils.js を読み込む必要があります
  */
-class ResponseQueue {
-    /**
-     * コンストラクタ
-     *
-     * @param sendMessageFn - WebSocketメッセージ送信関数
-     * @param options - 設定オプション
-     */
-    constructor(sendMessageFn, options = {}) {
-        this.sendMessage = sendMessageFn;
-        this.config = {
-            maxQueueSize: options.maxQueueSize || 10,
-            debugMode: options.debugMode !== undefined ? options.debugMode : false
-        };
 
-        // 生産者・消費者キュー
-        this.pendingQueue = []; // 未送信のリクエスト(生産者が追加)
-        this.processingQueue = []; // 処理中のリクエスト(消費者が処理)
-
-        // 統計情報
-        this.stats = {
-            totalRequests: 0,
-            completedRequests: 0,
-            failedRequests: 0
-        };
-    }
-
-    /**
-     * リクエストをキューに追加(生産者)
-     *
-     * 目的:
-     *   リクエストが来たらキューに入れるだけ
-     *   フラグチェック不要
-     *
-     * @param request - リクエストオブジェクト
-     * @returns Promise<string> - レスポンスID
-     */
-    enqueue(request) {
-        return new Promise((resolve, reject) => {
-            // ✅ 並発制御: 処理中のリクエストがある場合は即座に拒否
-            if (this.processingQueue.length > 0) {
-                const error = new Error('Previous response is still in progress');
-                console.warn('[ResponseQueue] 並発リクエストを拒否:', {
-                    processing: this.processingQueue.length,
-                    pending: this.pendingQueue.length
-                });
-                reject(error);
-                return;
-            }
-
-            // キューが満杯かチェック
-            const totalInQueue = this.pendingQueue.length + this.processingQueue.length;
-            if (totalInQueue >= this.config.maxQueueSize) {
-                reject(new Error('Queue is full'));
-                return;
-            }
-
-            // キューに追加(生産)
-            const item = {
-                request: request,
-                resolve: resolve,
-                reject: reject,
-                timestamp: Date.now()
-            };
-
-            this.pendingQueue.push(item);
-            this.stats.totalRequests++;
-
-            if (this.config.debugMode) {
-                console.info('[ResponseQueue] 生産:', {
-                    pending: this.pendingQueue.length,
-                    processing: this.processingQueue.length
-                });
-            }
-
-            // 消費開始
-            this.consume();
-        });
-    }
-
-    /**
-     * キューから消費(消費者)
-     *
-     * 目的:
-     *   未送信キューから取り出してAPIに送信
-     *   処理中キューに移動
-     */
-    consume() {
-        // 処理中が既にある場合は何もしない(1つずつ処理)
-        if (this.processingQueue.length > 0) {
-            if (this.config.debugMode) {
-                console.info('[ResponseQueue] 処理中のリクエストがあるため待機:', {
-                    processing: this.processingQueue.length
-                });
-            }
-            return;
-        }
-
-        // 未送信キューが空の場合は何もしない
-        if (this.pendingQueue.length === 0) {
-            if (this.config.debugMode) {
-                console.info('[ResponseQueue] 未送信キューが空です');
-            }
-            return;
-        }
-
-        // 未送信キューから取り出す
-        const item = this.pendingQueue.shift();
-        if (!item) {
-            return;
-        }
-
-        // ✅ 重要: 処理中キューに追加してから送信
-        // これにより、sendMessage()が同期的に実行されても、
-        // 次のenqueue()呼び出しで processingQueue.length > 0 が検出される
-        this.processingQueue.push(item);
-
-        if (this.config.debugMode) {
-            console.info('[ResponseQueue] 消費開始:', {
-                pending: this.pendingQueue.length,
-                processing: this.processingQueue.length,
-                timestamp: Date.now()
-            });
-        }
-
-        try {
-            // ✅ APIにリクエスト送信(同期実行)
-            // この時点で processingQueue.length = 1 なので、
-            // 新しいenqueue()は consume()をスキップする
-            this.sendMessage({
-                type: 'response.create',
-                response: item.request
-            });
-
-            if (this.config.debugMode) {
-                console.info('[ResponseQueue] リクエスト送信完了:', {
-                    processing: this.processingQueue.length
-                });
-            }
-        } catch (error) {
-            console.error('[ResponseQueue] 送信失敗:', error);
-            // 処理中キューから削除
-            this.processingQueue.shift();
-            if (item.reject) {
-                item.reject(error);
-            }
-            this.stats.failedRequests++;
-            // 次を消費
-            this.consume();
-        }
-    }
-
-    /**
-     * response.createdイベント処理
-     *
-     * @param responseId - レスポンスID
-     */
-    handleResponseCreated(responseId) {
-        if (this.config.debugMode) {
-            console.info('[ResponseQueue] レスポンス作成:', responseId);
-        }
-    }
-
-    /**
-     * response.doneイベント処理(消費完了)
-     *
-     * 目的:
-     *   処理中キューから削除
-     *   次のリクエストを消費
-     *
-     * @param responseId - レスポンスID
-     */
-    handleResponseDone(responseId) {
-        if (this.config.debugMode) {
-            console.info('[ResponseQueue] 消費完了:', responseId);
-        }
-
-        // 処理中キューから取り出す
-        const item = this.processingQueue.shift();
-
-        if (item) {
-            // 完了通知
-            if (item.resolve) {
-                item.resolve(responseId);
-            }
-            this.stats.completedRequests++;
-        }
-
-        // 次を消費
-        this.consume();
-    }
-
-    /**
-     * エラー処理
-     *
-     * @param error - エラーオブジェクト
-     * @param code - エラーコード
-     */
-    handleError(error, code) {
-        console.error('[ResponseQueue] Error:', error);
-
-        const errorCode = code || '';
-        const errorMessage = error.message || '';
-        const isActiveResponseError =
-            errorCode === 'conversation_already_has_active_response' ||
-            errorMessage.includes('conversation_already_has_active_response') ||
-            errorMessage.includes('active response in progress');
-
-        if (isActiveResponseError) {
-            // ✅ 重要: processingQueue から削除しない
-            // 理由: OpenAI API側でまだレスポンスが処理中のため、
-            //       processingQueue を維持することで新しいリクエストの送信を防ぐ
-            //       response.done イベントが来たら handleResponseDone で正常に処理される
-            console.warn(
-                '[ResponseQueue] Active response still in progress; waiting for response.done.',
-                {
-                    code: errorCode || 'N/A',
-                    pending: this.pendingQueue.length,
-                    processing: this.processingQueue.length
-                }
-            );
-
-            // item.reject() も呼び出さない（待機状態として扱う）
-            // processingQueue はそのまま維持
-            return;
-        }
-
-        // 通常のエラー処理: processingQueue から削除して次を処理
-        const item = this.processingQueue.shift();
-
-        if (item) {
-            if (item.reject) {
-                item.reject(error);
-            }
-            this.stats.failedRequests++;
-        }
-
-        this.consume();
-    }
-
-    /**
-     * キューをクリア
-     */
-    clear() {
-        if (this.config.debugMode) {
-            console.info('[ResponseQueue] キューをクリア');
-        }
-
-        // すべてのリクエストを拒否
-        [...this.pendingQueue, ...this.processingQueue].forEach((item) => {
-            if (item.reject) {
-                item.reject(new Error('Queue cleared'));
-            }
-        });
-
-        this.pendingQueue = [];
-        this.processingQueue = [];
-    }
-
-    /**
-     * 統計情報を取得
-     *
-     * @returns 統計情報
-     */
-    getStats() {
-        return {
-            ...this.stats,
-            pendingCount: this.pendingQueue.length,
-            processingCount: this.processingQueue.length
-        };
-    }
-
-    /**
-     * ステータスを取得(互換性のため)
-     *
-     * @returns ステータス情報
-     */
-    getStatus() {
-        return this.getStats();
-    }
-}
-
-// ====================
-// グローバル設定
-// ====================
-// デフォルト設定（環境変数から上書き可能）
-const CONFIG = {
-    // デバッグモード（本番環境では false に設定）
-    DEBUG_MODE: false,
-
-    API: {
-        REALTIME_URL: 'wss://api.openai.com/v1/realtime',
-        // 2種類のモデル設定（環境変数から上書き可能）
-        //
-        // 1. REALTIME_MODEL: Realtime API用（音声→音声翻訳、音声認識）
-        //    - 用途: WebSocket接続、Session作成、音声→音声翻訳
-        //    - 自動機能: 音声認識（whisper-1）、言語自動検出
-        //    - 推奨: gpt-realtime-2025-08-28 (最新・最高品質)
-        //    - 例: gpt-realtime-2025-08-28, gpt-4o-realtime-preview-2024-12-17
-        REALTIME_MODEL: 'gpt-realtime-2025-08-28',
-
-        // 2. CHAT_MODEL: Chat Completions API用（言語検出、テキスト翻訳）
-        //    - 用途: 言語検出、テキスト→テキスト翻訳
-        //    - API: /v1/chat/completions
-        //    - 例: gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5-turbo
-        //    - ⚠️ Realtime APIモデルは使用不可
-        CHAT_MODEL: 'gpt-5-2025-08-07',
-
-        TIMEOUT: 30000
-    },
-
-    // 音声設定プリセット（4つの方案から選択）
-    // 使用方法: CONFIG.AUDIO_PRESET を変更して再読み込み
-    AUDIO_PRESET: 'BALANCED', // 'BALANCED' | 'AGGRESSIVE' | 'LOW_LATENCY' | 'SERVER_VAD'
-
-    AUDIO_PRESETS: {
-        // 方案A: バランス型（推奨）
-        BALANCED: {
-            BUFFER_SIZE: 6000, // 250ms @ 24kHz
-            MIN_SPEECH_MS: 500, // 最小音声長さ
-            VAD_DEBOUNCE: 400, // VAD去抖動時間
-            DESCRIPTION: '精度と遅延のバランス - 推奨設定'
-        },
-        // 方案B: 高精度型
-        AGGRESSIVE: {
-            BUFFER_SIZE: 8000, // 333ms @ 24kHz
-            MIN_SPEECH_MS: 800, // 最小音声長さ
-            VAD_DEBOUNCE: 500, // VAD去抖動時間
-            DESCRIPTION: '最高精度、ネットワーク負荷最小 - 遅延やや大'
-        },
-        // 方案C: 低遅延型
-        LOW_LATENCY: {
-            BUFFER_SIZE: 4800, // 200ms @ 24kHz
-            MIN_SPEECH_MS: 400, // 最小音声長さ
-            VAD_DEBOUNCE: 250, // VAD去抖動時間
-            DESCRIPTION: '最低遅延 - VAD精度やや低'
-        },
-        // 方案D: Server VAD型
-        SERVER_VAD: {
-            BUFFER_SIZE: 4800, // 200ms @ 24kHz
-            MIN_SPEECH_MS: 0, // Server VADに任せる
-            VAD_DEBOUNCE: 0, // Client VAD無効
-            DESCRIPTION: 'OpenAI Server VAD使用 - 最高精度、ネットワーク負荷大'
-        }
-    },
-
-    AUDIO: {
-        SAMPLE_RATE: 24000,
-        CHUNK_SIZE: 4800,
-        FORMAT: 'pcm16'
-    },
-
-    VAD: {
-        // マイクモード用（静かな環境：個人会議、少人数会議）
-        MICROPHONE: {
-            LOW: { threshold: 0.008, debounce: 400 },
-            MEDIUM: { threshold: 0.004, debounce: 250 },
-            HIGH: { threshold: 0.002, debounce: 150 }
-        },
-        // システム音声モード用（騒がしい環境：ブラウザ音声、会議、音楽）
-        SYSTEM: {
-            LOW: { threshold: 0.015, debounce: 500 },
-            MEDIUM: { threshold: 0.01, debounce: 350 },
-            HIGH: { threshold: 0.006, debounce: 250 }
-        }
-    }
-};
-
-// 現在のプリセット設定を取得
-function getAudioPreset() {
-    return CONFIG.AUDIO_PRESETS[CONFIG.AUDIO_PRESET] || CONFIG.AUDIO_PRESETS.BALANCED;
-}
-
-// ====================
-// ユーティリティ関数
-// ====================
-const Utils = {
-    // Base64エンコード/デコード
-    arrayBufferToBase64(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary);
-    },
-
-    base64ToArrayBuffer(base64) {
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
-        return bytes.buffer;
-    },
-
-    // Float32 to PCM16変換
-    floatTo16BitPCM(float32Array) {
-        const buffer = new ArrayBuffer(float32Array.length * 2);
-        const view = new DataView(buffer);
-        let offset = 0;
-        for (let i = 0; i < float32Array.length; i++, offset += 2) {
-            const s = Math.max(-1, Math.min(1, float32Array[i]));
-            view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-        }
-        return buffer;
-    },
-
-    // 時間フォーマット
-    formatTime(seconds) {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = seconds % 60;
-        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    },
-
-    // 言語名取得（英語名）
-    getLanguageName(code) {
-        const names = {
-            ja: 'Japanese',
-            en: 'English',
-            zh: 'Chinese',
-            ko: 'Korean',
-            es: 'Spanish',
-            fr: 'French',
-            de: 'German',
-            pt: 'Portuguese'
-        };
-        return names[code] || code;
-    },
-
-    // ネイティブ言語名取得
-    getNativeLanguageName(code) {
-        const names = {
-            ja: '日本語',
-            en: 'English',
-            zh: '中文',
-            ko: '한국어',
-            es: 'Español',
-            fr: 'Français',
-            de: 'Deutsch',
-            pt: 'Português'
-        };
-        return names[code] || code;
-    }
-};
-
-// ====================
-// VADクラス
-// ====================
-class VoiceActivityDetector {
-    constructor(options = {}) {
-        this.threshold = options.threshold || 0.01;
-        this.debounceTime = options.debounceTime || 300;
-        this.onSpeechStart = options.onSpeechStart || (() => {});
-        this.onSpeechEnd = options.onSpeechEnd || (() => {});
-
-        this.isSpeaking = false;
-        this.silenceTimer = null;
-        this.energyHistory = [];
-        this.historySize = 10;
-        this.calibrationSamples = [];
-        this.isCalibrating = true;
-        this.calibrationDuration = 30;
-        this.noiseFloor = 0;
-        this.adaptiveThreshold = this.threshold;
-    }
-
-    analyze(audioData) {
-        const energy = this.calculateEnergy(audioData);
-
-        if (this.isCalibrating) {
-            this.calibrationSamples.push(energy);
-            if (this.calibrationSamples.length >= this.calibrationDuration) {
-                this.completeCalibration();
-            }
-            return { energy, isSpeaking: false };
-        }
-
-        this.energyHistory.push(energy);
-        if (this.energyHistory.length > this.historySize) {
-            this.energyHistory.shift();
-        }
-
-        const smoothedEnergy = this.getSmoothedEnergy();
-
-        if (smoothedEnergy > this.adaptiveThreshold) {
-            if (!this.isSpeaking) {
-                this.isSpeaking = true;
-                this.onSpeechStart();
-            }
-            clearTimeout(this.silenceTimer);
-        } else if (this.isSpeaking) {
-            clearTimeout(this.silenceTimer);
-            this.silenceTimer = setTimeout(() => {
-                this.isSpeaking = false;
-                this.onSpeechEnd();
-            }, this.debounceTime);
-        }
-
-        return { energy: smoothedEnergy, isSpeaking: this.isSpeaking };
-    }
-
-    calculateEnergy(data) {
-        const sum = data.reduce((acc, val) => acc + val * val, 0);
-        return Math.sqrt(sum / data.length);
-    }
-
-    getSmoothedEnergy() {
-        if (this.energyHistory.length === 0) {
-            return 0;
-        }
-        const sum = this.energyHistory.reduce((acc, val) => acc + val, 0);
-        return sum / this.energyHistory.length;
-    }
-
-    completeCalibration() {
-        const mean =
-            this.calibrationSamples.reduce((a, b) => a + b, 0) / this.calibrationSamples.length;
-        const variance =
-            this.calibrationSamples.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) /
-            this.calibrationSamples.length;
-        const stdDev = Math.sqrt(variance);
-
-        this.noiseFloor = mean;
-
-        // 適応閾値を計算（最小値を設定）
-        const calculatedThreshold = mean + stdDev * 3;
-        const minThreshold = 0.01; // 最小閾値（環境が静かすぎる場合の対策）
-        this.adaptiveThreshold = Math.max(calculatedThreshold, minThreshold);
-
-        this.isCalibrating = false;
-
-        console.info(
-            `[VAD] Calibration complete - Noise: ${this.noiseFloor.toFixed(4)}, Calculated: ${calculatedThreshold.toFixed(4)}, Final Threshold: ${this.adaptiveThreshold.toFixed(4)}`
-        );
-    }
-
-    reset() {
-        this.isSpeaking = false;
-        this.energyHistory = [];
-        this.calibrationSamples = [];
-        this.isCalibrating = true;
-        clearTimeout(this.silenceTimer);
-    }
-}
+// Utils オブジェクトを AudioUtils にマッピング（互換性のため）
+const Utils = AudioUtils;
 
 // ====================
 // メインアプリケーションクラス
-// ====================
 class VoiceTranslateApp {
     constructor() {
         this.state = {
@@ -587,7 +34,7 @@ class VoiceTranslateApp {
             audioSourceType: 'microphone', // 'microphone' or 'system'
             systemAudioSourceId: null, // システム音声のソースID
             isNewResponse: true, // 新しい応答かどうかのフラグ
-            outputVolume: 2.0, // 出力音量（1.0 = 通常、2.0 = 2倍）
+            outputVolume: 2, // 出力音量（1.0 = 通常、2.0 = 2倍）
             isPlayingAudio: false, // 音声再生中フラグ（ループバック防止用）
             inputAudioOutputEnabled: true // 入力音声出力フラグ（入力音声をスピーカーに出力するか）
         };
@@ -608,6 +55,7 @@ class VoiceTranslateApp {
 
         // ✅ レスポンス状態管理（並発制御）
         this.activeResponseId = null; // 現在処理中のレスポンスID
+        this.pendingResponseId = null; // ✅ リクエスト送信中フラグ（レース条件対策）
         this.lastCommitTime = 0; // 最後のコミット時刻（重複防止）
 
         // ✅ レスポンスキュー管理（conversation_already_has_active_response エラー対策）
@@ -616,7 +64,14 @@ class VoiceTranslateApp {
             timeout: 60000, // タイムアウト: 60秒（response.done が来ない場合に備えて）
             retryOnError: true, // エラー時リトライ有効
             maxRetries: 2, // 最大リトライ回数
-            debugMode: CONFIG.DEBUG_MODE // デバッグモード
+            debugMode: CONFIG.DEBUG_MODE, // デバッグモード
+            // ✅ リクエスト送信時のコールバック（レース条件対策）
+            onRequestSending: () => {
+                this.pendingResponseId = 'pending_' + Date.now();
+                console.info('[ResponseQueue] リクエスト送信開始:', {
+                    pendingResponseId: this.pendingResponseId
+                });
+            }
         });
 
         this.init();
@@ -627,6 +82,9 @@ class VoiceTranslateApp {
 
         // Electron環境の場合、環境変数からAPIキーを取得
         await this.loadApiKeyFromEnv();
+
+        // 初期化: localStorage をクリアして詳細設定をデフォルト折りたたみに
+        this.initializeDefaultSettings();
 
         this.initEventListeners();
         this.initVisualizer();
@@ -657,6 +115,7 @@ class VoiceTranslateApp {
 
         // 詳細設定
         this.elements.vadEnabled = document.getElementById('vadEnabled');
+        this.elements.translationModeAudio = document.getElementById('translationModeAudio');
         this.elements.noiseReduction = document.getElementById('noiseReduction');
         this.elements.echoCancellation = document.getElementById('echoCancellation');
         this.elements.autoGainControl = document.getElementById('autoGainControl');
@@ -696,6 +155,47 @@ class VoiceTranslateApp {
         this.elements.notification = document.getElementById('notification');
         this.elements.notificationTitle = document.getElementById('notificationTitle');
         this.elements.notificationMessage = document.getElementById('notificationMessage');
+    }
+
+    /**
+     * デフォルト設定を初期化
+     *
+     * 目的: 詳細設定をデフォルト折りたたみにし、トグルボタンのデフォルト状態を設定
+     *
+     * デフォルト状態:
+     * - 自動音声検出: ON
+     * - リアルタイム音声翻訳: ON
+     * - ノイズ除去: OFF (dev-only)
+     * - エコー除去: OFF (dev-only)
+     * - 自動ゲイン: OFF (dev-only)
+     * - 入力音声を表示: ON
+     * - 翻訳結果を表示: ON
+     * - 翻訳音声を出力: ON
+     * - 入力音声を出力: OFF
+     */
+    initializeDefaultSettings() {
+        // 詳細設定を折りたたみ状態にリセット
+        localStorage.setItem('advancedSettingsCollapsed', 'true');
+
+        // デフォルト状態を設定（ON = 'true', OFF = 'false'）
+        const defaultSettings = {
+            vadEnabled: 'true', // ON
+            translationModeAudio: 'true', // ON
+            noiseReduction: 'false', // OFF (dev-only)
+            echoCancellation: 'false', // OFF (dev-only)
+            autoGainControl: 'false', // OFF (dev-only)
+            showInputTranscript: 'true', // ON
+            showOutputTranscript: 'true', // ON
+            audioOutputEnabled: 'true', // ON
+            inputAudioOutputEnabled: 'false' // OFF
+        };
+
+        // localStorage に設定を保存
+        for (const [key, value] of Object.entries(defaultSettings)) {
+            localStorage.setItem(key, value);
+        }
+
+        console.info('[App] デフォルト設定を初期化しました');
     }
 
     initEventListeners() {
@@ -750,7 +250,7 @@ class VoiceTranslateApp {
             this.state.voiceType = e.target.value;
             this.saveToStorage('voice_type', e.target.value);
 
-            // 音声タイプ変更時にトランスクリプトをクリア
+            // 翻訳音色変更時にトランスクリプトをクリア
             this.clearTranscript('both');
 
             if (this.state.isConnected) {
@@ -789,6 +289,7 @@ class VoiceTranslateApp {
         // 詳細設定トグル
         [
             'vadEnabled',
+            'translationModeAudio',
             'noiseReduction',
             'echoCancellation',
             'autoGainControl',
@@ -798,56 +299,7 @@ class VoiceTranslateApp {
             'inputAudioOutputEnabled'
         ].forEach((id) => {
             this.elements[id].addEventListener('click', (e) => {
-                const element = e.currentTarget;
-                element.classList.toggle('active');
-                this.saveToStorage(id, element.classList.contains('active'));
-
-                // VAD有効/無効が変更された場合、セッション更新
-                if (id === 'vadEnabled' && this.state.isConnected) {
-                    console.info('[VAD] 設定変更 - セッションを更新します');
-                    this.updateSession();
-                }
-
-                // トランスクリプト表示設定が変更された場合
-                if (id === 'showInputTranscript' || id === 'showOutputTranscript') {
-                    const isActive = element.classList.contains('active');
-                    const label = id === 'showInputTranscript' ? '入力音声表示' : '翻訳結果表示';
-                    console.info(`[Transcript] ${label}: ${isActive ? 'ON' : 'OFF'}`);
-                    this.notify(
-                        '表示設定変更',
-                        `${label}を${isActive ? 'ON' : 'OFF'}にしました`,
-                        'info'
-                    );
-                }
-
-                // 翻訳音声出力設定が変更された場合、セッション更新
-                if (id === 'audioOutputEnabled' && this.state.isConnected) {
-                    const isActive = element.classList.contains('active');
-                    console.info('[Audio Output] 翻訳音声出力:', isActive ? 'ON' : 'OFF');
-                    this.notify(
-                        '音声出力設定',
-                        `翻訳音声出力を${isActive ? 'ON' : 'OFF'}にしました`,
-                        'info'
-                    );
-                    this.updateSession();
-                }
-
-                // 入力音声出力設定が変更された場合
-                if (id === 'inputAudioOutputEnabled') {
-                    const isActive = element.classList.contains('active');
-                    this.state.inputAudioOutputEnabled = isActive;
-                    console.info('[Input Audio Output] 入力音声出力:', isActive ? 'ON' : 'OFF');
-                    this.notify(
-                        '入力音声出力設定',
-                        `入力音声出力を${isActive ? 'ON' : 'OFF'}にしました`,
-                        'info'
-                    );
-
-                    // 録音中の場合、音声処理を再セットアップ
-                    if (this.state.isRecording) {
-                        this.reconnectAudioOutput();
-                    }
-                }
+                this.handleToggleSetting(id, e.currentTarget);
             });
         });
 
@@ -877,7 +329,7 @@ class VoiceTranslateApp {
         });
 
         // ページ離脱時
-        window.addEventListener('beforeunload', () => {
+        globalThis.addEventListener('beforeunload', () => {
             if (this.state.isConnected) {
                 this.disconnect();
             }
@@ -936,6 +388,135 @@ class VoiceTranslateApp {
         });
     }
 
+    /**
+     * トグル設定の変更を処理
+     *
+     * 目的:
+     *   詳細設定トグルの変更イベントを統一的に処理
+     *   各設定に応じた適切なハンドラーを呼び出す
+     *
+     * 入力:
+     *   id: 設定ID（例: 'vadEnabled', 'audioOutputEnabled'）
+     *   element: トグル要素
+     */
+    handleToggleSetting(id, element) {
+        element.classList.toggle('active');
+        this.saveToStorage(id, element.classList.contains('active'));
+
+        // 各設定に応じたハンドラーを呼び出す
+        switch (id) {
+            case 'vadEnabled':
+                this.handleVadToggle();
+                break;
+            case 'translationModeAudio':
+                this.handleTranslationModeToggle(element);
+                break;
+            case 'showInputTranscript':
+            case 'showOutputTranscript':
+                this.handleTranscriptToggle(id, element);
+                break;
+            case 'audioOutputEnabled':
+                this.handleAudioOutputToggle(element);
+                break;
+            case 'inputAudioOutputEnabled':
+                this.handleInputAudioOutputToggle(element);
+                break;
+            default:
+                // その他の設定（noiseReduction, echoCancellation, autoGainControl）
+                break;
+        }
+    }
+
+    /**
+     * 自動音声検出トグルの処理
+     *
+     * 目的:
+     *   自動音声検出設定が変更された場合、セッションを更新
+     */
+    handleVadToggle() {
+        if (this.state.isConnected) {
+            console.info('[VAD] 設定変更 - セッションを更新します');
+            this.updateSession();
+        }
+    }
+
+    /**
+     * 音声翻訳モードトグルの処理
+     *
+     * 目的:
+     *   音声翻訳モード（ON: 音声翻訳、OFF: テキスト翻訳）の変更をユーザーに通知
+     *
+     * 入力:
+     *   element: トグル要素
+     */
+    handleTranslationModeToggle(element) {
+        const isActive = element.classList.contains('active');
+        const mode = isActive ? '音声翻訳（高速・高品質）' : 'テキスト翻訳（入力と一対一対応）';
+        console.info('[Translation Mode] 翻訳モード:', mode);
+        this.notify('翻訳モード変更', `翻訳モードを${mode}に変更しました`, 'info');
+    }
+
+    /**
+     * トランスクリプト表示設定トグルの処理
+     *
+     * 目的:
+     *   トランスクリプト表示設定の変更をユーザーに通知
+     *
+     * 入力:
+     *   id: 設定ID（'showInputTranscript' または 'showOutputTranscript'）
+     *   element: トグル要素
+     */
+    handleTranscriptToggle(id, element) {
+        const isActive = element.classList.contains('active');
+        const label = id === 'showInputTranscript' ? '入力音声を表示' : '翻訳結果を表示';
+        console.info(`[Transcript] ${label}: ${isActive ? 'ON' : 'OFF'}`);
+        this.notify('表示設定変更', `${label}を${isActive ? 'ON' : 'OFF'}にしました`, 'info');
+    }
+
+    /**
+     * 翻訳音声を出力設定トグルの処理
+     *
+     * 目的:
+     *   翻訳音声を出力設定が変更された場合、セッションを更新
+     *
+     * 入力:
+     *   element: トグル要素
+     */
+    handleAudioOutputToggle(element) {
+        const isActive = element.classList.contains('active');
+        console.info('[Audio Output] 翻訳音声を出力:', isActive ? 'ON' : 'OFF');
+        this.notify('音声出力設定', `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`, 'info');
+        if (this.state.isConnected) {
+            this.updateSession();
+        }
+    }
+
+    /**
+     * 入力音声を出力設定トグルの処理
+     *
+     * 目的:
+     *   入力音声を出力設定が変更された場合、状態を更新し、
+     *   必要に応じて音声処理を再セットアップ
+     *
+     * 入力:
+     *   element: トグル要素
+     */
+    handleInputAudioOutputToggle(element) {
+        const isActive = element.classList.contains('active');
+        this.state.inputAudioOutputEnabled = isActive;
+        console.info('[Input Audio Output] 入力音声を出力:', isActive ? 'ON' : 'OFF');
+        this.notify(
+            '入力音声出力設定',
+            `入力音声を出力を${isActive ? 'ON' : 'OFF'}にしました`,
+            'info'
+        );
+
+        // 録音中の場合、音声処理を再セットアップ
+        if (this.state.isRecording) {
+            this.reconnectAudioOutput();
+        }
+    }
+
     async loadSettings() {
         // ストレージから設定を読み込み
         const settings = {
@@ -983,13 +564,14 @@ class VoiceTranslateApp {
 
         // 出力音量設定を復元
         if (settings.outputVolume) {
-            this.state.outputVolume = parseFloat(settings.outputVolume);
+            this.state.outputVolume = Number.parseFloat(settings.outputVolume);
             console.info('[Settings] 出力音量を復元:', this.state.outputVolume);
         }
 
         // トグル設定
         const toggleSettings = [
             'vadEnabled',
+            'translationModeAudio',
             'noiseReduction',
             'echoCancellation',
             'autoGainControl',
@@ -1014,7 +596,8 @@ class VoiceTranslateApp {
      */
     initCrossInstanceSync() {
         // Electron環境かどうかを判定
-        const isElectron = typeof window !== 'undefined' && window.electronAPI;
+        const isElectron =
+            typeof globalThis.window !== 'undefined' && (globalThis.window).electronAPI; // eslint-disable-line
 
         if (isElectron) {
             console.info('[Sync] Electronアプリとして起動 - ブラウザ版を制御します');
@@ -1022,7 +605,7 @@ class VoiceTranslateApp {
             console.info('[Sync] ブラウザ版として起動 - Electronアプリからの制御を監視します');
 
             // ブラウザ版の場合、LocalStorageの変更を監視
-            window.addEventListener('storage', (event) => {
+            globalThis.addEventListener('storage', (event) => {
                 if (event.key === 'app2_recording' && event.newValue === 'true') {
                     console.info(
                         '[Sync] Electronアプリが録音を開始しました - ブラウザ版を停止します'
@@ -1086,7 +669,8 @@ class VoiceTranslateApp {
     }
 
     async loadApiKeyFromEnv() {
-        const isElectron = typeof window !== 'undefined' && window.electronAPI;
+        const isElectron =
+            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
 
         if (!isElectron) {
             console.info('[App] ブラウザ環境: 環境変数からAPIキーを読み込めません');
@@ -1095,7 +679,7 @@ class VoiceTranslateApp {
 
         try {
             console.info('[App] Electron環境: 環境変数からAPIキーを取得中...');
-            const envApiKey = await window.electronAPI.getEnvApiKey();
+            const envApiKey = await globalThis.window.electronAPI.getEnvApiKey();
 
             if (envApiKey) {
                 this.state.apiKey = envApiKey;
@@ -1118,7 +702,7 @@ class VoiceTranslateApp {
 
             // 環境変数から設定を読み込む
             console.info('[App] Electron環境: 環境変数から設定を取得中...');
-            const envConfig = await window.electronAPI.getEnvConfig();
+            const envConfig = await globalThis.window.electronAPI.getEnvConfig();
 
             if (envConfig) {
                 // CONFIGを上書き（2種類のモデル設定）
@@ -1138,32 +722,32 @@ class VoiceTranslateApp {
     }
 
     setupElectronWebSocketHandlers() {
-        if (!window.electronAPI) {
+        if (!globalThis.window.electronAPI) {
             return;
         }
 
         console.info('[Electron WS] IPCハンドラーを設定中...');
 
         // 接続成功
-        window.electronAPI.on('realtime-ws-open', () => {
+        globalThis.window.electronAPI.on('realtime-ws-open', () => {
             console.info('[Electron WS] 接続成功イベント受信');
             this.handleWSOpen();
         });
 
         // メッセージ受信
-        window.electronAPI.on('realtime-ws-message', (message) => {
+        globalThis.window.electronAPI.on('realtime-ws-message', (message) => {
             console.info('[Electron WS] メッセージ受信イベント');
             this.handleWSMessage({ data: message });
         });
 
         // エラー
-        window.electronAPI.on('realtime-ws-error', (error) => {
+        globalThis.window.electronAPI.on('realtime-ws-error', (error) => {
             console.error('[Electron WS] エラーイベント:', error);
             this.handleWSError(error);
         });
 
         // 接続終了
-        window.electronAPI.on('realtime-ws-close', (data) => {
+        globalThis.window.electronAPI.on('realtime-ws-close', (data) => {
             console.info('[Electron WS] 接続終了イベント:', data);
             this.handleWSClose(data);
         });
@@ -1174,7 +758,6 @@ class VoiceTranslateApp {
     async connect() {
         if (!this.state.apiKey) {
             this.notify('エラー', 'APIキーを入力してください', 'error');
-            // alert('エラー: APIキーを入力してください');
             return;
         }
 
@@ -1192,10 +775,10 @@ class VoiceTranslateApp {
                 url: CONFIG.API.REALTIME_URL
             };
             console.info('[Connect] 接続開始:', debugInfo);
-            // alert(`接続開始\nAPIキー: ${debugInfo.apiKey}\nモデル: ${debugInfo.model}\nURL: ${debugInfo.url}`);
 
             // Electron環境チェック
-            const isElectron = typeof window !== 'undefined' && window.electronAPI;
+            const isElectron =
+                typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
 
             if (isElectron) {
                 // Electronの場合、mainプロセス経由で接続（Authorizationヘッダー付き）
@@ -1205,7 +788,7 @@ class VoiceTranslateApp {
                 this.setupElectronWebSocketHandlers();
 
                 // WebSocket接続を要求
-                const result = await window.electronAPI.realtimeWebSocketConnect({
+                const result = await globalThis.window.electronAPI.realtimeWebSocketConnect({
                     url: CONFIG.API.REALTIME_URL,
                     apiKey: this.state.apiKey,
                     model: CONFIG.API.REALTIME_MODEL
@@ -1243,7 +826,6 @@ class VoiceTranslateApp {
             const timeout = setTimeout(() => {
                 if (!this.state.isConnected) {
                     console.error('[Connect] タイムアウト - 接続に失敗しました');
-                    // alert('エラー: 接続タイムアウト\n30秒以内に接続できませんでした');
                     this.disconnect();
                     this.notify('エラー', '接続タイムアウト (30秒)', 'error');
                 }
@@ -1251,10 +833,8 @@ class VoiceTranslateApp {
 
             this.timers.connectionTimeout = timeout;
         } catch (error) {
-            const _errorMsg = `接続エラー: ${error.message}`;
             console.error('[Connect Error]', error);
             console.error('[Connect Error] Stack:', error.stack);
-            // alert(_errorMsg);
             this.notify('エラー', '接続に失敗しました: ' + error.message, 'error');
             this.updateConnectionStatus('error');
             this.elements.connectBtn.disabled = false;
@@ -1262,11 +842,12 @@ class VoiceTranslateApp {
     }
 
     async disconnect() {
-        const isElectron = typeof window !== 'undefined' && window.electronAPI;
+        const isElectron =
+            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
 
         if (isElectron) {
             // Electron環境
-            await window.electronAPI.realtimeWebSocketClose();
+            await globalThis.window.electronAPI.realtimeWebSocketClose();
         } else if (this.state.ws) {
             // ブラウザ環境
             this.state.ws.close();
@@ -1294,7 +875,6 @@ class VoiceTranslateApp {
     handleWSOpen() {
         clearTimeout(this.timers.connectionTimeout);
         console.info('[WS] Connected - WebSocket接続成功');
-        // alert('接続成功: WebSocketが開きました\nセッション作成中...');
 
         this.state.isConnected = true;
         this.updateConnectionStatus('connected');
@@ -1521,11 +1101,14 @@ Even if you have translated many sentences, your role has NOT changed:
     }
 
     async sendMessage(message) {
-        const isElectron = typeof window !== 'undefined' && window.electronAPI;
+        const isElectron =
+            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
 
         if (isElectron) {
             // Electron環境
-            const result = await window.electronAPI.realtimeWebSocketSend(JSON.stringify(message));
+            const result = await globalThis.window.electronAPI.realtimeWebSocketSend(
+                JSON.stringify(message)
+            );
             if (!result.success) {
                 console.error('[Send Message] Electron送信エラー:', result.message);
             }
@@ -1544,224 +1127,236 @@ Even if you have translated many sentences, your role has NOT changed:
                 console.info('[WS Message]', message.type, message);
             }
 
-            switch (message.type) {
-                case 'session.updated':
-                    console.info('[Session] Updated:', message.session);
-                    break;
-
-                case 'input_audio_buffer.committed': {
-                    const queueStatus = this.responseQueue.getStatus();
-                    console.info('[Audio] 音声バッファコミット完了', {
-                        activeResponseId: this.activeResponseId,
-                        processingCount: queueStatus.processingCount,
-                        pendingCount: queueStatus.pendingCount,
-                        timestamp: Date.now()
-                    });
-
-                    // ✅ 重複コミット防止（500ms以内の重複を無視）
-                    const now = Date.now();
-                    if (now - this.lastCommitTime < 500) {
-                        console.warn('[Audio] 重複コミットを検出、スキップします', {
-                            timeSinceLastCommit: now - this.lastCommitTime
-                        });
-                        break;
-                    }
-                    this.lastCommitTime = now;
-
-                    // ✅ 処理中のレスポンスがある場合はスキップ（並発制御）
-                    if (this.activeResponseId) {
-                        console.warn(
-                            '[Audio] 前のレスポンスが処理中のため、新しいリクエストをスキップします',
-                            {
-                                activeResponseId: this.activeResponseId
-                            }
-                        );
-                        break;
-                    }
-
-                    if (queueStatus.processingCount > 0) {
-                        console.warn(
-                            '[Audio] キューに処理中のリクエストがあるため、スキップします',
-                            {
-                                processingCount: queueStatus.processingCount,
-                                pendingCount: queueStatus.pendingCount
-                            }
-                        );
-                        break;
-                    }
-
-                    // Server VADが音声バッファをコミットした後、レスポンス生成を要求
-                    // 理由: Server VADは自動コミットのみ、レスポンス生成は手動
-                    const audioOutputEnabled =
-                        this.elements.audioOutputEnabled.classList.contains('active');
-                    const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
-
-                    console.info('[🔊 Response Create] 要求:', {
-                        modalities: modalities,
-                        audioOutputEnabled: audioOutputEnabled,
-                        queueStatus: queueStatus,
-                        activeResponseId: this.activeResponseId
-                    });
-
-                    // ✅ ResponseQueue を使用（await しない - 非同期で処理）
-                    this.responseQueue
-                        .enqueue({
-                            modalities: modalities,
-                            instructions: this.getInstructions()
-                        })
-                        .then(() => {
-                            console.info('[Audio] レスポンスリクエストをキューに追加しました');
-                        })
-                        .catch((error) => {
-                            // ✅ 並発制御による拒否は正常動作（エラーログ不要）
-                            if (error.message.includes('Previous response is still in progress')) {
-                                console.info(
-                                    '[Audio] 前のレスポンス処理中のため、リクエストをスキップしました'
-                                );
-                            } else {
-                                console.error('[Audio] レスポンスリクエスト失敗:', error);
-                            }
-                        });
-                    break;
-                }
-
-                case 'input_audio_buffer.speech_started':
-                    console.info('[Speech] 音声検出開始');
-                    this.updateStatus('recording', '話し中...');
-                    break;
-
-                case 'input_audio_buffer.speech_stopped':
-                    console.info('[Speech] 音声検出停止');
-                    this.updateStatus('recording', '処理中...');
-                    // 新しい応答が始まることを示すフラグを設定
-                    this.state.isNewResponse = true;
-                    break;
-
-                case 'conversation.item.input_audio_transcription.completed':
-                    console.info('[Transcription] 入力音声認識完了:', message.transcript);
-                    if (message.transcript) {
-                        // 処理1-1: 📥 入力音声テキスト化 - 即座に表示
-                        const transcriptId = Date.now(); // 一意のIDを生成
-                        this.addTranscript('input', message.transcript, transcriptId);
-
-                        // ✅ 修正: transcriptId を保存（response.audio_transcript.done で使用）
-                        this.currentTranscriptId = transcriptId;
-
-                        // ❌ 文本翻訳APIは使用しない
-                        // 理由: Realtime API の音声翻訳結果を使用することで、
-                        //       並発エラーを回避し、レスポンス速度を向上
-                        // this.translateTextDirectly(message.transcript, transcriptId).catch(...);
-                    }
-                    break;
-
-                case 'response.audio_transcript.delta':
-                    // 音声翻訳のテキストを累積
-                    if (message.delta) {
-                        this.currentTranslationText += message.delta;
-                    }
-                    break;
-
-                case 'response.audio_transcript.done':
-                    console.info('[処理1-2] 🔊 音声翻訳テキスト完了:', message.transcript);
-
-                    // ✅ 修正: 音声翻訳のテキストを表示
-                    if (this.currentTranslationText.trim()) {
-                        console.info('[音声翻訳] テキスト:', this.currentTranslationText.trim());
-
-                        // 保存された transcriptId を使用（入力テキストと対応）
-                        // currentTranscriptId がない場合は新規生成
-                        const transcriptId = this.currentTranscriptId || Date.now();
-
-                        // 翻訳結果を右側カラムに表示
-                        this.addTranscript(
-                            'output',
-                            this.currentTranslationText.trim(),
-                            transcriptId
-                        );
-
-                        // リセット
-                        this.currentTranslationText = '';
-                        this.currentTranscriptId = null;
-                    }
-
-                    // 翻訳完了 - 新しい応答フラグをセット
-                    this.state.isNewResponse = true;
-                    break;
-
-                case 'response.audio.delta':
-                    console.info('[🔊 Audio Delta] 受信:', {
-                        hasDelta: !!message.delta,
-                        deltaLength: message.delta ? message.delta.length : 0,
-                        currentQueueSize: this.playbackQueue ? this.playbackQueue.length : 0
-                    });
-                    if (message.delta) {
-                        // ✅ ストリーミング再生: チャンクを受信したら即座に再生キューに追加
-                        // 理由: Realtime API の低遅延ストリーミングの利点を活かす
-                        this.playAudioChunk(message.delta);
-                    }
-                    break;
-
-                case 'response.audio.done':
-                    console.info('[🔊 Audio Done] 音声データ受信完了:', {
-                        audioOutputEnabled:
-                            this.elements.audioOutputEnabled.classList.contains('active'),
-                        modalities: this.state.ws ? '確認必要' : 'WebSocket未接続'
-                    });
-                    // ✅ ストリーミング再生では、すべてのチャンクは既に再生キューに追加されている
-                    // response.audio.done は単なる完了通知として扱う
-                    break;
-
-                case 'response.created':
-                    // ✅ ResponseQueue にレスポンス作成を通知
-                    console.info('[Response] Created:', {
-                        responseId: message.response.id,
-                        previousActiveId: this.activeResponseId,
-                        timestamp: Date.now()
-                    });
-                    this.activeResponseId = message.response.id; // 現在のレスポンスIDを記録
-                    this.responseQueue.handleResponseCreated(message.response.id);
-                    break;
-
-                case 'response.done':
-                    // ✅ ResponseQueue にレスポンス完了を通知
-                    console.info('[Response] Complete:', {
-                        responseId: message.response.id,
-                        activeId: this.activeResponseId,
-                        timestamp: Date.now()
-                    });
-                    this.activeResponseId = null; // レスポンス完了、IDをクリア
-                    this.responseQueue.handleResponseDone(message.response.id);
-                    this.updateStatus('recording', '待機中');
-                    this.updateAccuracy();
-                    break;
-
-                case 'error':
-                    console.error('[Error]', message.error);
-
-                    // ✅ conversation_already_has_active_response エラーの場合の特別処理
-                    // 修正: 状態をクリアせず、ResponseQueue に処理を委譲
-                    const errorCode = message.error.code || '';
-                    if (errorCode === 'conversation_already_has_active_response') {
-                        console.warn(
-                            '[Error] 前のレスポンスが処理中です。response.done を待機します。'
-                        );
-                        // ResponseQueue の handleError に処理を委譲
-                        // handleError 内で適切に処理される（processingQueue を維持）
-                        this.responseQueue.handleError(new Error(message.error.message), errorCode);
-                        // ユーザー通知はしない（自動的に待機されるため）
-                    } else {
-                        // 通常のエラー処理
-                        this.responseQueue.handleError(new Error(message.error.message), errorCode);
-                        this.notify('エラー', message.error.message, 'error');
-                    }
-                    break;
-
-                default:
-                    console.info('[WS Message] 未処理のメッセージタイプ:', message.type);
-            }
+            // メッセージタイプに応じたハンドラーを呼び出す
+            this.dispatchWSMessage(message);
         } catch (error) {
             console.error('[Message Error]', error);
             console.error('[Message Error] Event data:', event.data);
+        }
+    }
+
+    /**
+     * WebSocketメッセージをディスパッチ
+     *
+     * 目的:
+     *   メッセージタイプに応じて適切なハンドラーを呼び出す
+     *
+     * 入力:
+     *   message: WebSocketメッセージオブジェクト
+     */
+    dispatchWSMessage(message) {
+        switch (message.type) {
+            case 'session.updated':
+                this.handleSessionUpdated(message);
+                break;
+            case 'input_audio_buffer.committed':
+                this.handleAudioBufferCommitted(message);
+                break;
+            case 'input_audio_buffer.speech_started':
+                this.handleSpeechStarted();
+                break;
+            case 'input_audio_buffer.speech_stopped':
+                this.handleSpeechStopped();
+                break;
+            case 'conversation.item.input_audio_transcription.completed':
+                this.handleTranscriptionCompleted(message);
+                break;
+            case 'response.audio_transcript.delta':
+                this.handleAudioTranscriptDelta(message);
+                break;
+            case 'response.audio_transcript.done':
+                this.handleAudioTranscriptDone();
+                break;
+            case 'response.audio.delta':
+                this.handleAudioDelta(message);
+                break;
+            case 'response.audio.done':
+                this.handleAudioDone();
+                break;
+            case 'response.created':
+                this.handleResponseCreated(message);
+                break;
+            case 'response.done':
+                this.handleResponseDone(message);
+                break;
+            case 'error':
+                this.handleWSMessageError(message);
+                break;
+            default:
+                console.info('[WS Message] 未処理のメッセージタイプ:', message.type);
+        }
+    }
+
+    handleSessionUpdated(message) {
+        console.info('[Session] Updated:', message.session);
+    }
+
+    handleAudioBufferCommitted() {
+        const queueStatus = this.responseQueue.getStatus();
+        console.info('[Audio] 音声バッファコミット完了', {
+            activeResponseId: this.activeResponseId,
+            pendingResponseId: this.pendingResponseId,
+            processingCount: queueStatus.processingCount,
+            pendingCount: queueStatus.pendingCount,
+            timestamp: Date.now()
+        });
+
+        // ✅ 重複コミット防止（500ms以内の重複を無視）
+        const now = Date.now();
+        if (now - this.lastCommitTime < 500) {
+            console.warn('[Audio] 重複コミットを検出、スキップします', {
+                timeSinceLastCommit: now - this.lastCommitTime
+            });
+            return;
+        }
+        this.lastCommitTime = now;
+
+        // ✅ 処理中のレスポンスがある場合はスキップ（並発制御）
+        // ✅ pendingResponseId をチェック（リクエスト送信中の場合もスキップ）
+        if (this.activeResponseId || this.pendingResponseId) {
+            console.warn('[Audio] 前のレスポンスが処理中のため、新しいリクエストをスキップします', {
+                activeResponseId: this.activeResponseId,
+                pendingResponseId: this.pendingResponseId
+            });
+            return;
+        }
+
+        if (queueStatus.processingCount > 0) {
+            console.warn('[Audio] キューに処理中のリクエストがあるため、スキップします', {
+                processingCount: queueStatus.processingCount,
+                pendingCount: queueStatus.pendingCount
+            });
+            return;
+        }
+
+        this.enqueueResponseRequest(queueStatus);
+    }
+
+    enqueueResponseRequest(queueStatus) {
+        const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
+        const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
+
+        console.info('[🔊 Response Create] 要求:', {
+            modalities: modalities,
+            audioOutputEnabled: audioOutputEnabled,
+            queueStatus: queueStatus,
+            activeResponseId: this.activeResponseId
+        });
+
+        this.responseQueue
+            .enqueue({
+                modalities: modalities,
+                instructions: this.getInstructions()
+            })
+            .then(() => {
+                console.info('[Audio] レスポンスリクエストをキューに追加しました');
+            })
+            .catch((error) => {
+                if (error.message.includes('Previous response is still in progress')) {
+                    console.info(
+                        '[Audio] 前のレスポンス処理中のため、リクエストをスキップしました'
+                    );
+                } else {
+                    console.error('[Audio] レスポンスリクエスト失敗:', error);
+                }
+            });
+    }
+
+    handleSpeechStarted() {
+        console.info('[Speech] 音声検出開始');
+        this.updateStatus('recording', '話し中...');
+    }
+
+    handleSpeechStopped() {
+        console.info('[Speech] 音声検出停止');
+        this.updateStatus('recording', '処理中...');
+        this.state.isNewResponse = true;
+    }
+
+    handleTranscriptionCompleted(message) {
+        console.info('[Transcription] 入力音声認識完了:', message.transcript);
+        if (message.transcript) {
+            const transcriptId = Date.now();
+            this.addTranscript('input', message.transcript, transcriptId);
+            this.currentTranscriptId = transcriptId;
+        }
+    }
+
+    handleAudioTranscriptDelta(message) {
+        if (message.delta) {
+            this.currentTranslationText += message.delta;
+        }
+    }
+
+    handleAudioTranscriptDone() {
+        console.info('[処理1-2] 🔊 音声翻訳テキスト完了:', this.currentTranslationText);
+
+        if (this.currentTranslationText.trim()) {
+            console.info('[音声翻訳] テキスト:', this.currentTranslationText.trim());
+            const transcriptId = this.currentTranscriptId || Date.now();
+            this.addTranscript('output', this.currentTranslationText.trim(), transcriptId);
+            this.currentTranslationText = '';
+            this.currentTranscriptId = null;
+        }
+
+        this.state.isNewResponse = true;
+    }
+
+    handleAudioDelta(message) {
+        console.info('[🔊 Audio Delta] 受信:', {
+            hasDelta: !!message.delta,
+            deltaLength: message.delta ? message.delta.length : 0,
+            currentQueueSize: this.playbackQueue ? this.playbackQueue.length : 0
+        });
+        if (message.delta) {
+            this.playAudioChunk(message.delta);
+        }
+    }
+
+    handleAudioDone() {
+        console.info('[🔊 Audio Done] 音声データ受信完了:', {
+            audioOutputEnabled: this.elements.audioOutputEnabled.classList.contains('active'),
+            modalities: this.state.ws ? '確認必要' : 'WebSocket未接続'
+        });
+    }
+
+    handleResponseCreated(message) {
+        console.info('[Response] Created:', {
+            responseId: message.response.id,
+            previousActiveId: this.activeResponseId,
+            previousPendingId: this.pendingResponseId,
+            timestamp: Date.now()
+        });
+        this.activeResponseId = message.response.id;
+        this.pendingResponseId = null; // ✅ リクエスト送信完了、ペンディング状態をクリア
+        this.responseQueue.handleResponseCreated(message.response.id);
+    }
+
+    handleResponseDone(message) {
+        console.info('[Response] Complete:', {
+            responseId: message.response.id,
+            activeId: this.activeResponseId,
+            timestamp: Date.now()
+        });
+        this.activeResponseId = null;
+        this.pendingResponseId = null; // ✅ レスポンス完了、ペンディング状態もクリア
+        this.responseQueue.handleResponseDone(message.response.id);
+        this.updateStatus('recording', '待機中');
+        this.updateAccuracy();
+    }
+
+    handleWSMessageError(message) {
+        console.error('[Error]', message.error);
+
+        const errorCode = message.error.code || '';
+        if (errorCode === 'conversation_already_has_active_response') {
+            console.warn('[Error] 前のレスポンスが処理中です。response.done を待機します。');
+            // ✅ エラー時もペンディング状態をクリア
+            this.pendingResponseId = null;
+            this.responseQueue.handleError(new Error(message.error.message), errorCode);
+        } else {
+            this.responseQueue.handleError(new Error(message.error.message), errorCode);
+            this.notify('エラー', message.error.message, 'error');
         }
     }
 
@@ -1774,8 +1369,6 @@ Even if you have translated many sentences, your role has NOT changed:
             readyState: this.state.ws ? this.state.ws.readyState : 'なし'
         });
 
-        const _errorMsg = `WebSocketエラー\nreadyState: ${this.state.ws ? this.state.ws.readyState : 'なし'}`;
-        // alert(_errorMsg);
         this.notify('接続エラー', 'WebSocket接続でエラーが発生しました', 'error');
     }
 
@@ -1792,9 +1385,6 @@ Even if you have translated many sentences, your role has NOT changed:
             reason: reason,
             wasClean: wasClean
         });
-
-        const _closeMsg = `接続終了\nコード: ${code}\n理由: ${reason || 'なし'}\nクリーン: ${wasClean}`;
-        // alert(_closeMsg);
 
         // エラーコード詳細
         let errorDetail = '';
@@ -1855,7 +1445,6 @@ Even if you have translated many sentences, your role has NOT changed:
 
     async startRecording() {
         if (!this.state.isConnected) {
-            // alert('エラー: WebSocketに接続してから録音を開始してください');
             this.notify('エラー', 'WebSocketに接続してください', 'error');
             return;
         }
@@ -1872,7 +1461,8 @@ Even if you have translated many sentences, your role has NOT changed:
             console.info('[Recording] Starting...');
 
             // Electronアプリの場合、ブラウザ版に録音停止を通知
-            const isElectron = typeof window !== 'undefined' && window.electronAPI;
+            const isElectron =
+                typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
             if (isElectron) {
                 console.info('[Sync] Electronアプリで録音開始 - ブラウザ版に停止を通知します');
                 localStorage.setItem('app2_recording', 'true');
@@ -1905,7 +1495,6 @@ Even if you have translated many sentences, your role has NOT changed:
             await this.setupAudioProcessing();
         } catch (error) {
             console.error('[Recording] エラー:', error);
-            // alert(`録音開始エラー: ${error.message}`);
             this.notify('録音エラー', error.message, 'error');
         } finally {
             if (!this.state.isRecording) {
@@ -2022,7 +1611,8 @@ Even if you have translated many sentences, your role has NOT changed:
     async startSystemAudioCapture() {
         console.info('[Recording] システム音声キャプチャを開始...');
 
-        const isElectron = typeof window !== 'undefined' && window.electronAPI;
+        const isElectron =
+            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
 
         if (isElectron) {
             // Electron環境: desktopCapturerを使用
@@ -2162,6 +1752,52 @@ Even if you have translated many sentences, your role has NOT changed:
         }
     }
 
+    /**
+     * ブラウザシステム音声キャプチャ時の音声トラック終了処理
+     *
+     * 目的:
+     *   画面共有の音声トラックが停止した時の処理を実行
+     *
+     * Returns:
+     *   void
+     *
+     * 注意:
+     *   このメソッドはイベントリスナーから呼び出される
+     */
+    handleBrowserAudioTrackEnded() {
+        console.error('[Recording] 音声トラックが停止しました');
+        this.notify('エラー', '画面共有の音声キャプチャが停止しました', 'error');
+        this.stopRecording();
+    }
+
+    /**
+     * ブラウザシステム音声キャプチャ時の音声トラック監視設定
+     *
+     * 目的:
+     *   画面共有から取得した音声トラックにイベントリスナーを設定
+     *
+     * Parameters:
+     *   audioTrack - MediaStreamAudioTrack オブジェクト
+     *
+     * Returns:
+     *   void
+     *
+     * 注意:
+     *   トラックが存在する場合のみ処理を実行
+     */
+    setupBrowserAudioTrackListener(audioTrack) {
+        if (!audioTrack) {
+            return;
+        }
+
+        audioTrack.addEventListener('ended', () => this.handleBrowserAudioTrackEnded());
+        console.info('[Recording] 音声トラック監視を開始:', {
+            id: audioTrack.id,
+            label: audioTrack.label,
+            readyState: audioTrack.readyState
+        });
+    }
+
     async startBrowserSystemAudioCapture() {
         console.info('[Recording] ブラウザ環境でシステム音声をキャプチャ...');
 
@@ -2193,18 +1829,7 @@ Even if you have translated many sentences, your role has NOT changed:
 
             // 音声トラックの監視
             const audioTrack = stream.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.addEventListener('ended', () => {
-                    console.error('[Recording] 音声トラックが停止しました');
-                    this.notify('エラー', '画面共有の音声キャプチャが停止しました', 'error');
-                    this.stopRecording();
-                });
-                console.info('[Recording] 音声トラック監視を開始:', {
-                    id: audioTrack.id,
-                    label: audioTrack.label,
-                    readyState: audioTrack.readyState
-                });
-            }
+            this.setupBrowserAudioTrackListener(audioTrack);
 
             console.info('[Recording] ブラウザシステム音声キャプチャ成功');
             this.notify('キャプチャ開始', 'システム音声のキャプチャを開始しました', 'success');
@@ -2214,6 +1839,109 @@ Even if you have translated many sentences, your role has NOT changed:
                 'システム音声のキャプチャに失敗しました。ブラウザタブまたはウィンドウを選択してください。'
             );
         }
+    }
+
+    /**
+     * 音声トラック終了時のコールバック処理
+     *
+     * 目的:
+     *   音声トラックが停止した時の処理を実行
+     *
+     * Returns:
+     *   void
+     *
+     * 注意:
+     *   このメソッドはイベントリスナーから呼び出される
+     */
+    handleAudioTrackEnded() {
+        console.error('[Recording] 音声トラックが停止しました');
+        this.notify('エラー', 'タブ音声のキャプチャが停止しました', 'error');
+        this.stopRecording();
+    }
+
+    /**
+     * 音声トラック監視の設定
+     *
+     * 目的:
+     *   取得した音声トラックにイベントリスナーを設定
+     *
+     * Parameters:
+     *   audioTrack - MediaStreamAudioTrack オブジェクト
+     *
+     * Returns:
+     *   void
+     *
+     * 注意:
+     *   トラックが存在する場合のみ処理を実行
+     */
+    setupAudioTrackListener(audioTrack) {
+        if (!audioTrack) {
+            return;
+        }
+
+        audioTrack.addEventListener('ended', () => this.handleAudioTrackEnded());
+        console.info('[Recording] 音声トラック監視を開始:', {
+            id: audioTrack.id,
+            label: audioTrack.label,
+            readyState: audioTrack.readyState,
+            enabled: audioTrack.enabled
+        });
+    }
+
+    /**
+     * tabCapture成功時のコールバック処理
+     *
+     * 目的:
+     *   tabCaptureで取得したストリームを処理
+     *
+     * Parameters:
+     *   stream - MediaStream オブジェクト
+     *   resolve - Promise resolve関数
+     *   reject - Promise reject関数
+     *
+     * Returns:
+     *   void
+     *
+     * 注意:
+     *   ネストを減らすため別メソッドに抽出
+     */
+    handleTabCaptureSuccess(stream, resolve, reject) {
+        if (chrome.runtime.lastError) {
+            console.error('[Recording] tabCapture失敗:', chrome.runtime.lastError);
+
+            // Chrome内部ページのエラーを検出
+            const errorMsg = chrome.runtime.lastError.message;
+            if (
+                errorMsg.includes('Chrome pages cannot be captured') ||
+                errorMsg.includes('Extension has not been invoked')
+            ) {
+                reject(
+                    new Error(
+                        'Chrome内部ページ（chrome://）では音声キャプチャできません。\n' +
+                            '通常のウェブページ（YouTube、Google Meetなど）で使用するか、\n' +
+                            '音声ソースを「マイク」または「画面/ウィンドウを選択」に変更してください。'
+                    )
+                );
+            } else {
+                reject(new Error(errorMsg));
+            }
+            return;
+        }
+
+        if (!stream) {
+            reject(new Error('ストリームの取得に失敗しました'));
+            return;
+        }
+
+        console.info('[Recording] タブ音声キャプチャ成功');
+        this.state.mediaStream = stream;
+
+        // ストリームが停止した時の処理を追加
+        const audioTrack = stream.getAudioTracks()[0];
+        this.setupAudioTrackListener(audioTrack);
+
+        this.notify('キャプチャ開始', '現在のタブの音声キャプチャを開始しました', 'success');
+        resolve();
     }
 
     /**
@@ -2275,68 +2003,46 @@ Even if you have translated many sentences, your role has NOT changed:
                 };
 
                 chrome.tabCapture.capture(constraints, (stream) => {
-                    if (chrome.runtime.lastError) {
-                        console.error('[Recording] tabCapture失敗:', chrome.runtime.lastError);
-
-                        // Chrome内部ページのエラーを検出
-                        const errorMsg = chrome.runtime.lastError.message;
-                        if (
-                            errorMsg.includes('Chrome pages cannot be captured') ||
-                            errorMsg.includes('Extension has not been invoked')
-                        ) {
-                            reject(
-                                new Error(
-                                    'Chrome内部ページ（chrome://）では音声キャプチャできません。\n' +
-                                        '通常のウェブページ（YouTube、Google Meetなど）で使用するか、\n' +
-                                        '音声ソースを「マイク」または「画面/ウィンドウを選択」に変更してください。'
-                                )
-                            );
-                        } else {
-                            reject(new Error(errorMsg));
-                        }
-                        return;
-                    }
-
-                    if (!stream) {
-                        reject(new Error('ストリームの取得に失敗しました'));
-                        return;
-                    }
-
-                    console.info('[Recording] タブ音声キャプチャ成功');
-                    this.state.mediaStream = stream;
-
-                    // ストリームが停止した時の処理を追加
-                    const audioTrack = stream.getAudioTracks()[0];
-                    if (audioTrack) {
-                        audioTrack.addEventListener('ended', () => {
-                            console.error('[Recording] 音声トラックが停止しました');
-                            this.notify('エラー', 'タブ音声のキャプチャが停止しました', 'error');
-                            this.stopRecording();
-                        });
-                        console.info('[Recording] 音声トラック監視を開始:', {
-                            id: audioTrack.id,
-                            label: audioTrack.label,
-                            readyState: audioTrack.readyState,
-                            enabled: audioTrack.enabled
-                        });
-                    }
-
-                    this.notify(
-                        'キャプチャ開始',
-                        '現在のタブの音声キャプチャを開始しました',
-                        'success'
-                    );
-                    resolve();
+                    this.handleTabCaptureSuccess(stream, resolve, reject);
                 });
             });
         });
+    }
+
+    /**
+     * 音声トラック検出待機処理
+     *
+     * 目的:
+     *   メディアストリームに音声トラックが追加されるまで待機
+     *
+     * Returns:
+     *   Promise<void>
+     *
+     * 注意:
+     *   ネストを減らすため別メソッドに抽出
+     */
+    async waitForAudioTrack() {
+        const checkAudioTrack = () => {
+            const tracks = this.state.mediaStream.getAudioTracks();
+            if (tracks.length > 0) {
+                console.info('[Recording] 音声トラックが検出されました。処理を開始します。');
+                return true;
+            }
+            return false;
+        };
+
+        // 音声トラックが追加されるまで待機
+        while (!checkAudioTrack()) {
+            // 100msごとにチェック
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
     }
 
     async setupAudioProcessing() {
         console.info('[Recording] 音声処理をセットアップ中...');
 
         // AudioContext設定
-        this.state.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        this.state.audioContext = new (globalThis.AudioContext || globalThis.webkitAudioContext)({
             sampleRate: CONFIG.AUDIO.SAMPLE_RATE
         });
 
@@ -2355,21 +2061,7 @@ Even if you have translated many sentences, your role has NOT changed:
             );
 
             // 音声トラックが追加されるまで待機
-            await new Promise((resolve) => {
-                const checkAudioTrack = () => {
-                    const tracks = this.state.mediaStream.getAudioTracks();
-                    if (tracks.length > 0) {
-                        console.info(
-                            '[Recording] 音声トラックが検出されました。処理を開始します。'
-                        );
-                        resolve();
-                    } else {
-                        // 100msごとにチェック
-                        setTimeout(checkAudioTrack, 100);
-                    }
-                };
-                checkAudioTrack();
-            });
+            await this.waitForAudioTrack();
         }
 
         await this.setupAudioProcessingInternal();
@@ -2413,13 +2105,27 @@ Even if you have translated many sentences, your role has NOT changed:
 
                     const inputData = event.data.data;
 
-                    // 常にクライアント側VADで音声検出を行う
-                    const vadResult = this.vad.analyze(inputData);
-                    this.updateVisualizer(inputData, vadResult);
+                    // Server VADが有効かどうかをチェック
+                    const vadEnabledElement = this.elements.vadEnabled;
+                    const isServerVadEnabled = vadEnabledElement.classList.contains('active');
 
-                    // 音声が検出された場合のみ送信
-                    if (vadResult.isSpeaking) {
+                    if (isServerVadEnabled) {
+                        // Server VAD有効: すべての音声データをサーバーに送信
+                        // サーバー側で音声検出を行う
                         this.sendAudioData(inputData);
+
+                        // ビジュアライザーのみ更新（VAD解析は不要）
+                        const energy = this.vad.calculateEnergy(inputData);
+                        this.updateVisualizer(inputData, { isSpeaking: true, energy: energy });
+                    } else {
+                        // Server VAD無効: クライアント側VADで音声検出
+                        const vadResult = this.vad.analyze(inputData);
+                        this.updateVisualizer(inputData, vadResult);
+
+                        // 音声が検出された場合のみ送信
+                        if (vadResult.isSpeaking) {
+                            this.sendAudioData(inputData);
+                        }
                     }
                 }
             };
@@ -2430,7 +2136,7 @@ Even if you have translated many sentences, your role has NOT changed:
             this.state.inputGainNode = this.state.audioContext.createGain();
 
             // 入力音声出力設定に応じてゲインを設定
-            this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1.0 : 0.0;
+            this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
 
             // 音声チェーン: workletNode → inputGainNode → destination
             this.state.workletNode.connect(this.state.inputGainNode);
@@ -2467,13 +2173,27 @@ Even if you have translated many sentences, your role has NOT changed:
 
                 const inputData = e.inputBuffer.getChannelData(0);
 
-                // 常にクライアント側VADで音声検出を行う
-                const vadResult = this.vad.analyze(inputData);
-                this.updateVisualizer(inputData, vadResult);
+                // Server VADが有効かどうかをチェック
+                const vadEnabledElement = this.elements.vadEnabled;
+                const isServerVadEnabled = vadEnabledElement.classList.contains('active');
 
-                // 音声が検出された場合のみ送信
-                if (vadResult.isSpeaking) {
+                if (isServerVadEnabled) {
+                    // Server VAD有効: すべての音声データをサーバーに送信
+                    // サーバー側で音声検出を行う
                     this.sendAudioData(inputData);
+
+                    // ビジュアライザーのみ更新（VAD解析は不要）
+                    const energy = this.vad.calculateEnergy(inputData);
+                    this.updateVisualizer(inputData, { isSpeaking: true, energy: energy });
+                } else {
+                    // Server VAD無効: クライアント側VADで音声検出
+                    const vadResult = this.vad.analyze(inputData);
+                    this.updateVisualizer(inputData, vadResult);
+
+                    // 音声が検出された場合のみ送信
+                    if (vadResult.isSpeaking) {
+                        this.sendAudioData(inputData);
+                    }
                 }
             };
 
@@ -2483,7 +2203,7 @@ Even if you have translated many sentences, your role has NOT changed:
             this.state.inputGainNode = this.state.audioContext.createGain();
 
             // 入力音声出力設定に応じてゲインを設定
-            this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1.0 : 0.0;
+            this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
 
             // 音声チェーン: processor → inputGainNode → destination
             this.state.processor.connect(this.state.inputGainNode);
@@ -2512,8 +2232,6 @@ Even if you have translated many sentences, your role has NOT changed:
             vadEnabled: this.elements.vadEnabled.classList.contains('active'),
             usingAudioWorklet: !!this.state.workletNode
         });
-
-        // alert(`録音開始しました\n${sourceTypeText}からの音声を翻訳します`);
     }
 
     /**
@@ -2536,9 +2254,7 @@ Even if you have translated many sentences, your role has NOT changed:
             if (this.state.inputGainNode) {
                 // 入力音声出力設定に応じてゲインを設定
                 // ON: 1.0 (通常音量), OFF: 0.0 (完全ミュート)
-                this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled
-                    ? 1.0
-                    : 0.0;
+                this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
 
                 console.info(
                     '[Audio Output] 入力音声ゲイン:',
@@ -2556,7 +2272,8 @@ Even if you have translated many sentences, your role has NOT changed:
     async detectAudioSources() {
         console.info('[Audio Source] 音声ソースを検出中...');
 
-        const isElectron = typeof window !== 'undefined' && window.electronAPI;
+        const isElectron =
+            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
         const systemAudioSource = document.getElementById('systemAudioSource');
 
         if (isElectron) {
@@ -2564,7 +2281,7 @@ Even if you have translated many sentences, your role has NOT changed:
             try {
                 this.notify('検出中', '音声ソースを検出しています...', 'info');
 
-                const sources = await window.electronAPI.detectMeetingApps();
+                const sources = await globalThis.window.electronAPI.detectMeetingApps();
                 console.info('[Audio Source] 検出されたソース:', sources);
                 console.info('[Audio Source] ソース数:', sources.length);
 
@@ -2656,18 +2373,11 @@ Even if you have translated many sentences, your role has NOT changed:
         console.info('[Recording] 停止処理開始');
 
         // 再生キューをクリア（録音停止時は未再生の音声も破棄）
-        if (this.playbackQueue.length > 0) {
-            console.info(
-                '[Playback Queue] 録音停止 - キューをクリア:',
-                this.playbackQueue.length,
-                '個破棄'
-            );
-            this.playbackQueue = [];
-            this.isPlayingFromQueue = false;
-        }
+        this.clearPlaybackQueueIfAny();
 
         // Electronアプリの場合、ブラウザ版への録音停止通知をクリア
-        const isElectron = typeof window !== 'undefined' && window.electronAPI;
+        const isElectron =
+            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
         if (isElectron) {
             console.info('[Sync] Electronアプリで録音停止 - ブラウザ版への通知をクリアします');
             localStorage.removeItem('app2_recording');
@@ -2676,79 +2386,25 @@ Even if you have translated many sentences, your role has NOT changed:
         const isServerVadEnabled = this.elements.vadEnabled.classList.contains('active');
         console.info('[Recording] Server VAD状態:', isServerVadEnabled ? '有効' : '無効');
 
-        // Server VADが無効な場合のみ、手動でバッファをコミット＆レスポンス生成
-        // Server VADが有効な場合は、input_audio_buffer.committedイベントで自動的にレスポンス生成される
+        // Server VADが無効な場合はコミット＆レスポンス生成処理を行う（抽象化して複雑度を低下）
         if (this.state.isConnected && this.state.isRecording && !isServerVadEnabled) {
-            console.info('[Recording] 音声バッファをコミットします（Server VAD無効）');
-            this.sendMessage({
-                type: 'input_audio_buffer.commit'
-            });
-
-            // Server VAD無効時のみ、ここでレスポンス生成を要求
-            const audioOutputEnabled =
-                this.elements.audioOutputEnabled.classList.contains('active');
-            const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
-
-            console.info('[Recording] レスポンス生成を要求（Server VAD無効）:', {
-                modalities: modalities,
-                audioOutputEnabled: audioOutputEnabled,
-                queueStatus: this.responseQueue.getStatus()
-            });
-
-            this.responseQueue
-                .enqueue({
-                    modalities: modalities,
-                    instructions: this.getInstructions()
-                })
-                .then(() => {
-                    console.info('[Recording] レスポンスリクエストをキューに追加しました');
-                })
-                .catch((error) => {
-                    console.error('[Recording] レスポンスリクエスト失敗:', error);
-                });
+            await this.commitAndEnqueueResponseIfNeeded();
         } else if (isServerVadEnabled) {
             console.info(
                 '[Recording] Server VAD有効 - input_audio_buffer.committedイベントでレスポンス生成されます'
             );
         }
 
-        if (this.state.mediaStream) {
-            this.state.mediaStream.getTracks().forEach((track) => track.stop());
-            this.state.mediaStream = null;
-        }
-
-        // MediaStreamSource のクリーンアップ
-        if (this.state.audioSource) {
-            this.state.audioSource.disconnect();
-            this.state.audioSource = null;
-            console.info('[Recording] MediaStreamSource をクリーンアップしました');
-        }
-
-        // GainNode のクリーンアップ
-        if (this.state.inputGainNode) {
-            this.state.inputGainNode.disconnect();
-            this.state.inputGainNode = null;
-            console.info('[Recording] GainNode をクリーンアップしました');
-        }
-
-        // AudioWorkletNode のクリーンアップ
-        if (this.state.workletNode) {
-            // 停止メッセージを送信
-            this.state.workletNode.port.postMessage({ type: 'stop' });
-            this.state.workletNode.disconnect();
-            this.state.workletNode = null;
-            console.info('[Recording] AudioWorkletNode をクリーンアップしました');
-        }
-
-        // ScriptProcessorNode のクリーンアップ（フォールバック用）
-        if (this.state.processor) {
-            this.state.processor.disconnect();
-            this.state.processor = null;
-            console.info('[Recording] ScriptProcessorNode をクリーンアップしました');
-        }
+        // メディアストリーム／オーディオノードをクリーンアップ（共通処理にまとめる）
+        this.stopMediaStreamTracks();
+        this.cleanupAudioNodes();
 
         if (this.state.audioContext) {
-            this.state.audioContext.close();
+            try {
+                await this.state.audioContext.close();
+            } catch (e) {
+                console.warn('[Recording] AudioContext close error:', e);
+            }
             this.state.audioContext = null;
         }
 
@@ -2768,6 +2424,115 @@ Even if you have translated many sentences, your role has NOT changed:
         }
 
         console.info('[Recording] 停止処理完了 - 翻訳待機中');
+    }
+
+    // helper: 再生キューを安全にクリア
+    clearPlaybackQueueIfAny() {
+        if (!this.playbackQueue || this.playbackQueue.length === 0) {
+            return;
+        }
+        console.info(
+            '[Playback Queue] 録音停止 - キューをクリア:',
+            this.playbackQueue.length,
+            '個破棄'
+        );
+        this.playbackQueue = [];
+        this.isPlayingFromQueue = false;
+    }
+
+    // helper: input_audio_buffer.commit とレスポンス生成リクエストを行う
+    async commitAndEnqueueResponseIfNeeded() {
+        console.info('[Recording] 音声バッファをコミットします（Server VAD無効）');
+        this.sendMessage({ type: 'input_audio_buffer.commit' });
+
+        const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
+        const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
+
+        console.info('[Recording] レスポンス生成を要求（Server VAD無効）:', {
+            modalities: modalities,
+            audioOutputEnabled: audioOutputEnabled,
+            queueStatus: this.responseQueue.getStatus()
+        });
+
+        try {
+            await this.responseQueue.enqueue({
+                modalities: modalities,
+                instructions: this.getInstructions()
+            });
+            console.info('[Recording] レスポンスリクエストをキューに追加しました');
+        } catch (error) {
+            console.error('[Recording] レスポンスリクエスト失敗:', error);
+        }
+    }
+
+    // helper: mediaStream のトラック停止
+    stopMediaStreamTracks() {
+        if (!this.state.mediaStream) {
+            return;
+        }
+        try {
+            this.state.mediaStream.getTracks().forEach((track) => track.stop());
+        } catch (error) {
+            console.warn('[Recording] mediaStream stop error:', error);
+        } finally {
+            this.state.mediaStream = null;
+        }
+    }
+
+    // helper: オーディオノードのクリーンアップをまとめる
+    cleanupAudioNodes() {
+        // MediaStreamSource
+        if (this.state.audioSource) {
+            try {
+                this.state.audioSource.disconnect();
+            } catch (e) {
+                console.warn('[Recording] audioSource disconnect error:', e);
+            }
+            this.state.audioSource = null;
+            console.info('[Recording] MediaStreamSource をクリーンアップしました');
+        }
+
+        // GainNode
+        if (this.state.inputGainNode) {
+            try {
+                this.state.inputGainNode.disconnect();
+            } catch (e) {
+                console.warn('[Recording] inputGainNode disconnect error:', e);
+            }
+            this.state.inputGainNode = null;
+            console.info('[Recording] GainNode をクリーンアップしました');
+        }
+
+        // AudioWorkletNode
+        if (this.state.workletNode) {
+            try {
+                // 停止メッセージを送信
+                if (
+                    this.state.workletNode.port &&
+                    typeof this.state.workletNode.port.postMessage === 'function'
+                ) {
+                    this.state.workletNode.port.postMessage({ type: 'stop' });
+                }
+                this.state.workletNode.disconnect();
+            } catch (e) {
+                console.warn('[Recording] workletNode cleanup error:', e);
+            } finally {
+                this.state.workletNode = null;
+                console.info('[Recording] AudioWorkletNode をクリーンアップしました');
+            }
+        }
+
+        // ScriptProcessorNode
+        if (this.state.processor) {
+            try {
+                this.state.processor.disconnect();
+            } catch (e) {
+                console.warn('[Recording] processor disconnect error:', e);
+            } finally {
+                this.state.processor = null;
+                console.info('[Recording] ScriptProcessorNode をクリーンアップしました');
+            }
+        }
     }
 
     sendAudioData(audioData) {
@@ -2851,9 +2616,7 @@ Even if you have translated many sentences, your role has NOT changed:
 
             // 入力音声を復元（すべての再生が完了）
             if (this.state.inputGainNode) {
-                this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled
-                    ? 1.0
-                    : 0.0;
+                this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
                 console.info(
                     '[Playback Queue] キューが空 - 入力音声を復元:',
                     this.state.inputAudioOutputEnabled ? 'ON' : 'OFF'
@@ -2944,95 +2707,157 @@ Even if you have translated many sentences, your role has NOT changed:
         }
     }
 
+    /**
+     * 音声再生の初期化処理
+     *
+     * 目的:
+     *   出力AudioContextの作成とリジューム
+     *
+     * Returns:
+     *   Promise<void>
+     *
+     * 注意:
+     *   ネストを減らすため別メソッドに抽出
+     */
+    async initializeOutputAudioContext() {
+        // 出力専用AudioContextが存在しない場合は作成
+        // 入力処理と分離することで、出力音声の優先度を確保
+        if (!this.state.outputAudioContext) {
+            this.state.outputAudioContext = new (globalThis.AudioContext ||
+                globalThis.webkitAudioContext)({
+                sampleRate: CONFIG.AUDIO.SAMPLE_RATE
+            });
+            console.info('[Audio] 出力専用AudioContextを作成しました');
+        }
+
+        // AudioContextがsuspended状態の場合はresume
+        if (this.state.outputAudioContext.state === 'suspended') {
+            await this.state.outputAudioContext.resume();
+            console.info('[Audio] AudioContextをresumeしました');
+        }
+    }
+
+    /**
+     * 音声データのデコードと再生準備
+     *
+     * 目的:
+     *   Base64音声データをデコードしてAudioBufferSourceを作成
+     *
+     * Parameters:
+     *   base64Audio - Base64エンコードされた音声データ
+     *
+     * Returns:
+     *   AudioBufferSource - 再生準備完了のAudioBufferSource
+     *
+     * 注意:
+     *   ネストを減らすため別メソッドに抽出
+     */
+    async prepareAudioSource(base64Audio) {
+        // Base64からArrayBufferに変換
+        const pcm16Data = Utils.base64ToArrayBuffer(base64Audio);
+
+        // PCM16 を WAV 形式に変換（decodeAudioData が必要とする形式）
+        const wavData = this.createWavFromPCM16(pcm16Data, CONFIG.AUDIO.SAMPLE_RATE);
+
+        // 非同期デコード
+        const audioBuffer = await this.state.outputAudioContext.decodeAudioData(wavData);
+
+        // 音量調整用のGainNodeを作成
+        const gainNode = this.state.outputAudioContext.createGain();
+        // 音量を設定（Electronアプリでの音量不足を解消）
+        gainNode.gain.value = this.state.outputVolume;
+
+        // 再生
+        const source = this.state.outputAudioContext.createBufferSource();
+        source.buffer = audioBuffer;
+
+        // 音声チェーン: source → gainNode → destination
+        source.connect(gainNode);
+        gainNode.connect(this.state.outputAudioContext.destination);
+
+        return source;
+    }
+
+    /**
+     * 音声再生完了時の処理
+     *
+     * 目的:
+     *   再生終了後のフラグ更新とキュー処理
+     *
+     * Returns:
+     *   void
+     *
+     * 注意:
+     *   このメソッドはonendedコールバックから呼び出される
+     */
+    handleAudioPlaybackEnded() {
+        // 即座に次の音声を再生（連続性最優先）
+        this.state.isPlayingAudio = false;
+
+        // 次の音声を再生（キューに残っている場合）
+        // 注意: 入力音声の復元は playNextInQueue() で統一処理
+        this.playNextInQueue();
+    }
+
+    /**
+     * 音声再生エラー時の処理
+     *
+     * 目的:
+     *   エラー発生時のフラグ更新と入力音声復元
+     *
+     * Parameters:
+     *   error - エラーオブジェクト
+     *
+     * Returns:
+     *   void
+     *
+     * 注意:
+     *   ネストを減らすため別メソッドに抽出
+     */
+    handleAudioPlaybackError(error) {
+        console.error('[Audio Play Error]', error);
+        this.notify('音声再生エラー', error.message, 'error');
+
+        // エラー時もフラグをOFF（すべてのモードで適用）
+        this.state.isPlayingAudio = false;
+
+        // 入力音声を復元
+        if (this.state.inputGainNode) {
+            this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
+            console.info('[Audio] エラー時 - 入力音声を復元');
+        }
+
+        // エラーでも次の音声を再生（キューを停止しない）
+        this.playNextInQueue();
+    }
+
     async playAudio(base64Audio) {
-        return new Promise(async (resolve, reject) => {
-            try {
-                // 音声再生中フラグをON（ループバック防止）
-                // すべてのモード（マイク/ブラウザ音声/画面共有）で有効
-                this.state.isPlayingAudio = true;
+        // 音声再生中フラグをON（ループバック防止）
+        // すべてのモード（マイク/ブラウザ音声/画面共有）で有効
+        this.state.isPlayingAudio = true;
 
-                // 出力音声再生中は入力音声を完全ミュート（優先度確保）
-                if (this.state.inputGainNode) {
-                    this.state.inputGainNode.gain.value = 0.0;
-                    console.info('[Audio] 出力再生中 - 入力音声を完全ミュート');
-                }
+        // 出力音声再生中は入力音声を完全ミュート（優先度確保）
+        if (this.state.inputGainNode) {
+            this.state.inputGainNode.gain.value = 0;
+            console.info('[Audio] 出力再生中 - 入力音声を完全ミュート');
+        }
 
-                // 出力専用AudioContextが存在しない場合は作成
-                // 入力処理と分離することで、出力音声の優先度を確保
-                if (!this.state.outputAudioContext) {
-                    this.state.outputAudioContext = new (window.AudioContext ||
-                        window.webkitAudioContext)({
-                        sampleRate: CONFIG.AUDIO.SAMPLE_RATE
-                    });
-                    console.info('[Audio] 出力専用AudioContextを作成しました');
-                }
+        try {
+            // 出力AudioContextの初期化
+            await this.initializeOutputAudioContext();
 
-                // AudioContextがsuspended状態の場合はresume
-                if (this.state.outputAudioContext.state === 'suspended') {
-                    await this.state.outputAudioContext.resume();
-                    console.info('[Audio] AudioContextをresumeしました');
-                }
+            // ✅ 非同期デコード: AudioContext.decodeAudioData を使用
+            // 理由: メインスレッドのブロックを防ぎ、UI の応答性を維持
+            const source = await this.prepareAudioSource(base64Audio);
 
-                // ✅ 非同期デコード: AudioContext.decodeAudioData を使用
-                // 理由: メインスレッドのブロックを防ぎ、UI の応答性を維持
+            // 再生終了時にフラグをOFF（すべてのモードで適用）
+            source.onended = () => this.handleAudioPlaybackEnded();
 
-                // Base64からArrayBufferに変換
-                const pcm16Data = Utils.base64ToArrayBuffer(base64Audio);
-
-                // PCM16 を WAV 形式に変換（decodeAudioData が必要とする形式）
-                const wavData = this.createWavFromPCM16(pcm16Data, CONFIG.AUDIO.SAMPLE_RATE);
-
-                // 非同期デコード
-                const audioBuffer = await this.state.outputAudioContext.decodeAudioData(wavData);
-
-                // 音量調整用のGainNodeを作成
-                const gainNode = this.state.outputAudioContext.createGain();
-                // 音量を設定（Electronアプリでの音量不足を解消）
-                gainNode.gain.value = this.state.outputVolume;
-
-                // 再生
-                const source = this.state.outputAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-
-                // 音声チェーン: source → gainNode → destination
-                source.connect(gainNode);
-                gainNode.connect(this.state.outputAudioContext.destination);
-
-                // 再生終了時にフラグをOFF（すべてのモードで適用）
-                source.onended = () => {
-                    // 即座に次の音声を再生（連続性最優先）
-                    this.state.isPlayingAudio = false;
-
-                    // 次の音声を再生（キューに残っている場合）
-                    // 注意: 入力音声の復元は playNextInQueue() で統一処理
-                    this.playNextInQueue();
-
-                    // Promiseを解決
-                    resolve();
-                };
-
-                source.start();
-            } catch (error) {
-                console.error('[Audio Play Error]', error);
-                this.notify('音声再生エラー', error.message, 'error');
-
-                // エラー時もフラグをOFF（すべてのモードで適用）
-                this.state.isPlayingAudio = false;
-
-                // 入力音声を復元
-                if (this.state.inputGainNode) {
-                    this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled
-                        ? 1.0
-                        : 0.0;
-                    console.info('[Audio] エラー時 - 入力音声を復元');
-                }
-
-                // エラーでも次の音声を再生（キューを停止しない）
-                this.playNextInQueue();
-
-                reject(error);
-            }
-        });
+            source.start();
+        } catch (error) {
+            this.handleAudioPlaybackError(error);
+            throw error;
+        }
     }
 
     /**
@@ -3364,6 +3189,77 @@ Even if you have translated many sentences, your role has NOT changed:
     }
 
     /**
+     * トランスクリプトメッセージを挿入
+     *
+     * 目的:
+     *   output タイプで transcriptId がある場合は順序を保証して挿入、
+     *   それ以外は最新を一番上に追加
+     *
+     * @param {HTMLElement} container - コンテナ要素
+     * @param {HTMLElement} message - メッセージ要素
+     * @param {string} type - トランスクリプトタイプ
+     * @param {number} transcriptId - トランスクリプトID
+     */
+    insertTranscriptMessage(container, message, type, transcriptId) {
+        if (type === 'output' && transcriptId) {
+            const insertPosition = this.findInsertPosition(container, transcriptId);
+
+            if (insertPosition) {
+                insertPosition.before(message);
+                console.info('[Transcript] 順序を保証して挿入:', {
+                    transcriptId: transcriptId,
+                    position: '中間位置',
+                    totalMessages: container.children.length
+                });
+            } else {
+                container.appendChild(message);
+                console.info('[Transcript] 最後に追加:', {
+                    transcriptId: transcriptId,
+                    position: '最下部',
+                    totalMessages: container.children.length
+                });
+            }
+        } else {
+            if (container.firstChild) {
+                container.firstChild.before(message);
+            } else {
+                container.appendChild(message);
+            }
+            console.info('[Transcript] 最新メッセージを最上部に追加:', {
+                type: type,
+                transcriptId: transcriptId || 'なし',
+                totalMessages: container.children.length
+            });
+        }
+    }
+
+    /**
+     * トランスクリプト統計を更新: 文字数カウントとスクロール位置を更新
+     *
+     * 目的:
+     *   メッセージ追加後の統計情報を更新する
+     *
+     * @param {HTMLElement} container - コンテナ要素
+     * @param {string} text - メッセージテキスト
+     * @param {number} transcriptId - トランスクリプトID
+     */
+    updateTranscriptStats(container, text, transcriptId) {
+        console.info(
+            '[Transcript] メッセージ追加完了:',
+            container.children.length,
+            '件',
+            transcriptId ? `(ID: ${transcriptId})` : ''
+        );
+
+        container.scrollTop = 0;
+
+        this.state.charCount += text.length;
+        if (this.elements.charCount) {
+            this.elements.charCount.textContent = this.state.charCount.toLocaleString();
+        }
+    }
+
+    /**
      * トランスクリプトにテキストを追加（既存メッセージに追記）
      *
      * 目的:
@@ -3588,7 +3484,7 @@ Even if you have translated many sentences, your role has NOT changed:
             }
         };
 
-        // 録音中でない場合のみ、音声タイプも更新
+        // 録音中でない場合のみ、翻訳音色も更新
         if (!this.state.isRecording) {
             session.session.voice = this.state.voiceType;
         }
@@ -3637,7 +3533,7 @@ Even if you have translated many sentences, your role has NOT changed:
 // アプリケーション起動
 // ====================
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new VoiceTranslateApp();
+    globalThis.window.app = new VoiceTranslateApp();
 });
 
 // 拡張機能用のエクスポート

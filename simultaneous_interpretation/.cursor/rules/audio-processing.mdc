@@ -1,0 +1,434 @@
+---
+description: 音声処理パイプライン、VAD、音声入出力に関するルール
+globs: src/audio/**,src/core/AudioManager.ts,electron/audioCapture.ts,electron/VoiceActivityDetector.ts
+---
+# 音声処理ルール
+
+## 音声処理アーキテクチャ
+
+### パイプライン構造
+
+[src/audio/AudioPipeline.ts](mdc:src/audio/AudioPipeline.ts) を中心とした責任の連鎖パターン：
+
+```
+AudioInput
+    ↓
+VADProcessor (音声活性検出)
+    ↓
+ResamplerProcessor (24kHz変換)
+    ↓
+EncoderProcessor (PCM16 + Base64)
+    ↓
+WebSocket送信
+```
+
+### プロセッサーインターフェース
+
+```typescript
+export interface IAudioProcessor {
+    readonly name: string;
+    process(input: AudioData): Promise<AudioProcessingResult>;
+    initialize(): Promise<void>;
+    dispose(): Promise<void>;
+    setNext(processor: IAudioProcessor | null): void;
+}
+```
+
+## VAD (Voice Activity Detection)
+
+### 実装
+
+#### ブラウザ/Renderer: [src/core/VAD.ts](mdc:src/core/VAD.ts)
+- Web Audio API ベース
+- AnalyserNode を使用
+
+#### Electron: [electron/VoiceActivityDetector.ts](mdc:electron/VoiceActivityDetector.ts)
+- エネルギーベース検出
+- キャリブレーション機能
+- 適応的閾値
+
+### VAD 設定パラメータ
+
+```typescript
+interface VADOptions {
+    threshold: number;        // エネルギー閾値 (0.01 推奨)
+    debounceTime: number;     // デバウンス時間 (300ms 推奨)
+    onSpeechStart?: () => void;
+    onSpeechEnd?: () => void;
+}
+```
+
+### VAD 処理フロー
+
+```
+1. 音声データ入力 (Float32Array)
+   ↓
+2. エネルギー計算: RMS (Root Mean Square)
+   energy = sqrt(Σ(sample^2) / N)
+   ↓
+3. キャリブレーション (最初の30サンプル)
+   - ノイズフロア測定
+   - 適応的閾値計算
+   ↓
+4. 音声検出判定
+   smoothedEnergy > adaptiveThreshold
+   ↓
+5. デバウンス処理 (300ms)
+   - 音声開始: 閾値超過
+   - 音声終了: 閾値未満が継続
+```
+
+### VAD ベストプラクティス
+
+```typescript
+// ✅ 推奨: キャリブレーション完了後に処理開始
+const vad = new VoiceActivityDetector({
+    threshold: 0.01,
+    debounceTime: 300,
+    onSpeechStart: () => {
+        // バッファリング開始
+        this.startBuffering();
+    },
+    onSpeechEnd: () => {
+        // バッファ送信
+        this.flushBuffer();
+    }
+});
+
+// 定期的に分析
+const result = vad.analyze(audioData);
+if (!result.isSpeaking && vad.isCalibrating) {
+    // まだキャリブレーション中は処理しない
+    return;
+}
+```
+
+## 音声入力管理
+
+### AudioManager ([src/core/AudioManager.ts](mdc:src/core/AudioManager.ts))
+
+#### 音声ソースタイプ
+
+```typescript
+export type AudioSourceType = 'microphone' | 'system';
+```
+
+#### 入力メソッド
+
+1. **マイク入力**
+```typescript
+async startMicrophoneCapture(constraints: AudioConstraints): Promise<void>
+```
+
+2. **ブラウザシステム音声** (displayMedia API)
+```typescript
+async startBrowserSystemAudioCapture(): Promise<void>
+```
+
+3. **Electron システム音声** (desktopCapturer)
+```typescript
+async startElectronSystemAudioCapture(sourceId?: string): Promise<void>
+```
+
+### 音声制約設定
+
+```typescript
+interface AudioConstraints {
+    echoCancellation: boolean;    // エコーキャンセル
+    noiseSuppression: boolean;    // ノイズ抑制
+    autoGainControl: boolean;     // 自動ゲイン制御
+}
+
+// 推奨設定
+const constraints: AudioConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+};
+```
+
+## 音声処理設定
+
+### AudioContext 設定
+
+```typescript
+const audioContext = new AudioContext({
+    sampleRate: 48000,  // 入力: 48kHz
+    latencyHint: 'interactive'  // 低遅延モード
+});
+```
+
+### バッファサイズ
+
+```typescript
+const BUFFER_SIZE = {
+    MIN: 4800,   // 100ms @ 48kHz
+    MAX: 8000,   // 166ms @ 48kHz
+    TARGET: 6000 // 125ms @ 48kHz (推奨)
+};
+```
+
+### リサンプリング (48kHz → 24kHz)
+
+```typescript
+// ResamplerProcessor: Linear interpolation
+private resample(input: Float32Array, inputRate: number, outputRate: number): Float32Array {
+    const ratio = inputRate / outputRate;
+    const outputLength = Math.floor(input.length / ratio);
+    const output = new Float32Array(outputLength);
+    
+    for (let i = 0; i < outputLength; i++) {
+        const position = i * ratio;
+        const index = Math.floor(position);
+        const fraction = position - index;
+        
+        // 線形補間
+        output[i] = input[index]! * (1 - fraction) + 
+                    (input[index + 1] ?? input[index]!) * fraction;
+    }
+    
+    return output;
+}
+```
+
+## 音声出力管理
+
+### 音声再生
+
+```typescript
+async playAudio(base64Audio: string): Promise<void> {
+    // 1. Base64 デコード
+    const audioData = this.base64ToArrayBuffer(base64Audio);
+    
+    // 2. AudioContext でデコード
+    const audioBuffer = await this.outputAudioContext.decodeAudioData(audioData);
+    
+    // 3. AudioBufferSourceNode 作成
+    const source = this.outputAudioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    
+    // 4. ゲインノード接続（音量調整）
+    const gainNode = this.outputAudioContext.createGain();
+    gainNode.gain.value = this.outputVolume;  // デフォルト: 2.0
+    
+    source.connect(gainNode);
+    gainNode.connect(this.outputAudioContext.destination);
+    
+    // 5. 再生
+    source.start();
+}
+```
+
+### 音声キュー管理
+
+```typescript
+private audioQueue: string[] = [];
+private isPlayingFromQueue = false;
+
+// キューに追加
+enqueueAudio(base64Audio: string): void {
+    this.audioQueue.push(base64Audio);
+    this.processQueue();
+}
+
+// 順次再生
+private async processQueue(): Promise<void> {
+    if (this.isPlayingFromQueue || this.audioQueue.length === 0) {
+        return;
+    }
+    
+    this.isPlayingFromQueue = true;
+    
+    while (this.audioQueue.length > 0) {
+        const audio = this.audioQueue.shift();
+        if (audio) {
+            await this.playAudio(audio);
+        }
+    }
+    
+    this.isPlayingFromQueue = false;
+}
+```
+
+## Electron 音声キャプチャ
+
+### システム音声ソース検出 ([electron/audioCapture.ts](mdc:electron/audioCapture.ts))
+
+```typescript
+// 会議アプリとブラウザを検出
+const sources = await ElectronAudioCapture.detectMeetingApps();
+
+// フィルタリングパターン
+const meetingAppPatterns = [
+    /Teams/i,           // Microsoft Teams
+    /Zoom/i,            // Zoom
+    /Google Meet/i,     // Google Meet
+    /Chrome/i,          // Google Chrome
+    /Edge/i,            // Microsoft Edge
+    // ... 他の会議アプリ・ブラウザ
+];
+```
+
+### 音声ストリーム取得
+
+```typescript
+// desktopCapturer API を使用
+const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+        mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: sourceId
+        }
+    } as any,
+    video: false
+});
+
+// 音声トラック確認
+const audioTracks = stream.getAudioTracks();
+if (audioTracks.length === 0) {
+    throw new Error('No audio track found');
+}
+```
+
+## パフォーマンス最適化
+
+### 音声バッファ管理
+
+```typescript
+// ✅ 循環バッファを使用
+class CircularAudioBuffer {
+    private buffer: Float32Array;
+    private writeIndex = 0;
+    
+    constructor(size: number) {
+        this.buffer = new Float32Array(size);
+    }
+    
+    append(data: Float32Array): void {
+        for (let i = 0; i < data.length; i++) {
+            this.buffer[this.writeIndex] = data[i]!;
+            this.writeIndex = (this.writeIndex + 1) % this.buffer.length;
+        }
+    }
+}
+```
+
+### メモリリーク防止
+
+```typescript
+// ✅ リソース解放
+async stopRecording(): Promise<void> {
+    // AudioWorklet 削除
+    if (this.workletNode) {
+        this.workletNode.disconnect();
+        this.workletNode = null;
+    }
+    
+    // MediaStream 停止
+    if (this.mediaStream) {
+        this.mediaStream.getTracks().forEach(track => track.stop());
+        this.mediaStream = null;
+    }
+    
+    // AudioContext 停止（非推奨）
+    // AudioContextは再利用するため、通常はcloseしない
+    // if (this.audioContext && this.audioContext.state !== 'closed') {
+    //     await this.audioContext.close();
+    // }
+}
+```
+
+### AudioWorklet 使用 (推奨)
+
+```typescript
+// ✅ AudioWorklet を優先使用（低遅延・高性能）
+async setupAudioWorklet(): Promise<void> {
+    await this.audioContext!.audioWorklet.addModule('audio-processor-worklet.js');
+    
+    this.workletNode = new AudioWorkletNode(
+        this.audioContext!,
+        'audio-processor'
+    );
+    
+    this.workletNode.port.onmessage = (event) => {
+        const audioData = event.data as Float32Array;
+        this.handleAudioData(audioData);
+    };
+    
+    this.audioSource!.connect(this.workletNode);
+}
+
+// ❌ フォールバック: ScriptProcessorNode（非推奨）
+// ScriptProcessorNodeは廃止予定、AudioWorkletが利用できない環境のみ使用
+```
+
+## エラーハンドリング
+
+### 音声キャプチャエラー
+
+```typescript
+try {
+    await this.startMicrophoneCapture(constraints);
+} catch (error) {
+    if (error.name === 'NotAllowedError') {
+        throw new Error('マイクへのアクセスが拒否されました');
+    } else if (error.name === 'NotFoundError') {
+        throw new Error('マイクが見つかりません');
+    } else {
+        throw new Error(`音声キャプチャエラー: ${error.message}`);
+    }
+}
+```
+
+### 音声再生エラー
+
+```typescript
+try {
+    await this.playAudio(base64Audio);
+} catch (error) {
+    console.error('[AudioManager] 音声再生エラー:', error);
+    // キューから削除してスキップ
+    this.audioQueue.shift();
+    this.processQueue();
+}
+```
+
+## テスト
+
+### AudioManager テスト例
+
+```typescript
+describe('AudioManager', () => {
+    let audioManager: AudioManager;
+    
+    beforeEach(() => {
+        audioManager = new AudioManager();
+    });
+    
+    afterEach(async () => {
+        await audioManager.stopRecording();
+    });
+    
+    describe('VAD', () => {
+        it('should detect speech when energy exceeds threshold', () => {
+            const vad = new VoiceActivityDetector({ threshold: 0.01 });
+            const speechData = new Float32Array(1024).fill(0.5);
+            
+            // キャリブレーション完了まで待つ
+            for (let i = 0; i < 30; i++) {
+                vad.analyze(speechData);
+            }
+            
+            const result = vad.analyze(speechData);
+            expect(result.isSpeaking).toBe(true);
+        });
+    });
+});
+```
+
+## 参考資料
+
+- Web Audio API: https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API
+- AudioWorklet: https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet
+- MediaDevices: https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices
+- Electron desktopCapturer: https://www.electronjs.org/docs/latest/api/desktop-capturer

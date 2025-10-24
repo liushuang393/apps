@@ -76,14 +76,14 @@ export class ElectronAudioCapture {
         const sources = await this.getAudioSources(['window']);
 
         // デバッグ: 全ウィンドウを出力
-        console.log('[ElectronAudioCapture] ========== 全ウィンドウ一覧 ==========');
-        console.log(`[ElectronAudioCapture] 総ウィンドウ数: ${sources.length}`);
+        console.info('[ElectronAudioCapture] ========== 全ウィンドウ一覧 ==========');
+        console.info(`[ElectronAudioCapture] 総ウィンドウ数: ${sources.length}`);
         sources.forEach((source, index) => {
-            console.log(`  [${index}] ${source.name}`);
-            console.log(`       ID: ${source.id}`);
-            console.log(`       Type: ${source.type}`);
+            console.info(`  [${index}] ${source.name}`);
+            console.info(`       ID: ${source.id}`);
+            console.info(`       Type: ${source.type}`);
         });
-        console.log('[ElectronAudioCapture] ========================================');
+        console.info('[ElectronAudioCapture] ========================================');
 
         // 会議アプリのパターン（柔軟なマッチング）
         const meetingAppPatterns = [
@@ -156,7 +156,7 @@ export class ElectronAudioCapture {
             /^PowerPoint$/i
         ];
 
-        console.log('[ElectronAudioCapture] ========== 検出処理開始 ==========');
+        console.info('[ElectronAudioCapture] ========== 検出処理開始 ==========');
 
         // フィルタリング処理
         const filtered = sources.filter((source) => {
@@ -164,25 +164,25 @@ export class ElectronAudioCapture {
 
             // 除外パターンに一致する場合はスキップ
             if (excludePatterns.some((pattern) => pattern.test(name))) {
-                console.log(`[ElectronAudioCapture] ❌ 除外: ${name}`);
+                console.info(`[ElectronAudioCapture] ❌ 除外: ${name}`);
                 return false;
             }
 
             // 会議アプリに一致するか確認
             const isMeetingApp = meetingAppPatterns.some((pattern) => pattern.test(name));
             if (isMeetingApp) {
-                console.log(`[ElectronAudioCapture] ✅ 会議アプリ: ${name}`);
+                console.info(`[ElectronAudioCapture] ✅ 会議アプリ: ${name}`);
                 return true;
             }
 
             // ブラウザかどうか確認
             const isBrowser = browserPatterns.some((pattern) => pattern.test(name));
             if (isBrowser) {
-                console.log(`[ElectronAudioCapture] ✅ ブラウザ: ${name}`);
+                console.info(`[ElectronAudioCapture] ✅ ブラウザ: ${name}`);
                 return true;
             }
 
-            console.log(`[ElectronAudioCapture] ❌ 不一致: ${name}`);
+            console.info(`[ElectronAudioCapture] ❌ 不一致: ${name}`);
             return false;
         });
 
@@ -200,11 +200,11 @@ export class ElectronAudioCapture {
             return 0;
         });
 
-        console.log(`[ElectronAudioCapture] ========== 検出結果: ${filtered.length}個 ==========`);
+        console.info(`[ElectronAudioCapture] ========== 検出結果: ${filtered.length}個 ==========`);
         filtered.forEach((source, index) => {
             const isMeeting = meetingAppPatterns.some((pattern) => pattern.test(source.name));
             const label = isMeeting ? '🎤 会議' : '🌐 ブラウザ';
-            console.log(`  [${index + 1}] ${label} ${source.name}`);
+            console.info(`  [${index + 1}] ${label} ${source.name}`);
         });
 
         return filtered;

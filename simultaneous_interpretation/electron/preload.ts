@@ -334,6 +334,6 @@ contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 /**
  * デバッグ情報を出力
  */
-console.log('[Preload] Electron API exposed to renderer process');
-console.log('[Preload] Platform:', electronAPI.platform);
-console.log('[Preload] Versions:', electronAPI.versions);
+console.info('[Preload] Electron API exposed to renderer process');
+console.info('[Preload] Platform:', electronAPI.platform);
+console.info('[Preload] Versions:', electronAPI.versions);

@@ -27,6 +27,13 @@ export interface VirtualDeviceInfo {
     platform: 'windows' | 'macos';
 }
 
+type ChromeMediaTrackConstraints = MediaTrackConstraints & {
+    mandatory?: {
+        chromeMediaSource: 'desktop' | 'screen' | 'window' | 'tab';
+        chromeMediaSourceId: string;
+    };
+};
+
 /**
  * VirtualAudioCapture クラス
  */
@@ -40,7 +47,7 @@ export class VirtualAudioCapture {
      */
     constructor() {
         this.platform = this.detectPlatform();
-        console.log('[VirtualAudioCapture] 初期化 - プラットフォーム:', this.platform);
+        console.info('[VirtualAudioCapture] 初期化 - プラットフォーム:', this.platform);
     }
 
     /**
@@ -62,7 +69,7 @@ export class VirtualAudioCapture {
      * @returns 検出された仮想デバイスのリスト
      */
     async detectVirtualDevices(): Promise<VirtualDeviceInfo[]> {
-        console.log('[VirtualAudioCapture] 仮想デバイスを検出中...');
+        console.info('[VirtualAudioCapture] 仮想デバイスを検出中...');
 
         try {
             // desktopCapturer で音声ソースを取得
@@ -80,7 +87,7 @@ export class VirtualAudioCapture {
                 }
             }
 
-            console.log('[VirtualAudioCapture] 検出完了:', virtualDevices.length, '個');
+            console.info('[VirtualAudioCapture] 検出完了:', virtualDevices.length, '個');
             return virtualDevices;
         } catch (error) {
             console.error('[VirtualAudioCapture] デバイス検出エラー:', error);
@@ -173,7 +180,7 @@ export class VirtualAudioCapture {
      * @param device - デバイス情報
      */
     selectDevice(device: VirtualDeviceInfo): void {
-        console.log('[VirtualAudioCapture] デバイス選択:', device.name);
+        console.info('[VirtualAudioCapture] デバイス選択:', device.name);
         this.selectedDevice = device;
     }
 
@@ -187,23 +194,23 @@ export class VirtualAudioCapture {
             throw new Error('デバイスが選択されていません');
         }
 
-        console.log('[VirtualAudioCapture] キャプチャ開始:', this.selectedDevice.name);
+        console.info('[VirtualAudioCapture] キャプチャ開始:', this.selectedDevice.name);
 
         try {
             // getUserMedia で音声をキャプチャ
-            const constraints = {
+            const constraints: MediaStreamConstraints = {
                 audio: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: this.selectedDevice.id
                     }
-                } as any,
+                } as ChromeMediaTrackConstraints,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: this.selectedDevice.id
                     }
-                } as any
+                } as ChromeMediaTrackConstraints
             };
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -214,7 +221,7 @@ export class VirtualAudioCapture {
 
             // ビデオトラックを停止
             videoTracks.forEach((track: MediaStreamTrack) => {
-                console.log('[VirtualAudioCapture] ビデオトラック停止:', track.label);
+                console.info('[VirtualAudioCapture] ビデオトラック停止:', track.label);
                 track.stop();
             });
 
@@ -223,7 +230,7 @@ export class VirtualAudioCapture {
                     '[VirtualAudioCapture] 音声トラックがありません（会議が開始されていない可能性）'
                 );
             } else {
-                console.log('[VirtualAudioCapture] 音声トラック取得:', audioTracks.length, '個');
+                console.info('[VirtualAudioCapture] 音声トラック取得:', audioTracks.length, '個');
             }
 
             this.mediaStream = stream;
@@ -238,11 +245,11 @@ export class VirtualAudioCapture {
      * キャプチャを停止
      */
     stopCapture(): void {
-        console.log('[VirtualAudioCapture] キャプチャ停止');
+        console.info('[VirtualAudioCapture] キャプチャ停止');
 
         if (this.mediaStream) {
             this.mediaStream.getTracks().forEach((track: MediaStreamTrack) => {
-                console.log('[VirtualAudioCapture] トラック停止:', track.label);
+                console.info('[VirtualAudioCapture] トラック停止:', track.label);
                 track.stop();
             });
             this.mediaStream = null;
@@ -326,7 +333,7 @@ BlackHole のインストール手順:
      * クリーンアップ
      */
     dispose(): void {
-        console.log('[VirtualAudioCapture] クリーンアップ');
+        console.info('[VirtualAudioCapture] クリーンアップ');
         this.stopCapture();
         this.selectedDevice = null;
     }

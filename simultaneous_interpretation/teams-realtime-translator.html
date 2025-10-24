@@ -154,6 +154,41 @@
             align-items: center;
             gap: 8px;
         }
+
+        /* 折叠标题样式 */
+        .collapsible-header {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s ease;
+        }
+
+        .collapsible-header:hover {
+            color: var(--primary);
+        }
+
+        /* 折叠图标 */
+        .collapse-icon {
+            font-size: 12px;
+            transition: transform 0.3s ease;
+            display: inline-block;
+        }
+
+        .collapsible-header:not(.collapsed) .collapse-icon {
+            transform: rotate(90deg);
+        }
+
+        /* 折叠内容 */
+        .collapsible-content {
+            max-height: 2000px;
+            overflow: hidden;
+            transition: max-height 0.3s ease, opacity 0.3s ease;
+            opacity: 1;
+        }
+
+        .collapsible-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+        }
         
         .form-group {
             margin-bottom: 16px;
@@ -438,6 +473,10 @@
             border-radius: 8px;
             border-left: 3px solid var(--primary);
             animation: fadeIn 0.3s ease;
+            word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%;
         }
         
         .transcript-message.translation {
@@ -505,7 +544,16 @@
         .toggle-switch.active::after {
             transform: translateX(20px);
         }
-        
+
+        /* 開発者向け機能（デフォルト非表示） */
+        .dev-only {
+            display: none;
+        }
+
+        .dev-only.visible {
+            display: flex;
+        }
+
         /* 通知 */
         .notification {
             position: fixed;
@@ -891,10 +939,12 @@
                 
                 <!-- 言語設定 -->
                 <div class="card">
-                    <h2 class="card-title">
+                    <h2 class="card-title collapsible-header" id="languageSettingsHeader">
+                        <span class="collapse-icon">▶</span>
                         <span>🌐</span>
                         <span>言語設定</span>
                     </h2>
+                    <div class="collapsible-content" id="languageSettingsContent">
                     <div class="form-group">
                         <label class="form-label">入力言語（話す言語）</label>
                         <select id="sourceLang" class="form-input">
@@ -922,7 +972,7 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">音声タイプ</label>
+                        <label class="form-label">翻訳音色</label>
                         <select id="voiceType" class="form-input">
                             <option value="alloy">Alloy（標準）</option>
                             <option value="echo">Echo（男性的）</option>
@@ -934,55 +984,63 @@
                             <option value="cedar">Cedar（新・プロフェッショナル）</option>
                         </select>
                     </div>
+                    </div>
                 </div>
-                
+
                 <!-- 詳細設定 -->
                 <div class="card">
-                    <h2 class="card-title">
+                    <h2 class="card-title collapsible-header collapsed" id="advancedSettingsHeader">
+                        <span class="collapse-icon">▶</span>
                         <span>⚙️</span>
                         <span>詳細設定</span>
                     </h2>
-                    <div class="settings-grid">
+                    <div class="collapsible-content collapsed" id="advancedSettingsContent">
+                        <div class="settings-grid">
                         <div class="toggle-group">
-                            <span class="toggle-label">VAD有効</span>
+                            <span class="toggle-label">自動音声検出</span>
                             <div class="toggle-switch active" id="vadEnabled"></div>
                         </div>
                         <div class="toggle-group">
+                            <span class="toggle-label">リアルタイム音声翻訳</span>
+                            <div class="toggle-switch active" id="translationModeAudio" title="ON: 音声翻訳（高速・高品質）&#10;OFF: テキスト翻訳（入力と一対一対応）"></div>
+                        </div>
+                        <div class="toggle-group dev-only">
                             <span class="toggle-label">ノイズ除去</span>
                             <div class="toggle-switch active" id="noiseReduction"></div>
                         </div>
-                        <div class="toggle-group">
+                        <div class="toggle-group dev-only">
                             <span class="toggle-label">エコー除去</span>
                             <div class="toggle-switch active" id="echoCancellation"></div>
                         </div>
-                        <div class="toggle-group">
+                        <div class="toggle-group dev-only">
                             <span class="toggle-label">自動ゲイン</span>
                             <div class="toggle-switch active" id="autoGainControl"></div>
                         </div>
                         <div class="toggle-group">
-                            <span class="toggle-label">入力音声表示</span>
+                            <span class="toggle-label">入力音声を表示</span>
                             <div class="toggle-switch active" id="showInputTranscript"></div>
                         </div>
                         <div class="toggle-group">
-                            <span class="toggle-label">翻訳結果表示</span>
+                            <span class="toggle-label">翻訳結果を表示</span>
                             <div class="toggle-switch active" id="showOutputTranscript"></div>
                         </div>
                         <div class="toggle-group">
-                            <span class="toggle-label">翻訳音声出力</span>
+                            <span class="toggle-label">翻訳音声を出力</span>
                             <div class="toggle-switch active" id="audioOutputEnabled"></div>
                         </div>
                         <div class="toggle-group">
-                            <span class="toggle-label">入力音声出力</span>
-                            <div class="toggle-switch active" id="inputAudioOutputEnabled"></div>
+                            <span class="toggle-label">入力音声を出力</span>
+                            <div class="toggle-switch" id="inputAudioOutputEnabled"></div>
                         </div>
                     </div>
-                    <div class="form-group" style="margin-top: 16px;">
-                        <label class="form-label">VAD感度</label>
-                        <select id="vadSensitivity" class="form-input">
-                            <option value="low">低（騒音環境）</option>
-                            <option value="medium" selected>中（標準）</option>
-                            <option value="high">高（静音環境）</option>
-                        </select>
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label class="form-label">VAD感度</label>
+                            <select id="vadSensitivity" class="form-input">
+                                <option value="low">低（騒音環境）</option>
+                                <option value="medium" selected>中（標準）</option>
+                                <option value="high">高（静音環境）</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 
@@ -1123,8 +1181,163 @@
     
     <!-- SimpleQueue - 简化的队列管理（MQ方式） -->
     <!-- VoiceTranslate Pro JavaScript (ResponseQueue included) -->
+    <!-- ユーティリティモジュール（最初に読み込む） -->
+    <script src="voicetranslate-utils.js"></script>
+    <!-- メインアプリケーション -->
     <script src="voicetranslate-pro.js"></script>
 
+    <!-- 詳細設定の折りたたみ機能 -->
+    <script>
+        // 詳細設定の折りたたみ機能を初期化
+        (function() {
+            let isInitialized = false;
+
+            const initCollapsible = () => {
+                // 既に初期化済みの場合はスキップ
+                if (isInitialized) {
+                    return;
+                }
+
+                const header = document.getElementById('advancedSettingsHeader');
+                const content = document.getElementById('advancedSettingsContent');
+
+                if (!header || !content) {
+                    return;
+                }
+
+                isInitialized = true;
+
+                // クリックイベントを追加
+                header.addEventListener('click', function() {
+                    // collapsed クラスをトグル
+                    content.classList.toggle('collapsed');
+                    header.classList.toggle('collapsed');
+
+                    // ローカルストレージに状態を保存
+                    const isCollapsed = content.classList.contains('collapsed');
+                    localStorage.setItem('advancedSettingsCollapsed', isCollapsed);
+                });
+
+                // ページ読み込み時に前回の状態を復元（デフォルトは折りたたみ）
+                const savedState = localStorage.getItem('advancedSettingsCollapsed');
+                if (savedState === null || savedState === 'true') {
+                    // デフォルトまたは保存された状態が折りたたみの場合
+                    content.classList.add('collapsed');
+                    header.classList.add('collapsed');
+                } else {
+                    // 展開状態の場合
+                    content.classList.remove('collapsed');
+                    header.classList.remove('collapsed');
+                }
+            };
+
+            // DOMContentLoaded 後に実行
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initCollapsible);
+            } else {
+                initCollapsible();
+            }
+
+            // voicetranslate-pro.js 読み込み後に再度確認
+            setTimeout(() => {
+                initCollapsible();
+            }, 500);
+        })();
+
+        // 言語設定の折りたたみ機能を初期化
+        (function() {
+            let isInitialized = false;
+
+            const initLanguageCollapsible = () => {
+                // 既に初期化済みの場合はスキップ
+                if (isInitialized) {
+                    return;
+                }
+
+                const header = document.getElementById('languageSettingsHeader');
+                const content = document.getElementById('languageSettingsContent');
+
+                if (!header || !content) {
+                    return;
+                }
+
+                isInitialized = true;
+
+                // クリックイベントを追加
+                header.addEventListener('click', function() {
+                    // collapsed クラスをトグル
+                    content.classList.toggle('collapsed');
+                    header.classList.toggle('collapsed');
+
+                    // ローカルストレージに状態を保存
+                    const isCollapsed = content.classList.contains('collapsed');
+                    localStorage.setItem('languageSettingsCollapsed', isCollapsed);
+                });
+
+                // ページ読み込み時に前回の状態を復元（デフォルトは展開）
+                const savedState = localStorage.getItem('languageSettingsCollapsed');
+                if (savedState === 'true') {
+                    // 保存された状態が折りたたみの場合
+                    content.classList.add('collapsed');
+                    header.classList.add('collapsed');
+                } else {
+                    // デフォルトまたは展開状態の場合
+                    content.classList.remove('collapsed');
+                    header.classList.remove('collapsed');
+                }
+            };
+
+            // DOMContentLoaded 後に実行
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initLanguageCollapsible);
+            } else {
+                initLanguageCollapsible();
+            }
+
+            // voicetranslate-pro.js 読み込み後に再度確認
+            setTimeout(() => {
+                initLanguageCollapsible();
+            }, 500);
+        })();
+
+        // 開発者向け機能の表示/非表示を制御
+        (function() {
+            // localStorage をクリア（初期化用）
+            // localStorage.removeItem('advancedSettingsCollapsed');
+
+            // CONFIG.DEBUG_MODE が利用可能になるまで待機
+            const checkDebugMode = setInterval(() => {
+                if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG_MODE !== undefined) {
+                    clearInterval(checkDebugMode);
+
+                    // 開発モードの場合、dev-only 要素を表示
+                    if (CONFIG.DEBUG_MODE) {
+                        const devOnlyElements = document.querySelectorAll('.dev-only');
+                        devOnlyElements.forEach(el => {
+                            el.classList.add('visible');
+                        });
+                        console.info('[UI] 開発者向け機能を表示しました');
+                    } else {
+                        console.info('[UI] 開発者向け機能は非表示です（DEBUG_MODE: false）');
+                    }
+                }
+            }, 50);
+
+            // タイムアウト（10秒）
+            setTimeout(() => {
+                clearInterval(checkDebugMode);
+                // タイムアウト後も dev-only 要素を確認
+                if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG_MODE) {
+                    const devOnlyElements = document.querySelectorAll('.dev-only');
+                    devOnlyElements.forEach(el => {
+                        if (!el.classList.contains('visible')) {
+                            el.classList.add('visible');
+                        }
+                    });
+                }
+            }, 10000);
+        })();
+    </script>
 
 </body>
 </html>

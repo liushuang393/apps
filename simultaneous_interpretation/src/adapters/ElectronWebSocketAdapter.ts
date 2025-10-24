@@ -15,42 +15,21 @@ import {
     WebSocketMessage,
     WebSocketState
 } from '../interfaces/IWebSocketAdapter';
+import type { ElectronAPI } from '../types/electron';
 
-/**
- * Electron API インターフェース
- */
-interface ElectronAPI {
-    realtimeWebSocketConnect: (config: {
-        url: string;
-        apiKey: string;
-        model: string;
-    }) => Promise<{ success: boolean; message?: string }>;
-
-    realtimeWebSocketSend: (message: string) => Promise<{ success: boolean; message?: string }>;
-
-    realtimeWebSocketSendBinary: (
+type ElectronRealtimeAPI = ElectronAPI & {
+    realtimeWebSocketSendBinary?: (
         data: ArrayBuffer
     ) => Promise<{ success: boolean; message?: string }>;
-
-    realtimeWebSocketDisconnect: () => Promise<{ success: boolean; message?: string }>;
-
-    onRealtimeWebSocketMessage: (callback: (data: string) => void) => void;
-
-    onRealtimeWebSocketError: (
+    realtimeWebSocketDisconnect?: () => Promise<{ success: boolean; message?: string }>;
+    onRealtimeWebSocketMessage?: (callback: (data: string) => void) => void;
+    onRealtimeWebSocketError?: (
         callback: (error: { code: string; message: string }) => void
     ) => void;
-
-    onRealtimeWebSocketClose: (callback: (data: { code: number; reason: string }) => void) => void;
-}
-
-/**
- * グローバル window オブジェクトの拡張
- */
-declare global {
-    interface Window {
-        electronAPI?: ElectronAPI;
-    }
-}
+    onRealtimeWebSocketClose?: (
+        callback: (data: { code: number; reason: string }) => void
+    ) => void;
+};
 
 /**
  * Electron WebSocket アダプター
@@ -59,18 +38,23 @@ export class ElectronWebSocketAdapter
     extends WebSocketAdapter
     implements IElectronWebSocketAdapter
 {
-    private electronAPI: ElectronAPI | null = null;
+    private electronAPI: ElectronRealtimeAPI | null = null;
     private readonly ipcChannel = 'realtime-websocket';
 
     /**
      * メインプロセスに接続
      */
     async connectToMainProcess(): Promise<void> {
-        if (typeof window === 'undefined' || !window.electronAPI) {
+        if (typeof window === 'undefined') {
             throw new Error('Electron API not available');
         }
 
-        this.electronAPI = window.electronAPI;
+        const api = window.electronAPI as ElectronRealtimeAPI | undefined;
+        if (!api) {
+            throw new Error('Electron API not available');
+        }
+
+        this.electronAPI = api;
 
         // IPC イベントリスナーを設定
         this.setupIPCListeners();
@@ -132,7 +116,9 @@ export class ElectronWebSocketAdapter
         this.stopReconnectTimer();
 
         try {
-            const result = await this.electronAPI.realtimeWebSocketDisconnect();
+            const result = this.electronAPI.realtimeWebSocketDisconnect
+                ? await this.electronAPI.realtimeWebSocketDisconnect()
+                : await this.electronAPI.realtimeWebSocketClose();
 
             if (!result.success) {
                 console.warn('[ElectronWebSocket] Disconnect warning:', result.message);
@@ -179,6 +165,10 @@ export class ElectronWebSocketAdapter
             throw new Error('WebSocket not connected');
         }
 
+        if (!this.electronAPI.realtimeWebSocketSendBinary) {
+            throw new Error('Binary send is not supported in the current environment');
+        }
+
         try {
             const result = await this.electronAPI.realtimeWebSocketSendBinary(data);
 
@@ -212,7 +202,7 @@ export class ElectronWebSocketAdapter
         }
 
         // メッセージ受信
-        this.electronAPI.onRealtimeWebSocketMessage((data: string) => {
+        this.electronAPI.onRealtimeWebSocketMessage?.((data: string) => {
             try {
                 // 特殊なイベント: 接続確立
                 if (data === '__CONNECTED__') {
@@ -239,7 +229,7 @@ export class ElectronWebSocketAdapter
         });
 
         // エラー受信
-        this.electronAPI.onRealtimeWebSocketError((error: { code: string; message: string }) => {
+        this.electronAPI.onRealtimeWebSocketError?.((error: { code: string; message: string }) => {
             this.handleError({
                 code: error.code,
                 message: error.message,
@@ -248,7 +238,7 @@ export class ElectronWebSocketAdapter
         });
 
         // 切断通知
-        this.electronAPI.onRealtimeWebSocketClose((data: { code: number; reason: string }) => {
+        this.electronAPI.onRealtimeWebSocketClose?.((data: { code: number; reason: string }) => {
             this.handleClose(data.code, data.reason);
         });
     }

@@ -76,7 +76,7 @@ function loadEnvironmentVariables(): void {
                 }
             }
 
-            console.log(`[Env] Loaded environment variables from ${envPath}`);
+            console.info(`[Env] Loaded environment variables from ${envPath}`);
             break;
         } catch (error) {
             console.error('[Env] Failed to load .env file:', error);
@@ -150,15 +150,15 @@ function createMainWindow(): void {
     // メディアアクセス権限のハンドラーを設定
     mainWindow.webContents.session.setPermissionRequestHandler(
         (_webContents, permission, callback) => {
-            console.log(`[Main] Permission requested: ${permission}`);
+            console.info(`[Main] Permission requested: ${permission}`);
 
             // マイク、カメラ、画面キャプチャを自動許可
             const allowedPermissions = ['media', 'microphone', 'camera', 'desktop-capturer'];
             if (allowedPermissions.includes(permission)) {
-                console.log(`[Main] Permission granted: ${permission}`);
+                console.info(`[Main] Permission granted: ${permission}`);
                 callback(true);
             } else {
-                console.log(`[Main] Permission denied: ${permission}`);
+                console.info(`[Main] Permission denied: ${permission}`);
                 callback(false);
             }
         }
@@ -168,7 +168,7 @@ function createMainWindow(): void {
     if (process.platform === 'darwin') {
         const micStatus = systemPreferences.getMediaAccessStatus('microphone');
         const screenStatus = systemPreferences.getMediaAccessStatus('screen');
-        console.log(
+        console.info(
             `[Main] macOS Media Access - Microphone: ${micStatus}, Screen: ${screenStatus}`
         );
 
@@ -200,7 +200,7 @@ function createMainWindow(): void {
         ? path.join(__dirname, '../../teams-realtime-translator.html')
         : path.join(app.getAppPath(), 'teams-realtime-translator.html');
 
-    console.log(`[Main] Loading HTML from: ${htmlPath}`);
+    console.info(`[Main] Loading HTML from: ${htmlPath}`);
     mainWindow.loadFile(htmlPath).catch((error) => {
         console.error('[Main] Failed to load HTML:', error);
     });
@@ -230,7 +230,7 @@ function createMainWindow(): void {
         return { action: 'deny' };
     });
 
-    console.log('[Main] Main window created');
+    console.info('[Main] Main window created');
 }
 
 /**
@@ -302,7 +302,7 @@ function createTray(): void {
         }
     });
 
-    console.log('[Main] System tray created');
+    console.info('[Main] System tray created');
 }
 
 /**
@@ -322,7 +322,7 @@ function registerGlobalShortcuts(): void {
             }
         });
 
-        console.log('[Main] Global shortcut registered: CommandOrControl+Shift+V');
+        console.info('[Main] Global shortcut registered: CommandOrControl+Shift+V');
     } catch (error) {
         console.error('[Main] Error registering global shortcut:', error);
     }
@@ -390,8 +390,8 @@ function registerIPCHandlers(): void {
 
     // 音声トラックの有無を確認（レンダラープロセスから呼ばれる）
     ipcMain.handle('check-audio-track', async (_event, sourceId: string) => {
-        console.log(`[Main] ========== 音声トラック確認開始 ==========`);
-        console.log(`[Main] ソースID: ${sourceId}`);
+        console.info(`[Main] ========== 音声トラック確認開始 ==========`);
+        console.info(`[Main] ソースID: ${sourceId}`);
 
         // レンダラープロセスに確認を依頼
         if (mainWindow) {
@@ -399,7 +399,7 @@ function registerIPCHandlers(): void {
                 const result = await mainWindow.webContents.executeJavaScript(`
                     (async () => {
                         try {
-                            console.log('[Audio Check] ストリーム取得開始...');
+                            console.info('[Audio Check] ストリーム取得開始...');
                             const constraints = {
                                 audio: {
                                     mandatory: {
@@ -415,11 +415,11 @@ function registerIPCHandlers(): void {
                                 }
                             };
                             const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                            console.log('[Audio Check] ストリーム取得成功');
+                            console.info('[Audio Check] ストリーム取得成功');
 
                             const audioTracks = stream.getAudioTracks();
                             const videoTracks = stream.getVideoTracks();
-                            console.log('[Audio Check] トラック情報:', {
+                            console.info('[Audio Check] トラック情報:', {
                                 audio: audioTracks.length,
                                 video: videoTracks.length
                             });
@@ -428,7 +428,7 @@ function registerIPCHandlers(): void {
 
                             // ストリームを停止
                             stream.getTracks().forEach(track => track.stop());
-                            console.log('[Audio Check] ストリーム停止完了');
+                            console.info('[Audio Check] ストリーム停止完了');
 
                             return hasAudio;
                         } catch (error) {
@@ -438,8 +438,8 @@ function registerIPCHandlers(): void {
                     })()
                 `);
 
-                console.log(`[Main] 音声トラック確認結果: ${result ? '音声あり' : '音声なし'}`);
-                console.log(`[Main] ========== 音声トラック確認終了 ==========`);
+                console.info(`[Main] 音声トラック確認結果: ${result ? '音声あり' : '音声なし'}`);
+                console.info(`[Main] ========== 音声トラック確認終了 ==========`);
                 return result;
             } catch (error) {
                 console.error(`[Main] executeJavaScript失敗:`, error);
@@ -447,7 +447,7 @@ function registerIPCHandlers(): void {
             }
         }
 
-        console.log(`[Main] mainWindowが存在しません`);
+        console.info(`[Main] mainWindowが存在しません`);
         return false;
     });
 
@@ -466,9 +466,9 @@ function registerIPCHandlers(): void {
             null;
 
         if (apiKey) {
-            console.log('[Main] API key loaded from environment:', apiKey.substring(0, 7) + '...');
+            console.info('[Main] API key loaded from environment:', apiKey.substring(0, 7) + '...');
         } else {
-            console.log('[Main] API key not found in environment variables');
+            console.info('[Main] API key not found in environment variables');
         }
 
         return apiKey;
@@ -516,7 +516,7 @@ function registerIPCHandlers(): void {
             realtimeUrl
         };
 
-        console.log('[Main] Config loaded from environment:', {
+        console.info('[Main] Config loaded from environment:', {
             realtimeModel: config.realtimeModel,
             chatModel: config.chatModel,
             realtimeUrl: config.realtimeUrl
@@ -525,7 +525,7 @@ function registerIPCHandlers(): void {
         return config;
     });
 
-    console.log('[Main] IPC handlers registered');
+    console.info('[Main] IPC handlers registered');
 }
 
 /**
@@ -588,43 +588,43 @@ if (chromiumCommandLine && typeof chromiumCommandLine.appendSwitch === 'function
  */
 async function requestMediaPermissions(): Promise<void> {
     const platform = process.platform;
-    console.log(`[Main] Platform: ${platform}`);
+    console.info(`[Main] Platform: ${platform}`);
 
     if (platform === 'darwin') {
         // macOS: Request media access explicitly
-        console.log('[Main] macOS: Requesting media access permissions...');
+        console.info('[Main] macOS: Requesting media access permissions...');
 
         try {
             const micStatus = systemPreferences.getMediaAccessStatus('microphone');
             const cameraStatus = systemPreferences.getMediaAccessStatus('camera');
             const screenStatus = systemPreferences.getMediaAccessStatus('screen');
 
-            console.log(
+            console.info(
                 `[Main] macOS permissions - Microphone: ${micStatus}, Camera: ${cameraStatus}, Screen: ${screenStatus}`
             );
 
             if (micStatus !== 'granted') {
-                console.log('[Main] Requesting microphone permission...');
+                console.info('[Main] Requesting microphone permission...');
                 await systemPreferences.askForMediaAccess('microphone');
             }
 
             if (cameraStatus !== 'granted') {
-                console.log('[Main] Requesting camera permission...');
+                console.info('[Main] Requesting camera permission...');
                 await systemPreferences.askForMediaAccess('camera');
             }
 
-            console.log('[Main] macOS: Media access permissions request completed');
+            console.info('[Main] macOS: Media access permissions request completed');
         } catch (error) {
             console.error('[Main] macOS permission request error:', error);
         }
     } else if (platform === 'win32') {
         // Windows: Permission dialog will be shown automatically
-        console.log('[Main] Windows: Media access permissions will be requested automatically');
-        console.log('[Main] Windows: Permission dialog will appear on first use');
+        console.info('[Main] Windows: Media access permissions will be requested automatically');
+        console.info('[Main] Windows: Permission dialog will appear on first use');
     } else if (platform === 'linux') {
         // Linux: Handled automatically via PulseAudio/ALSA
-        console.log('[Main] Linux: Media access permissions managed by system');
-        console.log('[Main] Linux: Check PulseAudio/ALSA configuration if needed');
+        console.info('[Main] Linux: Media access permissions managed by system');
+        console.info('[Main] Linux: Check PulseAudio/ALSA configuration if needed');
     } else {
         console.warn(`[Main] Unsupported platform: ${platform}`);
     }
@@ -634,7 +634,7 @@ async function requestMediaPermissions(): Promise<void> {
  * アプリケーション起動時
  */
 app.whenReady().then(async () => {
-    console.log('[Main] App is ready');
+    console.info('[Main] App is ready');
 
     // 全プラットフォーム対応: メディアアクセス権限を要求
     await requestMediaPermissions();
@@ -671,12 +671,12 @@ app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     // WebSocket接続をクリーンアップ
     cleanupRealtimeWebSocket();
-    console.log('[Main] App is quitting');
+    console.info('[Main] App is quitting');
 });
 
 /**
  * アプリケーション終了時
  */
 app.on('quit', () => {
-    console.log('[Main] App has quit');
+    console.info('[Main] App has quit');
 });

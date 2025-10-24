@@ -308,7 +308,7 @@ export class VoiceTranslateCore {
         // Part 5 で実装
     }
 
-    sendMessage(_message: any): void {
+    sendMessage(_message: unknown): void {
         // Part 2 で実装
     }
 }

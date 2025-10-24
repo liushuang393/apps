@@ -54,7 +54,12 @@ export interface QueueStats {
 /**
  * WebSocketメッセージ送信関数の型
  */
-export type SendMessageFunction = (message: any) => void;
+export interface ResponseCreateMessage<T> {
+    type: 'response.create';
+    response: T;
+}
+
+export type SendMessageFunction<T> = (message: ResponseCreateMessage<T>) => void;
 
 /**
  * ResponseQueue クラス
@@ -62,9 +67,9 @@ export type SendMessageFunction = (message: any) => void;
  * OpenAI Realtime APIのレスポンス管理を行うキュー。
  * 並発制御により、conversation_already_has_active_response エラーを防止します。
  */
-export class ResponseQueue<T = any> {
+export class ResponseQueue<T = unknown> {
     /** WebSocketメッセージ送信関数 */
-    private sendMessage: SendMessageFunction;
+    private sendMessage: SendMessageFunction<T>;
     /** 設定 */
     private config: Required<ResponseQueueOptions>;
     /** 未送信のリクエスト（生産者が追加） */
@@ -80,7 +85,7 @@ export class ResponseQueue<T = any> {
      * @param sendMessageFn - WebSocketメッセージ送信関数
      * @param options - 設定オプション
      */
-    constructor(sendMessageFn: SendMessageFunction, options: ResponseQueueOptions = {}) {
+    constructor(sendMessageFn: SendMessageFunction<T>, options: ResponseQueueOptions = {}) {
         this.sendMessage = sendMessageFn;
         this.config = {
             maxQueueSize: options.maxQueueSize || 10,
