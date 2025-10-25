@@ -137,9 +137,66 @@ export interface ElectronAPI {
     }>;
 
     /**
+     * 会話データベース API
+     */
+    conversation: {
+        startSession: (sourceLanguage?: string, targetLanguage?: string) => Promise<number>;
+        endSession: () => Promise<void>;
+        addTurn: (turn: {
+            role: 'user' | 'assistant';
+            content: string;
+            language?: string;
+            timestamp: number;
+        }) => Promise<number>;
+        getRecentTurns: (count?: number, sessionId?: number) => Promise<ConversationTurn[]>;
+        getContextForAPI: (
+            count?: number,
+            sessionId?: number
+        ) => Promise<Array<{ role: string; content: string }>>;
+        getStats: () => Promise<ConversationStats>;
+        getAllSessions: (limit?: number) => Promise<ConversationSession[]>;
+        getSessionTurns: (sessionId: number) => Promise<ConversationTurn[]>;
+        cleanupOldSessions: (daysToKeep?: number) => Promise<number>;
+    };
+
+    /**
      * システム音声ストリームを取得（Electron専用）
      */
     getSystemAudioStream?: (sourceId?: string) => Promise<MediaStream>;
+}
+
+/**
+ * 会話ターン
+ */
+export interface ConversationTurn {
+    id: number;
+    sessionId: number;
+    role: 'user' | 'assistant';
+    content: string;
+    language?: string;
+    timestamp: number;
+}
+
+/**
+ * 会話セッション
+ */
+export interface ConversationSession {
+    id: number;
+    startTime: number;
+    endTime?: number;
+    turnCount: number;
+    sourceLanguage?: string;
+    targetLanguage?: string;
+}
+
+/**
+ * 会話統計
+ */
+export interface ConversationStats {
+    totalSessions: number;
+    totalTurns: number;
+    currentSessionTurns: number;
+    averageTurnsPerSession: number;
 }
 
 /**

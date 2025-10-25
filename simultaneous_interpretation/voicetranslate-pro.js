@@ -3,9 +3,11 @@
  *
  * 依存モジュール:
  *   - voicetranslate-utils.js: ResponseQueue, VoiceActivityDetector, CONFIG, AudioUtils
+ *   - voicetranslate-audio-queue.js: AudioSegment, AudioQueue (✅ 新規)
+ *   - voicetranslate-path-processors.js: TextPathProcessor, VoicePathProcessor (✅ 新規)
  *
  * 注意:
- *   このファイルを読み込む前に voicetranslate-utils.js を読み込む必要があります
+ *   このファイルを読み込む前に上記モジュールを読み込む必要があります
  */
 
 // Utils オブジェクトを AudioUtils にマッピング（互換性のため）
@@ -19,7 +21,7 @@ class VoiceTranslateApp {
             apiKey: '',
             isConnected: false,
             isRecording: false,
-            sourceLang: 'ja',
+            sourceLang: null, // ✅ 修正: 自動検出に変更、初期値は null
             targetLang: 'en',
             voiceType: 'alloy',
             sessionStartTime: null,
@@ -58,6 +60,26 @@ class VoiceTranslateApp {
         this.pendingResponseId = null; // ✅ リクエスト送信中フラグ（レース条件対策）
         this.lastCommitTime = 0; // 最後のコミット時刻（重複防止）
 
+        // ✅ P1: 智能VAD缓冲策略
+        this.speechStartTime = null; // 発話開始時刻
+        this.silenceConfirmTimer = null; // 無声確認タイマー
+        this.minSpeechDuration = 1000; // 最小発話時長（1秒）
+        this.silenceConfirmDelay = 500; // 無声確認延迟（500ms）
+
+        // ✅ P1-2: 会話コンテキスト管理（Electron環境のみ）
+        // ブラウザ・拡張機能では使用しない
+        this.conversationEnabled =
+            this.isElectron() &&
+            typeof globalThis.window !== 'undefined' &&
+            typeof globalThis.window.electronAPI !== 'undefined' &&
+            typeof globalThis.window.electronAPI.conversation !== 'undefined';
+
+        if (this.conversationEnabled) {
+            console.info('[Conversation] 会話管理機能が有効です（Electron環境）');
+        } else {
+            console.info('[Conversation] 会話管理機能は無効です（ブラウザ/拡張機能環境）');
+        }
+
         // ✅ レスポンスキュー管理（conversation_already_has_active_response エラー対策）
         this.responseQueue = new ResponseQueue((message) => this.sendMessage(message), {
             maxQueueSize: 10, // 最大キュー長
@@ -73,6 +95,54 @@ class VoiceTranslateApp {
                 });
             }
         });
+
+        // ✅ 音声源トラッキング（ループバック防止用）
+        // 各オーディオフレームに対して、それが「ユーザー新規音声」か「システム出力」かを標記
+        this.audioSourceTracker = {
+            outputStartTime: null, // 出力再生開始時刻
+            outputEndTime: null, // 出力再生終了時刻
+            bufferWindow: 2000, // バッファウィンドウ（出力完了後2秒間は入力を無視）
+            playbackTokens: new Set() // 再生中の音声トークンセット
+        };
+
+        // ✅ グローバルモード状態管理（すべてのインスタンス間での一貫性を確保）
+        // 複数のブラウザ標準、Electron、拡張機能などが同時に実行されるのを防ぐ
+        this.modeStateManager = {
+            currentMode: null, // 現在のモード: 'microphone' | 'system' | 'browser' | null
+            modeStartTime: null, // モード開始時刻
+            lastModeChange: null, // 最後のモード変更時刻
+            modeChangeTimeout: 1000, // モード変更待機時間（1秒）
+            globalLockKey: 'global_capture_mode_v2' // グローバルロックキー
+        };
+
+        this.initializeModeManager();
+
+        // ✅ 双パス异步処理架构（Phase 2）
+        this.audioQueue = new AudioQueue({
+            maxConcurrent: 1 // 同時処理数を1に制限（並発エラー防止）
+        });
+
+        // ✅ パス処理器
+        this.textPathProcessor = new TextPathProcessor(this.audioQueue, this);
+        this.voicePathProcessor = new VoicePathProcessor(this.audioQueue, this);
+
+        // ✅ 监听队列イベント
+        this.audioQueue.on('segmentReady', (segment) => {
+            this.handleNewAudioSegment(segment);
+        });
+
+        this.audioQueue.on('segmentComplete', (segment) => {
+            this.handleSegmentComplete(segment);
+        });
+
+        this.audioQueue.on('queueFull', (size) => {
+            this.notify('警告', `音声キューが満杯です（${size}個）`, 'warning');
+        });
+
+        // ✅ Phase 3: 音声バッファ管理
+        this.audioBuffer = []; // から保存された onaudioprocess キャプチャされた音声データ
+        this.audioBufferStartTime = null; // 音声バッファ開始時刻記録
+        this.isBufferingAudio = false; // マーク是否正在缓冲音声
 
         this.init();
     }
@@ -107,11 +177,16 @@ class VoiceTranslateApp {
         this.elements.validateBtn = document.getElementById('validateBtn');
 
         // 言語設定
-        this.elements.sourceLang = document.getElementById('sourceLang');
+        // ✅ 修正: sourceLang は自動検出されるため、HTML から削除
+        // this.elements.sourceLang = document.getElementById('sourceLang');
         this.elements.targetLang = document.getElementById('targetLang');
         this.elements.voiceType = document.getElementById('voiceType');
         this.elements.sourceLangDisplay = document.getElementById('sourceLangDisplay');
         this.elements.targetLangDisplay = document.getElementById('targetLangDisplay');
+
+        // ✅ 新規: 自動検出言語表示用要素
+        this.elements.detectedLanguageDisplay = document.getElementById('detectedLanguageDisplay');
+        this.elements.detectedLanguageCode = document.getElementById('detectedLanguageCode');
 
         // 詳細設定
         this.elements.vadEnabled = document.getElementById('vadEnabled');
@@ -216,20 +291,18 @@ class VoiceTranslateApp {
         });
 
         // 言語設定変更
-        this.elements.sourceLang.addEventListener('change', (e) => {
-            this.state.sourceLang = e.target.value;
-            this.elements.sourceLangDisplay.textContent = Utils.getNativeLanguageName(
-                e.target.value
-            );
-            this.saveToStorage('source_lang', e.target.value);
-
-            // 言語変更時にトランスクリプトをクリア
-            this.clearTranscript('both');
-
-            if (this.state.isConnected) {
-                this.updateSession();
-            }
-        });
+        // ✅ 修正: sourceLang は自動検出されるため、手動設定は不要（コメント化）
+        // this.elements.sourceLang.addEventListener('change', (e) => {
+        //     this.state.sourceLang = e.target.value;
+        //     this.elements.sourceLangDisplay.textContent = Utils.getNativeLanguageName(
+        //         e.target.value
+        //     );
+        //     this.saveToStorage('source_lang', e.target.value);
+        //     this.clearTranscript('both');
+        //     if (this.state.isConnected) {
+        //         this.updateSession();
+        //     }
+        // });
 
         this.elements.targetLang.addEventListener('change', (e) => {
             this.state.targetLang = e.target.value;
@@ -521,7 +594,8 @@ class VoiceTranslateApp {
         // ストレージから設定を読み込み
         const settings = {
             apiKey: await this.getFromStorage('openai_api_key'),
-            sourceLang: await this.getFromStorage('source_lang'),
+            // ✅ 修正: sourceLang は自動検出に変更、ストレージから読む必要なし
+            // sourceLang: await this.getFromStorage('source_lang'),
             targetLang: await this.getFromStorage('target_lang'),
             voiceType: await this.getFromStorage('voice_type'),
             vadSensitivity: await this.getFromStorage('vad_sensitivity'),
@@ -535,14 +609,6 @@ class VoiceTranslateApp {
             if (progress) {
                 progress.style.width = '100%';
             }
-        }
-
-        if (settings.sourceLang) {
-            this.elements.sourceLang.value = settings.sourceLang;
-            this.state.sourceLang = settings.sourceLang;
-            this.elements.sourceLangDisplay.textContent = Utils.getNativeLanguageName(
-                settings.sourceLang
-            );
         }
 
         if (settings.targetLang) {
@@ -950,7 +1016,7 @@ class VoiceTranslateApp {
     }
 
     getInstructions() {
-        const sourceLang = this.state.sourceLang; // 言語コード（例: 'en', 'ja'）
+        const sourceLang = this.state.sourceLang || 'en'; // ✅ 修正: null 時は 'en' をデフォルト
         const targetLang = this.state.targetLang;
         const sourceName = Utils.getLanguageName(sourceLang);
         const targetName = Utils.getLanguageName(targetLang);
@@ -1193,24 +1259,232 @@ Even if you have translated many sentences, your role has NOT changed:
 
     handleAudioBufferCommitted() {
         const queueStatus = this.responseQueue.getStatus();
+        const now = Date.now();
+        const speechDuration = this.speechStartTime ? now - this.speechStartTime : 0;
+
         console.info('[Audio] 音声バッファコミット完了', {
             activeResponseId: this.activeResponseId,
             pendingResponseId: this.pendingResponseId,
             processingCount: queueStatus.processingCount,
             pendingCount: queueStatus.pendingCount,
-            timestamp: Date.now()
+            speechDuration: speechDuration + 'ms',
+            timestamp: now
         });
 
         // ✅ 重複コミット防止（500ms以内の重複を無視）
-        const now = Date.now();
+        if (this.isDuplicateCommit(now)) {
+            return;
+        }
+
+        // ✅ P1: 最小発話時長チェック（1秒未満は500ms待って確認）
+        if (this.shouldWaitForSpeechConfirmation(speechDuration)) {
+            return;
+        }
+
+        this.lastCommitTime = now;
+        this.speechStartTime = null; // リセット
+
+        // ✅ Phase 3: バッファから音声データ抽出
+        this.isBufferingAudio = false; // バッファリング停止
+
+        const { totalLength, sampleRate, actualDuration, combinedAudio } =
+            this.extractAudioBuffer();
+
+        // ✅ 早期検証: 音声が無い場合はスキップ
+        if (!this.isValidAudioDuration(totalLength, actualDuration)) {
+            return;
+        }
+
+        // ✅ Phase 3: 新アーキテクチャ有効化
+        const ENABLE_AUDIO_QUEUE = true; // ← 新アーキテクチャ有効化
+
+        if (ENABLE_AUDIO_QUEUE) {
+            if (this.tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now)) {
+                return; // ← 新アーキテクチャ使用、旧ロジック非実行
+            }
+        }
+
+        // ✅ 旧ロジック（フォールバック）
+        this.processFallbackAudioRequest(queueStatus);
+    }
+
+    /**
+     * 重複コミットをチェック（500ms以内の重複を無視）
+     * @param {number} now - 現在のタイムスタンプ
+     * @returns {boolean} 重複コミットの場合は true
+     */
+    isDuplicateCommit(now) {
         if (now - this.lastCommitTime < 500) {
             console.warn('[Audio] 重複コミットを検出、スキップします', {
                 timeSinceLastCommit: now - this.lastCommitTime
             });
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 発話時長確認待機が必要かチェック
+     * @param {number} speechDuration - 発話時長（ms）
+     * @returns {boolean} 確認待機が必要な場合は true
+     */
+    shouldWaitForSpeechConfirmation(speechDuration) {
+        if (speechDuration > 0 && speechDuration < this.minSpeechDuration) {
+            console.warn('[VAD Buffer] 発話時長が短い、確認待機中...', {
+                duration: speechDuration + 'ms',
+                minDuration: this.minSpeechDuration + 'ms',
+                willConfirmIn: this.silenceConfirmDelay + 'ms'
+            });
+
+            // 既存のタイマーをクリア
+            if (this.silenceConfirmTimer) {
+                clearTimeout(this.silenceConfirmTimer);
+            }
+
+            // 500ms後に再確認
+            this.silenceConfirmTimer = setTimeout(() => {
+                this.confirmSpeechDuration();
+            }, this.silenceConfirmDelay);
+
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 発話時長を確認し、必要に応じて処理を再開
+     */
+    confirmSpeechDuration() {
+        // ✅ 防御: speechStartTime が null の場合は処理しない
+        if (!this.speechStartTime) {
+            console.warn('[VAD Buffer] speechStartTime が null、スキップ');
+            this.silenceConfirmTimer = null;
             return;
         }
-        this.lastCommitTime = now;
 
+        const finalDuration = Date.now() - this.speechStartTime;
+        if (finalDuration >= this.minSpeechDuration) {
+            console.info('[VAD Buffer] 確認完了: 発話時長OK', {
+                duration: finalDuration + 'ms'
+            });
+            // 再帰呼び出し（但し今回は時長チェックをパスする）
+            this.speechStartTime = null; // リセットしてチェックをスキップ
+            this.handleAudioBufferCommitted();
+        } else {
+            console.warn('[VAD Buffer] 発話時長が短すぎる、スキップ', {
+                duration: finalDuration + 'ms',
+                minRequired: this.minSpeechDuration + 'ms'
+            });
+        }
+        this.silenceConfirmTimer = null;
+    }
+
+    /**
+     * 音声バッファから音声データを抽出
+     * @returns {Object} { totalLength, sampleRate, actualDuration, combinedAudio }
+     */
+    extractAudioBuffer() {
+        // バッファ内全音声チャンク結合
+        let totalLength = 0;
+        for (const chunk of this.audioBuffer) {
+            totalLength += chunk.length;
+        }
+
+        // ✅ 重要: actualDuration を先に計算してからバッファをクリア
+        // これにより 0.00ms の問題を防ぐ
+        const sampleRate = this.state.audioContext?.sampleRate || 24000;
+        const actualDuration = (totalLength / sampleRate) * 1000;
+
+        console.info('[Audio] 音声データ抽出完了:', {
+            samples: totalLength,
+            duration: actualDuration.toFixed(2) + 'ms',
+            bufferChunks: this.audioBuffer.length,
+            sampleRate: sampleRate + 'Hz'
+        });
+
+        // ✅ ここまで来たら音声は有効、バッファをクリア
+        const combinedAudio = new Float32Array(totalLength);
+        let offset = 0;
+        for (const chunk of this.audioBuffer) {
+            combinedAudio.set(chunk, offset);
+            offset += chunk.length;
+        }
+        this.audioBuffer = [];
+
+        return { totalLength, sampleRate, actualDuration, combinedAudio };
+    }
+
+    /**
+     * 音声時長が有効かチェック
+     * @param {number} totalLength - サンプル数
+     * @param {number} actualDuration - 音声時長（ms）
+     * @returns {boolean} 有効な場合は false、無効な場合は true（スキップ）
+     */
+    isValidAudioDuration(totalLength, actualDuration) {
+        // ✅ 早期検証: 音声が無い場合はスキップ
+        if (totalLength === 0 || actualDuration < 100) {
+            // 100ms 未満は無視
+            console.warn('[Audio] 音声データが不足、スキップ:', {
+                samples: totalLength,
+                duration: actualDuration.toFixed(2) + 'ms'
+            });
+            return true;
+        }
+
+        // ✅ 最終チェック: 最小音声時長（1秒）
+        if (actualDuration < 1000) {
+            console.warn('[Audio] 音声が短すぎるためスキップ（API呼び出し防止）:', {
+                duration: actualDuration.toFixed(2) + 'ms',
+                minRequired: '1000ms',
+                reason: '有効なトランスクリプションを生成できません'
+            });
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * 音声セグメントをキューに追加
+     * @param {Float32Array} combinedAudio - 結合された音声データ
+     * @param {number} actualDuration - 音声時長（ms）
+     * @param {number} sampleRate - サンプルレート
+     * @param {number} now - 現在のタイムスタンプ
+     * @returns {boolean} 成功した場合は true
+     */
+    tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now) {
+        // ✅ 有効な音声データのみをキューに追加
+        const segment = this.audioQueue.enqueue(combinedAudio, {
+            duration: actualDuration,
+            language: this.state.sourceLang,
+            sourceType: this.state.audioSourceType,
+            timestamp: now,
+            sampleRate: sampleRate
+        });
+
+        if (!segment) {
+            console.error('[Audio] AudioQueue への追加失敗（キューが満杯か短すぎる）');
+            // 旧ロジックをフォールバックとして継続使用
+            return false;
+        }
+
+        console.info('[Audio] AudioSegment 作成完了:', {
+            segmentId: segment.id,
+            duration: actualDuration.toFixed(2) + 'ms',
+            samples: combinedAudio.length,
+            queueSize: this.audioQueue.size()
+        });
+        // ✅ 双パス処理会通过 segmentReady イベント自动触发
+        // 参见: handleNewAudioSegment()
+        return true;
+    }
+
+    /**
+     * フォールバック音声リクエスト処理
+     * @param {Object} queueStatus - キューのステータス
+     */
+    processFallbackAudioRequest(queueStatus) {
+        // ✅ 旧ロジック（フォールバック）
         // ✅ 処理中のレスポンスがある場合はスキップ（並発制御）
         // ✅ pendingResponseId をチェック（リクエスト送信中の場合もスキップ）
         if (this.activeResponseId || this.pendingResponseId) {
@@ -1229,10 +1503,30 @@ Even if you have translated many sentences, your role has NOT changed:
             return;
         }
 
+        // ✅ 重要: enqueueResponseRequest を呼ぶ前に両方の ID を設定
+        // pendingResponseId と activeResponseId の両方を設定することで、
+        // response.created を待つ間も次のリクエストを確実にブロックする
+        this.pendingResponseId = 'pending_' + Date.now();
+        this.activeResponseId = 'temp_' + Date.now(); // ✅ 仮ID（response.created で上書き）
+
         this.enqueueResponseRequest(queueStatus);
     }
 
     enqueueResponseRequest(queueStatus) {
+        // ✅ 最終チェック: pendingResponseId で並発リクエストを防止
+        if (this.activeResponseId) {
+            console.warn('[🔊 Response Create] スキップ: レスポンス処理中', {
+                activeResponseId: this.activeResponseId,
+                pendingResponseId: this.pendingResponseId
+            });
+            return;
+        }
+
+        // ✅ pendingResponseId が未設定の場合のみ設定（handleAudioBufferCommitted で設定済みの場合は保持）
+        if (!this.pendingResponseId) {
+            this.pendingResponseId = 'pending_' + Date.now();
+        }
+
         const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
         const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
 
@@ -1240,7 +1534,8 @@ Even if you have translated many sentences, your role has NOT changed:
             modalities: modalities,
             audioOutputEnabled: audioOutputEnabled,
             queueStatus: queueStatus,
-            activeResponseId: this.activeResponseId
+            activeResponseId: this.activeResponseId,
+            pendingResponseId: this.pendingResponseId
         });
 
         this.responseQueue
@@ -1252,6 +1547,9 @@ Even if you have translated many sentences, your role has NOT changed:
                 console.info('[Audio] レスポンスリクエストをキューに追加しました');
             })
             .catch((error) => {
+                // ✅ エラー時は pendingResponseId をクリア
+                this.pendingResponseId = null;
+
                 if (error.message.includes('Previous response is still in progress')) {
                     console.info(
                         '[Audio] 前のレスポンス処理中のため、リクエストをスキップしました'
@@ -1263,12 +1561,21 @@ Even if you have translated many sentences, your role has NOT changed:
     }
 
     handleSpeechStarted() {
-        console.info('[Speech] 音声検出開始');
+        // ✅ P1: 記録発話開始時刻
+        this.speechStartTime = Date.now();
+
+        // ✅ Phase 3: 启动音声缓冲
+        this.isBufferingAudio = true;
+        this.audioBuffer = []; // バッファクリア
+        this.audioBufferStartTime = Date.now();
+
+        console.info('[Speech] 音声検出開始', { startTime: this.speechStartTime });
         this.updateStatus('recording', '話し中...');
     }
 
     handleSpeechStopped() {
-        console.info('[Speech] 音声検出停止');
+        const duration = this.speechStartTime ? Date.now() - this.speechStartTime : 0;
+        console.info('[Speech] 音声検出停止', { duration: duration + 'ms' });
         this.updateStatus('recording', '処理中...');
         this.state.isNewResponse = true;
     }
@@ -1327,6 +1634,7 @@ Even if you have translated many sentences, your role has NOT changed:
             previousPendingId: this.pendingResponseId,
             timestamp: Date.now()
         });
+        // ✅ 仮IDを実際のレスポンスIDで上書き
         this.activeResponseId = message.response.id;
         this.pendingResponseId = null; // ✅ リクエスト送信完了、ペンディング状態をクリア
         this.responseQueue.handleResponseCreated(message.response.id);
@@ -1350,11 +1658,24 @@ Even if you have translated many sentences, your role has NOT changed:
 
         const errorCode = message.error.code || '';
         if (errorCode === 'conversation_already_has_active_response') {
-            console.warn('[Error] 前のレスポンスが処理中です。response.done を待機します。');
-            // ✅ エラー時もペンディング状態をクリア
+            console.warn('[Error] 前のレスポンスが処理中です。状態をリセットします。', {
+                activeResponseId: this.activeResponseId,
+                pendingResponseId: this.pendingResponseId
+            });
+            // ✅ エラー時は両方の状態をクリア
+            // サーバー側に既に active response があるため、クライアント側の temp_xxx ID はクリア
+            // 実際の response.done イベントで正しくクリアされる
+            if (this.activeResponseId && this.activeResponseId.startsWith('temp_')) {
+                // temp ID の場合はクリア（サーバー側には到達していない）
+                this.activeResponseId = null;
+            }
+            // pending ID は必ずクリア
             this.pendingResponseId = null;
             this.responseQueue.handleError(new Error(message.error.message), errorCode);
         } else {
+            // ✅ 他のエラーの場合も状態をクリア
+            this.activeResponseId = null;
+            this.pendingResponseId = null;
             this.responseQueue.handleError(new Error(message.error.message), errorCode);
             this.notify('エラー', message.error.message, 'error');
         }
@@ -1460,6 +1781,49 @@ Even if you have translated many sentences, your role has NOT changed:
         try {
             console.info('[Recording] Starting...');
 
+            // ✅ ステップ1: 新しいモードを確定
+            const targetMode = this.state.audioSourceType; // 'microphone' or 'system'
+            console.info('[ModeSwitch] 目標モード:', targetMode);
+
+            // ✅ ステップ2: 現在のモードをチェック
+            const globalLock = localStorage.getItem(this.modeStateManager.globalLockKey);
+            if (globalLock && globalLock !== targetMode) {
+                const parsedLock = JSON.parse(globalLock);
+                console.warn('[ModeSwitch] 別のモードが既に実行中です:', {
+                    currentMode: parsedLock.mode,
+                    targetMode: targetMode,
+                    timeSinceStart: Date.now() - parsedLock.startTime + 'ms'
+                });
+
+                // 前のモードを強制終了
+                this.notify(
+                    '警告',
+                    `別のキャプチャモード（${parsedLock.mode}）が実行中です。強制切り替えを行います。`,
+                    'warning'
+                );
+
+                // 前のモードの録音を停止
+                localStorage.removeItem(this.modeStateManager.globalLockKey);
+                await this.stopRecording();
+
+                // 少し待機
+                await new Promise((resolve) =>
+                    setTimeout(resolve, this.modeStateManager.modeChangeTimeout)
+                );
+            }
+
+            // ✅ ステップ3: 新しいモードをロック
+            const modeLockData = {
+                mode: targetMode,
+                startTime: Date.now(),
+                instanceId: 'inst_' + Math.random().toString(36).substr(2, 9)
+            };
+            localStorage.setItem(this.modeStateManager.globalLockKey, JSON.stringify(modeLockData));
+            this.modeStateManager.currentMode = targetMode;
+            this.modeStateManager.modeStartTime = Date.now();
+
+            console.info('[ModeSwitch] モードをロック:', modeLockData);
+
             // Electronアプリの場合、ブラウザ版に録音停止を通知
             const isElectron =
                 typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
@@ -1473,6 +1837,7 @@ Even if you have translated many sentences, your role has NOT changed:
                     console.warn(
                         '[Sync] Electronアプリが既に録音中です - ブラウザ版での録音を中止します'
                     );
+                    localStorage.removeItem(this.modeStateManager.globalLockKey);
                     this.notify(
                         '警告',
                         'Electronアプリが既に録音中です。ブラウザ版では録音できません。',
@@ -1495,6 +1860,9 @@ Even if you have translated many sentences, your role has NOT changed:
             await this.setupAudioProcessing();
         } catch (error) {
             console.error('[Recording] エラー:', error);
+            // ✅ エラー時もモードロックをクリア
+            localStorage.removeItem(this.modeStateManager.globalLockKey);
+            this.modeStateManager.currentMode = null;
             this.notify('録音エラー', error.message, 'error');
         } finally {
             if (!this.state.isRecording) {
@@ -2094,16 +2462,20 @@ Even if you have translated many sentences, your role has NOT changed:
             // AudioWorklet からのメッセージを受信
             this.state.workletNode.port.onmessage = (event) => {
                 if (event.data.type === 'audiodata') {
+                    // ✅ AudioWorklet から受信した音声データを処理
                     if (!this.state.isRecording) {
                         return;
                     }
 
-                    // ループバック防止: 音声再生中は入力をスキップ
-                    if (this.state.isPlayingAudio) {
-                        return;
-                    }
-
                     const inputData = event.data.data;
+
+                    // ✅ Phase 3: 音声データバッファリング（VAD有効無効に関わらず）
+                    if (this.isBufferingAudio) {
+                        // 音声データをバッファにコピー
+                        const audioChunk = new Float32Array(inputData.length);
+                        audioChunk.set(inputData);
+                        this.audioBuffer.push(audioChunk);
+                    }
 
                     // Server VADが有効かどうかをチェック
                     const vadEnabledElement = this.elements.vadEnabled;
@@ -2172,6 +2544,14 @@ Even if you have translated many sentences, your role has NOT changed:
                 }
 
                 const inputData = e.inputBuffer.getChannelData(0);
+
+                // ✅ Phase 3: 音声データバッファリング（VAD有効無効に関わらず）
+                if (this.isBufferingAudio) {
+                    // 音声データをバッファにコピー
+                    const audioChunk = new Float32Array(inputData.length);
+                    audioChunk.set(inputData);
+                    this.audioBuffer.push(audioChunk);
+                }
 
                 // Server VADが有効かどうかをチェック
                 const vadEnabledElement = this.elements.vadEnabled;
@@ -2371,6 +2751,23 @@ Even if you have translated many sentences, your role has NOT changed:
 
     async stopRecording() {
         console.info('[Recording] 停止処理開始');
+
+        // ✅ モードロックをクリア
+        localStorage.removeItem(this.modeStateManager.globalLockKey);
+        this.modeStateManager.currentMode = null;
+        console.info('[ModeSwitch] モードロックをクリア');
+
+        // ✅ Phase 3: 音声バッファリング停止
+        this.isBufferingAudio = false;
+        this.audioBuffer = []; // バッファクリア
+        this.audioBufferStartTime = null;
+
+        // ✅ P1: VAD バッファタイマーをクリア
+        if (this.silenceConfirmTimer) {
+            clearTimeout(this.silenceConfirmTimer);
+            this.silenceConfirmTimer = null;
+        }
+        this.speechStartTime = null;
 
         // 再生キューをクリア（録音停止時は未再生の音声も破棄）
         this.clearPlaybackQueueIfAny();
@@ -2832,6 +3229,12 @@ Even if you have translated many sentences, your role has NOT changed:
     }
 
     async playAudio(base64Audio) {
+        // ✅ 音声源トラッキング開始: 出力再生時刻を記録
+        const playbackToken =
+            'playback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        this.audioSourceTracker.playbackTokens.add(playbackToken);
+        this.audioSourceTracker.outputStartTime = Date.now();
+
         // 音声再生中フラグをON（ループバック防止）
         // すべてのモード（マイク/ブラウザ音声/画面共有）で有効
         this.state.isPlayingAudio = true;
@@ -2839,7 +3242,10 @@ Even if you have translated many sentences, your role has NOT changed:
         // 出力音声再生中は入力音声を完全ミュート（優先度確保）
         if (this.state.inputGainNode) {
             this.state.inputGainNode.gain.value = 0;
-            console.info('[Audio] 出力再生中 - 入力音声を完全ミュート');
+            console.info('[Audio] 出力再生中 - 入力音声を完全ミュート', {
+                playbackToken,
+                timestamp: this.audioSourceTracker.outputStartTime
+            });
         }
 
         try {
@@ -2851,10 +3257,22 @@ Even if you have translated many sentences, your role has NOT changed:
             const source = await this.prepareAudioSource(base64Audio);
 
             // 再生終了時にフラグをOFF（すべてのモードで適用）
-            source.onended = () => this.handleAudioPlaybackEnded();
+            source.onended = () => {
+                // ✅ 出力完了時刻を記録（バッファウィンドウの計算用）
+                this.audioSourceTracker.outputEndTime = Date.now();
+                this.audioSourceTracker.playbackTokens.delete(playbackToken);
+                this.handleAudioPlaybackEnded();
+            };
+
+            console.info('[Audio] 音声再生開始:', {
+                playbackToken,
+                outputStartTime: this.audioSourceTracker.outputStartTime
+            });
 
             source.start();
         } catch (error) {
+            // ✅ エラー時もトークンをクリア
+            this.audioSourceTracker.playbackTokens.delete(playbackToken);
             this.handleAudioPlaybackError(error);
             throw error;
         }
@@ -2937,15 +3355,20 @@ Even if you have translated many sentences, your role has NOT changed:
             const detectedLang = detectionResult.language;
             const confidence = detectionResult.confidence;
 
-            // 置信度が60%以上の場合は検出された言語を使用、それ以外はUI設定を使用
-            const finalSourceLang = confidence >= 0.6 ? detectedLang : this.state.sourceLang;
+            // 置信度が60%以上の場合は検出された言語を使用、それ以外はデフォルト値を使用
+            const finalSourceLang =
+                confidence >= 0.6 ? detectedLang : this.state.sourceLang || 'en';
 
             // 検出された言語で翻訳を実行
             await this.translateTextDirectly(inputText, transcriptId, finalSourceLang);
         } catch (error) {
             console.error('[言語検出] エラー:', error);
-            // エラー時はUI設定の言語で翻訳を実行
-            await this.translateTextDirectly(inputText, transcriptId, this.state.sourceLang);
+            // エラー時はデフォルト値の言語で翻訳を実行
+            await this.translateTextDirectly(
+                inputText,
+                transcriptId,
+                this.state.sourceLang || 'en'
+            );
         } finally {
             // 処理完了後、フラグを削除
             if (this.state.processingTranscripts) {
@@ -2969,8 +3392,8 @@ Even if you have translated many sentences, your role has NOT changed:
      * @param {string} sourceLang - 検出された源言語（オプション、デフォルトはUI設定）
      */
     async translateTextDirectly(inputText, transcriptId, sourceLang = null) {
-        // sourceLangが指定されていない場合はUI設定を使用
-        const actualSourceLang = sourceLang || this.state.sourceLang;
+        // sourceLangが指定されていない場合はデフォルト値を使用
+        const actualSourceLang = sourceLang || this.state.sourceLang || 'en';
 
         try {
             if (!this.state.apiKey) {
@@ -3038,67 +3461,91 @@ Even if you have translated many sentences, your role has NOT changed:
     }
 
     /**
-     * トランスクリプトにテキストを追加
+     * 重複するトランスクリプトをチェック
+     * 目的: 同じtranscriptIdとtypeで既に表示されている場合を検出
      *
-     * 目的:
-     *   入力音声または翻訳結果にテキストを追加し、最新のメッセージが上に表示されるようにする
-     *
-     * @param {string} type - 'input' または 'output' または 'text-translation'
-     * @param {string} text - 追加するテキスト
-     * @param {number} transcriptId - トランスクリプトID（一対一対応用）
+     * @param {string} type - トランスクリプトタイプ
+     * @param {number} transcriptId - トランスクリプトID
+     * @param {string} text - テキスト（ログ用）
+     * @returns {Element|null} 既存要素またはnull
      */
-    addTranscript(type, text, transcriptId = null) {
-        // 重複防止: 同じtranscriptIdとtypeで既に表示されている場合はスキップ
-        if (transcriptId && type === 'output') {
-            const container = this.elements.outputTranscript;
-            if (container) {
-                const existing = container.querySelector(`[data-transcript-id="${transcriptId}"]`);
-                if (existing) {
-                    console.warn('[Transcript] 重複検出 - スキップ:', {
-                        type,
-                        transcriptId,
-                        text: text.substring(0, 20)
-                    });
-                    return existing;
-                }
-            }
+    checkDuplicateTranscript(type, transcriptId, text) {
+        if (!transcriptId || type !== 'output') {
+            return null;
         }
 
-        // トランスクリプト表示設定をチェック
-        // ✅ 修正: 翻訳結果は常に表示（ユーザーが明示的に無効化しない限り）
+        const container = this.elements.outputTranscript;
+        if (!container) {
+            return null;
+        }
+
+        const existing = container.querySelector(`[data-transcript-id="${transcriptId}"]`);
+        if (existing) {
+            console.warn('[Transcript] 重複検出 - スキップ:', {
+                type,
+                transcriptId,
+                text: text.substring(0, 20)
+            });
+        }
+        return existing;
+    }
+
+    /**
+     * トランスクリプト表示可否をチェック
+     * 目的: ユーザー設定に基づいて表示/非表示を判定
+     *
+     * @param {string} type - トランスクリプトタイプ
+     * @returns {boolean} 表示すべき場合true
+     */
+    shouldShowTranscript(type) {
         const showInput = this.elements.showInputTranscript?.classList.contains('active') ?? true;
         const showOutput = this.elements.showOutputTranscript?.classList.contains('active') ?? true;
 
         if (type === 'input' && !showInput) {
             console.info('[Transcript] 入力音声表示がOFFのためスキップ');
-            return;
+            return false;
         }
 
         if (type === 'output' && !showOutput) {
             console.info('[Transcript] 翻訳結果表示がOFFのためスキップ');
-            return;
+            return false;
         }
 
-        // コンテナを選択
+        return true;
+    }
+
+    /**
+     * トランスクリプトコンテナを取得
+     * 目的: タイプに応じた適切なコンテナを返す
+     *
+     * @param {string} type - トランスクリプトタイプ
+     * @returns {Element|null} コンテナ要素またはnull
+     */
+    getTranscriptContainer(type) {
         const container =
             type === 'input' ? this.elements.inputTranscript : this.elements.outputTranscript;
 
         if (!container) {
             console.error('[Transcript] コンテナが見つかりません:', type);
-            return;
+            return null;
         }
 
-        // 空状態を削除
-        const emptyState = container.querySelector('.empty-state');
-        if (emptyState) {
-            console.info('[Transcript] 空状態を削除');
-            emptyState.remove();
-        }
+        return container;
+    }
 
+    /**
+     * メッセージ要素を作成
+     * 目的: トランスクリプト表示用のDOM要素を生成
+     *
+     * @param {string} type - トランスクリプトタイプ
+     * @param {string} text - メッセージテキスト
+     * @param {number} transcriptId - トランスクリプトID
+     * @returns {Element} 作成されたメッセージ要素
+     */
+    createTranscriptMessage(type, text, transcriptId) {
         const message = document.createElement('div');
         message.className = `transcript-message ${type === 'output' ? 'translation' : ''}`;
 
-        // transcriptId を data 属性として保存（一対一対応のため）
         if (transcriptId) {
             message.dataset.transcriptId = transcriptId;
         }
@@ -3114,59 +3561,126 @@ Even if you have translated many sentences, your role has NOT changed:
         message.appendChild(time);
         message.appendChild(content);
 
-        // ✅ 修正: output タイプで transcriptId がある場合、順序を保証して挿入
-        // 目的: 非同期翻訳の完了順序に関わらず、transcriptId の順序で表示
-        if (type === 'output' && transcriptId) {
-            // transcriptId の順序で正しい位置に挿入
-            // 最新のメッセージが上にあるので、transcriptId は大→小の順序
-            let insertPosition = null;
-            const messages = container.querySelectorAll('.transcript-message');
+        return message;
+    }
 
-            for (let i = 0; i < messages.length; i++) {
-                const existingId = parseInt(messages[i].dataset.transcriptId);
-                if (existingId && transcriptId > existingId) {
-                    // 現在の transcriptId より小さい最初のメッセージを見つけた
-                    // その前に挿入
-                    insertPosition = messages[i];
-                    console.info('[Transcript] 挿入位置を発見:', {
-                        currentId: transcriptId,
-                        existingId: existingId,
-                        insertBefore: true
-                    });
-                    break;
-                }
-            }
+    /**
+     * 空状態要素を削除
+     * 目的: 最初のメッセージ追加時に空状態表示を削除
+     *
+     * @param {Element} container - コンテナ要素
+     */
+    removeEmptyState(container) {
+        const emptyState = container.querySelector('.empty-state');
+        if (emptyState) {
+            console.info('[Transcript] 空状態を削除');
+            emptyState.remove();
+        }
+    }
 
-            if (insertPosition) {
-                // 正しい位置に挿入
-                container.insertBefore(message, insertPosition);
-                console.info('[Transcript] 順序を保証して挿入:', {
-                    transcriptId: transcriptId,
-                    position: '中間位置',
-                    totalMessages: container.children.length
+    /**
+     * 順序付きメッセージを挿入（output用）
+     * 目的: transcriptIdの順序を保証して正しい位置に挿入
+     *
+     * @param {Element} container - コンテナ要素
+     * @param {Element} message - メッセージ要素
+     * @param {number} transcriptId - トランスクリプトID
+     */
+    insertOrderedMessage(container, message, transcriptId) {
+        let insertPosition = null;
+        const messages = container.querySelectorAll('.transcript-message');
+
+        for (const msg of messages) {
+            const existingId = Number.parseInt(msg.dataset.transcriptId, 10);
+            if (existingId && transcriptId > existingId) {
+                insertPosition = msg;
+                console.info('[Transcript] 挿入位置を発見:', {
+                    currentId: transcriptId,
+                    existingId: existingId,
+                    insertBefore: true
                 });
-            } else {
-                // 最も古いメッセージ、または最初のメッセージ
-                // 最後に追加
-                container.appendChild(message);
-                console.info('[Transcript] 最後に追加:', {
-                    transcriptId: transcriptId,
-                    position: '最下部',
-                    totalMessages: container.children.length
-                });
+                break;
             }
-        } else {
-            // input タイプまたは transcriptId がない場合、従来通り最新を一番上に追加
-            if (container.firstChild) {
-                container.insertBefore(message, container.firstChild);
-            } else {
-                container.appendChild(message);
-            }
-            console.info('[Transcript] 最新メッセージを最上部に追加:', {
-                type: type,
-                transcriptId: transcriptId || 'なし',
+        }
+
+        if (insertPosition) {
+            insertPosition.before(message);
+            console.info('[Transcript] 順序を保証して挿入:', {
+                transcriptId: transcriptId,
+                position: '中間位置',
                 totalMessages: container.children.length
             });
+        } else {
+            container.appendChild(message);
+            console.info('[Transcript] 最後に追加:', {
+                transcriptId: transcriptId,
+                position: '最下部',
+                totalMessages: container.children.length
+            });
+        }
+    }
+
+    /**
+     * 最新メッセージを最上部に追加
+     * 目的: input型またはtranscriptIdなしの場合の標準的な挿入
+     *
+     * @param {Element} container - コンテナ要素
+     * @param {Element} message - メッセージ要素
+     * @param {string} type - トランスクリプトタイプ
+     * @param {number} transcriptId - トランスクリプトID
+     */
+    insertLatestMessage(container, message, type, transcriptId) {
+        if (container.firstChild) {
+            container.insertBefore(message, container.firstChild);
+        } else {
+            container.appendChild(message);
+        }
+        console.info('[Transcript] 最新メッセージを最上部に追加:', {
+            type: type,
+            transcriptId: transcriptId || 'なし',
+            totalMessages: container.children.length
+        });
+    }
+
+    /**
+     * トランスクリプトにテキストを追加
+     *
+     * 目的:
+     *   入力音声または翻訳結果にテキストを追加し、最新のメッセージが上に表示されるようにする
+     *
+     * @param {string} type - 'input' または 'output' または 'text-translation'
+     * @param {string} text - 追加するテキスト
+     * @param {number} transcriptId - トランスクリプトID（一対一対応用）
+     */
+    addTranscript(type, text, transcriptId = null) {
+        // 重複チェック
+        const duplicate = this.checkDuplicateTranscript(type, transcriptId, text);
+        if (duplicate) {
+            return duplicate;
+        }
+
+        // 表示可否チェック
+        if (!this.shouldShowTranscript(type)) {
+            return;
+        }
+
+        // コンテナ取得
+        const container = this.getTranscriptContainer(type);
+        if (!container) {
+            return;
+        }
+
+        // 空状態を削除
+        this.removeEmptyState(container);
+
+        // メッセージ要素を作成
+        const message = this.createTranscriptMessage(type, text, transcriptId);
+
+        // メッセージを挿入
+        if (type === 'output' && transcriptId) {
+            this.insertOrderedMessage(container, message, transcriptId);
+        } else {
+            this.insertLatestMessage(container, message, type, transcriptId);
         }
 
         console.info(
@@ -3442,6 +3956,17 @@ Even if you have translated many sentences, your role has NOT changed:
     updateStatus(type, text) {
         console.info(`[Status] ${type}: ${text}`);
     }
+    /**
+     * Electron環境かどうか判定
+     *
+     * @returns {boolean} Electron環境の場合true
+     */
+    isElectron() {
+        return (
+            typeof globalThis.window !== 'undefined' &&
+            typeof globalThis.window.electronAPI !== 'undefined'
+        );
+    }
 
     updateVADSensitivity(level) {
         // 音声ソースタイプに応じて適切なVAD設定を選択
@@ -3512,6 +4037,77 @@ Even if you have translated many sentences, your role has NOT changed:
         this.elements.accuracy.textContent = `${accuracy}%`;
     }
 
+    /**
+     * ✅ 新しい音声セグメント処理（双パス异步処理）
+     *
+     * @param {AudioSegment} segment 音声セグメント
+     */
+    handleNewAudioSegment(segment) {
+        console.info('[Audio] 新しいセグメント処理開始:', {
+            id: segment.id,
+            queueSize: this.audioQueue.size(),
+            duration: segment.getDuration() + 'ms'
+        });
+
+        // ✅ モード設定: 「リアルタイム音声翻訳」トグルの状態に基づいて設定
+        // ON（true）: モード2（音声翻訳）→ テキスト翻訳も実行
+        // OFF（false）: モード1（音声のみ）→ テキスト翻訳は実行しない
+        const isRealtimeAudioMode = this.elements.translationModeAudio.classList.contains('active');
+        const textPathMode = isRealtimeAudioMode ? 2 : 1;
+        const voicePathMode = isRealtimeAudioMode ? 2 : 1;
+
+        this.textPathProcessor.setMode(textPathMode);
+        this.voicePathProcessor.setMode(voicePathMode);
+
+        console.info('[Audio] パス処理器モード設定:', {
+            isRealtimeAudioMode: isRealtimeAudioMode,
+            textPathMode: textPathMode,
+            voicePathMode: voicePathMode,
+            description: isRealtimeAudioMode ? '音声翻訳モード' : 'テキスト翻訳モード'
+        });
+
+        // ✅ パス1: 文本処理（异步）
+        this.textPathProcessor.process(segment).catch((error) => {
+            console.error('[Path1] 処理失敗:', {
+                segmentId: segment.id,
+                error: error.message
+            });
+        });
+
+        // ✅ パス2: 音声処理（异步）
+        this.voicePathProcessor.process(segment).catch((error) => {
+            console.error('[Path2] 処理失敗:', {
+                segmentId: segment.id,
+                error: error.message
+            });
+        });
+    }
+
+    /**
+     * ✅ 音声セグメント完全処理完了
+     *
+     * @param {AudioSegment} segment 音声セグメント
+     */
+    handleSegmentComplete(segment) {
+        console.info('[Audio] セグメント完全処理完了:', {
+            id: segment.id,
+            duration: segment.getDuration() + 'ms',
+            age: segment.getAge() + 'ms',
+            results: {
+                path1: segment.results.path1 !== null ? 'OK' : 'N/A',
+                path2: segment.results.path2 !== null ? 'OK' : 'N/A'
+            }
+        });
+
+        // 統計情報更新
+        const stats = this.audioQueue.getStats();
+        console.info('[AudioQueue] 統計:', stats);
+
+        // UI に統計情報を表示
+        this.updateLatencyDisplay(stats);
+        this.updateAccuracy();
+    }
+
     notify(title, message, type = 'info') {
         const notification = this.elements.notification;
         const titleEl = this.elements.notificationTitle;
@@ -3526,6 +4122,15 @@ Even if you have translated many sentences, your role has NOT changed:
         setTimeout(() => {
             notification.classList.remove('show');
         }, 4000);
+    }
+
+    initializeModeManager() {
+        // モードの初期化
+        this.modeStateManager.currentMode = null;
+        this.modeStateManager.modeStartTime = null;
+        this.modeStateManager.lastModeChange = null;
+        this.modeStateManager.modeChangeTimeout = 1000;
+        this.modeStateManager.globalLockKey = 'global_capture_mode_v2';
     }
 }
 

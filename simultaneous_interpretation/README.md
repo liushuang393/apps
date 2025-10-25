@@ -214,24 +214,31 @@ OPENAI_VOICE_TO_VOICE_MODEL=gpt-realtime-2025-08-28
 
 ## 📁 ドキュメント構成
 
-### 📋 プロジェクト文書
-詳細なプロジェクト情報は [`docs/`](./docs/) フォルダを参照してください：
+### 📋 コア文書（必読）
 - **[ENGINEERING_RULES.md](./docs/ENGINEERING_RULES.md)** - 🔥 **エンジニアリング規則** (開発者必読)
-- **[README.md](./docs/README.md)** - プロジェクト概要と機能説明
-- **[GETTING_STARTED.md](./docs/GETTING_STARTED.md)** - クイックスタートガイド
-- **[SETUP_GUIDE.md](./docs/SETUP_GUIDE.md)** - 詳細なセットアップ手順
+- **[ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - 技術アーキテクチャ設計書
 - **[API_KEY_SETUP_CHECKLIST.md](./docs/API_KEY_SETUP_CHECKLIST.md)** - API キー設定チェックリスト
-- **[EXTENSION_INSTALL.md](./docs/EXTENSION_INSTALL.md)** - ブラウザ拡張機能のインストール方法
+
+### 📚 セットアップ・使用ガイド
+- **[SETUP_GUIDE.md](./docs/SETUP_GUIDE.md)** - 詳細なセットアップ手順
 - **[USAGE_GUIDE.md](./docs/USAGE_GUIDE.md)** - 使用ガイド
-- **[PROJECT_SUMMARY.md](./docs/PROJECT_SUMMARY.md)** - プロジェクト総括
-- **[TEST_REPORT.md](./docs/TEST_REPORT.md)** - テスト結果レポート
-- **[VERIFICATION_CHECKLIST.md](./docs/VERIFICATION_CHECKLIST.md)** - 検証チェックリスト
+- **[EXTENSION_INSTALL.md](./docs/EXTENSION_INSTALL.md)** - ブラウザ拡張機能のインストール方法
+- **[QUICK_TEST_GUIDE.md](./docs/QUICK_TEST_GUIDE.md)** - 快速テストガイド
 
 ### 🎨 設計文書
-設計関連の文書は [`design/`](./design/) フォルダを参照してください：
-- **[DETAILED_DESIGN.md](./design/DETAILED_DESIGN.md)** - 詳細設計書
-- **[PROJECT_PLAN.md](./design/PROJECT_PLAN.md)** - プロジェクト計画書
-- **[TEST_PLAN.md](./design/TEST_PLAN.md)** - テスト計画書
+- **[design/DETAILED_DESIGN.md](./design/DETAILED_DESIGN.md)** - 詳細設計書
+- **[design/PROJECT_PLAN.md](./design/PROJECT_PLAN.md)** - プロジェクト計画書
+- **[design/TEST_PLAN.md](./design/TEST_PLAN.md)** - テスト計画書
+
+### 📊 実装報告書
+- **[P0_COMPLETE_SUMMARY.md](./docs/P0_COMPLETE_SUMMARY.md)** - P0 並発エラー修復完了報告
+- **[P1_COMPLETE_SUMMARY.md](./docs/P1_COMPLETE_SUMMARY.md)** - P1 機能完善完了報告
+- **[P1_VAD_BUFFER_STRATEGY.md](./docs/P1_VAD_BUFFER_STRATEGY.md)** - VAD バッファ戦略
+- **[P1_CONVERSATION_CONTEXT.md](./docs/P1_CONVERSATION_CONTEXT.md)** - 会話コンテキスト管理
+- **[CODE_REVIEW_P0_P1.md](./docs/CODE_REVIEW_P0_P1.md)** - コード審査報告
+
+### 🚀 API・アップグレード
+- **[GPT_REALTIME_2025_UPGRADE_GUIDE.md](./docs/GPT_REALTIME_2025_UPGRADE_GUIDE.md)** - GPT Realtime 2025 アップグレードガイド
 
 ---
 
@@ -247,6 +254,7 @@ OPENAI_VOICE_TO_VOICE_MODEL=gpt-realtime-2025-08-28
 1. **依存関係のインストール**
    ```bash
    npm install
+   npx --yes electron-rebuild -f -w better-sqlite3 2>NUL || npm install better-sqlite3
    ```
 
 2. **起動方法の選択**
@@ -572,6 +580,158 @@ app2/
 - **ヘッドセット使用**（エコー防止）
 - **静音環境**（翻訳精度向上）
 - **有線 LAN 接続**（安定性向上）
+
+---
+
+## 🛠️ 開発環境
+
+### 開発環境のセットアップ
+
+```bash
+# 1. リポジトリをクローン
+git clone https://github.com/liushuang393/apps.git
+cd simultaneous_interpretation
+
+# 2. 依存関係をインストール
+npm install
+npx --yes electron-rebuild -f -w better-sqlite3 2>NUL || npm install better-sqlite3
+
+# 3. 環境変数を設定
+cp .env.example .env
+# .env ファイルを編集して API キーを設定
+```
+
+### 開発コマンド
+
+| コマンド | 説明 | 用途 |
+|---------|------|------|
+| `npm run dev` | 🔥 **推奨** | ファイル監視 + 自動再コンパイル・再起動 |
+| `npm start` | ⚡ クイック起動 | 開発版を素早く起動 |
+| `npm run build` | 📦 ビルド | TypeScript コンパイル |
+| `npm run build:all` | 📦 全ビルド | Core + Electron + Extension |
+| `npm test` | 🧪 テスト | 全テスト実行 |
+| `npm run test:coverage` | 📊 カバレッジ | カバレッジ付きテスト |
+| `npm run lint` | ✅ Lint | ESLint チェック |
+| `npm run format` | 🎨 フォーマット | Prettier フォーマット |
+
+### 開発時の注意点
+
+1. **TypeScript エラーチェック**
+   ```bash
+   npm run type-check
+   ```
+
+2. **ESLint チェック**
+   ```bash
+   npm run lint
+   npm run lint:fix  # 自動修正
+   ```
+
+3. **コードフォーマット**
+   ```bash
+   npm run format
+   ```
+
+4. **テストカバレッジ確認**
+   ```bash
+   npm run test:coverage
+   # coverage/ フォルダで詳細を確認
+   ```
+
+### デバッグ方法
+
+1. **Electron DevTools を開く**
+   - アプリ起動後、`Ctrl+Shift+I` (Windows) または `Cmd+Option+I` (Mac)
+
+2. **Console ログを確認**
+   - DevTools の Console タブで実行時ログを確認
+
+3. **ネットワークリクエストを確認**
+   - DevTools の Network タブで API 通信を確認
+
+---
+
+## 🚀 本番環境
+
+### 本番環境のビルド
+
+```bash
+# 1. 本番用ビルド
+npm run build:all
+
+# 2. Electron アプリをパッケージング
+npm run dist
+
+# 3. 出力ファイル
+# Windows: release/VoiceTranslate Pro Setup 2.0.0.exe
+# macOS: release/VoiceTranslate Pro-2.0.0.dmg
+# Linux: release/VoiceTranslate Pro-2.0.0.AppImage
+```
+
+### 本番環境の設定
+
+1. **環境変数の設定**
+   ```bash
+   # .env ファイルで以下を設定
+   NODE_ENV=production
+   OPENAI_REALTIME_MODEL=gpt-realtime-2025-08-28
+   OPENAI_CHAT_MODEL=gpt-4o
+   OPENAI_VOICE_TO_VOICE_MODEL=gpt-realtime-2025-08-28
+   OPENAI_TRANSLATION_MODEL=gpt-5-2025-08-07
+   ```
+
+2. **API キーの管理**
+   - 本番環境では環境変数から読み込み
+   - `.env` ファイルは Git にコミットしない
+   - `.gitignore` に `.env` が含まれていることを確認
+
+3. **セキュリティチェック**
+   ```bash
+   # ESLint チェック
+   npm run lint
+
+   # TypeScript 型チェック
+   npm run type-check
+
+   # テスト実行
+   npm test
+   ```
+
+### 本番環境での実行
+
+```bash
+# 1. ビルド済みアプリを実行
+npm run electron
+
+# 2. または、パッケージ化されたアプリを実行
+# Windows: VoiceTranslate Pro Setup 2.0.0.exe をダブルクリック
+# macOS: VoiceTranslate Pro-2.0.0.dmg をダブルクリック
+# Linux: VoiceTranslate Pro-2.0.0.AppImage をダブルクリック
+```
+
+### 本番環境での品質基準
+
+- ✅ ESLint エラー: 0
+- ✅ TypeScript エラー: 0
+- ✅ テストカバレッジ: 80% 以上
+- ✅ 全テスト: パス
+- ✅ セキュリティ: API キー暗号化、HTTPS 通信
+
+### 本番環境でのトラブルシューティング
+
+1. **アプリが起動しない**
+   - Node.js バージョンを確認: `node --version`
+   - 依存関係を再インストール: `npm install`
+
+2. **API キーエラー**
+   - `.env` ファイルが存在することを確認
+   - API キーが正しく設定されていることを確認
+   - OpenAI API の利用可能性を確認
+
+3. **音声が出力されない**
+   - スピーカーが接続されていることを確認
+   - 音量設定を確認
+   - ブラウザの音声許可を確認
 
 ---
 

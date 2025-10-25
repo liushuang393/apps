@@ -200,14 +200,14 @@ export class AudioManager {
 
             // 音声トラックの監視
             const audioTracks = stream.getAudioTracks();
-        if (audioTracks.length > 0) {
-            const [audioTrack] = audioTracks;
-            if (audioTrack) {
-                audioTrack.addEventListener('ended', () => {
-                    console.error('[AudioManager] 音声トラックが停止しました');
-                });
+            if (audioTracks.length > 0) {
+                const [audioTrack] = audioTracks;
+                if (audioTrack) {
+                    audioTrack.addEventListener('ended', () => {
+                        console.error('[AudioManager] 音声トラックが停止しました');
+                    });
+                }
             }
-        }
 
             console.info('[AudioManager] システム音声キャプチャ成功');
         } catch (error) {

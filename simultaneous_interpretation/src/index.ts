@@ -47,5 +47,15 @@ export { EncoderProcessor, AudioFormat } from './audio/EncoderProcessor';
 export { AudioPipeline, AudioPipelineBuilder } from './audio/AudioPipeline';
 export { SystemAudioCapture } from './audio/SystemAudioCapture';
 
+// コアクラス
+export { VoiceTranslateCore } from './core/VoiceTranslateCore';
+export { WebSocketManager } from './core/WebSocketManager';
+export { AudioManager } from './core/AudioManager';
+export { UIManager } from './core/UIManager';
+export { VoiceActivityDetector } from './core/VAD';
+export { ResponseStateManager, ResponseState } from './core/ResponseStateManager';
+export { ImprovedResponseQueue } from './core/ImprovedResponseQueue';
+export type { ResponseRequest } from './core/ImprovedResponseQueue';
+
 // ユーティリティ
 export * from './utils';

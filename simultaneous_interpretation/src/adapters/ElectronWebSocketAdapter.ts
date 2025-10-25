@@ -26,9 +26,7 @@ type ElectronRealtimeAPI = ElectronAPI & {
     onRealtimeWebSocketError?: (
         callback: (error: { code: string; message: string }) => void
     ) => void;
-    onRealtimeWebSocketClose?: (
-        callback: (data: { code: number; reason: string }) => void
-    ) => void;
+    onRealtimeWebSocketClose?: (callback: (data: { code: number; reason: string }) => void) => void;
 };
 
 /**

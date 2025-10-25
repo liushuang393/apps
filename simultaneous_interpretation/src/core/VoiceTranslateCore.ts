@@ -10,7 +10,8 @@
  */
 
 import { VoiceActivityDetector } from './VAD';
-import { ResponseQueue } from './ResponseQueue';
+import { ResponseStateManager } from './ResponseStateManager';
+import { ImprovedResponseQueue } from './ImprovedResponseQueue';
 import { CONFIG } from './Config';
 import { WebSocketManager } from './WebSocketManager';
 import { AudioManager } from './AudioManager';
@@ -116,12 +117,10 @@ export class VoiceTranslateCore {
     // 翻訳テキスト累積
     currentTranslationText: string;
 
-    // レスポンス状態管理
-    activeResponseId: string | null;
+    // レスポンス状態管理（新アーキテクチャ）
+    responseStateManager: ResponseStateManager;
+    responseQueue: ImprovedResponseQueue;
     lastCommitTime: number;
-
-    // レスポンスキュー
-    responseQueue: ResponseQueue;
 
     /**
      * コンストラクタ
@@ -132,7 +131,7 @@ export class VoiceTranslateCore {
             apiKey: '',
             isConnected: false,
             isRecording: false,
-            sourceLang: 'ja',
+            sourceLang: null, // ✅ 修正: 自動検出に変更、初期値は null
             targetLang: 'en',
             voiceType: 'alloy',
             sessionStartTime: null,
@@ -169,14 +168,18 @@ export class VoiceTranslateCore {
         // 翻訳テキスト累積初期化
         this.currentTranslationText = '';
 
-        // レスポンス状態管理初期化
-        this.activeResponseId = null;
+        // レスポンス状態管理初期化（新アーキテクチャ）
+        this.responseStateManager = new ResponseStateManager();
+        this.responseQueue = new ImprovedResponseQueue(this.responseStateManager, {
+            timeout: 30000, // 30秒タイムアウト
+            processingDelay: 100, // 100ms処理遅延
+            debugMode: CONFIG.DEBUG_MODE
+        });
         this.lastCommitTime = 0;
 
-        // レスポンスキュー初期化
-        this.responseQueue = new ResponseQueue((message) => this.sendMessage(message), {
-            maxQueueSize: 10,
-            debugMode: CONFIG.DEBUG_MODE
+        // レスポンスキューの送信関数を設定
+        this.responseQueue.setSendFunction((message) => {
+            this.sendMessage(message);
         });
 
         // 初期化

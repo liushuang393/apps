@@ -1,0 +1,380 @@
+---
+description: プロジェクトのビルド・コンパイル規則
+globs: package.json,tsconfig*.json,webpack.config.js
+---
+# ビルド・コンパイル規則
+
+## プロジェクト構成
+
+### 2つの独立したコードベース
+
+#### 1. HTML + JavaScript (ブラウザ版)
+```
+teams-realtime-translator.html
+├── voicetranslate-utils.js    (手書き・直接編集)
+└── voicetranslate-pro.js      (手書き・直接編集)
+```
+
+**特徴**:
+- ✅ **ソースファイルとして直接編集**
+- ✅ コンパイル不要
+- ✅ ブラウザで直接実行可能
+- ❌ 型安全性なし
+- ❌ モジュールシステムなし
+
+#### 2. TypeScript (Electron + モジュール)
+```
+src/
+├── core/
+│   ├── VoiceTranslateCore.ts
+│   ├── ResponseStateManager.ts
+│   ├── ImprovedResponseQueue.ts
+│   └── ...
+├── audio/
+├── adapters/
+└── index.ts
+
+electron/
+├── main.ts
+├── preload.ts
+└── ...
+```
+
+**特徴**:
+- ✅ 型安全性
+- ✅ モジュールシステム
+- ✅ 保守性が高い
+- ⚠️ コンパイル必要
+- ⚠️ Electron環境で実行
+
+---
+
+## ビルドコマンド
+
+### TypeScript コンパイル
+
+```bash
+# すべてビルド
+npm run build:all
+
+# コアモジュールのみ (src/ → dist/)
+npm run build:core
+
+# Electron のみ (electron/ → dist/electron/)
+npm run build:electron
+
+# ブラウザ拡張のみ (browser-extension/src/ → browser-extension/dist/)
+npm run build:extension
+```
+
+### 実行コマンド
+
+```bash
+# 開発モード（自動再起動）
+npm run dev
+npm run electron:dev
+
+# 本番ビルド
+npm run electron:build
+
+# HTML版（コンパイル不要）
+start teams-realtime-translator.html
+# または
+open teams-realtime-translator.html
+```
+
+---
+
+## tsconfig 設定
+
+### src/core/ 用 (`tsconfig.json`)
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020", "DOM"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests"]
+}
+```
+
+### electron/ 用 (`tsconfig.electron.json`)
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist/electron",
+    "rootDir": "./electron",
+    "module": "commonjs",
+    "target": "ES2020"
+  },
+  "include": ["electron/**/*"]
+}
+```
+
+### browser-extension/ 用 (`browser-extension/tsconfig.json`)
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "lib": ["ES2020", "DOM", "WebWorker"],
+    "outDir": "./dist",
+    "strict": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
+}
+```
+
+---
+
+## HTML版の修正フロー
+
+### ❌ 間違い
+```bash
+# HTML版には TypeScript コンパイルは不要！
+npm run build:core  # これは関係ない
+```
+
+### ✅ 正しい
+```bash
+# 1. エディタで直接編集
+code voicetranslate-pro.js
+
+# 2. 保存
+
+# 3. ブラウザで再読み込み（Ctrl+F5で強制リロード）
+start teams-realtime-translator.html
+```
+
+**重要**: `voicetranslate-pro.js` と `voicetranslate-utils.js` は**手書きのソースコード**であり、コンパイル生成物ではない！
+
+---
+
+## Electron版の修正フロー
+
+### TypeScript ソース修正
+
+```bash
+# 1. TypeScript ファイルを編集
+code src/core/VoiceTranslateCore.ts
+
+# 2. コンパイル
+npm run build:core
+
+# 3. Electronビルド
+npm run build:electron
+
+# 4. 実行
+npm run electron:dev
+```
+
+### または自動再起動モード
+
+```bash
+# 開発モードで起動（ファイル変更時に自動再起動）
+npm run dev
+```
+
+---
+
+## 依存関係
+
+### HTML版 → TypeScript版
+- ❌ **依存なし**
+- `voicetranslate-pro.js` は `src/core/` を使用しない
+- 完全に独立
+
+### TypeScript版 → HTML版
+- ❌ **依存なし**
+- `src/core/VoiceTranslateCore.ts` は `voicetranslate-pro.js` を使用しない
+- 完全に独立
+
+### 共通点
+- 両方とも OpenAI Realtime API を使用
+- 両方とも同じアーキテクチャ理念（ResponseQueue, VAD, etc.）
+- **実装は完全に独立**
+
+---
+
+## デプロイ
+
+### HTML版（ブラウザ）
+```bash
+# ファイルをそのままコピー
+cp teams-realtime-translator.html /deploy/
+cp voicetranslate-utils.js /deploy/
+cp voicetranslate-pro.js /deploy/
+```
+
+### Electron版
+```bash
+# ビルド
+npm run electron:build
+
+# 生成物: dist/electron-builds/ に .exe または .app
+```
+
+### ブラウザ拡張
+```bash
+# ビルド
+npm run build:extension
+
+# 生成物: browser-extension/dist/
+# Chrome拡張としてロード
+```
+
+---
+
+## トラブルシューティング
+
+### Q: TypeScript コンパイルエラーが出るが、HTML版は動く
+**A**: HTML版は TypeScript を使用しないため、コンパイルエラーは関係ない。
+
+### Q: `npm run build:core` しても HTML版が更新されない
+**A**: HTML版は `dist/` を使用しない。`voicetranslate-pro.js` を直接編集する必要がある。
+
+### Q: HTML版を修正したが反映されない
+**A**: ブラウザキャッシュをクリアするか、Ctrl+F5で強制リロード。
+
+### Q: Electron版を修正したが反映されない
+**A**: `npm run build:core` → `npm run build:electron` → `npm run electron:dev` の順に実行。
+
+---
+
+## コード同期
+
+### HTML版 → TypeScript版
+**手動移植**が必要：
+
+```bash
+# 1. HTML版で修正・テスト
+code voicetranslate-pro.js
+
+# 2. 同じロジックを TypeScript版に移植
+code src/core/VoiceTranslateCore.ts
+
+# 3. 型安全性を追加
+# 4. テスト
+npm test
+
+# 5. Electronでテスト
+npm run electron:dev
+```
+
+### TypeScript版 → HTML版
+**手動移植**が必要：
+
+```bash
+# 1. TypeScript版で実装・テスト
+code src/core/ResponseStateManager.ts
+npm test
+
+# 2. 同じロジックを JavaScript版に移植
+code voicetranslate-utils.js
+
+# 3. HTML版でテスト
+start teams-realtime-translator.html
+```
+
+---
+
+## ベストプラクティス
+
+### 1. 修正対象を明確にする
+```
+❓ どちらを修正する？
+├── HTML版（voicetranslate-pro.js）
+│   ✅ ブラウザで即テスト可能
+│   ✅ コンパイル不要
+│   ❌ 型安全性なし
+│
+└── TypeScript版（src/core/）
+    ✅ 型安全性
+    ✅ 保守性高い
+    ❌ Electronでしか使えない
+```
+
+### 2. 緊急修正は HTML版
+- バグ修正が必要 → HTML版を修正（即座に反映）
+- 後でTypeScript版に移植（時間がある時）
+
+### 3. 新機能は TypeScript版
+- 新機能開発 → TypeScript版で実装（型安全）
+- 後でHTML版に移植（必要なら）
+
+### 4. テストは両方
+```bash
+# TypeScript版
+npm test
+
+# HTML版
+start teams-realtime-translator.html
+# 手動テスト
+```
+
+---
+
+## package.json スクリプト
+
+```json
+{
+  "scripts": {
+    "build:core": "tsc",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:extension": "cd browser-extension && tsc",
+    "build:all": "npm run build:core && npm run build:electron && npm run build:extension",
+    
+    "dev": "concurrently \"npm run watch:core\" \"npm run electron:dev\"",
+    "watch:core": "tsc --watch",
+    "electron:dev": "electron dist/electron/main.js",
+    "electron:build": "electron-builder",
+    
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    
+    "lint": "eslint src/**/*.ts electron/**/*.ts",
+    "type-check": "tsc --noEmit",
+    "quality": "npm run type-check && npm run lint"
+  }
+}
+```
+
+---
+
+## まとめ
+
+| 項目 | HTML版 | TypeScript版 |
+|------|--------|--------------|
+| **ファイル** | voicetranslate-pro.js | src/core/*.ts |
+| **編集方法** | 直接編集 | 編集 → コンパイル |
+| **実行環境** | ブラウザ | Electron |
+| **コンパイル** | 不要 | 必要 |
+| **型安全性** | なし | あり |
+| **修正速度** | 速い（即反映） | 遅い（コンパイル必要） |
+| **保守性** | 低い | 高い |
+| **依存関係** | なし（独立） | なし（独立） |
+
+**原則**: 
+- 緊急修正 → HTML版
+- 新機能・リファクタリング → TypeScript版
+- 両方のコードベースは**完全に独立**

@@ -30,6 +30,7 @@ import {
 } from 'electron';
 import { ElectronAudioCapture } from './audioCapture';
 import { initializeRealtimeWebSocket, cleanupRealtimeWebSocket } from './realtimeWebSocket';
+import { ConversationDatabase, isElectronEnvironment } from './ConversationDatabase';
 
 /**
  * .env から環境変数を読み込み、未設定の値を補完する
@@ -95,6 +96,11 @@ let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
  * システムトレイ
  */
 let tray: InstanceType<typeof Tray> | null = null;
+
+/**
+ * 会話データベース
+ */
+let conversationDB: ConversationDatabase | null = null;
 
 /**
  * アプリケーション設定
@@ -525,6 +531,99 @@ function registerIPCHandlers(): void {
         return config;
     });
 
+    // ✅ 会話データベース IPC ハンドラー
+    // セッション開始
+    ipcMain.handle(
+        'conversation:start-session',
+        (_event, sourceLanguage?: string, targetLanguage?: string) => {
+            if (!conversationDB) {
+                throw new Error('Conversation database not initialized');
+            }
+            return conversationDB.startSession(sourceLanguage, targetLanguage);
+        }
+    );
+
+    // セッション終了
+    ipcMain.handle('conversation:end-session', () => {
+        if (!conversationDB) {
+            throw new Error('Conversation database not initialized');
+        }
+        conversationDB.endSession();
+    });
+
+    // ターン追加
+    ipcMain.handle(
+        'conversation:add-turn',
+        (
+            _event,
+            turn: {
+                role: 'user' | 'assistant';
+                content: string;
+                language?: string;
+                timestamp: number;
+            }
+        ) => {
+            if (!conversationDB) {
+                throw new Error('Conversation database not initialized');
+            }
+            return conversationDB.addTurn(turn);
+        }
+    );
+
+    // 最近のターンを取得
+    ipcMain.handle(
+        'conversation:get-recent-turns',
+        (_event, count: number = 10, sessionId?: number) => {
+            if (!conversationDB) {
+                throw new Error('Conversation database not initialized');
+            }
+            return conversationDB.getRecentTurns(count, sessionId);
+        }
+    );
+
+    // API用のコンテキストを取得
+    ipcMain.handle(
+        'conversation:get-context-for-api',
+        (_event, count: number = 10, sessionId?: number) => {
+            if (!conversationDB) {
+                throw new Error('Conversation database not initialized');
+            }
+            return conversationDB.getContextForAPI(count, sessionId);
+        }
+    );
+
+    // 統計情報を取得
+    ipcMain.handle('conversation:get-stats', () => {
+        if (!conversationDB) {
+            throw new Error('Conversation database not initialized');
+        }
+        return conversationDB.getStats();
+    });
+
+    // すべてのセッションを取得
+    ipcMain.handle('conversation:get-all-sessions', (_event, limit: number = 100) => {
+        if (!conversationDB) {
+            throw new Error('Conversation database not initialized');
+        }
+        return conversationDB.getAllSessions(limit);
+    });
+
+    // セッションのすべてのターンを取得
+    ipcMain.handle('conversation:get-session-turns', (_event, sessionId: number) => {
+        if (!conversationDB) {
+            throw new Error('Conversation database not initialized');
+        }
+        return conversationDB.getSessionTurns(sessionId);
+    });
+
+    // 古いセッションを削除
+    ipcMain.handle('conversation:cleanup-old-sessions', (_event, daysToKeep: number = 30) => {
+        if (!conversationDB) {
+            throw new Error('Conversation database not initialized');
+        }
+        return conversationDB.cleanupOldSessions(daysToKeep);
+    });
+
     console.info('[Main] IPC handlers registered');
 }
 
@@ -639,6 +738,28 @@ app.whenReady().then(async () => {
     // 全プラットフォーム対応: メディアアクセス権限を要求
     await requestMediaPermissions();
 
+    // ✅ 会話データベース初期化（Electron 環境のみ）
+    if (isElectronEnvironment()) {
+        try {
+            // 環境変数 CONVERSATION_DB_PATH から カスタムパスを読み込み
+            // 空の場合はデフォルトパス (userData/conversations.db) を使用
+            const customDbPath = process.env['CONVERSATION_DB_PATH'];
+            if (customDbPath) {
+                console.info(
+                    '[Main] Using custom database path from CONVERSATION_DB_PATH:',
+                    customDbPath
+                );
+            }
+            conversationDB = new ConversationDatabase(customDbPath);
+            console.info('[Main] Conversation database initialized');
+        } catch (error) {
+            console.error('[Main] Failed to initialize conversation database:', error);
+            // データベース初期化失敗でもアプリは起動する
+        }
+    } else {
+        console.info('[Main] Skipping database initialization (not in Electron environment)');
+    }
+
     createMainWindow();
     createTray();
     registerGlobalShortcuts();
@@ -671,6 +792,11 @@ app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     // WebSocket接続をクリーンアップ
     cleanupRealtimeWebSocket();
+    // ✅ 会話データベースを閉じる
+    if (conversationDB) {
+        conversationDB.close();
+        conversationDB = null;
+    }
     console.info('[Main] App is quitting');
 });
 

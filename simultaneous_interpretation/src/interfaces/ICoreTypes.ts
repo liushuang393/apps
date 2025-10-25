@@ -14,8 +14,8 @@ export interface AppState {
     isConnected: boolean;
     /** 録音状態 */
     isRecording: boolean;
-    /** ソース言語 */
-    sourceLang: string;
+    /** ソース言語 (✅ 自動検出により null から始まる) */
+    sourceLang: string | null;
     /** ターゲット言語 */
     targetLang: string;
     /** 音声タイプ */

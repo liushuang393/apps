@@ -117,6 +117,34 @@ export interface ElectronAPI {
     }>;
 
     /**
+     * 会話データベース API
+     */
+    conversation: {
+        startSession: (sourceLanguage?: string, targetLanguage?: string) => Promise<number>;
+        endSession: () => Promise<void>;
+        addTurn: (turn: {
+            role: 'user' | 'assistant';
+            content: string;
+            language?: string;
+            timestamp: number;
+        }) => Promise<number>;
+        getRecentTurns: (count?: number, sessionId?: number) => Promise<unknown[]>;
+        getContextForAPI: (
+            count?: number,
+            sessionId?: number
+        ) => Promise<Array<{ role: string; content: string }>>;
+        getStats: () => Promise<{
+            totalSessions: number;
+            totalTurns: number;
+            currentSessionTurns: number;
+            averageTurnsPerSession: number;
+        }>;
+        getAllSessions: (limit?: number) => Promise<unknown[]>;
+        getSessionTurns: (sessionId: number) => Promise<unknown[]>;
+        cleanupOldSessions: (daysToKeep?: number) => Promise<number>;
+    };
+
+    /**
      * イベントリスナーを登録
      */
     on: (channel: string, callback: (...args: unknown[]) => void) => void;
@@ -289,6 +317,48 @@ const electronAPI: ElectronAPI = {
      */
     getEnvConfig: async () => {
         return await ipcRenderer.invoke('get-env-config');
+    },
+
+    /**
+     * 会話データベース API 実装
+     */
+    conversation: {
+        startSession: async (sourceLanguage?: string, targetLanguage?: string) => {
+            return await ipcRenderer.invoke(
+                'conversation:start-session',
+                sourceLanguage,
+                targetLanguage
+            );
+        },
+        endSession: async () => {
+            return await ipcRenderer.invoke('conversation:end-session');
+        },
+        addTurn: async (turn: {
+            role: 'user' | 'assistant';
+            content: string;
+            language?: string;
+            timestamp: number;
+        }) => {
+            return await ipcRenderer.invoke('conversation:add-turn', turn);
+        },
+        getRecentTurns: async (count?: number, sessionId?: number) => {
+            return await ipcRenderer.invoke('conversation:get-recent-turns', count, sessionId);
+        },
+        getContextForAPI: async (count?: number, sessionId?: number) => {
+            return await ipcRenderer.invoke('conversation:get-context-for-api', count, sessionId);
+        },
+        getStats: async () => {
+            return await ipcRenderer.invoke('conversation:get-stats');
+        },
+        getAllSessions: async (limit?: number) => {
+            return await ipcRenderer.invoke('conversation:get-all-sessions', limit);
+        },
+        getSessionTurns: async (sessionId: number) => {
+            return await ipcRenderer.invoke('conversation:get-session-turns', sessionId);
+        },
+        cleanupOldSessions: async (daysToKeep?: number) => {
+            return await ipcRenderer.invoke('conversation:cleanup-old-sessions', daysToKeep);
+        }
     },
 
     /**
