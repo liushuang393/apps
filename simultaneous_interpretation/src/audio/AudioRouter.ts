@@ -60,6 +60,7 @@ export class AudioRouter {
     private sourceNodes: Map<string, MediaStreamAudioSourceNode> = new Map();
     private gainNodes: Map<string, GainNode> = new Map();
     private mixerNode: GainNode | null = null;
+    private workletNode: AudioWorkletNode | null = null;
     private processorNode: ScriptProcessorNode | null = null;
     private audioCallback: ((audioData: Float32Array) => void) | null = null;
     private isActive: boolean = false;
@@ -108,20 +109,22 @@ export class AudioRouter {
         this.mixerNode = this.audioContext.createGain();
         this.mixerNode.gain.value = 1.0;
 
-        // プロセッサーノード作成
-        this.processorNode = this.audioContext.createScriptProcessor(
-            this.config.bufferSize,
-            this.config.channelCount,
-            this.config.channelCount
-        );
-
-        this.processorNode.onaudioprocess = (event: AudioProcessingEvent) => {
-            this.processAudio(event);
-        };
+        // AudioWorklet を優先使用、フォールバックで ScriptProcessorNode
+        try {
+            await this.setupAudioWorklet();
+        } catch (error) {
+            logger.warn('AudioWorklet setup failed, falling back to ScriptProcessorNode', error);
+            this.setupScriptProcessor();
+        }
 
         // ノード接続
-        this.mixerNode.connect(this.processorNode);
-        this.processorNode.connect(this.audioContext.destination);
+        if (this.workletNode) {
+            this.mixerNode.connect(this.workletNode);
+            this.workletNode.connect(this.audioContext.destination);
+        } else if (this.processorNode) {
+            this.mixerNode.connect(this.processorNode);
+            this.processorNode.connect(this.audioContext.destination);
+        }
 
         this.isActive = true;
 
@@ -142,6 +145,12 @@ export class AudioRouter {
         }
 
         // ノードを切断
+        if (this.workletNode) {
+            this.workletNode.port.postMessage({ type: 'stop' });
+            this.workletNode.disconnect();
+            this.workletNode = null;
+        }
+
         if (this.processorNode) {
             this.processorNode.disconnect();
             this.processorNode = null;
@@ -161,6 +170,57 @@ export class AudioRouter {
         this.isActive = false;
 
         logger.info('AudioRouter stopped');
+    }
+
+    /**
+     * AudioWorklet をセットアップ（推奨）
+     *
+     * @private
+     */
+    private async setupAudioWorklet(): Promise<void> {
+        if (!this.audioContext) {
+            throw new Error('AudioContext not initialized');
+        }
+
+        // AudioWorklet モジュールをロード
+        await this.audioContext.audioWorklet.addModule('audio-processor-worklet.js');
+
+        // AudioWorkletNode を作成
+        this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor-worklet');
+
+        // メッセージハンドラーを設定
+        this.workletNode.port.onmessage = (event) => {
+            if (event.data.type === 'audiodata' && this.audioCallback) {
+                const audioData = event.data.data as Float32Array;
+                this.audioCallback(audioData);
+            }
+        };
+
+        logger.info('AudioWorklet setup completed');
+    }
+
+    /**
+     * ScriptProcessorNode をセットアップ（フォールバック）
+     *
+     * @private
+     */
+    private setupScriptProcessor(): void {
+        if (!this.audioContext) {
+            throw new Error('AudioContext not initialized');
+        }
+
+        // プロセッサーノード作成
+        this.processorNode = this.audioContext.createScriptProcessor(
+            this.config.bufferSize,
+            this.config.channelCount,
+            this.config.channelCount
+        );
+
+        this.processorNode.onaudioprocess = (event: AudioProcessingEvent) => {
+            this.processAudio(event);
+        };
+
+        logger.info('ScriptProcessorNode setup completed (fallback)');
     }
 
     /**

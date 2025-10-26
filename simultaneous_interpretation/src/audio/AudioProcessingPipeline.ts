@@ -69,6 +69,7 @@ export class AudioProcessingPipeline {
     private audioContext: AudioContext | null = null;
     private mediaStream: MediaStream | null = null;
     private sourceNode: MediaStreamAudioSourceNode | null = null;
+    private workletNode: AudioWorkletNode | null = null;
     private processorNode: ScriptProcessorNode | null = null;
 
     // 音声処理ノード
@@ -196,7 +197,7 @@ export class AudioProcessingPipeline {
      *
      * @private
      */
-    private createProcessingNodes(): void {
+    private async createProcessingNodes(): Promise<void> {
         if (!this.audioContext) {
             throw new Error('AudioContext not initialized');
         }
@@ -217,6 +218,52 @@ export class AudioProcessingPipeline {
         this.gainNode = this.audioContext.createGain();
         this.gainNode.gain.value = 1.0;
 
+        // AudioWorklet を優先使用、フォールバックで ScriptProcessorNode
+        try {
+            await this.setupAudioWorklet();
+        } catch (error) {
+            logger.warn('AudioWorklet setup failed, falling back to ScriptProcessorNode', error);
+            this.setupScriptProcessor();
+        }
+    }
+
+    /**
+     * AudioWorklet をセットアップ（推奨）
+     *
+     * @private
+     */
+    private async setupAudioWorklet(): Promise<void> {
+        if (!this.audioContext) {
+            throw new Error('AudioContext not initialized');
+        }
+
+        // AudioWorklet モジュールをロード
+        await this.audioContext.audioWorklet.addModule('audio-processor-worklet.js');
+
+        // AudioWorkletNode を作成
+        this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor-worklet');
+
+        // メッセージハンドラーを設定
+        this.workletNode.port.onmessage = (event) => {
+            if (event.data.type === 'audiodata' && this.audioCallback) {
+                const audioData = event.data.data as Float32Array;
+                this.processAudioData(audioData);
+            }
+        };
+
+        logger.info('AudioWorklet setup completed');
+    }
+
+    /**
+     * ScriptProcessorNode をセットアップ（フォールバック）
+     *
+     * @private
+     */
+    private setupScriptProcessor(): void {
+        if (!this.audioContext) {
+            throw new Error('AudioContext not initialized');
+        }
+
         // プロセッサーノード
         this.processorNode = this.audioContext.createScriptProcessor(
             this.config.bufferSize,
@@ -227,6 +274,8 @@ export class AudioProcessingPipeline {
         this.processorNode.onaudioprocess = (event) => {
             this.processAudio(event);
         };
+
+        logger.info('ScriptProcessorNode setup completed (fallback)');
     }
 
     /**
@@ -240,18 +289,30 @@ export class AudioProcessingPipeline {
             !this.noiseGateNode ||
             !this.compressorNode ||
             !this.gainNode ||
-            !this.processorNode ||
             !this.audioContext
         ) {
             throw new Error('Audio nodes not initialized');
         }
 
-        // 接続チェーン: Source -> NoiseGate -> Compressor -> Gain -> Processor -> Destination
+        // AudioWorklet または ScriptProcessorNode のいずれかが必要
+        if (!this.workletNode && !this.processorNode) {
+            throw new Error('Neither AudioWorkletNode nor ScriptProcessorNode initialized');
+        }
+
+        // 接続チェーン: Source -> NoiseGate -> Compressor -> Gain -> Processor/Worklet -> Destination
         this.sourceNode.connect(this.noiseGateNode);
         this.noiseGateNode.connect(this.compressorNode);
         this.compressorNode.connect(this.gainNode);
-        this.gainNode.connect(this.processorNode);
-        this.processorNode.connect(this.audioContext.destination);
+
+        if (this.workletNode) {
+            // AudioWorklet を使用
+            this.gainNode.connect(this.workletNode);
+            this.workletNode.connect(this.audioContext.destination);
+        } else if (this.processorNode) {
+            // ScriptProcessorNode を使用（フォールバック）
+            this.gainNode.connect(this.processorNode);
+            this.processorNode.connect(this.audioContext.destination);
+        }
     }
 
     /**
@@ -276,10 +337,38 @@ export class AudioProcessingPipeline {
             this.gainNode.disconnect();
             this.gainNode = null;
         }
+        if (this.workletNode) {
+            this.workletNode.port.postMessage({ type: 'stop' });
+            this.workletNode.disconnect();
+            this.workletNode = null;
+        }
         if (this.processorNode) {
             this.processorNode.disconnect();
             this.processorNode = null;
         }
+    }
+
+    /**
+     * 音声データを処理（AudioWorklet用）
+     *
+     * @private
+     * @param audioData - 音声データ
+     */
+    private processAudioData(audioData: Float32Array): void {
+        if (!this.isActive || !this.audioCallback) {
+            return;
+        }
+
+        const startTime = performance.now();
+
+        // ノイズゲート適用
+        const gatedData = this.applyNoiseGate(audioData);
+
+        // メトリクス計算
+        this.calculateMetrics(gatedData, startTime);
+
+        // コールバック呼び出し
+        this.audioCallback(gatedData);
     }
 
     /**

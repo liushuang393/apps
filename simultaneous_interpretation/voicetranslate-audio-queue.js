@@ -302,10 +302,16 @@ class AudioQueue {
             onQueueFull: null
         };
 
+        // ✅ 排他制御: セグメントを順番に処理
+        this.isProcessing = false; // 現在処理中かどうか
+        this.currentSegmentId = null; // 現在処理中のセグメントID
+        this.processingQueue = []; // 処理待ちセグメントIDのキュー
+
         console.info('[AudioQueue] 初期化完了:', {
             maxSegmentDuration: this.config.maxSegmentDuration + 'ms',
             minSegmentDuration: this.config.minSegmentDuration + 'ms',
-            maxQueueSize: this.config.maxQueueSize
+            maxQueueSize: this.config.maxQueueSize,
+            sequentialProcessing: true
         });
     }
 
@@ -360,18 +366,15 @@ class AudioQueue {
         console.info('[AudioQueue] セグメント追加:', {
             id: segment.id,
             queueSize: this.queue.size,
-            duration: metadata.duration + 'ms'
+            duration: metadata.duration + 'ms',
+            processingQueueSize: this.processingQueue.length
         });
 
-        // ✅ リスナー通知
-        if (this.listeners.onSegmentReady !== null) {
-            // setTimeoutを使用(0)して非同期実行を保証
-            setTimeout(() => {
-                if (this.listeners.onSegmentReady !== null) {
-                    this.listeners.onSegmentReady(segment);
-                }
-            }, 0);
-        }
+        // ✅ 処理キューに追加
+        this.processingQueue.push(segment.id);
+
+        // ✅ 処理中でない場合、次のセグメントを処理開始
+        this.processNextSegment();
 
         return segment;
     }
@@ -442,6 +445,17 @@ class AudioQueue {
         setTimeout(() => {
             this.cleanup(segment.id);
         }, this.config.cleanupDelay);
+
+        // ✅ 処理完了フラグをリセット
+        if (this.currentSegmentId === segment.id) {
+            this.isProcessing = false;
+            this.currentSegmentId = null;
+
+            console.info('[AudioQueue] 処理完了、次のセグメントを処理開始');
+
+            // ✅ 次のセグメントを処理
+            this.processNextSegment();
+        }
     }
 
     /**
@@ -525,6 +539,62 @@ class AudioQueue {
      */
     size() {
         return this.queue.size;
+    }
+
+    /**
+     * 次のセグメントを処理
+     *
+     * @description
+     * 処理キューから次のセグメントを取り出して処理を開始
+     * 排他制御により、同時に1つのセグメントのみ処理
+     *
+     * @private
+     */
+    processNextSegment() {
+        // ✅ 既に処理中の場合はスキップ
+        if (this.isProcessing) {
+            console.info('[AudioQueue] 既に処理中、次のセグメント処理をスキップ:', {
+                currentSegmentId: this.currentSegmentId,
+                queueSize: this.processingQueue.length
+            });
+            return;
+        }
+
+        // ✅ 処理待ちセグメントがない場合は終了
+        if (this.processingQueue.length === 0) {
+            console.info('[AudioQueue] 処理待ちセグメントなし');
+            return;
+        }
+
+        // ✅ 次のセグメントを取得
+        const segmentId = this.processingQueue.shift();
+        const segment = this.queue.get(segmentId);
+
+        if (!segment) {
+            console.warn('[AudioQueue] セグメントが見つかりません:', segmentId);
+            // 次のセグメントを処理
+            this.processNextSegment();
+            return;
+        }
+
+        // ✅ 処理中フラグを設定
+        this.isProcessing = true;
+        this.currentSegmentId = segmentId;
+
+        console.info('[AudioQueue] セグメント処理開始:', {
+            segmentId: segmentId,
+            remainingInQueue: this.processingQueue.length,
+            duration: segment.getDuration() + 'ms'
+        });
+
+        // ✅ リスナー通知（非同期）
+        if (this.listeners.onSegmentReady !== null) {
+            setTimeout(() => {
+                if (this.listeners.onSegmentReady !== null) {
+                    this.listeners.onSegmentReady(segment);
+                }
+            }, 0);
+        }
     }
 }
 

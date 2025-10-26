@@ -87,7 +87,12 @@ export interface AudioConfig {
 /**
  * 音声プリセット名の型定義
  */
-export type AudioPresetName = 'BALANCED' | 'AGGRESSIVE' | 'LOW_LATENCY' | 'SERVER_VAD';
+export type AudioPresetName =
+    | 'BALANCED'
+    | 'AGGRESSIVE'
+    | 'LOW_LATENCY'
+    | 'ULTRA_LOW_LATENCY'
+    | 'SERVER_VAD';
 
 /**
  * アプリケーション設定の型定義
@@ -145,9 +150,9 @@ export const CONFIG: AppConfig = {
         TIMEOUT: 30000
     },
 
-    // 音声設定プリセット（4つの方案から選択）
+    // 音声設定プリセット（5つの方案から選択）
     // 使用方法: CONFIG.AUDIO_PRESET を変更して再読み込み
-    AUDIO_PRESET: 'BALANCED', // 'BALANCED' | 'AGGRESSIVE' | 'LOW_LATENCY' | 'SERVER_VAD'
+    AUDIO_PRESET: 'BALANCED', // 'BALANCED' | 'AGGRESSIVE' | 'LOW_LATENCY' | 'ULTRA_LOW_LATENCY' | 'SERVER_VAD'
 
     AUDIO_PRESETS: {
         // 方案A: バランス型（推奨）
@@ -171,7 +176,14 @@ export const CONFIG: AppConfig = {
             VAD_DEBOUNCE: 250, // VAD去抖動時間
             DESCRIPTION: '最低遅延 - VAD精度やや低'
         },
-        // 方案D: Server VAD型
+        // 方案D: 超低遅延型（Teams/ブラウザ監視用）
+        ULTRA_LOW_LATENCY: {
+            BUFFER_SIZE: 2048, // 85ms @ 24kHz
+            MIN_SPEECH_MS: 300, // 最小音声長さ
+            VAD_DEBOUNCE: 150, // VAD去抖動時間
+            DESCRIPTION: '超低遅延 - Teams/ブラウザ監視最適化、フレームドロップ防止'
+        },
+        // 方案E: Server VAD型
         SERVER_VAD: {
             BUFFER_SIZE: 4800, // 200ms @ 24kHz
             MIN_SPEECH_MS: 0, // Server VADに任せる
@@ -194,6 +206,7 @@ export const CONFIG: AppConfig = {
             HIGH: { threshold: 0.002, debounce: 150 }
         },
         // システム音声モード用（騒がしい環境：ブラウザ音声、会議、音楽）
+        // 注意: Teams/Zoom監視時は ULTRA_LOW_LATENCY プリセット + MEDIUM/HIGH 感度推奨
         SYSTEM: {
             LOW: { threshold: 0.015, debounce: 500 },
             MEDIUM: { threshold: 0.01, debounce: 350 },

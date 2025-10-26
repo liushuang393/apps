@@ -969,11 +969,18 @@ const WebSocketMixin = {
     },
 
     /**
-     * ✅ 新しい音声セグメント処理（双パス异步処理）
+     * ✅ 新しい音声セグメント処理（双パス順次処理）
+     *
+     * @description
+     * 音声入力を起点として、2つの処理を順番に実行：
+     * 1. Path1（テキストパス）: 音声送信 → STT → テキスト翻訳（モード2のみ）
+     * 2. Path2（音声パス）: 音声送信待機 → 音声翻訳 → 音声再生
+     *
+     * 排他制御により、1つのセグメントが完全に処理されるまで次のセグメントは開始されない
      *
      * @param {AudioSegment} segment 音声セグメント
      */
-    handleNewAudioSegment(segment) {
+    async handleNewAudioSegment(segment) {
         console.info('[Audio] 新しいセグメント処理開始:', {
             id: segment.id,
             queueSize: this.audioQueue.size(),
@@ -997,21 +1004,40 @@ const WebSocketMixin = {
             description: isRealtimeAudioMode ? '音声翻訳モード' : 'テキスト翻訳モード'
         });
 
-        // ✅ パス1: 文本処理（异步）
-        this.textPathProcessor.process(segment).catch((error) => {
-            console.error('[Path1] 処理失敗:', {
-                segmentId: segment.id,
-                error: error.message
-            });
-        });
+        try {
+            // ✅ パス1: テキスト処理（順次実行）
+            console.info('[Audio] Path1 開始:', { segmentId: segment.id });
+            await this.textPathProcessor.process(segment);
+            console.info('[Audio] Path1 完了:', { segmentId: segment.id });
 
-        // ✅ パス2: 音声処理（异步）
-        this.voicePathProcessor.process(segment).catch((error) => {
-            console.error('[Path2] 処理失敗:', {
+            // ✅ パス2: 音声処理（順次実行）
+            console.info('[Audio] Path2 開始:', { segmentId: segment.id });
+            await this.voicePathProcessor.process(segment);
+            console.info('[Audio] Path2 完了:', { segmentId: segment.id });
+
+            console.info('[Audio] セグメント処理完全完了:', {
                 segmentId: segment.id,
-                error: error.message
+                totalDuration: segment.getAge() + 'ms'
             });
-        });
+        } catch (error) {
+            console.error('[Audio] セグメント処理エラー:', {
+                segmentId: segment.id,
+                error: error.message,
+                stack: error.stack
+            });
+
+            // ✅ エラーでも両パスを完了マーク（次のセグメント処理を継続）
+            if (segment.processingStatus.path1_text === 0) {
+                this.audioQueue.markPathComplete(segment.id, 'path1', {
+                    error: error.message
+                });
+            }
+            if (segment.processingStatus.path2_voice === 0) {
+                this.audioQueue.markPathComplete(segment.id, 'path2', {
+                    error: error.message
+                });
+            }
+        }
     },
 
     /**

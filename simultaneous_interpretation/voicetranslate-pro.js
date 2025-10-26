@@ -244,9 +244,9 @@ class VoiceTranslateApp {
      * デフォルト状態:
      * - 自動音声検出: ON
      * - リアルタイム音声翻訳: ON
-     * - ノイズ除去: OFF (dev-only)
-     * - エコー除去: OFF (dev-only)
-     * - 自動ゲイン: OFF (dev-only)
+     * - ノイズ除去: ON (dev-only)
+     * - エコー除去: ON (dev-only)
+     * - 自動ゲイン: ON (dev-only)
      * - 入力音声を表示: ON
      * - 翻訳結果を表示: ON
      * - 翻訳音声を出力: ON
@@ -260,9 +260,9 @@ class VoiceTranslateApp {
         const defaultSettings = {
             vadEnabled: 'true', // ON
             translationModeAudio: 'true', // ON
-            noiseReduction: 'false', // OFF (dev-only)
-            echoCancellation: 'false', // OFF (dev-only)
-            autoGainControl: 'false', // OFF (dev-only)
+            noiseReduction: 'true', // ON (dev-only)
+            echoCancellation: 'true', // ON (dev-only)
+            autoGainControl: 'true', // ON (dev-only)
             showInputTranscript: 'true', // ON
             showOutputTranscript: 'true', // ON
             audioOutputEnabled: 'true', // ON
@@ -339,7 +339,7 @@ class VoiceTranslateApp {
         const audioSourceType = document.getElementById('audioSourceType');
         const systemAudioSourceGroup = document.getElementById('systemAudioSourceGroup');
 
-        audioSourceType.addEventListener('change', (e) => {
+        audioSourceType.addEventListener('change', async (e) => {
             const sourceType = e.target.value;
             this.state.audioSourceType = sourceType;
             this.saveToStorage('audio_source_type', sourceType);
@@ -347,6 +347,14 @@ class VoiceTranslateApp {
             // システム音声選択時は追加UIを表示
             if (sourceType === 'system') {
                 systemAudioSourceGroup.style.display = 'block';
+
+                // ✅ 修正: ブラウザ環境では自動的に音声ソースを検出
+                // Electron環境ではユーザーが手動で「会議アプリを検出」ボタンをクリックする
+                const isElectron = typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
+                if (!isElectron) {
+                    console.info('[Audio Source] ブラウザ環境: 音声ソースを自動検出');
+                    await this.detectAudioSources();
+                }
             } else {
                 systemAudioSourceGroup.style.display = 'none';
             }
@@ -2802,10 +2810,200 @@ Object.assign(VoiceTranslateApp.prototype, WebSocketMixin);
 Object.assign(VoiceTranslateApp.prototype, UIMixin);
 
 // ====================
+// UI折りたたみ機能
+// ====================
+/**
+ * 折りたたみ可能なセクションを初期化
+ * @description 詳細設定と言語設定の折りたたみ機能を提供
+ */
+class CollapsibleManager {
+    constructor() {
+        this.sections = new Map();
+    }
+
+    /**
+     * 折りたたみセクションを登録
+     * @param {string} name - セクション名
+     * @param {string} headerId - ヘッダー要素のID
+     * @param {string} contentId - コンテンツ要素のID
+     * @param {boolean} defaultCollapsed - デフォルトで折りたたむか
+     */
+    registerSection(name, headerId, contentId, defaultCollapsed = false) {
+        this.sections.set(name, {
+            headerId,
+            contentId,
+            defaultCollapsed,
+            clickHandler: null,
+            initialized: false  // ✅ 追加: 個別セクションの初期化状態
+        });
+    }
+
+    /**
+     * すべてのセクションを初期化
+     */
+    initializeAll() {
+        let successCount = 0;
+        let alreadyInitializedCount = 0;
+
+        for (const [name, config] of this.sections) {
+            if (config.initialized) {
+                alreadyInitializedCount++;
+                continue;
+            }
+
+            if (this.initializeSection(name, config)) {
+                successCount++;
+                config.initialized = true;  // ✅ 追加: 初期化成功をマーク
+            }
+        }
+
+        if (alreadyInitializedCount > 0) {
+            console.log(`[Collapsible] ${alreadyInitializedCount}/${this.sections.size} セクションは既に初期化済み`);
+        }
+
+        if (successCount > 0) {
+            console.log(`[Collapsible] ${successCount}/${this.sections.size} セクションを新規初期化しました`);
+        }
+
+        return successCount;
+    }
+
+    /**
+     * 個別セクションを初期化
+     * @param {string} name - セクション名
+     * @param {object} config - セクション設定
+     * @returns {boolean} 初期化成功したか
+     */
+    initializeSection(name, config) {
+        const header = document.getElementById(config.headerId);
+        const content = document.getElementById(config.contentId);
+
+        if (!header || !content) {
+            console.warn(`[Collapsible] ${name}: 要素が見つかりません`, {
+                header: !!header,
+                content: !!content
+            });
+            return false;
+        }
+
+        console.log(`[Collapsible] ${name}: 初期化開始`);
+
+        // クリックイベントハンドラーを定義
+        const clickHandler = (e) => {
+            console.log(`[Collapsible] ${name}: クリックイベント発火`, e.target);
+
+            // collapsed クラスをトグル
+            const wasCollapsed = content.classList.contains('collapsed');
+            content.classList.toggle('collapsed');
+            header.classList.toggle('collapsed');
+
+            // ローカルストレージに状態を保存
+            const isCollapsed = content.classList.contains('collapsed');
+            const storageKey = `${name}SettingsCollapsed`;
+            localStorage.setItem(storageKey, isCollapsed);
+            console.log(`[Collapsible] ${name}: 状態変更`, wasCollapsed ? '折りたたみ→展開' : '展開→折りたたみ');
+        };
+
+        // 既存のイベントリスナーを削除（存在する場合）
+        if (config.clickHandler) {
+            header.removeEventListener('click', config.clickHandler);
+        }
+
+        // 新しいイベントリスナーを追加
+        header.addEventListener('click', clickHandler, { passive: false });
+        config.clickHandler = clickHandler;
+        console.log(`[Collapsible] ${name}: イベントリスナー登録完了`);
+
+        // ページ読み込み時に前回の状態を復元
+        const storageKey = `${name}SettingsCollapsed`;
+        const savedState = localStorage.getItem(storageKey);
+        const shouldCollapse = savedState !== null ? savedState === 'true' : config.defaultCollapsed;
+
+        if (shouldCollapse) {
+            content.classList.add('collapsed');
+            header.classList.add('collapsed');
+            console.log(`[Collapsible] ${name}: 初期状態 -> 折りたたみ`);
+        } else {
+            content.classList.remove('collapsed');
+            header.classList.remove('collapsed');
+            console.log(`[Collapsible] ${name}: 初期状態 -> 展開`);
+        }
+
+        return true;
+    }
+
+    /**
+     * デバッグ用: セクションをテスト
+     * @param {string} name - セクション名
+     */
+    testSection(name) {
+        const config = this.sections.get(name);
+        if (!config) {
+            console.error('[Collapsible Test] 不明なセクション:', name);
+            console.log('[Collapsible Test] 利用可能なセクション:', Array.from(this.sections.keys()));
+            return;
+        }
+
+        const header = document.getElementById(config.headerId);
+        const content = document.getElementById(config.contentId);
+
+        console.log('[Collapsible Test] セクション:', name);
+        console.log('[Collapsible Test] ヘッダー:', header);
+        console.log('[Collapsible Test] コンテンツ:', content);
+        console.log('[Collapsible Test] ヘッダークラス:', header?.className);
+        console.log('[Collapsible Test] コンテンツクラス:', content?.className);
+
+        if (header) {
+            console.log('[Collapsible Test] クリックイベントを発火');
+            header.click();
+        }
+    }
+}
+
+// グローバルな折りたたみマネージャーを作成
+const collapsibleManager = new CollapsibleManager();
+
+// セクションを登録
+collapsibleManager.registerSection('advanced', 'advancedSettingsHeader', 'advancedSettingsContent', true);
+collapsibleManager.registerSection('language', 'languageSettingsHeader', 'languageSettingsContent', false);
+
+// ====================
 // アプリケーション起動
 // ====================
 document.addEventListener('DOMContentLoaded', () => {
     globalThis.window.app = new VoiceTranslateApp();
+
+    // ✅ 修正: 折りたたみ機能を初期化（即座に実行）
+    console.log('[Collapsible] DOMContentLoaded: 初期化開始');
+    const initialSuccess = collapsibleManager.initializeAll();
+
+    if (initialSuccess === 0) {
+        console.warn('[Collapsible] DOMContentLoaded: 初期化失敗、再試行をスケジュール');
+    }
+
+    // ✅ 修正: 複数のタイミングで再試行（初期化されていないセクションのみ）
+    setTimeout(() => {
+        console.log('[Collapsible] 500ms後に再試行');
+        const retrySuccess = collapsibleManager.initializeAll();
+        if (retrySuccess > 0) {
+            console.log('[Collapsible] 500ms後の再試行で成功');
+        }
+    }, 500);
+
+    setTimeout(() => {
+        console.log('[Collapsible] 1500ms後に再試行');
+        const retrySuccess = collapsibleManager.initializeAll();
+        if (retrySuccess > 0) {
+            console.log('[Collapsible] 1500ms後の再試行で成功');
+        }
+    }, 1500);
+
+    // デバッグ用関数をグローバルに公開
+    globalThis.window.testCollapsible = (sectionName) => {
+        collapsibleManager.testSection(sectionName);
+    };
+
+    console.log('[UI] デバッグ関数を公開: window.testCollapsible("advanced") または window.testCollapsible("language")');
 });
 
 // 拡張機能用のエクスポート

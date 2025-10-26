@@ -160,6 +160,9 @@
             cursor: pointer;
             user-select: none;
             transition: color 0.2s ease;
+            pointer-events: auto; /* ✅ 追加: クリックイベントを確実に受け取る */
+            position: relative; /* ✅ 追加: z-indexを有効にする */
+            z-index: 1; /* ✅ 追加: 他の要素より前面に配置 */
         }
 
         .collapsible-header:hover {
@@ -171,6 +174,8 @@
             font-size: 12px;
             transition: transform 0.3s ease;
             display: inline-block;
+            margin-right: 4px; /* ✅ 追加: アイコンとテキストの間隔 */
+            pointer-events: none; /* ✅ 追加: アイコン自体はクリックイベントを受け取らない */
         }
 
         .collapsible-header:not(.collapsed) .collapse-icon {
@@ -947,9 +952,10 @@
                     <div class="collapsible-content" id="languageSettingsContent">
                     <!-- ✅ 修正: 自動言語検出 -->
                     <div class="form-group">
-                        <label class="form-label">📥 入力言語（自動検出）</label>
+                        <label class="form-label" for="detectedLanguageInput">📥 入力言語（自動検出）</label>
+                        <input type="hidden" id="detectedLanguageInput" name="detectedLanguage" value="auto">
                         <div class="form-input" style="background: var(--input-bg); padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-                            <span id="detectedLanguageDisplay" style="font-weight: bold; color: var(--primary);">🔄 待機中...</span>
+                            <span id="detectedLanguageDisplay" style="font-weight: bold; color: var(--primary);">🔄 自動検出中...</span>
                             <span id="detectedLanguageCode" style="font-size: 12px; color: var(--text-secondary);">auto</span>
                         </div>
                         <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
@@ -1003,15 +1009,15 @@
                         </div>
                         <div class="toggle-group dev-only">
                             <span class="toggle-label">ノイズ除去</span>
-                            <div class="toggle-switch active" id="noiseReduction"></div>
+                            <div class="toggle-switch" id="noiseReduction"></div>
                         </div>
                         <div class="toggle-group dev-only">
                             <span class="toggle-label">エコー除去</span>
-                            <div class="toggle-switch active" id="echoCancellation"></div>
+                            <div class="toggle-switch" id="echoCancellation"></div>
                         </div>
                         <div class="toggle-group dev-only">
                             <span class="toggle-label">自動ゲイン</span>
-                            <div class="toggle-switch active" id="autoGainControl"></div>
+                            <div class="toggle-switch" id="autoGainControl"></div>
                         </div>
                         <div class="toggle-group">
                             <span class="toggle-label">入力音声を表示</span>
@@ -1189,158 +1195,7 @@
     <!-- メインアプリケーション -->
     <script src="voicetranslate-pro.js"></script>
 
-    <!-- 詳細設定の折りたたみ機能 -->
-    <script>
-        // 詳細設定の折りたたみ機能を初期化
-        (function() {
-            let isInitialized = false;
-
-            const initCollapsible = () => {
-                // 既に初期化済みの場合はスキップ
-                if (isInitialized) {
-                    return;
-                }
-
-                const header = document.getElementById('advancedSettingsHeader');
-                const content = document.getElementById('advancedSettingsContent');
-
-                if (!header || !content) {
-                    return;
-                }
-
-                isInitialized = true;
-
-                // クリックイベントを追加
-                header.addEventListener('click', function() {
-                    // collapsed クラスをトグル
-                    content.classList.toggle('collapsed');
-                    header.classList.toggle('collapsed');
-
-                    // ローカルストレージに状態を保存
-                    const isCollapsed = content.classList.contains('collapsed');
-                    localStorage.setItem('advancedSettingsCollapsed', isCollapsed);
-                });
-
-                // ページ読み込み時に前回の状態を復元（デフォルトは折りたたみ）
-                const savedState = localStorage.getItem('advancedSettingsCollapsed');
-                if (savedState === null || savedState === 'true') {
-                    // デフォルトまたは保存された状態が折りたたみの場合
-                    content.classList.add('collapsed');
-                    header.classList.add('collapsed');
-                } else {
-                    // 展開状態の場合
-                    content.classList.remove('collapsed');
-                    header.classList.remove('collapsed');
-                }
-            };
-
-            // DOMContentLoaded 後に実行
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initCollapsible);
-            } else {
-                initCollapsible();
-            }
-
-            // voicetranslate-pro.js 読み込み後に再度確認
-            setTimeout(() => {
-                initCollapsible();
-            }, 500);
-        })();
-
-        // 言語設定の折りたたみ機能を初期化
-        (function() {
-            let isInitialized = false;
-
-            const initLanguageCollapsible = () => {
-                // 既に初期化済みの場合はスキップ
-                if (isInitialized) {
-                    return;
-                }
-
-                const header = document.getElementById('languageSettingsHeader');
-                const content = document.getElementById('languageSettingsContent');
-
-                if (!header || !content) {
-                    return;
-                }
-
-                isInitialized = true;
-
-                // クリックイベントを追加
-                header.addEventListener('click', function() {
-                    // collapsed クラスをトグル
-                    content.classList.toggle('collapsed');
-                    header.classList.toggle('collapsed');
-
-                    // ローカルストレージに状態を保存
-                    const isCollapsed = content.classList.contains('collapsed');
-                    localStorage.setItem('languageSettingsCollapsed', isCollapsed);
-                });
-
-                // ページ読み込み時に前回の状態を復元（デフォルトは展開）
-                const savedState = localStorage.getItem('languageSettingsCollapsed');
-                if (savedState === 'true') {
-                    // 保存された状態が折りたたみの場合
-                    content.classList.add('collapsed');
-                    header.classList.add('collapsed');
-                } else {
-                    // デフォルトまたは展開状態の場合
-                    content.classList.remove('collapsed');
-                    header.classList.remove('collapsed');
-                }
-            };
-
-            // DOMContentLoaded 後に実行
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initLanguageCollapsible);
-            } else {
-                initLanguageCollapsible();
-            }
-
-            // voicetranslate-pro.js 読み込み後に再度確認
-            setTimeout(() => {
-                initLanguageCollapsible();
-            }, 500);
-        })();
-
-        // 開発者向け機能の表示/非表示を制御
-        (function() {
-            // localStorage をクリア（初期化用）
-            // localStorage.removeItem('advancedSettingsCollapsed');
-
-            // CONFIG.DEBUG_MODE が利用可能になるまで待機
-            const checkDebugMode = setInterval(() => {
-                if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG_MODE !== undefined) {
-                    clearInterval(checkDebugMode);
-
-                    // 開発モードの場合、dev-only 要素を表示
-                    if (CONFIG.DEBUG_MODE) {
-                        const devOnlyElements = document.querySelectorAll('.dev-only');
-                        devOnlyElements.forEach(el => {
-                            el.classList.add('visible');
-                        });
-                        console.info('[UI] 開発者向け機能を表示しました');
-                    } else {
-                        console.info('[UI] 開発者向け機能は非表示です（DEBUG_MODE: false）');
-                    }
-                }
-            }, 50);
-
-            // タイムアウト（10秒）
-            setTimeout(() => {
-                clearInterval(checkDebugMode);
-                // タイムアウト後も dev-only 要素を確認
-                if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG_MODE) {
-                    const devOnlyElements = document.querySelectorAll('.dev-only');
-                    devOnlyElements.forEach(el => {
-                        if (!el.classList.contains('visible')) {
-                            el.classList.add('visible');
-                        }
-                    });
-                }
-            }, 10000);
-        })();
-    </script>
+    <!-- ✅ 折りたたみ機能は voicetranslate-pro.js に移動しました（CSPエラー対策） -->
 
 </body>
 </html>

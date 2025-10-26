@@ -48,6 +48,8 @@ export interface SystemAudioCaptureConfig {
     noiseSuppression: boolean;
     /** 自動ゲイン制御 */
     autoGainControl: boolean;
+    /** 個人対話モード（エコー防止強化） */
+    personalConversationMode?: boolean;
 }
 
 /**
@@ -64,12 +66,16 @@ export class SystemAudioCapture {
      * @param config - システム音声キャプチャ設定
      */
     constructor(config: Partial<SystemAudioCaptureConfig> = {}) {
+        // 個人対話モードの場合、エコーキャンセレーションを強制有効化
+        const personalMode = config.personalConversationMode ?? false;
+
         this.config = {
             sampleRate: config.sampleRate ?? 24000,
             channelCount: config.channelCount ?? 1,
-            echoCancellation: config.echoCancellation ?? false,
-            noiseSuppression: config.noiseSuppression ?? false,
-            autoGainControl: config.autoGainControl ?? false
+            echoCancellation: personalMode ? true : (config.echoCancellation ?? false),
+            noiseSuppression: personalMode ? true : (config.noiseSuppression ?? false),
+            autoGainControl: personalMode ? true : (config.autoGainControl ?? false),
+            personalConversationMode: personalMode
         };
 
         // Electron 環境チェック
@@ -77,7 +83,9 @@ export class SystemAudioCapture {
 
         logger.info('SystemAudioCapture initialized', {
             isElectron: this.isElectron,
-            sampleRate: this.config.sampleRate
+            sampleRate: this.config.sampleRate,
+            personalConversationMode: this.config.personalConversationMode,
+            echoCancellation: this.config.echoCancellation
         });
     }
 
