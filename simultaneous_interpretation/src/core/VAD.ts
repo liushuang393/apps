@@ -14,6 +14,8 @@
  * - 環境ノイズに応じて閾値を自動調整
  */
 
+import { defaultLogger } from '../utils/Logger';
+
 /**
  * VAD設定オプション
  */
@@ -187,7 +189,7 @@ export class VoiceActivityDetector {
 
         this.isCalibrating = false;
 
-        console.info(
+        defaultLogger.debug(
             `[VAD] Calibration complete - Noise: ${this.noiseFloor.toFixed(4)}, Calculated: ${calculatedThreshold.toFixed(4)}, Final Threshold: ${this.adaptiveThreshold.toFixed(4)}`
         );
     }

@@ -502,16 +502,12 @@ class TextPathProcessor {
             this.app.elements.detectedLanguageCode = element;
         }
 
-        // 言語コードから言語名へ変換
+        // 言語コードから言語名へ変換（対応言語: 英語、日本語、中国語、ベトナム語のみ）
         const languageNames = {
             ja: '日本語',
             en: 'English',
             zh: '中文',
-            ko: '한국어',
-            es: 'Español',
-            fr: 'Français',
-            de: 'Deutsch',
-            pt: 'Português',
+            vi: 'Tiếng Việt',
             auto: '待機中...'
         };
 
@@ -519,11 +515,7 @@ class TextPathProcessor {
             ja: '🇯🇵',
             en: '🇬🇧',
             zh: '🇨🇳',
-            ko: '🇰🇷',
-            es: '🇪🇸',
-            fr: '🇫🇷',
-            de: '🇩🇪',
-            pt: '🇵🇹'
+            vi: '🇻🇳'
         };
 
         const displayName = languageNames[detectedLanguage] || detectedLanguage;
@@ -566,16 +558,12 @@ class TextPathProcessor {
             this.app.elements.sourceLangDisplay = element;
         }
 
-        // 言語コードから言語名へ変換
+        // 言語コードから言語名へ変換（対応言語: 英語、日本語、中国語、ベトナム語のみ）
         const languageNames = {
             ja: '日本語',
             en: 'English',
             zh: '中文',
-            ko: '한국어',
-            es: 'Español',
-            fr: 'Français',
-            de: 'Deutsch',
-            pt: 'Português',
+            vi: 'Tiếng Việt',
             auto: '🔄 自動'
         };
 
@@ -583,11 +571,7 @@ class TextPathProcessor {
             ja: '🇯🇵',
             en: '🇬🇧',
             zh: '🇨🇳',
-            ko: '🇰🇷',
-            es: '🇪🇸',
-            fr: '🇫🇷',
-            de: '🇩🇪',
-            pt: '🇵🇹'
+            vi: '🇻🇳'
         };
 
         const displayName = languageNames[detectedLanguage] || detectedLanguage;

@@ -47,6 +47,47 @@ export { EncoderProcessor, AudioFormat } from './audio/EncoderProcessor';
 export { AudioPipeline, AudioPipelineBuilder } from './audio/AudioPipeline';
 export { SystemAudioCapture } from './audio/SystemAudioCapture';
 
+// 音質向上モジュール
+export { AdaptiveVADBuffer } from './audio/AdaptiveVADBuffer';
+export { StreamingAudioSender } from './audio/StreamingAudioSender';
+export { AudioValidator } from './audio/AudioValidator';
+export { NoiseSuppression } from './audio/NoiseSuppression';
+export { EchoCanceller, getRecommendedECConfig } from './audio/EchoCanceller';
+
+// 会話コンテキスト管理
+export { ConversationContext } from './context/ConversationContext';
+export { TerminologyManager } from './context/TerminologyManager';
+
+// パフォーマンス最適化
+export {
+    AudioContextPreloader,
+    preloadAudioContext,
+    getPreloadedAudioContext,
+    getPreloadedMediaStream
+} from './utils/AudioContextPreloader';
+export { TranslationCache, getGlobalTranslationCache } from './utils/TranslationCache';
+export {
+    ResourcePreloader,
+    getResourcePreloader,
+    preloadAllResources
+} from './utils/ResourcePreloader';
+export { LazyLoader, getLazyLoader, lazyLoad, preloadModules } from './utils/LazyLoader';
+
+// テストフレームワーク
+export { PerformanceTestFramework } from './test/PerformanceTestFramework';
+export {
+    calculateCER,
+    calculateWER,
+    calculateBLEU,
+    calculateBatchCER,
+    calculateBatchWER,
+    levenshteinDistance,
+    normalizeText
+} from './test/QualityMetrics';
+
+// VAD設定プリセット
+export * from './config/VADPresets';
+
 // コアクラス
 export { VoiceTranslateCore } from './core/VoiceTranslateCore';
 export { WebSocketManager } from './core/WebSocketManager';

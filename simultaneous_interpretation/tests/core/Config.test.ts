@@ -19,7 +19,7 @@ describe('Config', () => {
         it('should have correct API configuration', () => {
             expect(CONFIG.API.REALTIME_URL).toBe('wss://api.openai.com/v1/realtime');
             expect(CONFIG.API.REALTIME_MODEL).toBe('gpt-realtime-2025-08-28');
-            expect(CONFIG.API.CHAT_MODEL).toBe('gpt-4o');
+            expect(CONFIG.API.CHAT_MODEL).toBe('gpt-5-2025-08-07'); // 修正: 現在の設定値に合わせる
             expect(CONFIG.API.TIMEOUT).toBe(30000);
         });
 
@@ -91,7 +91,7 @@ describe('Config', () => {
         });
 
         it('should enable debug mode', () => {
-            const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'info').mockImplementation();
             setDebugMode(true);
             expect(CONFIG.DEBUG_MODE).toBe(true);
             expect(consoleSpy).toHaveBeenCalledWith('[Config] デバッグモード: 有効');
@@ -99,7 +99,7 @@ describe('Config', () => {
         });
 
         it('should disable debug mode', () => {
-            const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'info').mockImplementation();
             CONFIG.DEBUG_MODE = true;
             setDebugMode(false);
             expect(CONFIG.DEBUG_MODE).toBe(false);

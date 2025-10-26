@@ -11,6 +11,7 @@
 
 import { AudioProcessor, type AudioProcessingResult } from './AudioProcessor';
 import type { AudioData } from '../interfaces/ICoreTypes';
+import { defaultLogger } from '../utils/Logger';
 
 /**
  * VAD 設定
@@ -149,7 +150,7 @@ export class VADProcessor extends AudioProcessor {
     private onSpeechStart(): void {
         this.isSpeaking = true;
         this.speechStartTime = Date.now();
-        console.info('[VAD] Speech started');
+        defaultLogger.debug('[VAD] Speech started');
     }
 
     /**
@@ -158,7 +159,7 @@ export class VADProcessor extends AudioProcessor {
     private onSpeechEnd(): void {
         this.isSpeaking = false;
         const duration = Date.now() - this.speechStartTime;
-        console.info(`[VAD] Speech ended (duration: ${duration}ms)`);
+        defaultLogger.debug(`[VAD] Speech ended (duration: ${duration}ms)`);
     }
 
     /**

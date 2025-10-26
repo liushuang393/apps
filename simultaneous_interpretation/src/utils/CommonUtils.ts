@@ -8,6 +8,8 @@
  * @version 2.0.0
  */
 
+import { defaultLogger } from './Logger';
+
 /**
  * 共通ユーティリティクラス
  */
@@ -125,7 +127,7 @@ export class CommonUtils {
                 return await fn();
             } catch (error) {
                 lastError = error as Error;
-                console.warn(`[Retry] Attempt ${attempt}/${maxAttempts} failed:`, error);
+                defaultLogger.warn(`[Retry] Attempt ${attempt}/${maxAttempts} failed:`, error);
 
                 if (attempt < maxAttempts) {
                     await this.sleep(delay * attempt);

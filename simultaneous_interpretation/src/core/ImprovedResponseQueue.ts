@@ -20,6 +20,7 @@
  */
 
 import { ResponseStateManager, ResponseState } from './ResponseStateManager';
+import { defaultLogger } from '../utils/Logger';
 
 /**
  * レスポンスリクエスト
@@ -120,7 +121,7 @@ export class ImprovedResponseQueue {
     private config: QueueConfig;
 
     /** タイムアウトタイマー */
-    private timeoutTimer: number | null = null;
+    private timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
     /** WebSocket 送信関数 */
     private sendFunction: ((message: { type: string; response: ResponseRequest }) => void) | null =
@@ -169,7 +170,7 @@ export class ImprovedResponseQueue {
             );
 
             if (this.config.debugMode) {
-                console.warn('[ImprovedResponseQueue] enqueue rejected:', {
+                defaultLogger.warn('[ImprovedResponseQueue] enqueue rejected:', {
                     state: currentState,
                     activeId,
                     pendingCount: this.pendingQueue.length
@@ -191,7 +192,7 @@ export class ImprovedResponseQueue {
             this.pendingQueue.push(item);
 
             if (this.config.debugMode) {
-                console.info('[ImprovedResponseQueue] Enqueued request:', {
+                defaultLogger.debug('[ImprovedResponseQueue] Enqueued request:', {
                     requestId: item.requestId,
                     pendingCount: this.pendingQueue.length,
                     state: this.stateManager.getState()
@@ -210,7 +211,7 @@ export class ImprovedResponseQueue {
         // ✅ 処理中フラグチェック（多重実行防止）
         if (this.isProcessing) {
             if (this.config.debugMode) {
-                console.info('[ImprovedResponseQueue] Already processing, skipping');
+                defaultLogger.debug('[ImprovedResponseQueue] Already processing, skipping');
             }
             return;
         }
@@ -218,7 +219,7 @@ export class ImprovedResponseQueue {
         // ✅ 状態チェック（再確認）
         if (!this.stateManager.canCreateResponse()) {
             if (this.config.debugMode) {
-                console.info('[ImprovedResponseQueue] Cannot process: response active', {
+                defaultLogger.debug('[ImprovedResponseQueue] Cannot process: response active', {
                     state: this.stateManager.getState(),
                     activeId: this.stateManager.getActiveResponseId()
                 });
@@ -236,7 +237,7 @@ export class ImprovedResponseQueue {
 
         try {
             if (this.config.debugMode) {
-                console.info('[ImprovedResponseQueue] Processing request:', {
+                defaultLogger.debug('[ImprovedResponseQueue] Processing request:', {
                     requestId: item.requestId,
                     state: this.stateManager.getState()
                 });
@@ -255,7 +256,7 @@ export class ImprovedResponseQueue {
             // item.resolve() は response.created イベントで実行
         } catch (error) {
             // エラー時
-            console.error('[ImprovedResponseQueue] Failed to send request:', error);
+            defaultLogger.error('[ImprovedResponseQueue] Failed to send request:', error);
 
             this.stats.failed++;
 
@@ -263,7 +264,7 @@ export class ImprovedResponseQueue {
             try {
                 this.stateManager.transition(ResponseState.IDLE);
             } catch (transitionError) {
-                console.error(
+                defaultLogger.error(
                     '[ImprovedResponseQueue] Failed to transition to IDLE:',
                     transitionError
                 );
@@ -312,7 +313,7 @@ export class ImprovedResponseQueue {
         this.stats.completed++;
 
         if (this.config.debugMode) {
-            console.info('[ImprovedResponseQueue] Response created:', {
+            defaultLogger.debug('[ImprovedResponseQueue] Response created:', {
                 responseId,
                 stats: this.getStats()
             });
@@ -328,7 +329,7 @@ export class ImprovedResponseQueue {
      */
     handleResponseDone(responseId: string): void {
         if (this.config.debugMode) {
-            console.info('[ImprovedResponseQueue] Response done:', {
+            defaultLogger.debug('[ImprovedResponseQueue] Response done:', {
                 responseId,
                 pendingCount: this.pendingQueue.length
             });
@@ -347,7 +348,7 @@ export class ImprovedResponseQueue {
      * @param code - エラーコード
      */
     handleError(error: Error, code?: string): void {
-        console.error('[ImprovedResponseQueue] Error:', error);
+        defaultLogger.error('[ImprovedResponseQueue] Error:', error);
 
         // タイムアウトタイマーをクリア
         this.clearTimeoutTimer();
@@ -359,7 +360,7 @@ export class ImprovedResponseQueue {
             error.message.includes('active response in progress');
 
         if (isActiveResponseError) {
-            console.warn(
+            defaultLogger.warn(
                 '[ImprovedResponseQueue] Active response error - state conflict detected',
                 {
                     code: code ?? 'N/A',
@@ -392,8 +393,8 @@ export class ImprovedResponseQueue {
     private startTimeoutTimer(item: QueueItem): void {
         this.clearTimeoutTimer();
 
-        this.timeoutTimer = window.setTimeout(() => {
-            console.warn('[ImprovedResponseQueue] Request timeout:', {
+        this.timeoutTimer = setTimeout(() => {
+            defaultLogger.warn('[ImprovedResponseQueue] Request timeout:', {
                 requestId: item.requestId,
                 elapsed: Date.now() - item.timestamp
             });
@@ -407,7 +408,7 @@ export class ImprovedResponseQueue {
             try {
                 this.stateManager.transition(ResponseState.IDLE);
             } catch (error) {
-                console.error('[ImprovedResponseQueue] Failed to transition to IDLE:', error);
+                defaultLogger.error('[ImprovedResponseQueue] Failed to transition to IDLE:', error);
                 this.stateManager.reset();
             }
 
@@ -445,7 +446,7 @@ export class ImprovedResponseQueue {
      * キューをクリア
      */
     clear(): void {
-        console.warn('[ImprovedResponseQueue] Clearing queue:', {
+        defaultLogger.warn('[ImprovedResponseQueue] Clearing queue:', {
             pendingCount: this.pendingQueue.length
         });
 

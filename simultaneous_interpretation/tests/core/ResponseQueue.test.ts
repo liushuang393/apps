@@ -90,7 +90,7 @@ describe('ResponseQueue', () => {
 
     describe('handleResponseCreated', () => {
         it('should handle response.created event', () => {
-            const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+            const consoleSpy = jest.spyOn(console, 'info').mockImplementation();
             
             const debugQueue = new ResponseQueue(sendMessageMock, {
                 debugMode: true

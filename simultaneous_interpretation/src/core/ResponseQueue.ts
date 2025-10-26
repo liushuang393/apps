@@ -11,12 +11,20 @@
  *   queue.handleResponseDone(id);        // 消費者: 処理完了を通知
  */
 
+import { defaultLogger } from '../utils/Logger';
+
 /**
  * ResponseQueue設定オプション
  */
 export interface ResponseQueueOptions {
     /** 最大キューサイズ */
     maxQueueSize?: number;
+    /** タイムアウト時間 (ms) */
+    timeout?: number;
+    /** 最大リトライ回数 */
+    maxRetries?: number;
+    /** リトライ基本遅延 (ms) */
+    retryBaseDelay?: number;
     /** デバッグモード */
     debugMode?: boolean;
 }
@@ -33,6 +41,10 @@ interface QueueItem<T> {
     reject: (reason: Error) => void;
     /** タイムスタンプ */
     timestamp: number;
+    /** リトライ回数 */
+    retryCount: number;
+    /** タイムアウトタイマーID */
+    timeoutId?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -45,6 +57,10 @@ export interface QueueStats {
     completedRequests: number;
     /** 失敗リクエスト数 */
     failedRequests: number;
+    /** リトライ回数 */
+    retriedRequests: number;
+    /** タイムアウト回数 */
+    timeoutRequests: number;
     /** 未送信キュー数 */
     pendingCount: number;
     /** 処理中キュー数 */
@@ -89,6 +105,9 @@ export class ResponseQueue<T = unknown> {
         this.sendMessage = sendMessageFn;
         this.config = {
             maxQueueSize: options.maxQueueSize || 10,
+            timeout: options.timeout || 30000, // 30秒
+            maxRetries: options.maxRetries || 2,
+            retryBaseDelay: options.retryBaseDelay || 1000, // 1秒
             debugMode: options.debugMode !== undefined ? options.debugMode : false
         };
 
@@ -100,7 +119,9 @@ export class ResponseQueue<T = unknown> {
         this.stats = {
             totalRequests: 0,
             completedRequests: 0,
-            failedRequests: 0
+            failedRequests: 0,
+            retriedRequests: 0,
+            timeoutRequests: 0
         };
     }
 
@@ -119,7 +140,7 @@ export class ResponseQueue<T = unknown> {
             // ✅ 並発制御: 処理中のリクエストがある場合は即座に拒否
             if (this.processingQueue.length > 0) {
                 const error = new Error('Previous response is still in progress');
-                console.warn('[ResponseQueue] 並発リクエストを拒否:', {
+                defaultLogger.warn('[ResponseQueue] 並発リクエストを拒否:', {
                     processing: this.processingQueue.length,
                     pending: this.pendingQueue.length
                 });
@@ -139,14 +160,15 @@ export class ResponseQueue<T = unknown> {
                 request: request,
                 resolve: resolve,
                 reject: reject,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                retryCount: 0
             };
 
             this.pendingQueue.push(item);
             this.stats.totalRequests++;
 
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] 生産:', {
+                defaultLogger.debug('[ResponseQueue] 生産:', {
                     pending: this.pendingQueue.length,
                     processing: this.processingQueue.length
                 });
@@ -168,7 +190,7 @@ export class ResponseQueue<T = unknown> {
         // 処理中が既にある場合は何もしない（1つずつ処理）
         if (this.processingQueue.length > 0) {
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] 処理中のリクエストがあるため待機:', {
+                defaultLogger.debug('[ResponseQueue] 処理中のリクエストがあるため待機:', {
                     processing: this.processingQueue.length
                 });
             }
@@ -178,7 +200,7 @@ export class ResponseQueue<T = unknown> {
         // 未送信キューが空の場合は何もしない
         if (this.pendingQueue.length === 0) {
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] 未送信キューが空です');
+                defaultLogger.debug('[ResponseQueue] 未送信キューが空です');
             }
             return;
         }
@@ -194,10 +216,16 @@ export class ResponseQueue<T = unknown> {
         // 次のenqueue()呼び出しで processingQueue.length > 0 が検出される
         this.processingQueue.push(item);
 
+        // タイムアウトタイマーを設定
+        item.timeoutId = setTimeout(() => {
+            this.handleTimeout(item);
+        }, this.config.timeout);
+
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] 消費開始:', {
+            defaultLogger.debug('[ResponseQueue] 消費開始:', {
                 pending: this.pendingQueue.length,
                 processing: this.processingQueue.length,
+                retryCount: item.retryCount,
                 timestamp: Date.now()
             });
         }
@@ -212,18 +240,83 @@ export class ResponseQueue<T = unknown> {
             });
 
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] リクエスト送信完了:', {
+                defaultLogger.debug('[ResponseQueue] リクエスト送信完了:', {
                     processing: this.processingQueue.length
                 });
             }
         } catch (error) {
-            console.error('[ResponseQueue] 送信失敗:', error);
+            defaultLogger.error('[ResponseQueue] 送信失敗:', error);
+            // タイムアウトタイマーをクリア
+            if (item.timeoutId) {
+                clearTimeout(item.timeoutId);
+            }
             // 処理中キューから削除
             this.processingQueue.shift();
+            // リトライまたは失敗
+            this.retryOrFail(item, error as Error);
+        }
+    }
+
+    /**
+     * タイムアウト処理
+     */
+    private handleTimeout(item: QueueItem<T>): void {
+        const error = new Error(
+            `Request timeout after ${this.config.timeout}ms (retry: ${item.retryCount}/${this.config.maxRetries})`
+        );
+
+        this.stats.timeoutRequests++;
+
+        if (this.config.debugMode) {
+            console.warn('[ResponseQueue] タイムアウト:', error.message);
+        }
+
+        // アイテムを処理キューから削除
+        const index = this.processingQueue.indexOf(item);
+        if (index !== -1) {
+            this.processingQueue.splice(index, 1);
+        }
+
+        // リトライまたは失敗
+        this.retryOrFail(item, error);
+    }
+
+    /**
+     * リトライまたは失敗
+     */
+    private retryOrFail(item: QueueItem<T>, error: Error): void {
+        if (item.retryCount < this.config.maxRetries) {
+            // リトライ
+            item.retryCount++;
+            this.stats.retriedRequests++;
+
+            // エクスポネンシャルバックオフ: 1s, 2s, 4s...
+            const delay = this.config.retryBaseDelay * Math.pow(2, item.retryCount - 1);
+
+            if (this.config.debugMode) {
+                defaultLogger.debug('[ResponseQueue] リトライスケジュール:', {
+                    retryCount: item.retryCount,
+                    delay: `${delay}ms`,
+                    error: error.message
+                });
+            }
+
+            // 遅延後にキューに再追加
+            setTimeout(() => {
+                this.pendingQueue.unshift(item); // 優先的に処理
+                this.consume();
+            }, delay);
+        } else {
+            // 最大リトライ回数に達した
             if (item.reject) {
-                item.reject(error as Error);
+                item.reject(error);
             }
             this.stats.failedRequests++;
+
+            if (this.config.debugMode) {
+                defaultLogger.error('[ResponseQueue] 最大リトライ回数到達:', error);
+            }
+
             // 次を消費
             this.consume();
         }
@@ -236,7 +329,7 @@ export class ResponseQueue<T = unknown> {
      */
     handleResponseCreated(responseId: string): void {
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] レスポンス作成:', responseId);
+            defaultLogger.debug('[ResponseQueue] レスポンス作成:', responseId);
         }
     }
 
@@ -251,13 +344,18 @@ export class ResponseQueue<T = unknown> {
      */
     handleResponseDone(responseId: string): void {
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] 消費完了:', responseId);
+            defaultLogger.debug('[ResponseQueue] 消費完了:', responseId);
         }
 
         // 処理中キューから取り出す
         const item = this.processingQueue.shift();
 
         if (item) {
+            // タイムアウトタイマーをクリア
+            if (item.timeoutId) {
+                clearTimeout(item.timeoutId);
+            }
+
             // 完了通知
             if (item.resolve) {
                 item.resolve(responseId);
@@ -275,7 +373,7 @@ export class ResponseQueue<T = unknown> {
      * @param error - エラーオブジェクト
      */
     handleError(error: Error, code?: string): void {
-        console.error('[ResponseQueue] Error:', error);
+        defaultLogger.error('[ResponseQueue] Error:', error);
 
         const errorCode = code || '';
         const errorMessage = error.message || '';
@@ -285,7 +383,7 @@ export class ResponseQueue<T = unknown> {
             errorMessage.includes('active response in progress');
 
         if (isActiveResponseError) {
-            console.warn(
+            defaultLogger.warn(
                 '[ResponseQueue] Active response still in progress; waiting for response.done.',
                 {
                     code: errorCode || 'N/A',
@@ -320,11 +418,14 @@ export class ResponseQueue<T = unknown> {
      */
     clear(): void {
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] キューをクリア');
+            defaultLogger.debug('[ResponseQueue] キューをクリア');
         }
 
-        // すべてのリクエストを拒否
+        // すべてのリクエストを拒否＋タイムアウトタイマーをクリア
         [...this.pendingQueue, ...this.processingQueue].forEach((item) => {
+            if (item.timeoutId) {
+                clearTimeout(item.timeoutId);
+            }
             if (item.reject) {
                 item.reject(new Error('Queue cleared'));
             }

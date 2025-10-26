@@ -18,6 +18,7 @@
 import { CONFIG } from './Config';
 import type { VoiceType } from '../interfaces/ICoreTypes';
 import type { ElectronAPI } from '../types/electron';
+import { defaultLogger } from '../utils/Logger';
 
 /**
  * セッション設定
@@ -63,7 +64,10 @@ export class WebSocketManager {
     private ws: WebSocket | null = null;
     private apiKey: string = '';
     private isConnected: boolean = false;
-    private connectionTimeout: number | null = null;
+    private connectionTimeout: ReturnType<typeof setTimeout> | null = null;
+    private keepAliveInterval: ReturnType<typeof setInterval> | null = null;
+    private lastPongTime: number = 0;
+    private missedPongs: number = 0;
     private messageHandlers: WebSocketMessageHandlers = {};
 
     private getElectronAPI(): ElectronAPI | undefined {
@@ -179,7 +183,7 @@ export class WebSocketManager {
         this.ws.onclose = (event) => this.handleClose(event);
 
         // タイムアウト設定
-        this.connectionTimeout = window.setTimeout(() => {
+        this.connectionTimeout = setTimeout(() => {
             if (!this.isConnected) {
                 console.error('[WebSocketManager] タイムアウト - 接続に失敗');
                 this.disconnect();
@@ -220,6 +224,9 @@ export class WebSocketManager {
      * WebSocket 切断
      */
     async disconnect(): Promise<void> {
+        // Keep-Aliveタイマーをクリア
+        this.stopKeepAlive();
+
         if (this.connectionTimeout) {
             clearTimeout(this.connectionTimeout);
             this.connectionTimeout = null;
@@ -348,6 +355,9 @@ export class WebSocketManager {
 
         this.isConnected = true;
         console.info('[WebSocketManager] 接続成功');
+
+        // Keep-Alive心跳を開始
+        this.startKeepAlive();
     }
 
     /**
@@ -424,6 +434,12 @@ export class WebSocketManager {
                     }
                     break;
                 }
+                case 'session.updated': {
+                    // Keep-Alive応答を記録
+                    this.recordPong();
+                    console.info('[WebSocketManager] セッション更新完了');
+                    break;
+                }
                 case 'error': {
                     const errorPayload = message['error'] as
                         | { message?: string; code?: string }
@@ -471,5 +487,86 @@ export class WebSocketManager {
 
         this.isConnected = false;
         this.ws = null;
+
+        // Keep-Aliveタイマーをクリア
+        this.stopKeepAlive();
+    }
+
+    /**
+     * Keep-Alive心跳を開始
+     * 目的: WebSocket接続の生存確認、タイムアウト検出
+     * 仕様: 30秒ごとにpingを送信、3回連続で応答なしの場合は再接続
+     */
+    private startKeepAlive(): void {
+        // 既存のタイマーをクリア
+        this.stopKeepAlive();
+
+        this.lastPongTime = Date.now();
+        this.missedPongs = 0;
+
+        // 30秒ごとにpingを送信
+        this.keepAliveInterval = setInterval(() => {
+            if (!this.isConnected) {
+                this.stopKeepAlive();
+                return;
+            }
+
+            const now = Date.now();
+            const timeSinceLastPong = now - this.lastPongTime;
+
+            // 90秒以上応答がない場合（3回連続でpong未受信）
+            if (timeSinceLastPong > 90000) {
+                defaultLogger.warn('[WebSocketManager] Keep-Alive timeout - 再接続を試みます');
+                this.missedPongs++;
+
+                if (this.missedPongs >= 3) {
+                    defaultLogger.error('[WebSocketManager] Keep-Alive失敗 - 接続を切断します');
+                    this.disconnect();
+                    return;
+                }
+            }
+
+            // pingメッセージを送信（OpenAI Realtime APIはping/pongをサポートしていないため、session.updateで代用）
+            try {
+                this.sendMessage({
+                    type: 'session.update',
+                    session: {
+                        // 空のupdateでkeep-aliveとして機能
+                    }
+                });
+
+                if (CONFIG.DEBUG_MODE) {
+                    defaultLogger.debug('[WebSocketManager] Keep-Alive ping送信');
+                }
+            } catch (error) {
+                defaultLogger.error('[WebSocketManager] Keep-Alive ping送信失敗:', error);
+            }
+        }, 30000); // 30秒間隔
+
+        defaultLogger.info('[WebSocketManager] Keep-Alive開始（30秒間隔）');
+    }
+
+    /**
+     * Keep-Alive心跳を停止
+     */
+    private stopKeepAlive(): void {
+        if (this.keepAliveInterval !== null) {
+            clearInterval(this.keepAliveInterval);
+            this.keepAliveInterval = null;
+            defaultLogger.debug('[WebSocketManager] Keep-Alive停止');
+        }
+    }
+
+    /**
+     * Keep-Alive応答を記録
+     * 注意: session.updated イベント受信時に呼び出す
+     */
+    private recordPong(): void {
+        this.lastPongTime = Date.now();
+        this.missedPongs = 0;
+
+        if (CONFIG.DEBUG_MODE) {
+            defaultLogger.debug('[WebSocketManager] Keep-Alive pong受信');
+        }
     }
 }

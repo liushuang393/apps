@@ -10,3 +10,4 @@
 
 export * from './AudioUtils';
 export * from './CommonUtils';
+export * from './Logger';

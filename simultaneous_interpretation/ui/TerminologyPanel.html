@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>術語管理パネル</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 24px;
+        }
+
+        /* 術語追加フォーム */
+        .add-form {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+
+        .form-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #333;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .btn-secondary:hover {
+            background: #dee2e6;
+        }
+
+        /* ドメイン選択 */
+        .domain-selector {
+            margin-bottom: 24px;
+        }
+
+        .domain-tabs {
+            display: flex;
+            gap: 8px;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 0;
+            margin-bottom: 16px;
+        }
+
+        .domain-tab {
+            padding: 10px 20px;
+            border: none;
+            background: none;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6c757d;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .domain-tab:hover {
+            color: #495057;
+        }
+
+        .domain-tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        /* 術語一覧 */
+        .terminology-list {
+            background: white;
+        }
+
+        .list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .list-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .search-box {
+            position: relative;
+            width: 300px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px 8px 36px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .search-box::before {
+            content: '🔍';
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+        }
+
+        .terminology-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .terminology-table thead {
+            background: #f8f9fa;
+        }
+
+        .terminology-table th {
+            padding: 12px;
+            text-align: left;
+            font-size: 14px;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .terminology-table td {
+            padding: 12px;
+            font-size: 14px;
+            color: #495057;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .terminology-table tbody tr {
+            transition: background-color 0.2s;
+        }
+
+        .terminology-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .priority-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .priority-high {
+            background: #fee;
+            color: #c33;
+        }
+
+        .priority-medium {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+
+        .priority-low {
+            background: #dfe6e9;
+            color: #636e72;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-icon {
+            padding: 6px 10px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .btn-icon:hover {
+            background: #e9ecef;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .empty-state-text {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .empty-state-subtext {
+            font-size: 14px;
+            color: #adb5bd;
+        }
+
+        /* 統計情報 */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .stat-card:nth-child(2) {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .stat-card:nth-child(3) {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .stat-card:nth-child(4) {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* レスポンシブ */
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .list-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+
+            .search-box {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 術語管理パネル</h1>
+            <p>カスタム術語を追加・管理して翻訳の一貫性を向上させます</p>
+        </div>
+
+        <div class="content">
+            <!-- 統計情報 -->
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-terms">0</div>
+                    <div class="stat-label">総術語数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="active-domain">一般</div>
+                    <div class="stat-label">現在のドメイン</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="recent-added">0</div>
+                    <div class="stat-label">最近追加</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="most-used">-</div>
+                    <div class="stat-label">最も使用</div>
+                </div>
+            </div>
+
+            <!-- 術語追加フォーム -->
+            <div class="add-form">
+                <div class="form-title">➕ 新規術語を追加</div>
+                <form id="add-term-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="source-term">原文術語 *</label>
+                            <input type="text" id="source-term" placeholder="例: AI" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="target-term">訳文術語 *</label>
+                            <input type="text" id="target-term" placeholder="例: 人工知能" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="domain">ドメイン *</label>
+                            <select id="domain" required>
+                                <option value="general">一般</option>
+                                <option value="IT">IT・技術</option>
+                                <option value="medical">医療</option>
+                                <option value="legal">法律</option>
+                                <option value="business">ビジネス</option>
+                                <option value="academic">学術</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="priority">優先度 *</label>
+                            <select id="priority" required>
+                                <option value="10">高 (10)</option>
+                                <option value="7">中 (7)</option>
+                                <option value="5" selected>通常 (5)</option>
+                                <option value="3">低 (3)</option>
+                                <option value="1">最低 (1)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="clear-btn">クリア</button>
+                        <button type="submit" class="btn btn-primary">追加</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- ドメイン選択 -->
+            <div class="domain-selector">
+                <div class="domain-tabs">
+                    <button class="domain-tab active" data-domain="all">すべて</button>
+                    <button class="domain-tab" data-domain="general">一般</button>
+                    <button class="domain-tab" data-domain="IT">IT・技術</button>
+                    <button class="domain-tab" data-domain="medical">医療</button>
+                    <button class="domain-tab" data-domain="legal">法律</button>
+                    <button class="domain-tab" data-domain="business">ビジネス</button>
+                    <button class="domain-tab" data-domain="academic">学術</button>
+                </div>
+            </div>
+
+            <!-- 術語一覧 -->
+            <div class="terminology-list">
+                <div class="list-header">
+                    <div class="list-title">📋 術語一覧</div>
+                    <div class="search-box">
+                        <input type="text" id="search-input" placeholder="術語を検索...">
+                    </div>
+                </div>
+
+                <table class="terminology-table">
+                    <thead>
+                        <tr>
+                            <th>原文術語</th>
+                            <th>訳文術語</th>
+                            <th>ドメイン</th>
+                            <th>優先度</th>
+                            <th>使用回数</th>
+                            <th>最終使用</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="terminology-tbody">
+                        <!-- JavaScript で動的に追加 -->
+                    </tbody>
+                </table>
+
+                <div id="empty-state" class="empty-state" style="display: none;">
+                    <div class="empty-state-icon">📭</div>
+                    <div class="empty-state-text">術語が登録されていません</div>
+                    <div class="empty-state-subtext">上のフォームから新しい術語を追加してください</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { TerminologyManager } from '../src/context/TerminologyManager.js';
+
+        // TerminologyManager インスタンス
+        const termManager = new TerminologyManager();
+        
+        // 初期化
+        termManager.loadFromLocalStorage();
+        
+        let currentDomain = 'all';
+        let searchQuery = '';
+
+        // DOM要素
+        const form = document.getElementById('add-term-form');
+        const clearBtn = document.getElementById('clear-btn');
+        const searchInput = document.getElementById('search-input');
+        const tbody = document.getElementById('terminology-tbody');
+        const emptyState = document.getElementById('empty-state');
+        const domainTabs = document.querySelectorAll('.domain-tab');
+
+        // フォーム送信
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const source = document.getElementById('source-term').value.trim();
+            const target = document.getElementById('target-term').value.trim();
+            const domain = document.getElementById('domain').value;
+            const priority = parseInt(document.getElementById('priority').value);
+
+            if (!source || !target) {
+                alert('原文術語と訳文術語は必須です');
+                return;
+            }
+
+            termManager.addUserTerm({
+                source,
+                target,
+                domain,
+                priority,
+                createdAt: Date.now()
+            });
+
+            termManager.saveToLocalStorage();
+            
+            form.reset();
+            renderList();
+            updateStats();
+            
+            // 成功メッセージ
+            showToast('✅ 術語を追加しました');
+        });
+
+        // クリアボタン
+        clearBtn.addEventListener('click', () => {
+            form.reset();
+        });
+
+        // 検索
+        searchInput.addEventListener('input', (e) => {
+            searchQuery = e.target.value.toLowerCase();
+            renderList();
+        });
+
+        // ドメインタブ
+        domainTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                domainTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentDomain = tab.dataset.domain;
+                renderList();
+                updateStats();
+            });
+        });
+
+        // 術語一覧を描画
+        function renderList() {
+            const allTerms = termManager.getAllUserTerms();
+            
+            // フィルター
+            let filteredTerms = allTerms;
+            
+            if (currentDomain !== 'all') {
+                filteredTerms = filteredTerms.filter(t => t.domain === currentDomain);
+            }
+            
+            if (searchQuery) {
+                filteredTerms = filteredTerms.filter(t => 
+                    t.source.toLowerCase().includes(searchQuery) ||
+                    t.target.toLowerCase().includes(searchQuery)
+                );
+            }
+
+            // 優先度順にソート
+            filteredTerms.sort((a, b) => b.priority - a.priority);
+
+            if (filteredTerms.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            
+            tbody.innerHTML = filteredTerms.map(term => {
+                const priorityClass = term.priority >= 8 ? 'priority-high' :
+                                     term.priority >= 5 ? 'priority-medium' :
+                                     'priority-low';
+                const priorityLabel = term.priority >= 8 ? '高' :
+                                     term.priority >= 5 ? '中' : '低';
+                
+                const lastUsed = term.lastUsedAt 
+                    ? formatDate(term.lastUsedAt)
+                    : '-';
+                
+                return `
+                    <tr>
+                        <td><strong>${escapeHtml(term.source)}</strong></td>
+                        <td>${escapeHtml(term.target)}</td>
+                        <td>${escapeHtml(term.domain)}</td>
+                        <td><span class="priority-badge ${priorityClass}">${priorityLabel} (${term.priority})</span></td>
+                        <td>${term.usageCount || 0}</td>
+                        <td>${lastUsed}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-icon" onclick="editTerm('${escapeHtml(term.source)}')" title="編集">✏️</button>
+                                <button class="btn-icon" onclick="deleteTerm('${escapeHtml(term.source)}')" title="削除">🗑️</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // 統計情報を更新
+        function updateStats() {
+            const allTerms = termManager.getAllUserTerms();
+            
+            let filteredTerms = allTerms;
+            if (currentDomain !== 'all') {
+                filteredTerms = filteredTerms.filter(t => t.domain === currentDomain);
+            }
+
+            document.getElementById('total-terms').textContent = filteredTerms.length;
+            document.getElementById('active-domain').textContent = 
+                currentDomain === 'all' ? 'すべて' : currentDomain;
+
+            // 最近追加（24時間以内）
+            const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+            const recentCount = filteredTerms.filter(t => t.createdAt > oneDayAgo).length;
+            document.getElementById('recent-added').textContent = recentCount;
+
+            // 最も使用されている術語
+            const mostUsed = filteredTerms
+                .filter(t => t.usageCount > 0)
+                .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))[0];
+            document.getElementById('most-used').textContent = mostUsed ? mostUsed.source : '-';
+        }
+
+        // 術語削除
+        window.deleteTerm = function(source) {
+            if (!confirm(`術語「${source}」を削除しますか？`)) {
+                return;
+            }
+
+            termManager.removeUserTerm(source);
+            termManager.saveToLocalStorage();
+            renderList();
+            updateStats();
+            
+            showToast('🗑️ 術語を削除しました');
+        };
+
+        // 術語編集
+        window.editTerm = function(source) {
+            const term = termManager.getUserTerm(source);
+            if (!term) return;
+
+            document.getElementById('source-term').value = term.source;
+            document.getElementById('target-term').value = term.target;
+            document.getElementById('domain').value = term.domain;
+            document.getElementById('priority').value = term.priority;
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        // ユーティリティ関数
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+
+            if (diff < 60 * 1000) return '今';
+            if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)}分前`;
+            if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / 3600000)}時間前`;
+            if (diff < 7 * 24 * 60 * 60 * 1000) return `${Math.floor(diff / 86400000)}日前`;
+            
+            return date.toLocaleDateString('ja-JP');
+        }
+
+        function showToast(message) {
+            // 簡易トースト通知
+            const toast = document.createElement('div');
+            toast.textContent = message;
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                background: #333;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 6px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                z-index: 10000;
+                animation: slideIn 0.3s ease;
+            `;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // 初期描画
+        renderList();
+        updateStats();
+
+        // アニメーション
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
+
+

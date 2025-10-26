@@ -14,8 +14,25 @@
 export class AudioUtils {
     /**
      * ArrayBuffer を Base64 にエンコード
+     *
+     * 目的:
+     *   ブラウザ/Node.js/Electron 全環境で動作する Base64 変換
+     *
+     * I/O:
+     *   - 入力: ArrayBuffer
+     *   - 出力: Base64文字列
+     *
+     * 注意点:
+     *   - ブラウザ環境では btoa を使用
+     *   - Node.js/Electron では Buffer を使用
      */
     static arrayBufferToBase64(buffer: ArrayBuffer): string {
+        // Node.js/Electron 環境対応
+        if (typeof Buffer !== 'undefined') {
+            return Buffer.from(new Uint8Array(buffer)).toString('base64');
+        }
+
+        // ブラウザ環境（btoa使用）
         const bytes = new Uint8Array(buffer);
         let binary = '';
         for (let i = 0; i < bytes.byteLength; i++) {

@@ -1,25 +1,14 @@
 /**
- * 音声処理モジュールエクスポート
- *
- * @description
- * すべての音声処理クラスを一箇所からエクスポート
- *
- * @author VoiceTranslate Pro Team
- * @version 2.0.0
+ * Audio module exports
  */
 
-// プロセッサー基底クラス
-export * from './AudioProcessor';
+export { AdaptiveVADBuffer } from './AdaptiveVADBuffer';
+export { AudioValidator } from './AudioValidator';
+export { StreamingAudioSender } from './StreamingAudioSender';
+export { NoiseSuppression } from './NoiseSuppression';
 
-// 具体的なプロセッサー
-export * from './VADProcessor';
-export * from './ResamplerProcessor';
-export * from './EncoderProcessor';
-
-// パイプライン
-export * from './AudioPipeline';
-
-// 仮想オーディオデバイス
-export * from './DeviceGuard';
-export * from './VirtualAudioDevice';
-export * from './MonitorPath';
+// Re-export existing modules
+export { AudioPipeline } from './AudioPipeline';
+export { VADProcessor } from './VADProcessor';
+export { ResamplerProcessor } from './ResamplerProcessor';
+export { EncoderProcessor } from './EncoderProcessor';
