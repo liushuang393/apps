@@ -1,6 +1,6 @@
 /**
  * ESLint 設定ファイル (Flat Config)
- * 
+ *
  * @description
  * VoiceTranslate Pro のコード品質管理設定
  */
@@ -54,26 +54,32 @@ module.exports = [
         },
         plugins: {
             '@typescript-eslint': tsPlugin,
-            'prettier': prettierPlugin
+            prettier: prettierPlugin
         },
         rules: {
             // TypeScript ルール
             '@typescript-eslint/no-explicit-any': 'warn',
-            '@typescript-eslint/no-unused-vars': ['error', {
-                argsIgnorePattern: '^_',
-                varsIgnorePattern: '^_'
-            }],
+            '@typescript-eslint/no-unused-vars': [
+                'error',
+                {
+                    argsIgnorePattern: '^_',
+                    varsIgnorePattern: '^_'
+                }
+            ],
 
             // 一般ルール
-            'no-console': ['warn', {
-                allow: ['warn', 'error', 'info']
-            }],
+            'no-console': [
+                'warn',
+                {
+                    allow: ['warn', 'error', 'info']
+                }
+            ],
             'no-debugger': 'error',
             'no-alert': 'error',
             'no-var': 'error',
             'prefer-const': 'error',
-            'eqeqeq': ['error', 'always'],
-            'curly': ['error', 'all'],
+            eqeqeq: ['error', 'always'],
+            curly: ['error', 'all'],
 
             // Prettier
             'prettier/prettier': 'error'
@@ -107,23 +113,26 @@ module.exports = [
         },
         plugins: {
             '@typescript-eslint': tsPlugin,
-            'prettier': prettierPlugin
+            prettier: prettierPlugin
         },
         rules: {
             // TypeScript ルール
             '@typescript-eslint/no-explicit-any': 'warn',
-            '@typescript-eslint/no-unused-vars': ['error', {
-                argsIgnorePattern: '^_',
-                varsIgnorePattern: '^_'
-            }],
+            '@typescript-eslint/no-unused-vars': [
+                'error',
+                {
+                    argsIgnorePattern: '^_',
+                    varsIgnorePattern: '^_'
+                }
+            ],
 
             // 一般ルール
             'no-console': 'off',
             'no-debugger': 'error',
             'no-var': 'error',
             'prefer-const': 'error',
-            'eqeqeq': ['error', 'always'],
-            'curly': ['error', 'all'],
+            eqeqeq: ['error', 'always'],
+            curly: ['error', 'all'],
 
             // Prettier
             'prettier/prettier': 'error'
@@ -193,23 +202,29 @@ module.exports = [
             }
         },
         plugins: {
-            'prettier': prettierPlugin
+            prettier: prettierPlugin
         },
         rules: {
             // 一般ルール
-            'no-console': ['warn', {
-                allow: ['warn', 'error', 'info']
-            }],
+            'no-console': [
+                'warn',
+                {
+                    allow: ['warn', 'error', 'info']
+                }
+            ],
             'no-debugger': 'error',
             'no-alert': 'error',
             'no-var': 'error',
             'prefer-const': 'error',
-            'eqeqeq': ['error', 'always'],
-            'curly': ['error', 'all'],
-            'no-unused-vars': ['error', {
-                argsIgnorePattern: '^_',
-                varsIgnorePattern: '^_'
-            }],
+            eqeqeq: ['error', 'always'],
+            curly: ['error', 'all'],
+            'no-unused-vars': [
+                'error',
+                {
+                    argsIgnorePattern: '^_',
+                    varsIgnorePattern: '^_'
+                }
+            ],
 
             // Prettier
             'prettier/prettier': 'error'
@@ -223,8 +238,11 @@ module.exports = [
             '*.config.js',
             'tests/**',
             'eslint.config.js',
-            'jest.config.js'
+            'jest.config.js',
+            'browser-extension/dist/**',
+            'src/**/*.js',
+            'src/core/Config.js',
+            'src/interfaces/ICoreTypes.js'
         ]
     }
 ];
-

@@ -57,10 +57,13 @@ class ResponseQueue {
 
             // ✅ 修正: 処理中のリクエストがある場合は警告するが、キューに追加する
             if (this.processingQueue.length > 0) {
-                console.warn('[ResponseQueue] 処理中のリクエストがあるため、ペンディングキューに追加:', {
-                    processing: this.processingQueue.length,
-                    pending: this.pendingQueue.length + 1
-                });
+                console.warn(
+                    '[ResponseQueue] 処理中のリクエストがあるため、ペンディングキューに追加:',
+                    {
+                        processing: this.processingQueue.length,
+                        pending: this.pendingQueue.length + 1
+                    }
+                );
             }
 
             const item = {
@@ -206,7 +209,7 @@ class ResponseQueue {
             errorMessage.includes('active response in progress');
 
         if (isActiveResponseError) {
-            console.warn('[ResponseQueue] Active response error - clearing processing queue.', {
+            console.warn('[ResponseQueue] Active response error - will retry later.', {
                 code: errorCode || 'N/A',
                 pending: this.pendingQueue.length,
                 processing: this.processingQueue.length
@@ -214,24 +217,26 @@ class ResponseQueue {
 
             this.clearTimeoutTimer();
 
+            // ✅ 修正: 処理中のリクエストをpendingキューに戻す（破棄しない）
             const item = this.processingQueue.shift();
 
             if (item) {
-                if (item.reject) {
-                    item.reject(new Error('Active response in progress'));
-                }
-                this.stats.failedRequests++;
+                // ✅ 重要: reject ではなく pending キューに戻す
+                // これによって サーバー側の response が完了した後に
+                // リトライできるようになる
+                this.pendingQueue.unshift(item); // 先頭に戻す（優先度確保）
 
                 if (this.config.debugMode) {
-                    console.info('[ResponseQueue] リクエストを破棄しました:', {
+                    console.info('[ResponseQueue] リクエストを保留キューに戻しました:', {
                         pending: this.pendingQueue.length,
                         processing: this.processingQueue.length
                     });
                 }
             }
 
-            // ✅ 修正: エラー後も次のリクエストを処理するため consume() を呼び出す
-            this.consume();
+            // ✅ 次のリクエストは処理しない（サーバー側が busy）
+            // 遅延処理で再試行（500ms後）
+            setTimeout(() => this.consume(), 500);
             return;
         }
 

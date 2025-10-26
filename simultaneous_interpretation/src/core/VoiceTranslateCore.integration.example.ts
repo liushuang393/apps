@@ -266,10 +266,12 @@ export class VoiceTranslateCoreIntegrationExample {
         const stateInfo = this.stateManager.getDebugInfo();
         const queueInfo = this.responseQueue.getDebugInfo();
 
+        // eslint-disable-next-line no-console
         console.group('[Debug Info]');
-        console.log('State:', stateInfo);
-        console.log('Queue:', queueInfo);
-        console.log('History:', this.stateManager.getHistory(5));
+        console.info('State:', stateInfo);
+        console.info('Queue:', queueInfo);
+        console.info('History:', this.stateManager.getHistory(5));
+        // eslint-disable-next-line no-console
         console.groupEnd();
     }
 

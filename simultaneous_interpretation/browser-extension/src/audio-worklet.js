@@ -47,7 +47,7 @@ class AudioProcessorWorklet extends AudioWorkletProcessor {
      *   - この関数は128サンプルごとに呼び出される
      *   - 48kHzの場合、約2.67ms間隔で呼び出される
      */
-    process(inputs, outputs, parameters) {
+    process(inputs, _outputs, _parameters) {
         // 停止フラグがセットされている場合は処理を終了
         if (this.shouldStop) {
             return false;
@@ -76,4 +76,3 @@ class AudioProcessorWorklet extends AudioWorkletProcessor {
 
 // AudioWorkletProcessor として登録
 registerProcessor('audio-processor-worklet', AudioProcessorWorklet);
-

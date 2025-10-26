@@ -1,9 +1,9 @@
 /**
  * Jest 設定ファイル
- * 
+ *
  * @description
  * VoiceTranslate Pro のテスト環境設定
- * 
+ *
  * @features
  * - JSDOM テスト環境
  * - カバレッジレポート
@@ -38,12 +38,7 @@ module.exports = {
     ],
 
     // カバレッジレポート形式
-    coverageReporters: [
-        'text',
-        'text-summary',
-        'html',
-        'lcov'
-    ],
+    coverageReporters: ['text', 'text-summary', 'html', 'lcov'],
 
     // カバレッジ閾値
     coverageThreshold: {
@@ -81,4 +76,3 @@ module.exports = {
     // 詳細出力
     verbose: true
 };
-

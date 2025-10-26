@@ -49,7 +49,7 @@ class AudioSegment {
 
         // ✅ 音声データ (追加: 直接保存してスキップ検証を可能にする)
         this.audio = audioData;
-        this.audioData = audioData;  // Path1/Path2 処理器から直接アクセス
+        this.audioData = audioData; // Path1/Path2 処理器から直接アクセス
 
         // ✅ メタデータ
         this.metadata = {

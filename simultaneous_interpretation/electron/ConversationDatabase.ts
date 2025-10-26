@@ -29,8 +29,8 @@ import * as fs from 'fs';
 export function isElectronEnvironment(): boolean {
     return (
         typeof process !== 'undefined' &&
-        process.versions != null &&
-        process.versions.electron != null
+        process.versions !== null &&
+        process.versions.electron !== null
     );
 }
 
@@ -367,14 +367,18 @@ export class ConversationDatabase {
             FROM turns
         `);
 
-        const stats = statsStmt.get() as any;
+        const stats = statsStmt.get() as {
+            totalSessions: number;
+            totalTurns: number;
+            avgTurns: number;
+        };
 
         let currentSessionTurns = 0;
         if (this.currentSessionId) {
             const currentStmt = this.db.prepare(
                 'SELECT COUNT(*) as count FROM turns WHERE session_id = ?'
             );
-            const current = currentStmt.get(this.currentSessionId) as any;
+            const current = currentStmt.get(this.currentSessionId) as { count: number };
             currentSessionTurns = current.count;
         }
 

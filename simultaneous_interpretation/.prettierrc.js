@@ -1,6 +1,6 @@
 /**
  * Prettier 設定ファイル
- * 
+ *
  * @description
  * VoiceTranslate Pro のコードフォーマット設定
  */
@@ -13,21 +13,21 @@ module.exports = {
     semi: true,
     singleQuote: true,
     quoteProps: 'as-needed',
-    
+
     // JSX 設定
     jsxSingleQuote: false,
     jsxBracketSameLine: false,
-    
+
     // 末尾カンマ
     trailingComma: 'none',
-    
+
     // スペース
     bracketSpacing: true,
     arrowParens: 'always',
-    
+
     // 改行
     endOfLine: 'lf',
-    
+
     // ファイル形式
     overrides: [
         {
@@ -44,4 +44,3 @@ module.exports = {
         }
     ]
 };
-

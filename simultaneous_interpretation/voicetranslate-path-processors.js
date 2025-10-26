@@ -172,7 +172,7 @@ class TextPathProcessor {
 
         console.info('[Path1] 音声データ送信開始:', {
             totalSamples: audioData.length,
-            estimatedDuration: (audioData.length / 24000 * 1000).toFixed(2) + 'ms',
+            estimatedDuration: ((audioData.length / 24000) * 1000).toFixed(2) + 'ms',
             estimatedChunks: Math.ceil(audioData.length / CHUNK_SIZE)
         });
 
@@ -206,7 +206,7 @@ class TextPathProcessor {
             totalSamples: audioData.length,
             chunks: chunksent,
             bytesPerChunk: CHUNK_SIZE,
-            completedPercentage: (offset / audioData.length * 100).toFixed(1) + '%'
+            completedPercentage: ((offset / audioData.length) * 100).toFixed(1) + '%'
         });
 
         // ✅ 验证所有数据都已发送
@@ -267,7 +267,10 @@ class TextPathProcessor {
                         transcript: transcriptText.substring(0, 50) + '...',
                         presetLanguage: segment.metadata.language,
                         detectedLanguage: detectedLanguage,
-                        mismatch: segment.metadata.language !== detectedLanguage ? '⚠️ 言語不一致' : '✅ 一致'
+                        mismatch:
+                            segment.metadata.language !== detectedLanguage
+                                ? '⚠️ 言語不一致'
+                                : '✅ 一致'
                     });
 
                     // ✅ セグメントのメタデータを実際の言語に更新
@@ -320,32 +323,32 @@ class TextPathProcessor {
         const patterns = [
             {
                 language: 'zh',
-                regex: /[\u4E00-\u9FFF]/,  // 中国語
+                regex: /[\u4E00-\u9FFF]/, // 中国語
                 name: '中文'
             },
             {
                 language: 'ja',
-                regex: /[\u3040-\u309F\u30A0-\u30FF]/,  // 日本語（ひらがな・カタカナ）
+                regex: /[\u3040-\u309F\u30A0-\u30FF]/, // 日本語（ひらがな・カタカナ）
                 name: '日本語'
             },
             {
                 language: 'ko',
-                regex: /[\uAC00-\uD7AF]/,  // ハングル
+                regex: /[\uAC00-\uD7AF]/, // ハングル
                 name: '한국어'
             },
             {
                 language: 'en',
-                regex: /^[a-zA-Z\s0-9!?,.\'-]+$/,  // 英字のみ
+                regex: /^[a-zA-Z\s0-9!?,.\'-]+$/, // 英字のみ
                 name: 'English'
             },
             {
                 language: 'es',
-                regex: /[\u00E1\u00E9\u00ED\u00F1\u00F3\u00FA]/,  // スペイン語
+                regex: /[\u00E1\u00E9\u00ED\u00F1\u00F3\u00FA]/, // スペイン語
                 name: 'Español'
             },
             {
                 language: 'fr',
-                regex: /[\u00E0\u00E7\u00E9\u00E8\u00EA\u00FB\u00F9]/,  // フランス語
+                regex: /[\u00E0\u00E7\u00E9\u00E8\u00EA\u00FB\u00F9]/, // フランス語
                 name: 'Français'
             }
         ];
@@ -858,7 +861,7 @@ class VoicePathProcessor {
                     // Response 完全完了
                     if (message.type === 'response.done' && message.response.id === responseId) {
                         clearTimeout(timeoutId);
-                        
+
                         // ✅ リスナーを削除
                         if (this.app.state.ws) {
                             this.app.state.ws.removeEventListener('message', unifiedListener);
