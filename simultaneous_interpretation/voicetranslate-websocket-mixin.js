@@ -330,6 +330,9 @@ const WebSocketMixin = {
      * @returns {boolean} 成功した場合は true
      */
     tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now) {
+        // ✅ 新アーキテクチャ有効化フラグを設定
+        this.useAudioQueue = true;
+
         // ✅ 有効な音声データのみをキューに追加
         const segment = this.audioQueue.enqueue(combinedAudio, {
             duration: actualDuration,
@@ -342,6 +345,7 @@ const WebSocketMixin = {
         if (!segment) {
             console.error('[Audio] AudioQueue への追加失敗（キューが満杯か短すぎる）');
             // 旧ロジックをフォールバックとして継続使用
+            this.useAudioQueue = false; // ← フォールバック時は旧アーキテクチャを使用
             return false;
         }
 
@@ -477,8 +481,18 @@ const WebSocketMixin = {
 
     /**
      * 音声翻訳テキストデルタ処理
+     *
+     * @description
+     * 旧アーキテクチャ用のハンドラー
+     * 新アーキテクチャ（AudioQueue）では、Path2 が独自にテキストを処理するため、
+     * このハンドラーは実行されない
      */
     handleAudioTranscriptDelta(message) {
+        // ✅ 新アーキテクチャが有効な場合はスキップ
+        if (this.useAudioQueue) {
+            return;
+        }
+
         if (message.delta) {
             this.currentTranslationText += message.delta;
         }
@@ -486,8 +500,21 @@ const WebSocketMixin = {
 
     /**
      * 音声翻訳テキスト完了処理
+     *
+     * @description
+     * 旧アーキテクチャ用のハンドラー
+     * 新アーキテクチャ（AudioQueue）では、Path2 が独自にテキストを表示するため、
+     * このハンドラーは実行されない
      */
     handleAudioTranscriptDone() {
+        // ✅ 新アーキテクチャが有効な場合はスキップ
+        if (this.useAudioQueue) {
+            console.info(
+                '[旧アーキテクチャ] handleAudioTranscriptDone スキップ（新アーキテクチャ有効）'
+            );
+            return;
+        }
+
         console.info('[処理1-2] 🔊 音声翻訳テキスト完了:', this.currentTranslationText);
 
         if (this.currentTranslationText.trim()) {
@@ -969,14 +996,17 @@ const WebSocketMixin = {
     },
 
     /**
-     * ✅ 新しい音声セグメント処理（双パス順次処理）
+     * ✅ 新しい音声セグメント処理（双パス並列処理）
      *
      * @description
-     * 音声入力を起点として、2つの処理を順番に実行：
+     * 音声入力を起点として、2つの処理を並列実行：
      * 1. Path1（テキストパス）: 音声送信 → STT → テキスト翻訳（モード2のみ）
      * 2. Path2（音声パス）: 音声送信待機 → 音声翻訳 → 音声再生
      *
-     * 排他制御により、1つのセグメントが完全に処理されるまで次のセグメントは開始されない
+     * 重複防止メカニズム:
+     *   - Path1: 音声をサーバーに送信 → markAudioSent() 呼び出し
+     *   - Path2: waitForAudioSent() で Path1 の送信完了を待機
+     *   - 両パスが完了したらセグメントを削除
      *
      * @param {AudioSegment} segment 音声セグメント
      */
@@ -1004,40 +1034,62 @@ const WebSocketMixin = {
             description: isRealtimeAudioMode ? '音声翻訳モード' : 'テキスト翻訳モード'
         });
 
-        try {
-            // ✅ パス1: テキスト処理（順次実行）
-            console.info('[Audio] Path1 開始:', { segmentId: segment.id });
-            await this.textPathProcessor.process(segment);
-            console.info('[Audio] Path1 完了:', { segmentId: segment.id });
+        // ✅ パス1とパス2を並列実行（リアルタイム性向上）
+        const startTime = Date.now();
+        console.info('[Audio] 並列処理開始:', { segmentId: segment.id });
 
-            // ✅ パス2: 音声処理（順次実行）
-            console.info('[Audio] Path2 開始:', { segmentId: segment.id });
-            await this.voicePathProcessor.process(segment);
-            console.info('[Audio] Path2 完了:', { segmentId: segment.id });
+        // Promise.allSettled を使用して、一方のエラーが他方に影響しないようにする
+        const results = await Promise.allSettled([
+            this.textPathProcessor.process(segment),
+            this.voicePathProcessor.process(segment)
+        ]);
 
-            console.info('[Audio] セグメント処理完全完了:', {
+        const processingTime = Date.now() - startTime;
+
+        // ✅ 各パスの結果を確認
+        const [path1Result, path2Result] = results;
+
+        console.info('[Audio] 並列処理完了:', {
+            segmentId: segment.id,
+            processingTime: processingTime + 'ms',
+            path1Status: path1Result.status,
+            path2Status: path2Result.status,
+            path1Complete: segment.processingStatus.path1_text === 1,
+            path2Complete: segment.processingStatus.path2_voice === 1
+        });
+
+        // ✅ エラーチェック（各パス内で既にエラーハンドリングされているが、念のため）
+        if (path1Result.status === 'rejected') {
+            console.error('[Audio] Path1 エラー:', {
                 segmentId: segment.id,
-                totalDuration: segment.getAge() + 'ms'
+                error: path1Result.reason
             });
-        } catch (error) {
-            console.error('[Audio] セグメント処理エラー:', {
-                segmentId: segment.id,
-                error: error.message,
-                stack: error.stack
-            });
-
-            // ✅ エラーでも両パスを完了マーク（次のセグメント処理を継続）
+            // Path1 が完了マークされていない場合のみマーク
             if (segment.processingStatus.path1_text === 0) {
                 this.audioQueue.markPathComplete(segment.id, 'path1', {
-                    error: error.message
-                });
-            }
-            if (segment.processingStatus.path2_voice === 0) {
-                this.audioQueue.markPathComplete(segment.id, 'path2', {
-                    error: error.message
+                    error: path1Result.reason?.message || 'Unknown error'
                 });
             }
         }
+
+        if (path2Result.status === 'rejected') {
+            console.error('[Audio] Path2 エラー:', {
+                segmentId: segment.id,
+                error: path2Result.reason
+            });
+            // Path2 が完了マークされていない場合のみマーク
+            if (segment.processingStatus.path2_voice === 0) {
+                this.audioQueue.markPathComplete(segment.id, 'path2', {
+                    error: path2Result.reason?.message || 'Unknown error'
+                });
+            }
+        }
+
+        console.info('[Audio] セグメント処理完全完了:', {
+            segmentId: segment.id,
+            totalDuration: segment.getAge() + 'ms',
+            processingTime: processingTime + 'ms'
+        });
     },
 
     /**

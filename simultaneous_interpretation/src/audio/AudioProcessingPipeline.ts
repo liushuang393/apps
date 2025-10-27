@@ -65,7 +65,7 @@ export interface AudioQualityMetrics {
  * 音声処理パイプラインクラス
  */
 export class AudioProcessingPipeline {
-    private config: Required<AudioProcessingConfig>;
+    private readonly config: Required<AudioProcessingConfig>;
     private audioContext: AudioContext | null = null;
     private mediaStream: MediaStream | null = null;
     private sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -82,7 +82,7 @@ export class AudioProcessingPipeline {
     private audioCallback: ((audioData: Float32Array) => void) | null = null;
 
     // メトリクス
-    private peakHistory: number[] = [];
+    private readonly peakHistory: number[] = [];
     private readonly peakHistorySize: number = 100;
 
     /**
@@ -138,7 +138,10 @@ export class AudioProcessingPipeline {
             this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
 
             // AudioContext 作成
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            const AudioContextClass =
+                globalThis.AudioContext ||
+                (globalThis as typeof globalThis & { webkitAudioContext?: typeof AudioContext })
+                    .webkitAudioContext;
             if (!AudioContextClass) {
                 throw new Error('AudioContext is not supported');
             }
@@ -176,7 +179,9 @@ export class AudioProcessingPipeline {
 
         // メディアストリーム停止
         if (this.mediaStream) {
-            this.mediaStream.getTracks().forEach((track) => track.stop());
+            for (const track of this.mediaStream.getTracks()) {
+                track.stop();
+            }
             this.mediaStream = null;
         }
 
@@ -204,7 +209,7 @@ export class AudioProcessingPipeline {
 
         // ノイズゲート（GainNode で実装）
         this.noiseGateNode = this.audioContext.createGain();
-        this.noiseGateNode.gain.value = 1.0;
+        this.noiseGateNode.gain.value = 1;
 
         // コンプレッサー
         this.compressorNode = this.audioContext.createDynamicsCompressor();
@@ -216,7 +221,7 @@ export class AudioProcessingPipeline {
 
         // ゲインノード
         this.gainNode = this.audioContext.createGain();
-        this.gainNode.gain.value = 1.0;
+        this.gainNode.gain.value = 1;
 
         // AudioWorklet を優先使用、フォールバックで ScriptProcessorNode
         try {
@@ -437,8 +442,7 @@ export class AudioProcessingPipeline {
         let sumSquares = 0;
         let peak = 0;
 
-        for (let i = 0; i < audioData.length; i++) {
-            const value = audioData[i];
+        for (const value of audioData) {
             if (value === undefined) {
                 continue;
             }

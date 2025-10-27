@@ -7,6 +7,7 @@
  *   - voicetranslate-path-processors.js: TextPathProcessor, VoicePathProcessor
  *   - voicetranslate-websocket-mixin.js: WebSocketMixin (WebSocket/音声処理機能)
  *   - voicetranslate-ui-mixin.js: UIMixin (UI/転録表示機能)
+ *   - voicetranslate-audio-capture-strategy.js: AudioCaptureStrategyFactory (音声キャプチャ戦略)
  *
  * 注意:
  *   このファイルを読み込む前に上記モジュールを読み込む必要があります
@@ -350,7 +351,8 @@ class VoiceTranslateApp {
 
                 // ✅ 修正: ブラウザ環境では自動的に音声ソースを検出
                 // Electron環境ではユーザーが手動で「会議アプリを検出」ボタンをクリックする
-                const isElectron = typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
+                const isElectron =
+                    typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
                 if (!isElectron) {
                     console.info('[Audio Source] ブラウザ環境: 音声ソースを自動検出');
                     await this.detectAudioSources();
@@ -370,6 +372,75 @@ class VoiceTranslateApp {
         // 会議アプリ検出ボタン
         const detectSourcesBtn = document.getElementById('detectSourcesBtn');
         detectSourcesBtn.addEventListener('click', () => this.detectAudioSources());
+
+        // ✅ システム音声ソース選択時の処理（ブラウザ拡張機能用）
+        const systemAudioSource = document.getElementById('systemAudioSource');
+        systemAudioSource.addEventListener('change', async (e) => {
+            const selectedValue = e.target.value;
+            console.info('[Audio Source] ソース選択:', selectedValue);
+
+            // ブラウザ拡張機能環境で「画面/ウィンドウを選択」が選択された場合
+            if (selectedValue === 'display-media') {
+                try {
+                    console.info('[Audio Source] 画面/ウィンドウ選択ダイアログを表示...');
+
+                    // getDisplayMedia で選択ダイアログを表示
+                    const stream = await navigator.mediaDevices.getDisplayMedia({
+                        audio: {
+                            channelCount: 1,
+                            sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        },
+                        video: true // 互換性のため
+                    });
+
+                    // ビデオトラックを停止
+                    stream.getVideoTracks().forEach((track) => track.stop());
+
+                    // ✅ 音声トラックの有無を即座にチェック
+                    const audioTrack = stream.getAudioTracks()[0];
+                    if (audioTrack) {
+                        console.info('[Audio Source] ✅ 音声トラック検出:', audioTrack.label);
+                        this.notify('選択完了', `${audioTrack.label} を選択しました`, 'success');
+
+                        // 選択された音声ソースを保存
+                        this.state.selectedDisplayMediaStream = stream;
+                    } else {
+                        console.warn('[Audio Source] ❌ 音声トラックが含まれていません');
+
+                        // ストリームを停止
+                        stream.getTracks().forEach((track) => track.stop());
+
+                        // ドロップダウンを元に戻す
+                        e.target.value = '';
+
+                        this.notify(
+                            '音声トラックなし',
+                            '【重要】音声をキャプチャするには「タブ」を選択してください。\n\n' +
+                                '画面全体やウィンドウを選択した場合、音声は含まれません。\n' +
+                                'または、音声ソースを「マイク」に変更してください。',
+                            'warning'
+                        );
+                    }
+                } catch (error) {
+                    console.error('[Audio Source] 選択キャンセルまたはエラー:', error);
+                    // ユーザーがキャンセルした場合、ドロップダウンを元に戻す
+                    e.target.value = '';
+
+                    if (error.name === 'NotAllowedError') {
+                        this.notify(
+                            'キャンセル',
+                            '画面/ウィンドウの選択がキャンセルされました',
+                            'info'
+                        );
+                    } else {
+                        this.notify('エラー', '画面/ウィンドウの選択に失敗しました', 'error');
+                    }
+                }
+            }
+        });
 
         // 詳細設定トグル
         [
@@ -1221,12 +1292,27 @@ Even if you have translated many sentences, your role has NOT changed:
             console.error('[Message Error] Event data:', event.data);
         }
     }
+    /**
+     * 録音を開始
+     *
+     * 目的:
+     *   WebSocket接続確認、モード切り替え、音声キャプチャを開始
+     *
+     * 処理フロー:
+     *   1. 接続状態と録音状態を確認
+     *   2. モード切り替え処理を実行
+     *   3. Electron/ブラウザ同期を処理
+     *   4. 音声キャプチャを開始
+     *   5. 共通の音声処理をセットアップ
+     */
     async startRecording() {
+        // 接続状態を確認
         if (!this.state.isConnected) {
             this.notify('エラー', 'WebSocketに接続してください', 'error');
             return;
         }
 
+        // 既に録音中の場合は無視
         if (this.state.isRecording) {
             console.warn('[Recording] 既に録音中のため開始要求を無視します');
             return;
@@ -1238,14 +1324,67 @@ Even if you have translated many sentences, your role has NOT changed:
         try {
             console.info('[Recording] Starting...');
 
-            // ✅ ステップ1: 新しいモードを確定
-            const targetMode = this.state.audioSourceType; // 'microphone' or 'system'
-            console.info('[ModeSwitch] 目標モード:', targetMode);
+            // モード切り替え処理を実行
+            await this.handleModeSwitch();
 
-            // ✅ ステップ2: 現在のモードをチェック
-            const globalLock = localStorage.getItem(this.modeStateManager.globalLockKey);
-            if (globalLock && globalLock !== targetMode) {
-                const parsedLock = JSON.parse(globalLock);
+            // Electron/ブラウザ同期を処理
+            const shouldContinue = await this.handleElectronBrowserSync();
+            if (!shouldContinue) {
+                return;
+            }
+
+            // 音声キャプチャを開始
+            await this.routeAudioCapture();
+
+            // 共通の録音開始処理
+            await this.setupAudioProcessing();
+        } catch (error) {
+            // エラーメッセージを安全に抽出
+            const errorMessage = this.extractErrorMessage(error);
+            console.error('[Recording] エラー:', errorMessage);
+            // エラー時もモードロックをクリア
+            localStorage.removeItem(this.modeStateManager.globalLockKey);
+            this.modeStateManager.currentMode = null;
+            this.notify('録音エラー', errorMessage, 'error');
+        } finally {
+            if (!this.state.isRecording) {
+                this.elements.startBtn.disabled = false;
+                this.elements.stopBtn.disabled = true;
+            }
+        }
+    }
+
+    /**
+     * モード切り替え処理
+     *
+     * 目的:
+     *   現在のモードをチェックし、別のモードが実行中の場合は強制終了
+     *   新しいモードをロック
+     */
+    async handleModeSwitch() {
+        const targetMode = this.state.audioSourceType; // 'microphone' or 'system'
+        console.info('[ModeSwitch] 目標モード:', targetMode);
+
+        // 現在のモードをチェック
+        const globalLock = localStorage.getItem(this.modeStateManager.globalLockKey);
+        if (globalLock) {
+            await this.handleExistingModeConflict(globalLock, targetMode);
+        }
+
+        // 新しいモードをロック
+        this.lockNewMode(targetMode);
+    }
+
+    /**
+     * 既存モードの競合を処理
+     *
+     * 目的:
+     *   別のモードが実行中の場合、それを強制終了して新しいモードに切り替え
+     */
+    async handleExistingModeConflict(globalLock, targetMode) {
+        try {
+            const parsedLock = JSON.parse(globalLock);
+            if (parsedLock.mode && parsedLock.mode !== targetMode) {
                 console.warn('[ModeSwitch] 別のモードが既に実行中です:', {
                     currentMode: parsedLock.mode,
                     targetMode: targetMode,
@@ -1268,65 +1407,134 @@ Even if you have translated many sentences, your role has NOT changed:
                     setTimeout(resolve, this.modeStateManager.modeChangeTimeout)
                 );
             }
+        } catch (error) {
+            console.error('[ModeSwitch] globalLock パース失敗:', error);
+            localStorage.removeItem(this.modeStateManager.globalLockKey);
+        }
+    }
 
-            // ✅ ステップ3: 新しいモードをロック
-            const modeLockData = {
-                mode: targetMode,
-                startTime: Date.now(),
-                instanceId: 'inst_' + Math.random().toString(36).substr(2, 9)
-            };
-            localStorage.setItem(this.modeStateManager.globalLockKey, JSON.stringify(modeLockData));
-            this.modeStateManager.currentMode = targetMode;
-            this.modeStateManager.modeStartTime = Date.now();
+    /**
+     * 新しいモードをロック
+     *
+     * 目的:
+     *   新しいモードをlocalStorageにロックして、他のインスタンスが同時に異なるモードで実行されないようにする
+     */
+    lockNewMode(targetMode) {
+        const modeLockData = {
+            mode: targetMode,
+            startTime: Date.now(),
+            instanceId: 'inst_' + Math.random().toString(36).substring(2, 11)
+        };
+        localStorage.setItem(this.modeStateManager.globalLockKey, JSON.stringify(modeLockData));
+        this.modeStateManager.currentMode = targetMode;
+        this.modeStateManager.modeStartTime = Date.now();
 
-            console.info('[ModeSwitch] モードをロック:', modeLockData);
+        console.info('[ModeSwitch] モードをロック:', modeLockData);
+    }
 
-            // Electronアプリの場合、ブラウザ版に録音停止を通知
-            const isElectron =
-                typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-            if (isElectron) {
-                console.info('[Sync] Electronアプリで録音開始 - ブラウザ版に停止を通知します');
-                localStorage.setItem('app2_recording', 'true');
-            } else {
-                // ブラウザ版の場合、app2が既に録音中かチェック
-                const app2Recording = localStorage.getItem('app2_recording');
-                if (app2Recording === 'true') {
-                    console.warn(
-                        '[Sync] Electronアプリが既に録音中です - ブラウザ版での録音を中止します'
-                    );
-                    localStorage.removeItem(this.modeStateManager.globalLockKey);
-                    this.notify(
-                        '警告',
-                        'Electronアプリが既に録音中です。ブラウザ版では録音できません。',
-                        'warning'
-                    );
-                    return;
+    /**
+     * Electron/ブラウザ同期を処理
+     *
+     * 目的:
+     *   Electronアプリとブラウザ版の競合を防ぐ
+     *
+     * 戻り値:
+     *   true: 続行可能、false: 中止
+     */
+    async handleElectronBrowserSync() {
+        const isElectron =
+            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
+
+        if (isElectron) {
+            console.info('[Sync] Electronアプリで録音開始 - ブラウザ版に停止を通知します');
+            localStorage.setItem('app2_recording', 'true');
+            return true;
+        }
+
+        // ブラウザ版の場合、app2が既に録音中かチェック
+        const app2Recording = localStorage.getItem('app2_recording');
+        if (app2Recording === 'true') {
+            console.warn('[Sync] Electronアプリが既に録音中です - ブラウザ版での録音を中止します');
+            localStorage.removeItem(this.modeStateManager.globalLockKey);
+            this.notify(
+                '警告',
+                'Electronアプリが既に録音中です。ブラウザ版では録音できません。',
+                'warning'
+            );
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 音声キャプチャを開始
+     *
+     * 目的:
+     *   音声ソースタイプに応じて、マイクまたはシステム音声のキャプチャを開始
+     */
+    async routeAudioCapture() {
+        if (this.state.audioSourceType === 'system') {
+            // システム音声キャプチャ
+            await this.startSystemAudioCapture();
+        } else {
+            // マイクキャプチャ（既存機能）
+            await this.startMicrophoneCapture();
+        }
+    }
+
+    /**
+     * エラーメッセージを安全に抽出
+     *
+     * 目的:
+     *   エラーオブジェクトから適切なメッセージを抽出
+     *   [object Object] のような不適切な表示を防ぐ
+     *
+     * 入力:
+     *   error - エラーオブジェクト
+     *
+     * 戻り値:
+     *   string - エラーメッセージ
+     */
+    extractErrorMessage(error) {
+        if (!error) {
+            return '不明なエラーが発生しました';
+        }
+
+        // Error オブジェクトの場合
+        if (error instanceof Error) {
+            return error.message || error.toString();
+        }
+
+        // 文字列の場合
+        if (typeof error === 'string') {
+            return error;
+        }
+
+        // オブジェクトの場合
+        if (typeof error === 'object') {
+            // message プロパティがある場合
+            if (error.message) {
+                return error.message;
+            }
+
+            // toString() メソッドがある場合
+            if (typeof error.toString === 'function') {
+                const str = error.toString();
+                if (str && str !== '[object Object]') {
+                    return str;
                 }
             }
 
-            // 音声ソースタイプに応じて処理を分岐
-            if (this.state.audioSourceType === 'system') {
-                // システム音声キャプチャ
-                await this.startSystemAudioCapture();
-            } else {
-                // マイクキャプチャ（既存機能）
-                await this.startMicrophoneCapture();
-            }
-
-            // 共通の録音開始処理
-            await this.setupAudioProcessing();
-        } catch (error) {
-            console.error('[Recording] エラー:', error);
-            // ✅ エラー時もモードロックをクリア
-            localStorage.removeItem(this.modeStateManager.globalLockKey);
-            this.modeStateManager.currentMode = null;
-            this.notify('録音エラー', error.message, 'error');
-        } finally {
-            if (!this.state.isRecording) {
-                this.elements.startBtn.disabled = false;
-                this.elements.stopBtn.disabled = true;
+            // JSON.stringify で試す
+            try {
+                return JSON.stringify(error);
+            } catch {
+                return '不明なエラーが発生しました';
             }
         }
+
+        return String(error);
     }
 
     /**
@@ -1385,7 +1593,8 @@ Even if you have translated many sentences, your role has NOT changed:
                 }
             };
         } catch (error) {
-            console.warn('[Permission] マイク権限チェックエラー:', error);
+            const errorMessage = this.extractErrorMessage(error);
+            console.warn('[Permission] マイク権限チェックエラー:', errorMessage);
             // エラーは無視（一部ブラウザでは microphone クエリが未サポート）
         }
     }
@@ -1393,70 +1602,66 @@ Even if you have translated many sentences, your role has NOT changed:
     async startMicrophoneCapture() {
         console.info('[Recording] マイクキャプチャを開始...');
 
-        // マイクアクセス取得
-        const constraints = {
-            audio: {
-                channelCount: 1,
-                sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-                echoCancellation: this.elements.echoCancellation.classList.contains('active'),
-                noiseSuppression: this.elements.noiseReduction.classList.contains('active'),
-                autoGainControl: this.elements.autoGainControl.classList.contains('active')
-            }
+        // ✅ 音声キャプチャ戦略を使用（低結合・高凝集）
+        const config = {
+            sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+            echoCancellation: this.elements.echoCancellation.classList.contains('active'),
+            noiseSuppression: this.elements.noiseReduction.classList.contains('active'),
+            autoGainControl: this.elements.autoGainControl.classList.contains('active')
         };
 
-        console.info('[Recording] マイクアクセス要求中...', constraints);
+        // 戦略を作成
+        const strategy = AudioCaptureStrategyFactory.createStrategy({
+            sourceType: 'microphone',
+            config: config
+        });
 
-        try {
-            this.state.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-            console.info('[Recording] マイクアクセス取得成功');
-            this.notify('マイク接続成功', 'マイクが正常に接続されました', 'success');
-        } catch (error) {
-            console.error('[Recording] マイクアクセス取得失敗:', error);
+        // 音声キャプチャを実行
+        this.state.mediaStream = await strategy.capture();
 
-            if (error.name === 'NotAllowedError') {
-                this.notify(
-                    'マイク権限が拒否されました',
-                    'ブラウザの設定からマイクへのアクセスを許可してください',
-                    'error'
-                );
-            } else if (error.name === 'NotFoundError') {
-                this.notify(
-                    'マイクが見つかりません',
-                    'マイクが接続されているか確認してください',
-                    'error'
-                );
-            } else {
-                this.notify('マイクエラー', error.message, 'error');
-            }
-
-            throw error;
-        }
+        console.info('[Recording] マイクキャプチャ成功');
+        this.notify('マイク接続成功', 'マイクが正常に接続されました', 'success');
     }
 
     async startSystemAudioCapture() {
         console.info('[Recording] システム音声キャプチャを開始...');
 
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
+        // ✅ 音声キャプチャ戦略を使用（低結合・高凝集）
+        const systemAudioSource = document.getElementById('systemAudioSource');
+        const sourceId = systemAudioSource?.value;
 
-        if (isElectron) {
-            // Electron環境: desktopCapturerを使用
-            await this.startElectronSystemAudioCapture();
-        } else {
-            // ブラウザ環境: ユーザーの選択に基づいて処理
-            const systemAudioSource = document.getElementById('systemAudioSource');
-            const selectedSource = systemAudioSource?.value;
+        // 音声設定を取得
+        const config = {
+            sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+        };
 
-            console.info('[Recording] 選択されたソース:', selectedSource);
+        // 戦略を作成
+        const strategy = AudioCaptureStrategyFactory.createStrategy({
+            sourceType: 'system',
+            config: config,
+            sourceId: sourceId, // Electron環境で使用
+            preSelectedStream: this.state.selectedDisplayMediaStream // ブラウザ環境で使用
+        });
 
-            if (selectedSource === 'current-tab') {
-                // 現在のタブの音声をキャプチャ
-                await this.startTabAudioCapture();
-            } else {
-                // getDisplayMediaを使用（画面/ウィンドウ選択）
-                await this.startBrowserSystemAudioCapture();
-            }
+        // 音声キャプチャを実行
+        this.state.mediaStream = await strategy.capture();
+
+        // ブラウザ環境で事前選択されたストリームを使用した場合はクリア
+        if (this.state.selectedDisplayMediaStream) {
+            this.state.selectedDisplayMediaStream = null;
         }
+
+        // 音声トラックの監視を設定
+        const audioTrack = this.state.mediaStream.getAudioTracks()[0];
+        if (audioTrack) {
+            this.setupAudioTrackListener(audioTrack);
+        }
+
+        console.info('[Recording] システム音声キャプチャ成功');
+        this.notify('キャプチャ開始', 'システム音声のキャプチャを開始しました', 'success');
     }
 
     async startElectronSystemAudioCapture() {
@@ -1485,7 +1690,8 @@ Even if you have translated many sentences, your role has NOT changed:
                 console.info('[Recording] 自動選択されたソース:', sourceId);
                 this.notify('自動選択', '音声ソースを自動選択しました', 'success');
             } catch (error) {
-                console.error('[Recording] 自動検出失敗:', error);
+                const errorMessage = this.extractErrorMessage(error);
+                console.error('[Recording] 自動検出失敗:', errorMessage);
                 throw new Error(
                     '音声ソースの自動検出に失敗しました。「会議アプリを検出」ボタンをクリックして、手動で選択してください。'
                 );
@@ -1572,8 +1778,9 @@ Even if you have translated many sentences, your role has NOT changed:
             // ビデオトラックは不要なので停止
             videoTracks.forEach((track) => track.stop());
         } catch (error) {
-            console.error('[Recording] Electronシステム音声キャプチャ失敗:', error);
-            throw new Error(`システム音声のキャプチャに失敗しました: ${error.message}`);
+            const errorMessage = this.extractErrorMessage(error);
+            console.error('[Recording] Electronシステム音声キャプチャ失敗:', errorMessage);
+            throw new Error(`システム音声のキャプチャに失敗しました: ${errorMessage}`);
         }
     }
 
@@ -1589,10 +1796,17 @@ Even if you have translated many sentences, your role has NOT changed:
      * 注意:
      *   このメソッドはイベントリスナーから呼び出される
      */
-    handleBrowserAudioTrackEnded() {
+    async handleBrowserAudioTrackEnded() {
         console.error('[Recording] 音声トラックが停止しました');
         this.notify('エラー', '画面共有の音声キャプチャが停止しました', 'error');
-        this.stopRecording();
+        try {
+            await this.stopRecording();
+        } catch (error) {
+            console.error(
+                '[Recording] stopRecording error in handleBrowserAudioTrackEnded:',
+                error
+            );
+        }
     }
 
     /**
@@ -1615,7 +1829,13 @@ Even if you have translated many sentences, your role has NOT changed:
             return;
         }
 
-        audioTrack.addEventListener('ended', () => this.handleBrowserAudioTrackEnded());
+        audioTrack.addEventListener('ended', async () => {
+            try {
+                await this.handleBrowserAudioTrackEnded();
+            } catch (error) {
+                console.error('[Recording] Error in audio track ended listener:', error);
+            }
+        });
         console.info('[Recording] 音声トラック監視を開始:', {
             id: audioTrack.id,
             label: audioTrack.label,
@@ -1627,28 +1847,39 @@ Even if you have translated many sentences, your role has NOT changed:
         console.info('[Recording] ブラウザ環境でシステム音声をキャプチャ...');
 
         try {
-            // getDisplayMediaでシステム音声をキャプチャ（画面/ウィンドウ選択）
-            // 注意: video: false は一部のブラウザでサポートされていないため、video: true を使用
-            const constraints = {
-                audio: {
-                    channelCount: 1,
-                    sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false
-                },
-                video: true // 互換性のためtrueに設定（後でビデオトラックを停止）
-            };
+            let stream;
 
-            console.info('[Recording] ブラウザ音声アクセス要求中...', constraints);
-            const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+            // ✅ 既に選択されたストリームがある場合はそれを使用
+            if (this.state.selectedDisplayMediaStream) {
+                console.info('[Recording] 既に選択されたストリームを使用');
+                stream = this.state.selectedDisplayMediaStream;
 
-            // ビデオトラックを停止（音声のみ使用）
-            const videoTracks = stream.getVideoTracks();
-            videoTracks.forEach((track) => {
-                console.info('[Recording] ビデオトラックを停止:', track.label);
-                track.stop();
-            });
+                // 使用後はクリア（次回は再選択が必要）
+                this.state.selectedDisplayMediaStream = null;
+            } else {
+                // ✅ 選択されていない場合は新規に選択ダイアログを表示
+                console.info('[Recording] 画面/ウィンドウ選択ダイアログを表示...');
+
+                const constraints = {
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    },
+                    video: true // 互換性のためtrueに設定（後でビデオトラックを停止）
+                };
+
+                stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+
+                // ビデオトラックを停止（音声のみ使用）
+                const videoTracks = stream.getVideoTracks();
+                videoTracks.forEach((track) => {
+                    console.info('[Recording] ビデオトラックを停止:', track.label);
+                    track.stop();
+                });
+            }
 
             this.state.mediaStream = stream;
 
@@ -1674,14 +1905,15 @@ Even if you have translated many sentences, your role has NOT changed:
      *
      * Returns:
      *   void
-     *
-     * 注意:
-     *   このメソッドはイベントリスナーから呼び出される
      */
-    handleAudioTrackEnded() {
+    async handleAudioTrackEnded() {
         console.error('[Recording] 音声トラックが停止しました');
         this.notify('エラー', 'タブ音声のキャプチャが停止しました', 'error');
-        this.stopRecording();
+        try {
+            await this.stopRecording();
+        } catch (error) {
+            console.error('[Recording] stopRecording error in handleAudioTrackEnded:', error);
+        }
     }
 
     /**
@@ -1704,7 +1936,13 @@ Even if you have translated many sentences, your role has NOT changed:
             return;
         }
 
-        audioTrack.addEventListener('ended', () => this.handleAudioTrackEnded());
+        audioTrack.addEventListener('ended', async () => {
+            try {
+                await this.handleAudioTrackEnded();
+            } catch (error) {
+                console.error('[Recording] Error in audio track ended listener:', error);
+            }
+        });
         console.info('[Recording] 音声トラック監視を開始:', {
             id: audioTrack.id,
             label: audioTrack.label,
@@ -1723,7 +1961,6 @@ Even if you have translated many sentences, your role has NOT changed:
      *   stream - MediaStream オブジェクト
      *   resolve - Promise resolve関数
      *   reject - Promise reject関数
-     *
      * Returns:
      *   void
      *
@@ -1732,10 +1969,19 @@ Even if you have translated many sentences, your role has NOT changed:
      */
     handleTabCaptureSuccess(stream, resolve, reject) {
         if (chrome.runtime.lastError) {
-            console.error('[Recording] tabCapture失敗:', chrome.runtime.lastError);
+            // エラーメッセージを安全に抽出
+            let errorMsg = '';
+            if (chrome.runtime.lastError.message) {
+                errorMsg = chrome.runtime.lastError.message;
+            } else if (typeof chrome.runtime.lastError === 'string') {
+                errorMsg = chrome.runtime.lastError;
+            } else {
+                errorMsg = JSON.stringify(chrome.runtime.lastError);
+            }
+
+            console.error('[Recording] tabCapture失敗:', errorMsg);
 
             // Chrome内部ページのエラーを検出
-            const errorMsg = chrome.runtime.lastError.message;
             if (
                 errorMsg.includes('Chrome pages cannot be captured') ||
                 errorMsg.includes('Extension has not been invoked')
@@ -1845,6 +2091,7 @@ Even if you have translated many sentences, your role has NOT changed:
      *
      * 注意:
      *   ネストを減らすため別メソッドに抽出
+     *   ブラウザ拡張機能では、タブを選択しないと音声トラックが含まれない
      */
     async waitForAudioTrack() {
         const checkAudioTrack = () => {
@@ -1856,8 +2103,37 @@ Even if you have translated many sentences, your role has NOT changed:
             return false;
         };
 
+        // ✅ タイムアウトを設定（5秒）
+        const timeout = 5000; // 5秒
+        const startTime = Date.now();
+
         // 音声トラックが追加されるまで待機
         while (!checkAudioTrack()) {
+            // タイムアウトチェック
+            if (Date.now() - startTime > timeout) {
+                console.error('[Recording] 音声トラック待機タイムアウト');
+
+                // ブラウザ拡張機能かElectronかを判定
+                const isElectron =
+                    typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
+
+                if (isElectron) {
+                    throw new Error(
+                        '音声トラックが検出されませんでした。\n' +
+                            '会議アプリで音声が再生されているか確認してください。'
+                    );
+                } else {
+                    throw new Error(
+                        '音声トラックが検出されませんでした。\n\n' +
+                            '【重要】getDisplayMedia() で音声をキャプチャするには:\n' +
+                            '1. 「タブ」を選択してください（画面/ウィンドウでは音声が含まれません）\n' +
+                            '2. または、音声ソースを「マイク」に変更してください\n\n' +
+                            '詳細: Chromeの仕様により、画面全体やウィンドウを選択した場合、\n' +
+                            '音声トラックは含まれません。タブを選択すると音声が含まれます。'
+                    );
+                }
+            }
+
             // 100msごとにチェック
             await new Promise((resolve) => setTimeout(resolve, 100));
         }
@@ -1977,9 +2253,10 @@ Even if you have translated many sentences, your role has NOT changed:
                 '）'
             );
         } catch (error) {
+            const errorMessage = this.extractErrorMessage(error);
             console.warn(
                 '[Recording] AudioWorklet の読み込みに失敗しました。ScriptProcessorNode にフォールバックします:',
-                error
+                errorMessage
             );
 
             // フォールバック: ScriptProcessorNode を使用（非推奨だが互換性のため）
@@ -2187,14 +2464,10 @@ Even if you have translated many sentences, your role has NOT changed:
             // ブラウザ環境: 標準オプションを表示
             systemAudioSource.innerHTML = '<option value="">ソースを選択...</option>';
 
-            // Chrome拡張環境の場合、現在のタブオプションを追加
-            if (typeof chrome !== 'undefined' && chrome.tabCapture) {
-                const tabOption = document.createElement('option');
-                tabOption.value = 'current-tab';
-                tabOption.textContent = '🔊 現在のタブ（ブラウザ音声）';
-                systemAudioSource.appendChild(tabOption);
-                console.info('[Audio Source] Chrome拡張環境: 現在のタブオプションを追加');
-            }
+            // ✅ Chrome拡張環境では「現在のタブ」オプションは不要
+            // 理由: 拡張機能のポップアップは独立したウィンドウなので、
+            //       「現在のタブ」という概念が意味をなさない
+            //       ユーザーは getDisplayMedia() で任意のタブ/ウィンドウを選択する方が便利
 
             // 画面共有オプション（常に利用可能）
             const displayOption = document.createElement('option');
@@ -2202,6 +2475,7 @@ Even if you have translated many sentences, your role has NOT changed:
             displayOption.textContent = '🖥️ 画面/ウィンドウを選択';
             systemAudioSource.appendChild(displayOption);
 
+            console.info('[Audio Source] ブラウザ拡張環境: 画面/ウィンドウ選択オプションを追加');
             this.notify('情報', '音声ソースを選択してください', 'info');
         }
     }
@@ -2489,7 +2763,7 @@ Even if you have translated many sentences, your role has NOT changed:
     async playAudio(base64Audio) {
         // ✅ 音声源トラッキング開始: 出力再生時刻を記録
         const playbackToken =
-            'playback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            'playback_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);
         this.audioSourceTracker.playbackTokens.add(playbackToken);
         this.audioSourceTracker.outputStartTime = Date.now();
 
@@ -2834,7 +3108,7 @@ class CollapsibleManager {
             contentId,
             defaultCollapsed,
             clickHandler: null,
-            initialized: false  // ✅ 追加: 個別セクションの初期化状態
+            initialized: false // ✅ 追加: 個別セクションの初期化状態
         });
     }
 
@@ -2853,16 +3127,20 @@ class CollapsibleManager {
 
             if (this.initializeSection(name, config)) {
                 successCount++;
-                config.initialized = true;  // ✅ 追加: 初期化成功をマーク
+                config.initialized = true; // ✅ 追加: 初期化成功をマーク
             }
         }
 
         if (alreadyInitializedCount > 0) {
-            console.log(`[Collapsible] ${alreadyInitializedCount}/${this.sections.size} セクションは既に初期化済み`);
+            console.info(
+                `[Collapsible] ${alreadyInitializedCount}/${this.sections.size} セクションは既に初期化済み`
+            );
         }
 
         if (successCount > 0) {
-            console.log(`[Collapsible] ${successCount}/${this.sections.size} セクションを新規初期化しました`);
+            console.info(
+                `[Collapsible] ${successCount}/${this.sections.size} セクションを新規初期化しました`
+            );
         }
 
         return successCount;
@@ -2886,11 +3164,11 @@ class CollapsibleManager {
             return false;
         }
 
-        console.log(`[Collapsible] ${name}: 初期化開始`);
+        console.info(`[Collapsible] ${name}: 初期化開始`);
 
         // クリックイベントハンドラーを定義
         const clickHandler = (e) => {
-            console.log(`[Collapsible] ${name}: クリックイベント発火`, e.target);
+            console.info(`[Collapsible] ${name}: クリックイベント発火`, e.target);
 
             // collapsed クラスをトグル
             const wasCollapsed = content.classList.contains('collapsed');
@@ -2901,7 +3179,10 @@ class CollapsibleManager {
             const isCollapsed = content.classList.contains('collapsed');
             const storageKey = `${name}SettingsCollapsed`;
             localStorage.setItem(storageKey, isCollapsed);
-            console.log(`[Collapsible] ${name}: 状態変更`, wasCollapsed ? '折りたたみ→展開' : '展開→折りたたみ');
+            console.info(
+                `[Collapsible] ${name}: 状態変更`,
+                wasCollapsed ? '折りたたみ→展開' : '展開→折りたたみ'
+            );
         };
 
         // 既存のイベントリスナーを削除（存在する場合）
@@ -2912,21 +3193,22 @@ class CollapsibleManager {
         // 新しいイベントリスナーを追加
         header.addEventListener('click', clickHandler, { passive: false });
         config.clickHandler = clickHandler;
-        console.log(`[Collapsible] ${name}: イベントリスナー登録完了`);
+        console.info(`[Collapsible] ${name}: イベントリスナー登録完了`);
 
         // ページ読み込み時に前回の状態を復元
         const storageKey = `${name}SettingsCollapsed`;
         const savedState = localStorage.getItem(storageKey);
-        const shouldCollapse = savedState !== null ? savedState === 'true' : config.defaultCollapsed;
+        const shouldCollapse =
+            savedState !== null ? savedState === 'true' : config.defaultCollapsed;
 
         if (shouldCollapse) {
             content.classList.add('collapsed');
             header.classList.add('collapsed');
-            console.log(`[Collapsible] ${name}: 初期状態 -> 折りたたみ`);
+            console.info(`[Collapsible] ${name}: 初期状態 -> 折りたたみ`);
         } else {
             content.classList.remove('collapsed');
             header.classList.remove('collapsed');
-            console.log(`[Collapsible] ${name}: 初期状態 -> 展開`);
+            console.info(`[Collapsible] ${name}: 初期状態 -> 展開`);
         }
 
         return true;
@@ -2940,21 +3222,24 @@ class CollapsibleManager {
         const config = this.sections.get(name);
         if (!config) {
             console.error('[Collapsible Test] 不明なセクション:', name);
-            console.log('[Collapsible Test] 利用可能なセクション:', Array.from(this.sections.keys()));
+            console.info(
+                '[Collapsible Test] 利用可能なセクション:',
+                Array.from(this.sections.keys())
+            );
             return;
         }
 
         const header = document.getElementById(config.headerId);
         const content = document.getElementById(config.contentId);
 
-        console.log('[Collapsible Test] セクション:', name);
-        console.log('[Collapsible Test] ヘッダー:', header);
-        console.log('[Collapsible Test] コンテンツ:', content);
-        console.log('[Collapsible Test] ヘッダークラス:', header?.className);
-        console.log('[Collapsible Test] コンテンツクラス:', content?.className);
+        console.info('[Collapsible Test] セクション:', name);
+        console.info('[Collapsible Test] ヘッダー:', header);
+        console.info('[Collapsible Test] コンテンツ:', content);
+        console.info('[Collapsible Test] ヘッダークラス:', header?.className);
+        console.info('[Collapsible Test] コンテンツクラス:', content?.className);
 
         if (header) {
-            console.log('[Collapsible Test] クリックイベントを発火');
+            console.info('[Collapsible Test] クリックイベントを発火');
             header.click();
         }
     }
@@ -2964,8 +3249,18 @@ class CollapsibleManager {
 const collapsibleManager = new CollapsibleManager();
 
 // セクションを登録
-collapsibleManager.registerSection('advanced', 'advancedSettingsHeader', 'advancedSettingsContent', true);
-collapsibleManager.registerSection('language', 'languageSettingsHeader', 'languageSettingsContent', false);
+collapsibleManager.registerSection(
+    'advanced',
+    'advancedSettingsHeader',
+    'advancedSettingsContent',
+    true
+);
+collapsibleManager.registerSection(
+    'language',
+    'languageSettingsHeader',
+    'languageSettingsContent',
+    false
+);
 
 // ====================
 // アプリケーション起動
@@ -2974,7 +3269,7 @@ document.addEventListener('DOMContentLoaded', () => {
     globalThis.window.app = new VoiceTranslateApp();
 
     // ✅ 修正: 折りたたみ機能を初期化（即座に実行）
-    console.log('[Collapsible] DOMContentLoaded: 初期化開始');
+    console.info('[Collapsible] DOMContentLoaded: 初期化開始');
     const initialSuccess = collapsibleManager.initializeAll();
 
     if (initialSuccess === 0) {
@@ -2983,18 +3278,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ✅ 修正: 複数のタイミングで再試行（初期化されていないセクションのみ）
     setTimeout(() => {
-        console.log('[Collapsible] 500ms後に再試行');
+        console.info('[Collapsible] 500ms後に再試行');
         const retrySuccess = collapsibleManager.initializeAll();
         if (retrySuccess > 0) {
-            console.log('[Collapsible] 500ms後の再試行で成功');
+            console.info('[Collapsible] 500ms後の再試行で成功');
         }
     }, 500);
 
     setTimeout(() => {
-        console.log('[Collapsible] 1500ms後に再試行');
+        console.info('[Collapsible] 1500ms後に再試行');
         const retrySuccess = collapsibleManager.initializeAll();
         if (retrySuccess > 0) {
-            console.log('[Collapsible] 1500ms後の再試行で成功');
+            console.info('[Collapsible] 1500ms後の再試行で成功');
         }
     }, 1500);
 
@@ -3003,7 +3298,9 @@ document.addEventListener('DOMContentLoaded', () => {
         collapsibleManager.testSection(sectionName);
     };
 
-    console.log('[UI] デバッグ関数を公開: window.testCollapsible("advanced") または window.testCollapsible("language")');
+    console.info(
+        '[UI] デバッグ関数を公開: window.testCollapsible("advanced") または window.testCollapsible("language")'
+    );
 });
 
 // 拡張機能用のエクスポート

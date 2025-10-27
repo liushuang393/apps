@@ -54,11 +54,11 @@ export interface AudioRoutingConfig {
  * 音声ルーティングクラス
  */
 export class AudioRouter {
-    private config: AudioRoutingConfig;
+    private readonly config: AudioRoutingConfig;
     private audioContext: AudioContext | null = null;
-    private sources: Map<string, AudioSource> = new Map();
-    private sourceNodes: Map<string, MediaStreamAudioSourceNode> = new Map();
-    private gainNodes: Map<string, GainNode> = new Map();
+    private readonly sources: Map<string, AudioSource> = new Map();
+    private readonly sourceNodes: Map<string, MediaStreamAudioSourceNode> = new Map();
+    private readonly gainNodes: Map<string, GainNode> = new Map();
     private mixerNode: GainNode | null = null;
     private workletNode: AudioWorkletNode | null = null;
     private processorNode: ScriptProcessorNode | null = null;
@@ -97,7 +97,10 @@ export class AudioRouter {
         this.audioCallback = callback;
 
         // AudioContext 作成
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const AudioContextClass =
+            globalThis.AudioContext ||
+            (globalThis as typeof globalThis & { webkitAudioContext?: typeof AudioContext })
+                .webkitAudioContext;
         if (!AudioContextClass) {
             throw new Error('AudioContext is not supported');
         }
@@ -107,7 +110,7 @@ export class AudioRouter {
 
         // ミキサーノード作成
         this.mixerNode = this.audioContext.createGain();
-        this.mixerNode.gain.value = 1.0;
+        this.mixerNode.gain.value = 1;
 
         // AudioWorklet を優先使用、フォールバックで ScriptProcessorNode
         try {
@@ -231,7 +234,7 @@ export class AudioRouter {
      * @param stream - MediaStream
      * @param volume - ボリューム (0.0 - 1.0)
      */
-    public addSource(id: string, name: string, stream: MediaStream, volume: number = 1.0): void {
+    public addSource(id: string, name: string, stream: MediaStream, volume: number = 1): void {
         if (!this.audioContext || !this.mixerNode) {
             logger.error('AudioRouter is not started');
             return;
@@ -296,7 +299,9 @@ export class AudioRouter {
         }
 
         // ストリームを停止
-        source.stream.getTracks().forEach((track) => track.stop());
+        for (const track of source.stream.getTracks()) {
+            track.stop();
+        }
 
         this.sources.delete(id);
 
@@ -362,9 +367,9 @@ export class AudioRouter {
         source.enabled = enabled;
 
         // トラックを有効/無効化
-        source.stream.getAudioTracks().forEach((track) => {
+        for (const track of source.stream.getAudioTracks()) {
             track.enabled = enabled;
-        });
+        }
 
         logger.info('Source enabled changed', { id, enabled });
     }

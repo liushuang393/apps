@@ -21,6 +21,11 @@ import '../types/electron';
 const logger = new Logger({ level: LogLevel.INFO });
 
 /**
+ * 音声ソースタイプ
+ */
+export type SystemAudioSourceType = 'window' | 'screen' | 'browser';
+
+/**
  * 音声ソース情報
  */
 export interface SystemAudioSource {
@@ -29,7 +34,7 @@ export interface SystemAudioSource {
     /** ソース名 */
     name: string;
     /** ソースタイプ */
-    type: 'window' | 'screen' | 'browser';
+    type: SystemAudioSourceType;
     /** サムネイル（Base64） */
     thumbnail?: string;
 }
@@ -56,9 +61,9 @@ export interface SystemAudioCaptureConfig {
  * システム音声キャプチャクラス
  */
 export class SystemAudioCapture {
-    private config: SystemAudioCaptureConfig;
+    private readonly config: SystemAudioCaptureConfig;
     private mediaStream: MediaStream | null = null;
-    private isElectron: boolean = false;
+    private readonly isElectron: boolean = false;
 
     /**
      * コンストラクタ
@@ -79,7 +84,8 @@ export class SystemAudioCapture {
         };
 
         // Electron 環境チェック
-        this.isElectron = !!window.electronAPI;
+        this.isElectron = !!(globalThis as typeof globalThis & { electronAPI?: unknown })
+            .electronAPI;
 
         logger.info('SystemAudioCapture initialized', {
             isElectron: this.isElectron,
@@ -261,7 +267,9 @@ export class SystemAudioCapture {
      */
     public stopCapture(): void {
         if (this.mediaStream) {
-            this.mediaStream.getTracks().forEach((track) => track.stop());
+            for (const track of this.mediaStream.getTracks()) {
+                track.stop();
+            }
             this.mediaStream = null;
             logger.info('System audio capture stopped');
         }

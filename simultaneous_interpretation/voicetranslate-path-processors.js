@@ -808,7 +808,7 @@ class VoicePathProcessor {
 
             // ✅ 監聴データ
             let audioData = null;
-            let textData = null;
+            let textData = ''; // ← 空文字列で初期化（delta を蓄積）
             let responseId = null;
 
             // ✅ 統合リスナー（重複登録を防止）
@@ -825,12 +825,25 @@ class VoicePathProcessor {
                         });
                     }
 
-                    // 翻訳テキスト受信
-                    if (message.type === 'response.audio_transcript.done') {
-                        textData = this.app.currentTranslationText || null;
-                        console.info('[Path2] 翻訳テキスト受信:', {
+                    // ✅ 翻訳テキストデルタ受信（段階的にテキストを蓄積）
+                    if (
+                        message.type === 'response.audio_transcript.delta' &&
+                        message.delta
+                    ) {
+                        textData += message.delta;
+                        console.info('[Path2] 翻訳テキストデルタ受信:', {
                             segmentId: segment.id,
-                            text: textData?.substring(0, 50) + '...'
+                            delta: message.delta,
+                            currentLength: textData.length
+                        });
+                    }
+
+                    // ✅ 翻訳テキスト受信完了
+                    if (message.type === 'response.audio_transcript.done') {
+                        console.info('[Path2] 翻訳テキスト受信完了:', {
+                            segmentId: segment.id,
+                            text: textData.substring(0, 50) + '...',
+                            totalLength: textData.length
                         });
                     }
 
@@ -855,12 +868,13 @@ class VoicePathProcessor {
                             segmentId: segment.id,
                             responseId: responseId,
                             hasAudio: audioData !== null,
-                            hasText: textData !== null
+                            hasText: textData !== null && textData.trim() !== '',
+                            textLength: textData.length
                         });
 
                         resolve({
                             audio: audioData,
-                            text: textData
+                            text: textData.trim() || null // ← 空文字列の場合は null
                         });
                     }
                 } catch (error) {

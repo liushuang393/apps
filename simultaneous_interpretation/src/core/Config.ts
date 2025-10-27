@@ -231,11 +231,11 @@ export function getAudioPreset(): AudioPresetConfig {
  * @returns 変更後のプリセット設定
  */
 export function setAudioPreset(presetName: AudioPresetName): AudioPresetConfig {
-    if (!CONFIG.AUDIO_PRESETS[presetName]) {
+    if (CONFIG.AUDIO_PRESETS[presetName]) {
+        CONFIG.AUDIO_PRESET = presetName;
+    } else {
         console.warn(`[Config] 無効なプリセット名: ${presetName}. BALANCED を使用します。`);
         CONFIG.AUDIO_PRESET = 'BALANCED';
-    } else {
-        CONFIG.AUDIO_PRESET = presetName;
     }
     return getAudioPreset();
 }
