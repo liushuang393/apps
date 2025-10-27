@@ -91,6 +91,7 @@ class ElectronAudioCaptureStrategy extends AudioCaptureStrategy {
 
         try {
             // getUserMedia で音声をキャプチャ
+            // Electron環境では mandatory 形式を使用（echoCancellation は使用不可）
             const constraints = {
                 audio: {
                     mandatory: {
@@ -164,13 +165,14 @@ class BrowserAudioCaptureStrategy extends AudioCaptureStrategy {
                 // getDisplayMedia で選択ダイアログを表示
                 console.info('[BrowserAudioCapture] 画面/ウィンドウ選択ダイアログを表示');
 
+                // ブラウザ環境の場合、設定に基づいて回音消除を適用
                 const constraints = {
                     audio: {
                         channelCount: 1,
                         sampleRate: this.config.sampleRate,
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false
+                        echoCancellation: this.config.echoCancellation,
+                        noiseSuppression: this.config.noiseSuppression,
+                        autoGainControl: this.config.autoGainControl
                     },
                     video: true // 互換性のため
                 };

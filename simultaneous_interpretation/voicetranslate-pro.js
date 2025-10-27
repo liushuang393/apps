@@ -1629,14 +1629,28 @@ Even if you have translated many sentences, your role has NOT changed:
         // ✅ 音声キャプチャ戦略を使用（低結合・高凝集）
         const systemAudioSource = document.getElementById('systemAudioSource');
         const sourceId = systemAudioSource?.value;
+        const sourceLabel = systemAudioSource?.options[systemAudioSource.selectedIndex]?.text || '';
 
         // 音声設定を取得
+        // ブラウザ、Teams、Zoom で異なる設定を使用
+        const isBrowserSource =
+            this.state.selectedDisplayMediaStream ||
+            sourceLabel.toLowerCase().includes('chrome') ||
+            sourceLabel.toLowerCase().includes('firefox') ||
+            sourceLabel.toLowerCase().includes('edge');
+
         const config = {
             sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-            echoCancellation: false,
-            noiseSuppression: false,
+            echoCancellation: isBrowserSource,
+            noiseSuppression: isBrowserSource,
             autoGainControl: false
         };
+
+        if (isBrowserSource) {
+            console.info('[Recording] ブラウザ環境: 回音消除を有効化');
+        } else {
+            console.info('[Recording] Electron環境: 回音消除は無効（mandatory形式を使用）');
+        }
 
         // 戦略を作成
         const strategy = AudioCaptureStrategyFactory.createStrategy({
