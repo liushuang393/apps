@@ -583,12 +583,48 @@ app2/
 
 ## 💰 料金について
 
+### プラグイン費用（Chrome拡張機能版）
+
+| 項目 | 料金 | 説明 |
+|------|------|------|
+| **サブスクリプション** | **$3/月** | プラグイン使用料 |
+| **無料トライアル** | 7日間 | クレジットカード登録必要 |
+| **キャンセル** | いつでも可能 | 違約金なし |
+
+**重要**: プラグイン費用（$3/月）とは別に、**OpenAI APIキー**が必要です。
+
+---
+
 ### OpenAI API 料金（2024年12月現在）
-- **音声入力**: $0.06/分
-- **音声出力**: $0.24/分
-- **概算**: 1時間の会議で約 $5-10
+
+**⚠️ OpenAI API費用は自己負担です**
+
+| 項目 | 料金 | 説明 |
+|------|------|------|
+| **音声入力** | $0.06/分 | マイク入力の音声認識 |
+| **音声出力** | $0.24/分 | 翻訳音声の出力 |
+| **概算** | $0.50-$1.00/時間 | 1時間の会議での目安 |
+
+**OpenAI APIキーの取得方法**:
+1. [OpenAI Platform](https://platform.openai.com) にアクセス
+2. アカウント作成（無料）
+3. APIキーを取得
+4. クレジットカード登録（使用した分だけ支払い）
+
+---
+
+### 月額費用の例
+
+| 使用時間 | プラグイン費用 | OpenAI API費用 | **合計** |
+|---------|--------------|---------------|---------|
+| 10時間/月 | $3 | $5-$10 | **$8-$13** |
+| 20時間/月 | $3 | $10-$20 | **$13-$23** |
+| 40時間/月 | $3 | $20-$40 | **$23-$43** |
+
+---
 
 ### コスト削減のヒント
+
 1. **VAD を有効化**: 無音部分を自動スキップ
 2. **必要な時だけ録音**: 不要な時は停止
 3. **短い発話で区切る**: 効率的な処理
@@ -917,5 +953,93 @@ VoiceTranslate Pro は、グローバルビジネスコミュニケーション�
 **Made with ❤️ by VoiceTranslate Pro Team**
 
 [ドキュメント](./docs/) • [設計書](./design/) • [サポート](#-サポート)
+-------------------リリース前準備関連ー製品作成者が参照用---------
+
+### **今すぐ必要な作業**
+
+#### 1. Firebase プロジェクトを作成（30分）
+
+https://console.firebase.google.com にアクセスして、以下を実行：
+
+1. **新しいプロジェクトを作成**: `voicetranslate-pro`
+2. **Firebase Authentication を有効化**: Google ログイン
+3. **Firestore を有効化**: テストモード、東京リージョン
+4. **Firebase Functions を有効化**: Blaze プラン（無料枠あり）
+5. **Web アプリを追加**: Firebase 設定をコピー
+
+#### 2. Stripe アカウントを作成（30分）
+
+https://stripe.com にアクセスして、以下を実行：
+
+1. **アカウント作成**
+2. **テストモードに切り替え**
+3. **商品を作成**: `VoiceTranslate Pro Subscription` - $3.00/月
+4. **API キーを取得**: `pk_test_xxxxx`、`sk_test_xxxxx`
+5. **Price ID をコピー**: `price_xxxxx`
+
+#### 3. Firebase にログインしてデプロイ（30分）
+
+PowerShellで以下のコマンドを実行：
+
+```powershell
+# Firebase にログイン
+cd d:\apps\simultaneous_interpretation\firebase-backend
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+firebase login
+
+# Firebase プロジェクトを選択
+firebase use voicetranslate-pro
+
+# Stripe API キーを設定
+firebase functions:config:set stripe.secret_key="sk_test_xxxxx"
+firebase functions:config:set stripe.price_id="price_xxxxx"
+firebase functions:config:set stripe.webhook_secret="whsec_xxxxx"
+
+# デプロイ
+firebase deploy --only functions,firestore
+```
+
+#### 4. subscription.html を更新（5分）
+
+`subscription.html` の以下の箇所を更新：
+
+- **242〜249行目**: Firebase 設定を貼り付け
+- **253行目**: Stripe Publishable Key を貼り付け
+
+---
+
+## 📋 詳細な手順
+
+すべての詳細な手順は以下のドキュメントに記載されています：
+
+📄 **`firebase-backend/SETUP_GUIDE.md`**
+
+このガイドに従って、ステップバイステップで実装してください。
+
+---
+
+## 🎯 実装後のテスト
+
+### テストカードで決済をテスト
+
+1. Chrome拡張機能をリロード
+2. 拡張機能アイコンをクリック
+3. **「サブスクリプションを開始」**をクリック
+4. Googleアカウントでログイン
+5. Stripe Checkout で以下のテストカードを使用：
+   - **カード番号**: `4242 4242 4242 4242`
+   - **有効期限**: `12/34`
+   - **CVC**: `123`
+   - **郵便番号**: `12345`
+6. **Subscribe** をクリック
+7. `success.html` にリダイレクト
+
+---
+
+## ❓ 質問
+
+何か質問があれば、お気軽にお聞きください！
+
+次は、**Firebase プロジェクトの作成**から始めましょうか？それとも、**Stripe アカウントの作成**から始めますか？🚀
 
 </div>

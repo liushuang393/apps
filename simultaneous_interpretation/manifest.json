@@ -3,6 +3,8 @@
   "name": "VoiceTranslate Pro - リアルタイム音声翻訳",
   "version": "3.0.1",
   "description": "OpenAI Realtime APIを使用した高精度リアルタイム音声翻訳ツール。Teams、Zoom等のオンライン会議で使用可能。",
+  "author": "VoiceTranslate Pro Team",
+  "homepage_url": "https://github.com/liushuang393/voicetranslate-pro",
 
   "permissions": [
     "storage",
@@ -29,22 +31,22 @@
       "128": "icons/icon128.png"
     }
   },
-  
+
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  
+
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' wss://api.openai.com https://api.openai.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' wss://api.openai.com https://api.openai.com https://*.firebaseio.com https://*.googleapis.com https://js.stripe.com;"
   },
-  
+
   "web_accessible_resources": [
     {
-      "resources": ["voicetranslate-pro.js", "teams-realtime-translator.html"],
-      "matches": ["<all_urls>"]
+      "resources": ["voicetranslate-pro.js", "teams-realtime-translator.html", "subscription.html", "success.html", "config.js"],
+      "matches": ["https://*/*"]
     }
   ]
 }

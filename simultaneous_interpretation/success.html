@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>サブスクリプション登録完了 - VoiceTranslate Pro</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .success-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: bounce 1s ease-in-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: left;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .info-item:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .info-value {
+            color: #333;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .note {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+            text-align: left;
+        }
+
+        .note-title {
+            font-weight: bold;
+            color: #1976d2;
+            margin-bottom: 5px;
+        }
+
+        .note-text {
+            color: #1976d2;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">🎉</div>
+        <h1>サブスクリプション登録完了！</h1>
+        <p class="subtitle">VoiceTranslate Pro へようこそ</p>
+
+        <div class="info-box">
+            <div class="info-item">
+                <span class="info-label">プラン</span>
+                <span class="info-value">VoiceTranslate Pro</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">料金</span>
+                <span class="info-value">$3/月</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">無料トライアル</span>
+                <span class="info-value">7日間</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">次回請求日</span>
+                <span class="info-value" id="nextBillingDate">計算中...</span>
+            </div>
+        </div>
+
+        <button class="btn" id="startBtn">
+            翻訳を開始する
+        </button>
+
+        <div class="note">
+            <div class="note-title">📝 次のステップ</div>
+            <div class="note-text">
+                1. OpenAI APIキーを入力してください<br>
+                2. 翻訳する言語を選択してください<br>
+                3. 「録音開始」ボタンをクリックして翻訳を開始<br>
+                <br>
+                <strong>OpenAI APIキーの取得方法：</strong><br>
+                <a href="https://platform.openai.com" target="_blank">OpenAI Platform</a> にアクセスしてAPIキーを取得してください。
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 次回請求日を計算（7日後）
+        const nextBillingDate = new Date();
+        nextBillingDate.setDate(nextBillingDate.getDate() + 7);
+        document.getElementById('nextBillingDate').textContent = 
+            nextBillingDate.toLocaleDateString('ja-JP', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+
+        // 翻訳開始ボタン
+        document.getElementById('startBtn').addEventListener('click', () => {
+            window.location.href = 'teams-realtime-translator.html';
+        });
+    </script>
+</body>
+</html>
+

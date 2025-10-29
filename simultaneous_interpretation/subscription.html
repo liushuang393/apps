@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceTranslate Pro - サブスクリプション</title>
+
+    <!-- 設定ファイルを読み込み -->
+    <script src="config.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo h1 {
+            font-size: 28px;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .pricing-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 30px;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .price {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .price-period {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+
+        .features {
+            list-style: none;
+            margin-bottom: 20px;
+        }
+
+        .features li {
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+        }
+
+        .features li:last-child {
+            border-bottom: none;
+        }
+
+        .features li::before {
+            content: "✓";
+            margin-right: 10px;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        .trial-badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .divider {
+            text-align: center;
+            margin: 20px 0;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .info-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .info-section h3 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .info-item:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .info-value {
+            color: #333;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+
+        .note-title {
+            font-weight: bold;
+            color: #856404;
+            margin-bottom: 5px;
+        }
+
+        .note-text {
+            color: #856404;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>🎯 VoiceTranslate Pro</h1>
+            <p>プロフェッショナル音声翻訳ツール</p>
+        </div>
+
+        <div class="pricing-card">
+            <div class="trial-badge">🎁 7日間無料トライアル</div>
+            <div class="price">$3<span style="font-size: 24px;">/月</span></div>
+            <div class="price-period">いつでもキャンセル可能</div>
+            
+            <ul class="features">
+                <li>リアルタイム音声翻訳</li>
+                <li>20+言語対応</li>
+                <li>無制限の翻訳</li>
+                <li>音声出力あり</li>
+                <li>翻訳履歴保存</li>
+                <li>Teams/Zoom対応</li>
+            </ul>
+        </div>
+
+        <button class="btn btn-primary" id="subscribeBtn">
+            サブスクリプションを開始
+        </button>
+
+        <div class="divider">または</div>
+
+        <button class="btn btn-secondary" id="loginBtn">
+            既にアカウントをお持ちの方
+        </button>
+
+        <div class="info-section">
+            <h3>💰 料金について</h3>
+            <div class="info-item">
+                <span class="info-label">プラグイン費用</span>
+                <span class="info-value">550円/月</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">OpenAI API費用</span>
+                <span class="info-value">別途必要（自己負担）</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">OpenAI API目安</span>
+                <span class="info-value">$0.50-$1.00/時間</span>
+            </div>
+        </div>
+
+        <div class="note">
+            <div class="note-title">⚠️ 重要なお知らせ</div>
+            <div class="note-text">
+                <strong>プラグイン費用（$3/月）</strong>とは別に、<strong>OpenAI APIキー</strong>が必要です。<br>
+                OpenAI APIの費用は使用量に応じて別途発生します（従量課金制）。<br>
+                <br>
+                <strong>OpenAI APIキーの取得方法：</strong><br>
+                1. <a href="https://platform.openai.com" target="_blank">OpenAI Platform</a> にアクセス<br>
+                2. アカウント作成（無料）<br>
+                3. APIキーを取得<br>
+                4. 使用した分だけ支払い（クレジットカード登録）
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>処理中...</p>
+        </div>
+    </div>
+
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Stripe SDK -->
+    <script src="https://js.stripe.com/v3/"></script>
+
+    <script>
+        // config.js から設定を読み込み
+        const supabaseUrl = CONFIG.supabase.url;
+        const supabaseAnonKey = CONFIG.supabase.anonKey;
+        const stripePublishableKey = CONFIG.stripe.publishableKey;
+
+        // Supabase クライアントを初期化
+        const { createClient } = supabase;
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+
+        // Stripe を初期化
+        const stripe = Stripe(stripePublishableKey);
+
+        // サブスクリプション開始ボタン
+        document.getElementById('subscribeBtn').addEventListener('click', async () => {
+            try {
+                showLoading(true);
+
+                // Googleログイン
+                const { data, error } = await supabaseClient.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                        redirectTo: window.location.origin + '/subscription.html'
+                    }
+                });
+
+                if (error) throw error;
+
+                // OAuth リダイレクト後の処理は別途実装
+                // ここでは何もしない（リダイレクトされる）
+
+            } catch (error) {
+                console.error('エラー:', error);
+                alert('エラーが発生しました: ' + error.message);
+                showLoading(false);
+            }
+        });
+
+        // ログインボタン
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            try {
+                showLoading(true);
+
+                // Googleログイン
+                const { error } = await supabaseClient.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                        redirectTo: window.location.origin + '/subscription.html'
+                    }
+                });
+
+                if (error) throw error;
+
+                // OAuth リダイレクト後の処理は別途実装
+
+            } catch (error) {
+                console.error('エラー:', error);
+                alert('エラーが発生しました: ' + error.message);
+                showLoading(false);
+            }
+        });
+
+        // ページ読み込み時: OAuth リダイレクト後の処理
+        window.addEventListener('load', async () => {
+            try {
+                // セッションを確認
+                const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+
+                if (sessionError) throw sessionError;
+
+                if (session) {
+                    console.log('ログイン済み:', session.user.email);
+
+                    // Stripe Checkout セッションを作成
+                    const response = await fetch('https://YOUR_VERCEL_URL/api/create-checkout-session', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            token: session.access_token
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.sessionId) {
+                        // Stripe Checkout にリダイレクト
+                        await stripe.redirectToCheckout({
+                            sessionId: data.sessionId
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('セッション確認エラー:', error);
+            }
+        });
+
+        function showLoading(show) {
+            const loading = document.getElementById('loading');
+            if (show) {
+                loading.classList.add('active');
+            } else {
+                loading.classList.remove('active');
+            }
+        }
+    </script>
+</body>
+</html>
+
