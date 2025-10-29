@@ -3,3 +3,4 @@ gcal_twilio_reminder/.env
 gcal_twilio_reminder/sent_events.db
 gcal_twilio_reminder/credentials.json
 simultaneous_interpretation/voicetranslate-pro.js.checkpoint-20251021-235535
+simultaneous_interpretation/README.md
