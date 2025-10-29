@@ -27,6 +27,7 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:extension": "tsc -p browser-extension/tsconfig.json",
     "build:all": "npm run build:core && npm run build:electron && npm run build:extension",
+    "pack:extension": "node build-extension.js",
     "electron": "npm run build:electron && npm run electron:run",
     "electron:run": "chcp 65001 >nul 2>&1 && electron .",
     "electron:dev": "chcp 65001 >nul 2>&1 && cross-env NODE_ENV=development npm run electron",
@@ -54,6 +55,7 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.45.0",
     "@typescript-eslint/parser": "^8.45.0",
+    "archiver": "^7.0.1",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^38.3.0",
@@ -117,9 +119,10 @@
     }
   },
   "dependencies": {
-    "better-sqlite3": "^12.4.1",
     "@supabase/supabase-js": "^2.39.0",
-    "stripe": "^14.10.0",
-    "micro": "^10.0.1"
+    "better-sqlite3": "^12.4.1",
+    "core-util-is": "^1.0.3",
+    "micro": "^10.0.1",
+    "stripe": "^14.10.0"
   }
 }
