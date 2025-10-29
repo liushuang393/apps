@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceTranslate Pro API</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 60px 40px;
+            max-width: 600px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+        
+        h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 20px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 1.2em;
+            margin-bottom: 40px;
+        }
+        
+        .info {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        
+        .info h2 {
+            color: #333;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+        }
+        
+        .info p {
+            color: #666;
+            line-height: 1.8;
+            margin-bottom: 10px;
+        }
+        
+        .api-list {
+            list-style: none;
+            margin-top: 20px;
+        }
+        
+        .api-list li {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .api-list code {
+            background: #e9ecef;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #764ba2;
+        }
+        
+        .links {
+            margin-top: 40px;
+        }
+        
+        .btn {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 8px;
+            text-decoration: none;
+            margin: 10px;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        
+        .btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ VoiceTranslate Pro</h1>
+        <p class="subtitle">API Endpoints for Subscription Management</p>
+        
+        <div class="info">
+            <h2>📡 Available API Endpoints</h2>
+            <ul class="api-list">
+                <li>
+                    <strong>Create Checkout Session</strong><br>
+                    <code>POST /api/create-checkout-session</code><br>
+                    <small>Create a Stripe checkout session for subscription</small>
+                </li>
+                <li>
+                    <strong>Check Subscription</strong><br>
+                    <code>POST /api/check-subscription</code><br>
+                    <small>Verify user's subscription status</small>
+                </li>
+                <li>
+                    <strong>Stripe Webhook</strong><br>
+                    <code>POST /api/stripe-webhook</code><br>
+                    <small>Handle Stripe webhook events</small>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="info">
+            <h2>ℹ️ About This Project</h2>
+            <p>
+                This is the <strong>API backend</strong> for VoiceTranslate Pro, 
+                a real-time voice translation Chrome extension and Electron app.
+            </p>
+            <p>
+                The main application is a <strong>Chrome Extension</strong> and 
+                <strong>Desktop App</strong>, not a web application.
+            </p>
+        </div>
+        
+        <div class="links">
+            <a href="https://github.com/liushuang393/apps" class="btn" target="_blank">
+                📚 View on GitHub
+            </a>
+            <a href="https://github.com/liushuang393/apps/blob/main/simultaneous_interpretation/README.md" class="btn btn-secondary" target="_blank">
+                📖 Documentation
+            </a>
+        </div>
+    </div>
+</body>
+</html>
+
