@@ -106,7 +106,12 @@ class VoiceTranslateApp {
         this.audioSourceTracker = {
             outputStartTime: null, // 出力再生開始時刻
             outputEndTime: null, // 出力再生終了時刻
-            bufferWindow: 2000, // バッファウィンドウ（出力完了後2秒間は入力を無視）
+            bufferWindow: 2000, // バッファウィンドウ（出力完了後3秒間は入力を無視）
+            // 注意: 3000msは以下の遅延を考慮
+            //   - スピーカー→マイク伝播: 100-500ms
+            //   - マイク処理: 100-200ms
+            //   - ネットワーク遅延: 100-300ms
+            //   - 安全マージン: 1000ms
             playbackTokens: new Set() // 再生中の音声トークンセット
         };
 

@@ -653,12 +653,32 @@ const WebSocketMixin = {
             return;
         }
 
-        // ✅ ループバック防止: システム音声モードの場合のみ、再生中の入力をスキップ
-        // 理由:
-        //   - マイクモード: ユーザーの音声と翻訳音声は別のソースなので、ループバックの心配がない
-        //   - システム音声モード: 翻訳音声が再度入力として捕捉される可能性があるため、スキップが必要
-        if (this.state.isPlayingAudio && this.state.audioSourceType === 'system') {
-            return; // システム音声モードの場合のみスキップ
+        // ✅ ループバック防止: 翻訳音声の再キャプチャを防止
+        // 目的:
+        //   - マイクモード: スピーカーから出た翻訳音声がマイクに戻ってくるのを防止
+        //   - システム音声モード: 翻訳音声が再度入力として捕捉されるのを防止
+        //
+        // 実装:
+        //   1. 再生中フラグ: 音声再生中は入力をスキップ
+        //   2. バッファウィンドウ: 再生終了後も2秒間は入力をスキップ
+        //      （スピーカー→マイク間の伝播遅延を考慮）
+
+        const now = Date.now();
+        const isPlayingAudio = this.state.isPlayingAudio;
+        const timeSincePlaybackEnd = this.audioSourceTracker.outputEndTime
+            ? now - this.audioSourceTracker.outputEndTime
+            : Infinity;
+        const isWithinBufferWindow = timeSincePlaybackEnd < this.audioSourceTracker.bufferWindow;
+
+        // 再生中またはバッファウィンドウ内の場合はスキップ
+        if (isPlayingAudio || isWithinBufferWindow) {
+            console.debug('[Audio] ループバック防止: 音声をスキップ', {
+                isPlayingAudio,
+                isWithinBufferWindow,
+                timeSincePlaybackEnd: isWithinBufferWindow ? `${timeSincePlaybackEnd.toFixed(0)}ms` : 'N/A',
+                bufferWindow: this.audioSourceTracker.bufferWindow
+            });
+            return;
         }
 
         // Float32をPCM16に変換（即座に送信、節流なし）
