@@ -1,12 +1,12 @@
 /**
  * Vercel Serverless Function: Stripe Checkout セッションを作成
- * 
+ *
  * 目的: サブスクリプション登録のための Stripe Checkout セッションを作成
  * エンドポイント: POST /api/create-checkout-session
  */
 
-import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
+const Stripe = require('stripe');
+const { createClient } = require('@supabase/supabase-js');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const supabase = createClient(
@@ -14,7 +14,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // CORS ヘッダーを設定
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');

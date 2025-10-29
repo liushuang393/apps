@@ -1,13 +1,13 @@
 /**
  * Vercel Serverless Function: Stripe Webhook を処理
- * 
+ *
  * 目的: Stripe からの Webhook イベントを処理
  * エンドポイント: POST /api/stripe-webhook
  */
 
-import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
-import { buffer } from 'micro';
+const Stripe = require('stripe');
+const { createClient } = require('@supabase/supabase-js');
+const { buffer } = require('micro');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const supabase = createClient(
@@ -16,13 +16,13 @@ const supabase = createClient(
 );
 
 // Vercel の設定: body parser を無効化
-export const config = {
+module.exports.config = {
   api: {
     bodyParser: false,
   },
 };
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // POST リクエストのみ許可
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
