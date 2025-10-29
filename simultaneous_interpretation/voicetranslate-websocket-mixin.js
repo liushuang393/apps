@@ -139,8 +139,6 @@ const WebSocketMixin = {
         const speechDuration = this.speechStartTime ? now - this.speechStartTime : 0;
 
         console.info('[Audio] 音声バッファコミット完了', {
-            activeResponseId: this.activeResponseId,
-            pendingResponseId: this.pendingResponseId,
             processingCount: queueStatus.processingCount,
             pendingCount: queueStatus.pendingCount,
             speechDuration: speechDuration + 'ms',
@@ -171,11 +169,42 @@ const WebSocketMixin = {
             return;
         }
 
+        // ✅ 音声結合ロジック: 短い音声を結合して300ms以上にする
+        const MIN_QUEUE_DURATION = 300; // 最小キュー送信時長（300ms - 品質優先）
+        let finalAudio = combinedAudio;
+        let finalDuration = actualDuration;
+
+        if (actualDuration < MIN_QUEUE_DURATION) {
+            // ✅ 300ms未満の音声は保留バッファに追加
+            this.addToPendingBuffer(combinedAudio, actualDuration);
+            return; // 保留中、次の音声を待つ
+        }
+
+        // ✅ 1秒以上の音声: 保留中の音声がある場合は結合
+        if (this.pendingAudioBuffer) {
+            console.info('[Audio Combine] 保留音声と結合して送信:', {
+                pendingDuration: this.pendingAudioDuration + 'ms',
+                currentDuration: actualDuration + 'ms',
+                totalDuration: this.pendingAudioDuration + actualDuration + 'ms'
+            });
+
+            const combined = new Float32Array(
+                this.pendingAudioBuffer.length + combinedAudio.length
+            );
+            combined.set(this.pendingAudioBuffer, 0);
+            combined.set(combinedAudio, this.pendingAudioBuffer.length);
+            finalAudio = combined;
+            finalDuration = this.pendingAudioDuration + actualDuration;
+
+            // バッファをクリア
+            this.clearPendingBuffer();
+        }
+
         // ✅ Phase 3: 新アーキテクチャ有効化
         const ENABLE_AUDIO_QUEUE = true; // ← 新アーキテクチャ有効化
 
         if (ENABLE_AUDIO_QUEUE) {
-            if (this.tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now)) {
+            if (this.tryEnqueueAudioSegment(finalAudio, finalDuration, sampleRate, now)) {
                 return; // ← 新アーキテクチャ使用、旧ロジック非実行
             }
         }
@@ -307,18 +336,110 @@ const WebSocketMixin = {
             return true;
         }
 
-        // ✅ 修正: 最小音声時長を 500ms に引き下げ（通訳では短発話も重要）
-        // OpenAI Realtime API は 100ms 以上あれば処理可能
-        if (actualDuration < 500) {
-            console.info('[Audio] 短い音声ですが処理します:', {
+        // ✅ 修正: 最小音声時長を 300ms に設定（品質優先）
+        // 理由: 短い単語や文の前半部分も重要（例: "Yes", "OK", "I think..."）
+        //       300ms未満は明らかなノイズ・クリック音のみスキップ
+        if (actualDuration < 300) {
+            console.info('[Audio] 音声が短すぎる、スキップ:', {
                 duration: actualDuration.toFixed(2) + 'ms',
-                minRequired: '500ms',
-                reason: '同時通訳では短い発話も重要（例：返答、相槌）'
+                minRequired: '300ms',
+                reason: '300ms未満はノイズの可能性が高い'
             });
-            // 修正前は return true（スキップ）、修正後は続行
+            return true; // ✅ スキップ（キューに入れない）
         }
 
         return false;
+    },
+
+    /**
+     * 保留バッファをクリア
+     */
+    clearPendingBuffer() {
+        this.pendingAudioBuffer = null;
+        this.pendingAudioDuration = 0;
+        if (this.pendingAudioTimer) {
+            clearTimeout(this.pendingAudioTimer);
+            this.pendingAudioTimer = null;
+        }
+    },
+
+    /**
+     * 保留バッファに音声を追加
+     * @param {Float32Array} audioData - 音声データ
+     * @param {number} duration - 音声時長（ms）
+     */
+    addToPendingBuffer(audioData, duration) {
+        if (!this.pendingAudioBuffer) {
+            // 初回: 新しいバッファを作成
+            this.pendingAudioBuffer = audioData;
+            this.pendingAudioDuration = duration;
+            console.info('[Audio Combine] 音声を保留バッファに追加（初回）:', {
+                duration: duration + 'ms',
+                samples: audioData.length
+            });
+        } else {
+            // 2回目以降: 既存のバッファと結合
+            const combined = new Float32Array(this.pendingAudioBuffer.length + audioData.length);
+            combined.set(this.pendingAudioBuffer, 0);
+            combined.set(audioData, this.pendingAudioBuffer.length);
+            this.pendingAudioBuffer = combined;
+            this.pendingAudioDuration += duration;
+            console.info('[Audio Combine] 音声を保留バッファに追加（結合）:', {
+                previousDuration: this.pendingAudioDuration - duration + 'ms',
+                addedDuration: duration + 'ms',
+                totalDuration: this.pendingAudioDuration + 'ms',
+                totalSamples: combined.length
+            });
+        }
+
+        // ✅ タイムアウトタイマーをリセット
+        if (this.pendingAudioTimer) {
+            clearTimeout(this.pendingAudioTimer);
+        }
+
+        // ✅ 1秒後に強制送信（次の音声が来ない場合）
+        this.pendingAudioTimer = setTimeout(() => {
+            if (!this.pendingAudioBuffer) {
+                return;
+            }
+
+            console.info('[Audio Combine] タイムアウト - 保留音声を強制送信:', {
+                duration: this.pendingAudioDuration + 'ms'
+            });
+
+            // ✅ 重要: handleAudioBufferCommitted() を再度呼び出して、両方のパスを処理
+            // 保留バッファを一時変数に保存
+            const bufferedAudio = this.pendingAudioBuffer;
+            const bufferedDuration = this.pendingAudioDuration;
+
+            // バッファをクリア（無限ループ防止）
+            this.clearPendingBuffer();
+
+            // 音声バッファに設定して再処理
+            this.audioBuffer = [bufferedAudio];
+            this.speechStartTime = Date.now() - bufferedDuration;
+            this.handleAudioBufferCommitted();
+        }, this.pendingAudioTimeout);
+
+        // ✅ 保留バッファが300ms以上になったら即座に送信
+        if (this.pendingAudioDuration >= 300) {
+            console.info('[Audio Combine] 保留バッファが300ms以上 - 即座に送信:', {
+                duration: this.pendingAudioDuration + 'ms'
+            });
+            clearTimeout(this.pendingAudioTimer);
+
+            // ✅ 重要: handleAudioBufferCommitted() を再度呼び出して、両方のパスを処理
+            const bufferedAudio = this.pendingAudioBuffer;
+            const bufferedDuration = this.pendingAudioDuration;
+
+            // バッファをクリア（無限ループ防止）
+            this.clearPendingBuffer();
+
+            // 音声バッファに設定して再処理
+            this.audioBuffer = [bufferedAudio];
+            this.speechStartTime = Date.now() - bufferedDuration;
+            this.handleAudioBufferCommitted();
+        }
     },
 
     /**
@@ -362,22 +483,16 @@ const WebSocketMixin = {
 
     /**
      * フォールバック音声リクエスト処理
-     * 修正内容:
-     *   - activeResponseId をチェックしない（キューが並発リクエストを管理）
-     *   - pendingResponseId のみチェック（送信中の重複を防ぐ）
-     *   - キューのpendingCountが多すぎる場合もスキップ
+     * 修正内容（プル型アーキテクチャ）:
+     *   - activeResponseId/pendingResponseId のチェックを削除
+     *   - ResponseQueue が自動的に並発制御を行う
+     *   - キューのpendingCountが多すぎる場合のみスキップ
      * @param {Object} queueStatus - キューのステータス
      */
     processFallbackAudioRequest(queueStatus) {
-        // ✅ 修正: pendingResponseId のみチェック（送信中のリクエスト重複を防ぐ）
-        // activeResponseId は不要（キューが処理中のレスポンスを管理）
-        if (this.pendingResponseId) {
-            console.warn('[Audio] 前のリクエスト送信中のため、新しいリクエストをスキップします', {
-                pendingResponseId: this.pendingResponseId,
-                queueStatus: queueStatus
-            });
-            return;
-        }
+        // ✅ プル型アーキテクチャ: pendingResponseId のチェックを削除
+        // 理由: ResponseQueue が自動的に並発制御を行うため不要
+        //       response.done イベント後に自動的に次のリクエストを送信
 
         // ✅ キューの pending 数が多い場合はスキップ（バックアップ防止）
         if (queueStatus.pendingCount > 5) {
@@ -388,26 +503,19 @@ const WebSocketMixin = {
             return;
         }
 
-        // ✅ 重要: enqueueResponseRequest を呼ぶ前に pendingResponseId を設定
-        this.pendingResponseId = 'pending_' + Date.now();
-
         this.enqueueResponseRequest(queueStatus);
     },
 
     /**
      * レスポンスリクエストをキューに追加
-     * 修正内容:
-     *   - activeResponseId チェックを削除（キューが管理）
-     *   - pendingResponseId のみで重複防止
+     * 修正内容（プル型アーキテクチャ）:
+     *   - activeResponseId/pendingResponseId の管理を削除
+     *   - ResponseQueue が自動的に並発制御を行う
      * @param {Object} queueStatus - キューのステータス
      */
     enqueueResponseRequest(queueStatus) {
-        // ✅ 修正: activeResponseId のチェックを削除
-        // （キューが処理中のレスポンスを管理するため不要）
-        // ✅ pendingResponseId が未設定の場合のみ設定（handleAudioBufferCommitted で設定済みの場合は保持）
-        if (!this.pendingResponseId) {
-            this.pendingResponseId = 'pending_' + Date.now();
-        }
+        // ✅ プル型アーキテクチャ: pendingResponseId の管理を削除
+        // 理由: ResponseQueue が自動的に並発制御を行うため不要
 
         const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
         const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
@@ -415,8 +523,7 @@ const WebSocketMixin = {
         console.info('[🔊 Response Create] 要求:', {
             modalities: modalities,
             audioOutputEnabled: audioOutputEnabled,
-            queueStatus: queueStatus,
-            pendingResponseId: this.pendingResponseId
+            queueStatus: queueStatus
         });
 
         this.responseQueue
@@ -428,13 +535,8 @@ const WebSocketMixin = {
                 console.info('[Audio] レスポンスリクエストをキューに追加しました');
             })
             .catch((error) => {
-                // ✅ エラー時は pendingResponseId をクリア
-                this.pendingResponseId = null;
-
-                if (error.message.includes('Previous response is still in progress')) {
-                    console.info(
-                        '[Audio] 前のレスポンス処理中のため、リクエストをスキップしました'
-                    );
+                if (error.message.includes('Queue is full')) {
+                    console.warn('[Audio] キューが満杯のため、リクエストをスキップしました');
                 } else {
                     console.error('[Audio] レスポンスリクエスト失敗:', error);
                 }
@@ -558,13 +660,10 @@ const WebSocketMixin = {
     handleResponseCreated(message) {
         console.info('[Response] Created:', {
             responseId: message.response.id,
-            previousActiveId: this.activeResponseId,
-            previousPendingId: this.pendingResponseId,
             timestamp: Date.now()
         });
-        // ✅ 仮IDを実際のレスポンスIDで上書き
+        // ✅ プル型アーキテクチャ: activeResponseId のみ記録（デバッグ用）
         this.activeResponseId = message.response.id;
-        this.pendingResponseId = null; // ✅ リクエスト送信完了、ペンディング状態をクリア
         this.responseQueue.handleResponseCreated(message.response.id);
     },
 
@@ -577,8 +676,9 @@ const WebSocketMixin = {
             activeId: this.activeResponseId,
             timestamp: Date.now()
         });
+        // ✅ プル型アーキテクチャ: 状態をクリア
         this.activeResponseId = null;
-        this.pendingResponseId = null; // ✅ レスポンス完了、ペンディング状態もクリア
+        // ✅ ResponseQueue が自動的に次のリクエストを送信（consume()）
         this.responseQueue.handleResponseDone(message.response.id);
         this.updateStatus('recording', '待機中');
         this.updateAccuracy();
@@ -592,22 +692,17 @@ const WebSocketMixin = {
 
         const errorCode = message.error.code || '';
         if (errorCode === 'conversation_already_has_active_response') {
-            console.warn('[Error] 前のレスポンスが処理中です。状態をリセットします。', {
+            console.warn('[Error] 前のレスポンスが処理中です。ResponseQueue がリトライします。', {
                 activeResponseId: this.activeResponseId,
                 pendingResponseId: this.pendingResponseId
             });
-            // ✅ エラー時は両方の状態をクリア
-            // サーバー側に既に active response があるため、クライアント側の temp_xxx ID はクリア
-            // 実際の response.done イベントで正しくクリアされる
-            if (this.activeResponseId && this.activeResponseId.startsWith('temp_')) {
-                // temp ID の場合はクリア（サーバー側には到達していない）
-                this.activeResponseId = null;
-            }
-            // pending ID は必ずクリア
-            this.pendingResponseId = null;
+            // ✅ プル型アーキテクチャ: エラー時は状態をクリアしない
+            // 理由: ResponseQueue が自動的にリトライするため、
+            //       状態をクリアすると二重送信の原因になる
+            // 注意: response.done イベントで正しくクリアされる
             this.responseQueue.handleError(new Error(message.error.message), errorCode);
         } else {
-            // ✅ 他のエラーの場合も状態をクリア
+            // ✅ 他のエラーの場合は状態をクリア
             this.activeResponseId = null;
             this.pendingResponseId = null;
             this.responseQueue.handleError(new Error(message.error.message), errorCode);
@@ -654,29 +749,49 @@ const WebSocketMixin = {
         }
 
         // ✅ ループバック防止: 翻訳音声の再キャプチャを防止
-        // 目的:
-        //   - マイクモード: スピーカーから出た翻訳音声がマイクに戻ってくるのを防止
-        //   - システム音声モード: 翻訳音声が再度入力として捕捉されるのを防止
         //
-        // 実装:
-        //   1. 再生中フラグ: 音声再生中は入力をスキップ
-        //   2. バッファウィンドウ: 再生終了後も2秒間は入力をスキップ
-        //      （スピーカー→マイク間の伝播遅延を考慮）
+        // 【重要】ループバック防止は全てここで統一的に処理
+        // onaudioprocess では処理しない（二重チェックを避ける）
+        //
+        // モード別の処理:
+        //   1. マイクモード:
+        //      - 再生中: スキップ（翻訳音声がスピーカーから出ている）
+        //      - 再生終了後 bufferWindow 内: スキップ（スピーカー→マイク伝播遅延を考慮）
+        //      - bufferWindow 経過後: 処理再開
+        //
+        //   2. システム音声モード:
+        //      - 再生中: スキップ（翻訳音声と入力音声の混在を防止）
+        //      - 再生終了後: 即座に処理再開（ループバックは発生しない）
 
         const now = Date.now();
         const isPlayingAudio = this.state.isPlayingAudio;
-        const timeSincePlaybackEnd = this.audioSourceTracker.outputEndTime
-            ? now - this.audioSourceTracker.outputEndTime
-            : Infinity;
-        const isWithinBufferWindow = timeSincePlaybackEnd < this.audioSourceTracker.bufferWindow;
+        const isMicrophoneMode = this.state.audioSourceType !== 'system';
 
-        // 再生中またはバッファウィンドウ内の場合はスキップ
-        if (isPlayingAudio || isWithinBufferWindow) {
-            console.debug('[Audio] ループバック防止: 音声をスキップ', {
+        // マイクモードの場合のみバッファウィンドウを適用
+        let shouldSkip = isPlayingAudio; // 全モード: 再生中はスキップ
+
+        if (isMicrophoneMode && !isPlayingAudio) {
+            // マイクモード: 再生終了後もバッファウィンドウ内はスキップ
+            const timeSincePlaybackEnd = this.audioSourceTracker.outputEndTime
+                ? now - this.audioSourceTracker.outputEndTime
+                : Infinity;
+            const isWithinBufferWindow =
+                timeSincePlaybackEnd < this.audioSourceTracker.bufferWindow;
+
+            if (isWithinBufferWindow) {
+                shouldSkip = true;
+                console.info('[Audio] ループバック防止 (マイクモード): バッファウィンドウ内', {
+                    timeSincePlaybackEnd: `${timeSincePlaybackEnd.toFixed(0)}ms`,
+                    bufferWindow: this.audioSourceTracker.bufferWindow
+                });
+            }
+        }
+
+        if (shouldSkip) {
+            console.info('[Audio] ループバック防止: 音声をスキップ', {
                 isPlayingAudio,
-                isWithinBufferWindow,
-                timeSincePlaybackEnd: isWithinBufferWindow ? `${timeSincePlaybackEnd.toFixed(0)}ms` : 'N/A',
-                bufferWindow: this.audioSourceTracker.bufferWindow
+                audioSourceType: this.state.audioSourceType,
+                reason: isPlayingAudio ? '再生中' : 'バッファウィンドウ内'
             });
             return;
         }
@@ -1038,11 +1153,11 @@ const WebSocketMixin = {
         });
 
         // ✅ モード設定: 「リアルタイム音声翻訳」トグルの状態に基づいて設定
-        // ON（true）: モード2（音声翻訳）→ テキスト翻訳も実行
-        // OFF（false）: モード1（音声のみ）→ テキスト翻訳は実行しない
+        // ON（true）: モード2（音声翻訳 + テキスト翻訳）
+        // OFF（false）: モード2（テキスト翻訳のみ）- バグ修正: テキスト翻訳を実行
         const isRealtimeAudioMode = this.elements.translationModeAudio.classList.contains('active');
-        const textPathMode = isRealtimeAudioMode ? 2 : 1;
-        const voicePathMode = isRealtimeAudioMode ? 2 : 1;
+        const textPathMode = 2; // ✅ 常にテキスト翻訳を実行
+        const voicePathMode = isRealtimeAudioMode ? 2 : 1; // ON: 音声翻訳も実行, OFF: 音声翻訳はスキップ
 
         this.textPathProcessor.setMode(textPathMode);
         this.voicePathProcessor.setMode(voicePathMode);
@@ -1051,7 +1166,9 @@ const WebSocketMixin = {
             isRealtimeAudioMode: isRealtimeAudioMode,
             textPathMode: textPathMode,
             voicePathMode: voicePathMode,
-            description: isRealtimeAudioMode ? '音声翻訳モード' : 'テキスト翻訳モード'
+            description: isRealtimeAudioMode
+                ? '音声翻訳 + テキスト翻訳モード'
+                : 'テキスト翻訳のみモード'
         });
 
         // ✅ パス1とパス2を並列実行（リアルタイム性向上）

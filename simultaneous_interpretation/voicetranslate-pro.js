@@ -65,11 +65,17 @@ class VoiceTranslateApp {
         this.pendingResponseId = null; // ✅ リクエスト送信中フラグ（レース条件対策）
         this.lastCommitTime = 0; // 最後のコミット時刻（重複防止）
 
-        // ✅ P1: 智能VAD缓冲策略
+        // ✅ P1: 智能VAD缓冲策略（品質優先）
         this.speechStartTime = null; // 発話開始時刻
         this.silenceConfirmTimer = null; // 無声確認タイマー
-        this.minSpeechDuration = 1000; // 最小発話時長（1秒）
-        this.silenceConfirmDelay = 500; // 無声確認延迟（500ms）
+        this.minSpeechDuration = 300; // ✅ 最小発話時長（300ms - 品質優先、短い単語も保護）
+        this.silenceConfirmDelay = 200; // ✅ 無声確認延迟（200ms - 反応速度向上）
+
+        // ✅ 音声結合バッファ（短い音声を結合して1秒以上にする）
+        this.pendingAudioBuffer = null; // 保留中の音声データ
+        this.pendingAudioDuration = 0; // 保留中の音声時長（ms）
+        this.pendingAudioTimer = null; // 保留音声タイムアウトタイマー
+        this.pendingAudioTimeout = 1000; // 保留音声タイムアウト（1秒）
 
         // ✅ P1-2: 会話コンテキスト管理（Electron環境のみ）
         // ブラウザ・拡張機能では使用しない
@@ -87,7 +93,9 @@ class VoiceTranslateApp {
 
         // ✅ レスポンスキュー管理（conversation_already_has_active_response エラー対策）
         this.responseQueue = new ResponseQueue((message) => this.sendMessage(message), {
-            maxQueueSize: 10, // 最大キュー長
+            maxQueueSize: 30, // 最大キュー長を拡大（10 → 30）
+            // 理由: システム音声モードで連続音声が来る場合、
+            //       10個では不足してレスポンスがドロップされる可能性
             timeout: 60000, // タイムアウト: 60秒（response.done が来ない場合に備えて）
             retryOnError: true, // エラー時リトライ有効
             maxRetries: 2, // 最大リトライ回数
@@ -129,18 +137,22 @@ class VoiceTranslateApp {
 
         // ✅ 双パス异步処理架构（Phase 2）
         this.audioQueue = new AudioQueue({
-            maxConcurrent: 1 // 同時処理数を1に制限（並発エラー防止）
+            maxQueueSize: 50 // キューサイズを拡大（20 → 50）
+            // 理由: システム音声モードで連続音声が来る場合、
+            //       20個では不足してセグメントがドロップされる
+            // 注意: cleanupDelay はデフォルト値（1000ms）を使用
+            //       0ms にすると問題が悪化する可能性がある
         });
 
         // ✅ パス処理器
         this.textPathProcessor = new TextPathProcessor(this.audioQueue, this);
         this.voicePathProcessor = new VoicePathProcessor(this.audioQueue, this);
 
-        // ✅ 监听队列イベント
-        this.audioQueue.on('segmentReady', (segment) => {
-            this.handleNewAudioSegment(segment);
-        });
+        // ✅ プル型アーキテクチャ: 消費者ループ
+        this.path1ConsumerInterval = null;
+        this.path2ConsumerInterval = null;
 
+        // ✅ 监听队列イベント
         this.audioQueue.on('segmentComplete', (segment) => {
             this.handleSegmentComplete(segment);
         });
@@ -639,6 +651,7 @@ class VoiceTranslateApp {
      *
      * 目的:
      *   翻訳音声を出力設定が変更された場合、セッションを更新
+     *   OFFの場合は「リアルタイム音声翻訳」も自動的にOFFにする
      *
      * 入力:
      *   element: トグル要素
@@ -646,7 +659,28 @@ class VoiceTranslateApp {
     handleAudioOutputToggle(element) {
         const isActive = element.classList.contains('active');
         console.info('[Audio Output] 翻訳音声を出力:', isActive ? 'ON' : 'OFF');
-        this.notify('音声出力設定', `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`, 'info');
+
+        // ✅ バグ修正: 翻訳音声を出力がOFFの場合、リアルタイム音声翻訳も自動的にOFFにする
+        if (!isActive) {
+            const translationModeAudio = this.elements.translationModeAudio;
+            if (translationModeAudio && translationModeAudio.classList.contains('active')) {
+                translationModeAudio.classList.remove('active');
+                this.saveToStorage('translationModeAudio', 'false');
+                console.info(
+                    '[Audio Output] 翻訳音声を出力がOFFのため、リアルタイム音声翻訳も自動的にOFFにしました'
+                );
+                this.notify(
+                    '音声出力設定',
+                    '翻訳音声を出力をOFFにしました。リアルタイム音声翻訳も自動的にOFFになりました。',
+                    'info'
+                );
+            } else {
+                this.notify('音声出力設定', `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`, 'info');
+            }
+        } else {
+            this.notify('音声出力設定', `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`, 'info');
+        }
+
         if (this.state.isConnected) {
             this.updateSession();
         }
@@ -1077,9 +1111,9 @@ class VoiceTranslateApp {
                 turn_detection: this.elements.vadEnabled.classList.contains('active')
                     ? {
                           type: 'server_vad',
-                          threshold: 0.3, // 音声検出の閾値（0.0-1.0、0.3=より敏感）- 0.5から0.3に変更
-                          prefix_padding_ms: 300, // 音声開始前のパディング（ms）
-                          silence_duration_ms: 1000 // 静音判定時間（ms）- 1.0秒に短縮（反応速度向上）
+                          threshold: 0.3, // 音声検出の閾値（0.0-1.0、0.3=より敏感）
+                          prefix_padding_ms: 300, // ✅ 音声開始前のパディング（300ms - 実時性優先）
+                          silence_duration_ms: 700 // ✅ 静音判定時間（700ms - 実時性と品質のバランス）
                       }
                     : null,
                 temperature: 0.8, // 0.8: 自然な表現とバランス（gpt-realtime-2025-08-28 推奨）
@@ -1322,6 +1356,9 @@ Even if you have translated many sentences, your role has NOT changed:
             console.warn('[Recording] 既に録音中のため開始要求を無視します');
             return;
         }
+
+        // ✅ プル型アーキテクチャ: 消費者ループを開始
+        this.startPathConsumers();
 
         this.elements.startBtn.disabled = true;
         this.elements.stopBtn.disabled = true;
@@ -2291,10 +2328,8 @@ Even if you have translated many sentences, your role has NOT changed:
                     return;
                 }
 
-                // ✅ ループバック防止: システム音声モードの場合のみ、再生中の入力をスキップ
-                if (this.state.isPlayingAudio && this.state.audioSourceType === 'system') {
-                    return;
-                }
+                // ✅ ループバック防止は sendAudioData() で統一的に処理
+                // ここでは録音状態のチェックのみ行う
 
                 const inputData = e.inputBuffer.getChannelData(0);
 
@@ -2501,6 +2536,9 @@ Even if you have translated many sentences, your role has NOT changed:
 
     async stopRecording() {
         console.info('[Recording] 停止処理開始');
+
+        // ✅ プル型アーキテクチャ: 消費者ループを停止
+        this.stopPathConsumers();
 
         // ✅ モードロックをクリア
         localStorage.removeItem(this.modeStateManager.globalLockKey);
@@ -3321,6 +3359,54 @@ document.addEventListener('DOMContentLoaded', () => {
         '[UI] デバッグ関数を公開: window.testCollapsible("advanced") または window.testCollapsible("language")'
     );
 });
+
+/**
+ * ✅ プル型アーキテクチャ: パス消費者ループを開始
+ */
+VoiceTranslateApp.prototype.startPathConsumers = function () {
+    console.info('[PathConsumers] 消費者ループを開始');
+
+    // ✅ Path1 消費者ループ（テキストパス）
+    this.path1ConsumerInterval = setInterval(async () => {
+        const segment = this.audioQueue.consumeForPath('path1');
+        if (segment) {
+            console.info('[Path1 Consumer] セグメント取得:', {
+                segmentId: segment.id,
+                duration: segment.getDuration() + 'ms'
+            });
+            await this.textPathProcessor.process(segment);
+        }
+    }, 100); // 100ms ごとにチェック
+
+    // ✅ Path2 消費者ループ（音声パス）
+    this.path2ConsumerInterval = setInterval(async () => {
+        const segment = this.audioQueue.consumeForPath('path2');
+        if (segment) {
+            console.info('[Path2 Consumer] セグメント取得:', {
+                segmentId: segment.id,
+                duration: segment.getDuration() + 'ms'
+            });
+            await this.voicePathProcessor.process(segment);
+        }
+    }, 100); // 100ms ごとにチェック
+};
+
+/**
+ * ✅ プル型アーキテクチャ: パス消費者ループを停止
+ */
+VoiceTranslateApp.prototype.stopPathConsumers = function () {
+    console.info('[PathConsumers] 消費者ループを停止');
+
+    if (this.path1ConsumerInterval) {
+        clearInterval(this.path1ConsumerInterval);
+        this.path1ConsumerInterval = null;
+    }
+
+    if (this.path2ConsumerInterval) {
+        clearInterval(this.path2ConsumerInterval);
+        this.path2ConsumerInterval = null;
+    }
+};
 
 // 拡張機能用のエクスポート
 if (typeof module !== 'undefined' && module.exports) {

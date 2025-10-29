@@ -61,8 +61,8 @@ class AudioSegment {
 
         // ✅ 双パス処理状態
         this.processingStatus = {
-            path1_text: 0, // 0=未処理, 1=完了
-            path2_voice: 0 // 0=未処理, 1=完了
+            path1_text: 0, // 0=未取得, 1=取得済み（処理中）, 2=完了
+            path2_voice: 0 // 0=未取得, 1=取得済み（処理中）, 2=完了
         };
 
         // ✅ 処理結果
@@ -87,6 +87,39 @@ class AudioSegment {
     }
 
     /**
+     * マークパス取得済み（処理開始）
+     *
+     * @param {string} pathName パス名（'path1' 或 'path2'）
+     * @throws {Error} 無効なパス名
+     * @returns {boolean} 取得成功の場合は true、既に取得済みの場合は false
+     */
+    markPathConsumed(pathName) {
+        if (pathName !== 'path1' && pathName !== 'path2') {
+            throw new Error(`無効なパス名: ${pathName}`);
+        }
+
+        const statusKey = pathName === 'path1' ? 'path1_text' : 'path2_voice';
+
+        // ✅ 既に取得済みの場合はスキップ
+        if (this.processingStatus[statusKey] >= 1) {
+            console.warn('[AudioSegment] 既に取得済み:', {
+                id: this.id,
+                path: pathName,
+                status: this.processingStatus[statusKey]
+            });
+            return false;
+        }
+
+        // ✅ 取得済みにマーク
+        this.processingStatus[statusKey] = 1;
+        console.info('[AudioSegment] パス取得:', {
+            id: this.id,
+            path: pathName
+        });
+        return true;
+    }
+
+    /**
      * マークパス完了
      *
      * @param {string} pathName パス名（'path1' 或 'path2'）
@@ -100,10 +133,10 @@ class AudioSegment {
 
         // 状態更新
         if (pathName === 'path1') {
-            this.processingStatus.path1_text = 1;
+            this.processingStatus.path1_text = 2;
             this.results.path1 = result;
         } else {
-            this.processingStatus.path2_voice = 1;
+            this.processingStatus.path2_voice = 2;
             this.results.path2 = result;
         }
 
@@ -121,7 +154,18 @@ class AudioSegment {
      * @returns {boolean} 所有パス完了返却true
      */
     isFullyProcessed() {
-        return this.processingStatus.path1_text === 1 && this.processingStatus.path2_voice === 1;
+        return this.processingStatus.path1_text === 2 && this.processingStatus.path2_voice === 2;
+    }
+
+    /**
+     * パスが取得可能かチェック
+     *
+     * @param {string} pathName パス名（'path1' 或 'path2'）
+     * @returns {boolean} 取得可能な場合は true
+     */
+    isPathAvailable(pathName) {
+        const statusKey = pathName === 'path1' ? 'path1_text' : 'path2_voice';
+        return this.processingStatus[statusKey] === 0;
     }
 
     /**
@@ -282,7 +326,8 @@ class AudioQueue {
         // ✅ 設定
         this.config = {
             maxSegmentDuration: options.maxSegmentDuration || 15000,
-            minSegmentDuration: options.minSegmentDuration || 1000,
+            // ✅ 最小セグメント時長: 300ms（品質優先 - 短い単語も重要）
+            minSegmentDuration: options.minSegmentDuration || 300,
             maxQueueSize: options.maxQueueSize || 20,
             cleanupDelay: options.cleanupDelay || 1000
         };
@@ -297,21 +342,15 @@ class AudioQueue {
 
         // ✅ イベントリスナー
         this.listeners = {
-            onSegmentReady: null,
             onSegmentComplete: null,
             onQueueFull: null
         };
-
-        // ✅ 排他制御: セグメントを順番に処理
-        this.isProcessing = false; // 現在処理中かどうか
-        this.currentSegmentId = null; // 現在処理中のセグメントID
-        this.processingQueue = []; // 処理待ちセグメントIDのキュー
 
         console.info('[AudioQueue] 初期化完了:', {
             maxSegmentDuration: this.config.maxSegmentDuration + 'ms',
             minSegmentDuration: this.config.minSegmentDuration + 'ms',
             maxQueueSize: this.config.maxQueueSize,
-            sequentialProcessing: true
+            architecture: 'pull-based'
         });
     }
 
@@ -366,15 +405,22 @@ class AudioQueue {
         console.info('[AudioQueue] セグメント追加:', {
             id: segment.id,
             queueSize: this.queue.size,
-            duration: metadata.duration + 'ms',
-            processingQueueSize: this.processingQueue.length
+            duration: metadata.duration + 'ms'
         });
 
-        // ✅ 処理キューに追加
-        this.processingQueue.push(segment.id);
-
-        // ✅ 処理中でない場合、次のセグメントを処理開始
-        this.processNextSegment();
+        // ✅ 200秒後に自動クリーンアップ（タイムアウト）
+        setTimeout(() => {
+            const seg = this.queue.get(segment.id);
+            if (seg && !seg.isFullyProcessed()) {
+                console.warn('[AudioQueue] タイムアウト - セグメントを強制削除:', {
+                    id: segment.id,
+                    age: seg.getAge() + 'ms',
+                    path1Status: seg.processingStatus.path1_text,
+                    path2Status: seg.processingStatus.path2_voice
+                });
+                this.cleanup(segment.id);
+            }
+        }, 200000); // 200秒
 
         return segment;
     }
@@ -387,6 +433,45 @@ class AudioQueue {
      */
     getSegment(segmentId) {
         return this.queue.get(segmentId);
+    }
+
+    /**
+     * ✅ プル型アーキテクチャ: パス専用の消費メソッド
+     *
+     * @description
+     * 指定されたパスがまだ取得していない最も古い音声セグメントを返す
+     * 重複取得を防ぐため、取得済みフラグを設定する
+     *
+     * @param {string} pathName パス名（'path1' 或 'path2'）
+     * @returns {AudioSegment|null} 取得可能なセグメント、なければ null
+     */
+    consumeForPath(pathName) {
+        if (pathName !== 'path1' && pathName !== 'path2') {
+            throw new Error(`無効なパス名: ${pathName}`);
+        }
+
+        // ✅ キューから最も古い未取得セグメントを検索
+        for (const [segmentId, segment] of this.queue) {
+            if (segment.isPathAvailable(pathName)) {
+                // ✅ 取得済みにマーク（重複防止）
+                if (segment.markPathConsumed(pathName)) {
+                    console.info('[AudioQueue] パス消費:', {
+                        segmentId,
+                        pathName,
+                        queueSize: this.queue.size,
+                        duration: segment.metadata.duration + 'ms'
+                    });
+                    return segment;
+                }
+            }
+        }
+
+        // ✅ 取得可能なセグメントがない
+        console.info('[AudioQueue] 取得可能なセグメントなし:', {
+            pathName,
+            queueSize: this.queue.size
+        });
+        return null;
     }
 
     /**
@@ -441,21 +526,8 @@ class AudioQueue {
             this.listeners.onSegmentComplete(segment);
         }
 
-        // ✅ 遅延クリーンアップ（結果使用を許可）
-        setTimeout(() => {
-            this.cleanup(segment.id);
-        }, this.config.cleanupDelay);
-
-        // ✅ 処理完了フラグをリセット
-        if (this.currentSegmentId === segment.id) {
-            this.isProcessing = false;
-            this.currentSegmentId = null;
-
-            console.info('[AudioQueue] 処理完了、次のセグメントを処理開始');
-
-            // ✅ 次のセグメントを処理
-            this.processNextSegment();
-        }
+        // ✅ 即座にクリーンアップ（両方のパスが完了したので不要）
+        this.cleanup(segment.id);
     }
 
     /**
@@ -511,9 +583,7 @@ class AudioQueue {
      * @throws {Error} 無効なイベント名
      */
     on(event, callback) {
-        if (event === 'segmentReady') {
-            this.listeners.onSegmentReady = callback;
-        } else if (event === 'segmentComplete') {
+        if (event === 'segmentComplete') {
             this.listeners.onSegmentComplete = callback;
         } else if (event === 'queueFull') {
             this.listeners.onQueueFull = callback;
@@ -541,61 +611,6 @@ class AudioQueue {
         return this.queue.size;
     }
 
-    /**
-     * 次のセグメントを処理
-     *
-     * @description
-     * 処理キューから次のセグメントを取り出して処理を開始
-     * 排他制御により、同時に1つのセグメントのみ処理
-     *
-     * @private
-     */
-    processNextSegment() {
-        // ✅ 既に処理中の場合はスキップ
-        if (this.isProcessing) {
-            console.info('[AudioQueue] 既に処理中、次のセグメント処理をスキップ:', {
-                currentSegmentId: this.currentSegmentId,
-                queueSize: this.processingQueue.length
-            });
-            return;
-        }
-
-        // ✅ 処理待ちセグメントがない場合は終了
-        if (this.processingQueue.length === 0) {
-            console.info('[AudioQueue] 処理待ちセグメントなし');
-            return;
-        }
-
-        // ✅ 次のセグメントを取得
-        const segmentId = this.processingQueue.shift();
-        const segment = this.queue.get(segmentId);
-
-        if (!segment) {
-            console.warn('[AudioQueue] セグメントが見つかりません:', segmentId);
-            // 次のセグメントを処理
-            this.processNextSegment();
-            return;
-        }
-
-        // ✅ 処理中フラグを設定
-        this.isProcessing = true;
-        this.currentSegmentId = segmentId;
-
-        console.info('[AudioQueue] セグメント処理開始:', {
-            segmentId: segmentId,
-            remainingInQueue: this.processingQueue.length,
-            duration: segment.getDuration() + 'ms'
-        });
-
-        // ✅ リスナー通知（非同期）
-        if (this.listeners.onSegmentReady !== null) {
-            setTimeout(() => {
-                if (this.listeners.onSegmentReady !== null) {
-                    this.listeners.onSegmentReady(segment);
-                }
-            }, 0);
-        }
-    }
 }
 
 /**

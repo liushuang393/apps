@@ -195,6 +195,13 @@ class ResponseQueue {
             this.stats.completedRequests++;
         }
 
+        // ✅ プル型アーキテクチャ: response.done 後に自動的に次のリクエストを送信
+        // これにより、activeResponseId/pendingResponseId の管理が不要になる
+        if (this.config.debugMode) {
+            console.info('[ResponseQueue] 次のリクエストを自動送信:', {
+                pending: this.pendingQueue.length
+            });
+        }
         this.consume();
     }
 
@@ -209,7 +216,7 @@ class ResponseQueue {
             errorMessage.includes('active response in progress');
 
         if (isActiveResponseError) {
-            console.warn('[ResponseQueue] Active response error - will retry later.', {
+            console.warn('[ResponseQueue] Active response still in progress - waiting for response.done.', {
                 code: errorCode || 'N/A',
                 pending: this.pendingQueue.length,
                 processing: this.processingQueue.length
@@ -217,26 +224,26 @@ class ResponseQueue {
 
             this.clearTimeoutTimer();
 
-            // ✅ 修正: 処理中のリクエストをpendingキューに戻す（破棄しない）
+            // ✅ プル型アーキテクチャ: 処理中のリクエストをpendingキューに戻す
             const item = this.processingQueue.shift();
 
             if (item) {
                 // ✅ 重要: reject ではなく pending キューに戻す
-                // これによって サーバー側の response が完了した後に
-                // リトライできるようになる
+                // これによって サーバー側の response.done イベント後に
+                // 自動的にリトライされる（プル型）
                 this.pendingQueue.unshift(item); // 先頭に戻す（優先度確保）
 
                 if (this.config.debugMode) {
-                    console.info('[ResponseQueue] リクエストを保留キューに戻しました:', {
+                    console.info('[ResponseQueue] リクエストを保留キューに戻しました（response.done 後に自動再送信）:', {
                         pending: this.pendingQueue.length,
                         processing: this.processingQueue.length
                     });
                 }
             }
 
-            // ✅ 次のリクエストは処理しない（サーバー側が busy）
-            // 遅延処理で再試行（500ms後）
-            setTimeout(() => this.consume(), 500);
+            // ✅ 注意: consume() を呼ばない
+            // 理由: サーバー側の response.done イベントで自動的に consume() が呼ばれる
+            // これにより、activeResponseId/pendingResponseId の管理が不要になる
             return;
         }
 
