@@ -2540,6 +2540,12 @@ Even if you have translated many sentences, your role has NOT changed:
         // ✅ プル型アーキテクチャ: 消費者ループを停止
         this.stopPathConsumers();
 
+        // ✅ AudioQueue をクリア（重要: 再開始時に古いセグメントが残らないようにする）
+        if (this.audioQueue) {
+            this.audioQueue.clear();
+            console.info('[Recording] AudioQueue をクリアしました');
+        }
+
         // ✅ モードロックをクリア
         localStorage.removeItem(this.modeStateManager.globalLockKey);
         this.modeStateManager.currentMode = null;

@@ -75,6 +75,56 @@ OpenAI Realtime API を活用した、会議・通話の同時通訳アプリケ
 - **音声→テキスト**: 音声認識 + テキスト表示
 - **テキスト→テキスト**: テキスト翻訳（Chat Completions API）
 
+### 5. 会話履歴管理（ConversationDB）
+
+#### 対応状況
+
+| 環境 | 会話履歴保存 | 実装状況 | 備考 |
+|------|------------|---------|------|
+| **Electron アプリ** | ✅ SQLite データベース | ⚠️ **未統合** | `ConversationDatabase.ts` は定義済み |
+| **ブラウザ（Chrome 拡張）** | ❌ 使用しない | ✅ 仕様通り | 画面表示のみ、保存なし |
+
+#### 実装状況の詳細
+
+**✅ 完了している部分**:
+- `electron/ConversationDatabase.ts` の定義
+  - セッション管理（開始時刻、終了時刻、言語設定）
+  - ターン管理（ユーザー発話、AI応答）
+  - SQLite による永続化
+  - 統計情報の取得
+  - 古いセッションの自動削除
+
+**❌ 未完了の部分**:
+- `voicetranslate-pro.js` への統合
+- 翻訳結果の自動保存
+- UI からの履歴表示機能
+- Electron メインプロセスとの IPC 通信
+
+#### データベース保存場所（Electron 環境）
+
+```
+優先順位:
+1. 引数で指定されたパス
+2. 環境変数 CONVERSATION_DB_PATH
+3. デフォルトパス: userData/conversations.db
+   - Windows: C:\Users\{ユーザー名}\AppData\Roaming\VoiceTranslate Pro\conversations.db
+   - macOS: ~/Library/Application Support/VoiceTranslate Pro/conversations.db
+   - Linux: ~/.config/VoiceTranslate Pro/conversations.db
+```
+
+#### 今後の実装予定
+
+1. **Electron 環境での統合**（優先度: 高）
+   - IPC ハンドラーの実装
+   - 翻訳完了時の自動保存
+   - 履歴表示 UI の追加
+
+2. **ブラウザ環境での対応**（優先度: 低）
+   - 仕様上、保存機能は不要
+   - 画面表示のみで十分
+
+詳細は [`docs/P1_CONVERSATION_CONTEXT.md`](./docs/P1_CONVERSATION_CONTEXT.md) を参照してください。
+
 ---
 
 ## 🎯 使用シナリオ

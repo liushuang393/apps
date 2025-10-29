@@ -1015,7 +1015,8 @@ const WebSocketMixin = {
         source.connect(gainNode);
         gainNode.connect(this.state.outputAudioContext.destination);
 
-        return source;
+        // ✅ メモリリーク修正: ノードの参照を保持して後でクリーンアップ
+        return { source, gainNode };
     },
 
     /**
@@ -1106,10 +1107,19 @@ const WebSocketMixin = {
 
             // ✅ 非同期デコード: AudioContext.decodeAudioData を使用
             // 理由: メインスレッドのブロックを防ぎ、UI の応答性を維持
-            const source = await this.prepareAudioSource(base64Audio);
+            const { source, gainNode } = await this.prepareAudioSource(base64Audio);
 
             // 再生終了時にフラグをOFF（すべてのモードで適用）
             source.onended = () => {
+                // ✅ メモリリーク修正: ノードを切断してクリーンアップ
+                try {
+                    source.disconnect();
+                    gainNode.disconnect();
+                    console.info('[Audio] ノードをクリーンアップしました:', { playbackToken });
+                } catch (cleanupError) {
+                    console.warn('[Audio] ノードクリーンアップエラー:', cleanupError);
+                }
+
                 // ✅ 出力完了時刻を記録（バッファウィンドウの計算用）
                 this.audioSourceTracker.outputEndTime = Date.now();
                 this.audioSourceTracker.playbackTokens.delete(playbackToken);
