@@ -407,18 +407,16 @@ const WebSocketMixin = {
                 duration: this.pendingAudioDuration + 'ms'
             });
 
-            // ✅ 重要: handleAudioBufferCommitted() を再度呼び出して、両方のパスを処理
-            // 保留バッファを一時変数に保存
+            // ✅ 修正: 保留バッファを直接キューに送信（handleAudioBufferCommitted を再帰呼び出ししない）
             const bufferedAudio = this.pendingAudioBuffer;
             const bufferedDuration = this.pendingAudioDuration;
 
             // バッファをクリア（無限ループ防止）
             this.clearPendingBuffer();
 
-            // 音声バッファに設定して再処理
-            this.audioBuffer = [bufferedAudio];
-            this.speechStartTime = Date.now() - bufferedDuration;
-            this.handleAudioBufferCommitted();
+            // ✅ 直接キューに追加
+            const sampleRate = this.state.audioContext?.sampleRate || 24000;
+            this.tryEnqueueAudioSegment(bufferedAudio, bufferedDuration, sampleRate, Date.now());
         }, this.pendingAudioTimeout);
 
         // ✅ 保留バッファが300ms以上になったら即座に送信
@@ -428,17 +426,16 @@ const WebSocketMixin = {
             });
             clearTimeout(this.pendingAudioTimer);
 
-            // ✅ 重要: handleAudioBufferCommitted() を再度呼び出して、両方のパスを処理
+            // ✅ 修正: 保留バッファを直接キューに送信（handleAudioBufferCommitted を再帰呼び出ししない）
             const bufferedAudio = this.pendingAudioBuffer;
             const bufferedDuration = this.pendingAudioDuration;
 
             // バッファをクリア（無限ループ防止）
             this.clearPendingBuffer();
 
-            // 音声バッファに設定して再処理
-            this.audioBuffer = [bufferedAudio];
-            this.speechStartTime = Date.now() - bufferedDuration;
-            this.handleAudioBufferCommitted();
+            // ✅ 直接キューに追加
+            const sampleRate = this.state.audioContext?.sampleRate || 24000;
+            this.tryEnqueueAudioSegment(bufferedAudio, bufferedDuration, sampleRate, Date.now());
         }
     },
 

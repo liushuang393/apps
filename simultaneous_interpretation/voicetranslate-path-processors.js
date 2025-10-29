@@ -743,8 +743,10 @@ class VoicePathProcessor {
                 audioLength: result.audio ? result.audio.length : 0
             });
 
-            // 音声再生
-            await this.playAudio(result.audio);
+            // ✅ 音声再生（非同期 - await しない）
+            // 理由: 音声再生を待つと、次のセグメントの処理が遅延してしまう
+            // 音声再生キューが順番に処理することで、音声の連続性を保証する
+            this.playAudio(result.audio);
 
             // モード1の場合、テキストも表示
             if (this.mode === 1 && result.text !== null && result.text.trim() !== '') {
@@ -941,6 +943,7 @@ class VoicePathProcessor {
      *
      * 注意:
      *   「翻訳音声を出力」がOFFの場合は、音声を再生しない
+     *   音声再生は非同期で行われ、キューに追加されて順番に再生される
      *
      * @private
      * @param {string} audioData Base64エンコードされた音声データ
@@ -956,18 +959,27 @@ class VoicePathProcessor {
             return;
         }
 
-        if (this.app.audioPlaybackQueue === null || this.app.audioPlaybackQueue === undefined) {
-            console.warn('[Path2] audioPlaybackQueue が見つかりません');
+        if (this.app.playbackQueue === null || this.app.playbackQueue === undefined) {
+            console.warn('[Path2] playbackQueue が見つかりません');
             return;
         }
 
-        // 音声再生キューに追加
-        this.app.audioPlaybackQueue.push(audioData);
+        // ✅ 音声再生キューに追加
+        this.app.playbackQueue.push(audioData);
 
-        // キューが処理中でなければ、再生開始
-        if (!this.app.isPlayingAudio) {
-            await this.app.processAudioPlaybackQueue();
+        console.info('[Path2] 音声をキューに追加:', {
+            queueLength: this.app.playbackQueue.length,
+            isPlayingFromQueue: this.app.isPlayingFromQueue
+        });
+
+        // ✅ キューが処理中でなければ、再生開始
+        if (!this.app.isPlayingFromQueue) {
+            this.app.playNextInQueue();
         }
+
+        // ✅ 注意: 音声再生は非同期で行われるため、ここでは await しない
+        // 再生完了を待つと、次のセグメントの処理が遅延してしまう
+        // 音声再生キューが順番に処理することで、音声の連続性を保証する
     }
 
     /**
