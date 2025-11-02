@@ -169,13 +169,13 @@ const WebSocketMixin = {
             return;
         }
 
-        // ✅ 音声結合ロジック: 短い音声を結合して300ms以上にする
-        const MIN_QUEUE_DURATION = 300; // 最小キュー送信時長（300ms - 品質優先）
+        // ✅ 音声結合ロジック: 短い音声を結合して500ms以上にする
+        const MIN_QUEUE_DURATION = 500; // ✅ 300ms → 500ms に変更（音声結巴を防ぐ）
         let finalAudio = combinedAudio;
         let finalDuration = actualDuration;
 
         if (actualDuration < MIN_QUEUE_DURATION) {
-            // ✅ 300ms未満の音声は保留バッファに追加
+            // ✅ 500ms未満の音声は保留バッファに追加
             this.addToPendingBuffer(combinedAudio, actualDuration);
             return; // 保留中、次の音声を待つ
         }
@@ -214,12 +214,13 @@ const WebSocketMixin = {
     },
 
     /**
-     * 重複コミットをチェック（500ms以内の重複を無視）
+     * 重複コミットをチェック（800ms以内の重複を無視）
      * @param {number} now - 現在のタイムスタンプ
      * @returns {boolean} 重複コミットの場合は true
      */
     isDuplicateCommit(now) {
-        if (now - this.lastCommitTime < 500) {
+        if (now - this.lastCommitTime < 800) {
+            // ✅ 500ms → 800ms に変更（音声結巴を防ぐ）
             console.warn('[Audio] 重複コミットを検出、スキップします', {
                 timeSinceLastCommit: now - this.lastCommitTime
             });
@@ -448,6 +449,13 @@ const WebSocketMixin = {
      * @returns {boolean} 成功した場合は true
      */
     tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now) {
+        // ✅ デバッグ：tryEnqueueAudioSegment 呼び出し確認
+        console.warn('[Audio] ========== tryEnqueueAudioSegment 呼び出し ==========');
+        console.warn('[Audio] combinedAudio.length:', combinedAudio?.length);
+        console.warn('[Audio] actualDuration:', actualDuration + 'ms');
+        console.warn('[Audio] sampleRate:', sampleRate);
+        console.warn('[Audio] =======================================================');
+
         // ✅ 新アーキテクチャ有効化フラグを設定
         this.useAudioQueue = true;
 
@@ -552,6 +560,10 @@ const WebSocketMixin = {
         this.audioBuffer = []; // バッファクリア
         this.audioBufferStartTime = Date.now();
 
+        // ✅ 重置句子追踪
+        this.currentTranscriptBuffer = '';
+        this.sentenceCount = 0;
+
         console.info('[Speech] 音声検出開始', { startTime: this.speechStartTime });
         this.updateStatus('recording', '話し中...');
     },
@@ -575,7 +587,108 @@ const WebSocketMixin = {
             const transcriptId = Date.now();
             this.addTranscript('input', message.transcript, transcriptId);
             this.currentTranscriptId = transcriptId;
+
+            // ✅ 句子数量追踪（実時性向上）
+            this.updateTranscriptBuffer(message.transcript);
         }
+    },
+
+    /**
+     * ✅ 更新転写文本缓冲区并检查是否达到目标句子数
+     *
+     * 目的：
+     *   基于句子数量而不是时长来决定何时提交音频
+     *   提高实时性，同时保证质量
+     *
+     * 策略：
+     *   - 累積転写文本
+     *   - 统计句子数量（通过标点符号）
+     *   - 达到2-3句时，立即提交音频缓冲
+     *   - 或超过最大时长（10秒）时，强制提交
+     */
+    updateTranscriptBuffer(transcript) {
+        // 累積転写文本
+        this.currentTranscriptBuffer += transcript;
+
+        // 统计句子数量（中文、日文、英文标点）
+        const sentenceEndings = /[。！？.!?]+/g;
+        const matches = this.currentTranscriptBuffer.match(sentenceEndings);
+        this.sentenceCount = matches ? matches.length : 0;
+
+        console.info('[Transcript Buffer] 句子追踪:', {
+            currentText: this.currentTranscriptBuffer.substring(0, 50) + '...',
+            sentenceCount: this.sentenceCount,
+            targetCount: this.targetSentenceCount,
+            bufferDuration: this.isBufferingAudio && this.audioBufferStartTime
+                ? (Date.now() - this.audioBufferStartTime) + 'ms'
+                : 'N/A'
+        });
+
+        // ✅ 检查是否应该提交音频
+        this.checkShouldCommitAudio();
+    },
+
+    /**
+     * ✅ 检查是否应该提交音频缓冲
+     *
+     * 条件：
+     *   1. 达到目标句子数（2-3句）
+     *   2. 或超过最大缓冲时长（10秒）
+     */
+    checkShouldCommitAudio() {
+        if (!this.isBufferingAudio || !this.audioBufferStartTime) {
+            return; // 未在缓冲中
+        }
+
+        const bufferDuration = Date.now() - this.audioBufferStartTime;
+        const shouldCommitBySentenceCount = this.sentenceCount >= this.targetSentenceCount;
+        const shouldCommitByDuration = bufferDuration >= this.maxBufferDuration;
+
+        if (shouldCommitBySentenceCount || shouldCommitByDuration) {
+            console.warn('[Transcript Buffer] ========== 音声提交触发 ==========');
+            console.warn('[Transcript Buffer] 触发原因:',
+                shouldCommitBySentenceCount ? `句子数達成（${this.sentenceCount}句）` : `時長超過（${bufferDuration}ms）`
+            );
+            console.warn('[Transcript Buffer] 累積文本:', this.currentTranscriptBuffer);
+            console.warn('[Transcript Buffer] =============================================');
+
+            // 手动触发音频提交
+            this.manuallyCommitAudioBuffer();
+
+            // 重置缓冲区
+            this.currentTranscriptBuffer = '';
+            this.sentenceCount = 0;
+        }
+    },
+
+    /**
+     * ✅ 手动提交音频缓冲
+     *
+     * 目的：
+     *   当达到句子数量目标时，主动提交音频缓冲
+     *   而不是等待Server VAD检测到静音
+     */
+    manuallyCommitAudioBuffer() {
+        if (!this.isBufferingAudio || this.audioBuffer.length === 0) {
+            console.warn('[Manual Commit] 无音声数据可提交');
+            return;
+        }
+
+        console.info('[Manual Commit] 手动提交音声缓冲:', {
+            bufferChunks: this.audioBuffer.length,
+            sentenceCount: this.sentenceCount
+        });
+
+        // 停止缓冲
+        this.isBufferingAudio = false;
+
+        // 触发音频提交处理
+        this.handleAudioBufferCommitted();
+
+        // 立即重新开始缓冲（为下一段音频做准备）
+        this.isBufferingAudio = true;
+        this.audioBuffer = [];
+        this.audioBufferStartTime = Date.now();
     },
 
     /**
@@ -659,6 +772,12 @@ const WebSocketMixin = {
             responseId: message.response.id,
             timestamp: Date.now()
         });
+
+        // ✅ 新しい翻訳開始時に古い音声をクリア（翻訳音声の中断を防ぐ）
+        // 理由: 複数の翻訳リクエストが並行して処理される場合、
+        //       古い翻訳音声が新しい翻訳音声と混在して再生されるのを防ぐ
+        this.clearPlaybackQueue();
+
         // ✅ プル型アーキテクチャ: activeResponseId のみ記録（デバッグ用）
         this.activeResponseId = message.response.id;
         this.responseQueue.handleResponseCreated(message.response.id);
@@ -852,12 +971,10 @@ const WebSocketMixin = {
             this.isPlayingFromQueue = false;
 
             // 入力音声を復元（すべての再生が完了）
+            // 注意: inputAudioOutputEnabled は削除されたため、常に0（ミュート）
             if (this.state.inputGainNode) {
-                this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
-                console.info(
-                    '[Playback Queue] キューが空 - 入力音声を復元:',
-                    this.state.inputAudioOutputEnabled ? 'ON' : 'OFF'
-                );
+                this.state.inputGainNode.gain.value = 0;
+                console.info('[Playback Queue] キューが空 - 入力音声はミュート状態を維持');
             }
 
             console.info('[Playback Queue] キューが空 - 再生終了');

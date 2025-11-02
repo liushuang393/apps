@@ -27,7 +27,7 @@ class VoiceTranslateApp {
             isConnected: false,
             isRecording: false,
             sourceLang: null, // ✅ 修正: 自動検出に変更、初期値は null
-            targetLang: 'en',
+            targetLang: 'ja', // ✅ 修正: デフォルトを日本語に変更（中国語→日本語翻訳用）
             voiceType: 'alloy',
             sessionStartTime: null,
             charCount: 0,
@@ -41,9 +41,8 @@ class VoiceTranslateApp {
             audioSourceType: 'microphone', // 'microphone' or 'system'
             systemAudioSourceId: null, // システム音声のソースID
             isNewResponse: true, // 新しい応答かどうかのフラグ
-            outputVolume: 2, // 出力音量（1.0 = 通常、2.0 = 2倍）
-            isPlayingAudio: false, // 音声再生中フラグ（ループバック防止用）
-            inputAudioOutputEnabled: true // 入力音声出力フラグ（入力音声をスピーカーに出力するか）
+            outputVolume: 1, // 出力音量（1 = 通常、クリッピング防止のため2から変更）
+            isPlayingAudio: false // 音声再生中フラグ（ループバック防止用）
         };
 
         this.vad = null;
@@ -55,6 +54,7 @@ class VoiceTranslateApp {
         this.isPlayingAudio = false; // 音声再生中フラグ（ループバック防止用）
         this.isPlayingFromQueue = false; // キューから再生中フラグ
         this.currentAudioStartTime = 0;
+        this.currentAudioSource = null; // 現在再生中のAudioBufferSourceNode（停止用）
 
         // 翻訳テキスト累積用（delta → 完全なテキスト）
         this.currentTranslationText = ''; // 現在の翻訳テキストを累積
@@ -76,6 +76,12 @@ class VoiceTranslateApp {
         this.pendingAudioDuration = 0; // 保留中の音声時長（ms）
         this.pendingAudioTimer = null; // 保留音声タイムアウトタイマー
         this.pendingAudioTimeout = 1000; // 保留音声タイムアウト（1秒）
+
+        // ✅ 句子数量追踪（実時性向上）
+        this.currentTranscriptBuffer = ''; // 当前累積的転写文本
+        this.sentenceCount = 0; // 当前句子数量
+        this.targetSentenceCount = 2; // 目標句子数（2-3句）
+        this.maxBufferDuration = 10000; // 最大缓冲时长（10秒 - 防止无限等待）
 
         // ✅ P1-2: 会話コンテキスト管理（Electron環境のみ）
         // ブラウザ・拡張機能では使用しない
@@ -137,11 +143,12 @@ class VoiceTranslateApp {
 
         // ✅ 双パス异步処理架构（Phase 2）
         this.audioQueue = new AudioQueue({
-            maxQueueSize: 50 // キューサイズを拡大（20 → 50）
-            // 理由: システム音声モードで連続音声が来る場合、
-            //       20個では不足してセグメントがドロップされる
+            maxQueueSize: 100, // ✅ キューサイズを拡大（50 → 100）長語音対応
+            maxSegmentDuration: 30000, // ✅ 最大セグメント時長を30秒に拡大（15秒 → 30秒）
+            minSegmentDuration: 300 // 最小300ms（短い単語も重要）
+            // 理由: 長時間の連続音声（会議、プレゼンなど）で
+            //       セグメントがドロップされるのを防ぐ
             // 注意: cleanupDelay はデフォルト値（1000ms）を使用
-            //       0ms にすると問題が悪化する可能性がある
         });
 
         // ✅ パス処理器
@@ -158,8 +165,40 @@ class VoiceTranslateApp {
         });
 
         this.audioQueue.on('queueFull', (size) => {
-            this.notify('警告', `音声キューが満杯です（${size}個）`, 'warning');
+            console.error('[AudioQueue] ========== キューが満杯 ==========');
+            console.error('[AudioQueue] 現在のキューサイズ:', size);
+            console.error('[AudioQueue] これ以上のセグメントは破棄されます！');
+            console.error('[AudioQueue] 統計:', this.audioQueue.getStats());
+            this.notify(
+                '警告',
+                `音声キューが満杯です（${size}個）\n処理が追いついていません`,
+                'warning'
+            );
         });
+
+        // ✅ 定期的なキュー状態監視（長語音丢失追踪用）
+        setInterval(() => {
+            const stats = this.audioQueue.getStats();
+            // 丢失セグメントがあり、かつ総セグメント数が0より大きい場合のみ警告
+            if (stats.droppedSegments > 0 && stats.totalSegments > 0) {
+                const dropRate = ((stats.droppedSegments / stats.totalSegments) * 100).toFixed(2);
+                console.warn('[AudioQueue] ========== 丢失警告 ==========');
+                console.warn('[AudioQueue] 累計丢失セグメント数:', stats.droppedSegments);
+                console.warn('[AudioQueue] 現在のキューサイズ:', stats.currentQueueSize);
+                console.warn('[AudioQueue] 処理済みセグメント:', stats.processedSegments);
+                console.warn('[AudioQueue] 総セグメント数:', stats.totalSegments);
+                console.warn('[AudioQueue] 丢失率:', dropRate + '%');
+
+                // 丢失率が10%を超えた場合はユーザーに通知
+                if (Number.parseFloat(dropRate) > 10) {
+                    this.notify(
+                        '警告',
+                        `音声セグメントの丢失率が高いです（${dropRate}%）\n翻訳品質が低下する可能性があります`,
+                        'warning'
+                    );
+                }
+            }
+        }, 5000); // 5秒ごとにチェック
 
         // ✅ Phase 3: 音声バッファ管理
         this.audioBuffer = []; // から保存された onaudioprocess キャプチャされた音声データ
@@ -180,8 +219,8 @@ class VoiceTranslateApp {
 
         this.initEventListeners();
         this.initVisualizer();
-        this.loadSettings();
-        this.initVAD();
+        this.initVAD(); // ✅ VADを先に初期化
+        this.loadSettings(); // ✅ 設定を読み込んでVAD灵敏度を適用
 
         // ブラウザ版とElectronアプリの競合を防ぐ
         this.initCrossInstanceSync();
@@ -220,7 +259,6 @@ class VoiceTranslateApp {
         this.elements.showInputTranscript = document.getElementById('showInputTranscript');
         this.elements.showOutputTranscript = document.getElementById('showOutputTranscript');
         this.elements.audioOutputEnabled = document.getElementById('audioOutputEnabled');
-        this.elements.inputAudioOutputEnabled = document.getElementById('inputAudioOutputEnabled');
 
         // コントロール
         this.elements.connectBtn = document.getElementById('connectBtn');
@@ -268,7 +306,6 @@ class VoiceTranslateApp {
      * - 入力音声を表示: ON
      * - 翻訳結果を表示: ON
      * - 翻訳音声を出力: ON
-     * - 入力音声を出力: OFF
      */
     initializeDefaultSettings() {
         // 詳細設定を折りたたみ状態にリセット
@@ -283,8 +320,7 @@ class VoiceTranslateApp {
             autoGainControl: 'true', // ON (dev-only)
             showInputTranscript: 'true', // ON
             showOutputTranscript: 'true', // ON
-            audioOutputEnabled: 'true', // ON
-            inputAudioOutputEnabled: 'false' // OFF
+            audioOutputEnabled: 'true' // ON
         };
 
         // localStorage に設定を保存
@@ -468,8 +504,7 @@ class VoiceTranslateApp {
             'autoGainControl',
             'showInputTranscript',
             'showOutputTranscript',
-            'audioOutputEnabled',
-            'inputAudioOutputEnabled'
+            'audioOutputEnabled'
         ].forEach((id) => {
             this.elements[id].addEventListener('click', (e) => {
                 this.handleToggleSetting(id, e.currentTarget);
@@ -477,9 +512,19 @@ class VoiceTranslateApp {
         });
 
         // VAD感度
-        this.elements.vadSensitivity.addEventListener('change', (e) => {
+        this.elements.vadSensitivity.addEventListener('change', async (e) => {
             this.updateVADSensitivity(e.target.value);
             this.saveToStorage('vad_sensitivity', e.target.value);
+
+            // ✅ Server VAD有効時は、セッション設定を更新
+            if (this.state.isConnected && this.elements.vadEnabled.classList.contains('active')) {
+                console.info('[VAD] Server VAD感度変更 - セッション設定を更新します');
+                try {
+                    await this.updateSessionConfig();
+                } catch (error) {
+                    console.error('[VAD] セッション設定更新失敗:', error);
+                }
+            }
         });
 
         // コントロールボタン
@@ -541,9 +586,12 @@ class VoiceTranslateApp {
     }
 
     initVAD() {
+        // ✅ デフォルト設定を使用（ユーザー設定で上書き可能）
+        const defaultSettings = CONFIG.VAD.MICROPHONE.MEDIUM;
+
         this.vad = new VoiceActivityDetector({
-            threshold: 0.01,
-            debounceTime: 300,
+            threshold: defaultSettings.threshold,
+            debounceTime: defaultSettings.debounce,
             onSpeechStart: () => {
                 console.info('[VAD] Speech started');
                 this.updateStatus('recording', '話し中...');
@@ -553,11 +601,10 @@ class VoiceTranslateApp {
                 this.updateStatus('recording', '待機中...');
             }
         });
-        console.info('[VAD] ✅ VAD初期化完了 - クライアント側音声検出有効（v3.1-VAD-FILTER）');
-        console.info('[VAD] 設定:', {
-            threshold: 0.01,
-            debounceTime: 300,
-            calibrationDuration: 30
+        console.info('[VAD] ✅ VAD初期化完了 - クライアント側音声検出有効', {
+            threshold: defaultSettings.threshold,
+            debounce: defaultSettings.debounce,
+            note: 'デフォルト設定（ユーザー設定で上書き可能）'
         });
     }
 
@@ -590,9 +637,6 @@ class VoiceTranslateApp {
                 break;
             case 'audioOutputEnabled':
                 this.handleAudioOutputToggle(element);
-                break;
-            case 'inputAudioOutputEnabled':
-                this.handleInputAudioOutputToggle(element);
                 break;
             default:
                 // その他の設定（noiseReduction, echoCancellation, autoGainControl）
@@ -686,32 +730,6 @@ class VoiceTranslateApp {
         }
     }
 
-    /**
-     * 入力音声を出力設定トグルの処理
-     *
-     * 目的:
-     *   入力音声を出力設定が変更された場合、状態を更新し、
-     *   必要に応じて音声処理を再セットアップ
-     *
-     * 入力:
-     *   element: トグル要素
-     */
-    handleInputAudioOutputToggle(element) {
-        const isActive = element.classList.contains('active');
-        this.state.inputAudioOutputEnabled = isActive;
-        console.info('[Input Audio Output] 入力音声を出力:', isActive ? 'ON' : 'OFF');
-        this.notify(
-            '入力音声出力設定',
-            `入力音声を出力を${isActive ? 'ON' : 'OFF'}にしました`,
-            'info'
-        );
-
-        // 録音中の場合、音声処理を再セットアップ
-        if (this.state.isRecording) {
-            this.reconnectAudioOutput();
-        }
-    }
-
     async loadSettings() {
         // ストレージから設定を読み込み
         const settings = {
@@ -748,6 +766,11 @@ class VoiceTranslateApp {
 
         if (settings.vadSensitivity) {
             this.elements.vadSensitivity.value = settings.vadSensitivity;
+            // ✅ VAD灵敏度を適用（initVAD後に呼び出す必要がある）
+            this.updateVADSensitivity(settings.vadSensitivity);
+        } else {
+            // デフォルト値を適用
+            this.updateVADSensitivity('medium');
         }
 
         // 出力音量設定を復元
@@ -1109,12 +1132,7 @@ class VoiceTranslateApp {
                     // 多人数・多言語環境で正確な言語検出を実現
                 },
                 turn_detection: this.elements.vadEnabled.classList.contains('active')
-                    ? {
-                          type: 'server_vad',
-                          threshold: 0.3, // 音声検出の閾値（0.0-1.0、0.3=より敏感）
-                          prefix_padding_ms: 300, // ✅ 音声開始前のパディング（300ms - 実時性優先）
-                          silence_duration_ms: 700 // ✅ 静音判定時間（700ms - 実時性と品質のバランス）
-                      }
+                    ? this.getTurnDetectionConfig()
                     : null,
                 temperature: 0.8, // 0.8: 自然な表現とバランス（gpt-realtime-2025-08-28 推奨）
                 max_response_output_tokens: 4096 // 4096: 長い会話にも対応
@@ -1134,6 +1152,80 @@ class VoiceTranslateApp {
         );
         this.sendMessage(session);
         console.info('[Session] セッション作成メッセージを送信しました');
+    }
+
+    /**
+     * 音声ソースタイプとVAD感度に応じた最適なServer VAD設定を取得
+     *
+     * 目的:
+     *   マイクモード（対話）とシステム音声モード（会議監視）で
+     *   異なるVADパラメータを使用して最適な翻訳体験を提供
+     *   VAD感度スライダーの値に応じてthresholdを動的に調整
+     *
+     * @returns {Object} Server VAD設定
+     */
+    getTurnDetectionConfig() {
+        const isMicrophoneMode = this.state.audioSourceType === 'microphone';
+
+        // ✅ VAD感度スライダーの値を取得（low/medium/high）
+        const vadSensitivity = this.elements.vadSensitivity?.value || 'medium';
+
+        // ✅ VAD感度に応じてthresholdを調整
+        // threshold値が小さいほど敏感（小さい音でも検出）
+        const thresholdMap = {
+            low: 0.7,    // 低感度：大きい音のみ検出
+            medium: 0.5, // 中感度：標準的な音声を検出
+            high: 0.3    // 高感度：小さい音も検出
+        };
+
+        const threshold = thresholdMap[vadSensitivity] || 0.5;
+
+        console.info(`[VAD] Server VAD threshold設定: ${vadSensitivity} → ${threshold}`);
+
+        if (isMicrophoneMode) {
+            // マイクモード（対話）: 短い発話、素早い応答
+            return {
+                type: 'server_vad',
+                threshold: threshold, // ✅ VAD感度に応じて調整
+                prefix_padding_ms: 300, // 音声開始前のパディング
+                silence_duration_ms: 500 // 短い静音で素早く翻訳開始
+            };
+        } else {
+            // システム音声モード（会議監視）: 長い発話、自然な停顿を許容
+            return {
+                type: 'server_vad',
+                threshold: threshold, // ✅ VAD感度に応じて調整
+                prefix_padding_ms: 300, // 音声開始前のパディング
+                silence_duration_ms: 1200 // 長い静音判定で途中の停顿を許容
+                // 理由: 会議・プレゼンでは呼吸や考え中の停顿があるため
+                //       1.2秒の静音で完全な文章を待つ
+            };
+        }
+    }
+
+    /**
+     * セッション設定を更新（VAD感度変更時など）
+     *
+     * 目的:
+     *   接続中にVAD感度を変更した場合、Server VADの設定を更新
+     */
+    async updateSessionConfig() {
+        if (!this.state.isConnected || !this.state.ws) {
+            console.warn('[Session] 未接続のためセッション設定を更新できません');
+            return;
+        }
+
+        const updateEvent = {
+            type: 'session.update',
+            session: {
+                turn_detection: this.elements.vadEnabled.classList.contains('active')
+                    ? this.getTurnDetectionConfig()
+                    : null
+            }
+        };
+
+        console.info('[Session] セッション設定を更新:', updateEvent);
+        this.sendMessage(updateEvent);
     }
 
     getInstructions() {
@@ -1772,16 +1864,27 @@ Even if you have translated many sentences, your role has NOT changed:
                 }
             };
 
-            console.info('[Recording] Electron画面キャプチャ要求中...', { sourceId });
+            console.info('[Recording] ========== Electron画面キャプチャ要求中 ==========');
+            console.info('[Recording] ソースID:', sourceId);
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
             // 音声トラックを取得
             const audioTracks = stream.getAudioTracks();
             const videoTracks = stream.getVideoTracks();
 
-            console.info('[Recording] トラック情報:', {
-                audioTracks: audioTracks.length,
-                videoTracks: videoTracks.length
+            console.info('[Recording] ========== トラック情報 ==========');
+            console.info('[Recording] 音声トラック数:', audioTracks.length);
+            console.info('[Recording] ビデオトラック数:', videoTracks.length);
+
+            // ✅ デバッグログ追加：各音声トラックの詳細
+            audioTracks.forEach((track, index) => {
+                console.info(`[Recording] 音声トラック[${index}]:`, {
+                    label: track.label,
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState,
+                    settings: track.getSettings()
+                });
             });
 
             // 重要: 音声トラックがなくても続行する
@@ -2238,6 +2341,15 @@ Even if you have translated many sentences, your role has NOT changed:
             console.info('[VAD] Calibrating...');
         }
 
+        // ✅ 録音フラグを先に設定（音声データ処理を有効化）
+        // 理由: AudioWorklet/ScriptProcessor の onmessage コールバックで
+        //       isRecording をチェックするため、先に true に設定する必要がある
+        //       そうしないと、初期の音声データが無視され、ビジュアライザーが動かない
+        this.state.isRecording = true;
+        this.elements.startBtn.disabled = true;
+        this.elements.stopBtn.disabled = false;
+        this.elements.disconnectBtn.disabled = true;
+
         try {
             // AudioWorklet をロードして使用（推奨方式）
             await this.state.audioContext.audioWorklet.addModule('audio-processor-worklet.js');
@@ -2296,18 +2408,14 @@ Even if you have translated many sentences, your role has NOT changed:
             // GainNodeを作成して入力音声のミュート制御
             this.state.inputGainNode = this.state.audioContext.createGain();
 
-            // 入力音声出力設定に応じてゲインを設定
-            this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
+            // 入力音声出力設定: デフォルトOFF（ゲイン0）
+            this.state.inputGainNode.gain.value = 0;
 
             // 音声チェーン: workletNode → inputGainNode → destination
             this.state.workletNode.connect(this.state.inputGainNode);
             this.state.inputGainNode.connect(this.state.audioContext.destination);
 
-            console.info(
-                '[Recording] AudioWorklet を使用して音声処理を開始しました（入力音声出力:',
-                this.state.inputAudioOutputEnabled ? 'ON' : 'OFF',
-                '）'
-            );
+            console.info('[Recording] AudioWorklet を使用して音声処理を開始しました（入力音声出力: OFF）');
         } catch (error) {
             const errorMessage = this.extractErrorMessage(error);
             console.warn(
@@ -2370,25 +2478,17 @@ Even if you have translated many sentences, your role has NOT changed:
             // GainNodeを作成して入力音声のミュート制御
             this.state.inputGainNode = this.state.audioContext.createGain();
 
-            // 入力音声出力設定に応じてゲインを設定
-            this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
+            // 入力音声出力設定: デフォルトOFF（ゲイン0）
+            this.state.inputGainNode.gain.value = 0;
 
             // 音声チェーン: processor → inputGainNode → destination
             this.state.processor.connect(this.state.inputGainNode);
             this.state.inputGainNode.connect(this.state.audioContext.destination);
 
-            console.info(
-                '[Recording] ScriptProcessorNode を使用して音声処理を開始しました（入力音声出力:',
-                this.state.inputAudioOutputEnabled ? 'ON' : 'OFF',
-                '）'
-            );
+            console.info('[Recording] ScriptProcessorNode を使用して音声処理を開始しました（入力音声出力: OFF）');
         }
 
-        this.state.isRecording = true;
-        this.elements.startBtn.disabled = true;
-        this.elements.stopBtn.disabled = false;
-        this.elements.disconnectBtn.disabled = true;
-
+        // ✅ UI更新と通知（isRecording は既に true に設定済み）
         const sourceTypeText = this.state.audioSourceType === 'system' ? 'システム音声' : 'マイク';
         this.updateStatus('recording', '録音中');
         this.notify('録音開始', `${sourceTypeText}から音声を取得しています`, 'success');
@@ -2411,32 +2511,6 @@ Even if you have translated many sentences, your role has NOT changed:
      * 注意:
      *   接続を切断せず、GainNodeのゲイン値を変更することで即座にミュート/アンミュート
      */
-    reconnectAudioOutput() {
-        console.info('[Audio Output] 入力音声出力を切り替え中...', {
-            enabled: this.state.inputAudioOutputEnabled,
-            hasGainNode: !!this.state.inputGainNode
-        });
-
-        try {
-            // GainNodeが存在する場合、ゲイン値を変更
-            if (this.state.inputGainNode) {
-                // 入力音声出力設定に応じてゲインを設定
-                // ON: 1.0 (通常音量), OFF: 0.0 (完全ミュート)
-                this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
-
-                console.info(
-                    '[Audio Output] 入力音声ゲイン:',
-                    this.state.inputAudioOutputEnabled ? '1.0 (ON)' : '0.0 (OFF)'
-                );
-            } else {
-                console.warn('[Audio Output] GainNodeが存在しません');
-            }
-        } catch (error) {
-            console.error('[Audio Output] 切り替えエラー:', error);
-            this.notify('エラー', '入力音声出力の切り替えに失敗しました', 'error');
-        }
-    }
-
     async detectAudioSources() {
         console.info('[Audio Source] 音声ソースを検出中...');
 
@@ -2450,8 +2524,19 @@ Even if you have translated many sentences, your role has NOT changed:
                 this.notify('検出中', '音声ソースを検出しています...', 'info');
 
                 const sources = await globalThis.window.electronAPI.detectMeetingApps();
-                console.info('[Audio Source] 検出されたソース:', sources);
+                console.info('[Audio Source] ========== 検出されたソース ==========');
                 console.info('[Audio Source] ソース数:', sources.length);
+
+                // ✅ デバッグログ追加：各ソースの詳細を表示
+                sources.forEach((source, index) => {
+                    console.info(`[Audio Source] [${index}] ${source.name}`, {
+                        id: source.id,
+                        type: source.type,
+                        isTeams: source.name.toLowerCase().includes('teams'),
+                        isZoom: source.name.toLowerCase().includes('zoom'),
+                        isChrome: source.name.toLowerCase().includes('chrome')
+                    });
+                });
 
                 // ドロップダウンを更新
                 systemAudioSource.innerHTML = '<option value="">ソースを選択...</option>';
@@ -2563,8 +2648,9 @@ Even if you have translated many sentences, your role has NOT changed:
         }
         this.speechStartTime = null;
 
-        // 再生キューをクリア（録音停止時は未再生の音声も破棄）
-        this.clearPlaybackQueueIfAny();
+        // ✅ 修正: 再生キューをクリアしない（翻訳音声の途中切断を防ぐ）
+        // 理由: 録音停止時に再生キューをクリアすると、翻訳音声が途中で切断される
+        // this.clearPlaybackQueueIfAny(); // ← 削除
 
         // Electronアプリの場合、ブラウザ版への録音停止通知をクリア
         const isElectron =
@@ -2856,6 +2942,12 @@ Even if you have translated many sentences, your role has NOT changed:
                 // ✅ 出力完了時刻を記録（バッファウィンドウの計算用）
                 this.audioSourceTracker.outputEndTime = Date.now();
                 this.audioSourceTracker.playbackTokens.delete(playbackToken);
+
+                // ✅ 現在のソースをクリア
+                if (this.currentAudioSource === source) {
+                    this.currentAudioSource = null;
+                }
+
                 this.handleAudioPlaybackEnded();
             };
 
@@ -2864,12 +2956,61 @@ Even if you have translated many sentences, your role has NOT changed:
                 outputStartTime: this.audioSourceTracker.outputStartTime
             });
 
+            // ✅ 現在再生中のソースを記録（停止用）
+            this.currentAudioSource = source;
             source.start();
         } catch (error) {
             // ✅ エラー時もトークンをクリア
             this.audioSourceTracker.playbackTokens.delete(playbackToken);
             this.handleAudioPlaybackError(error);
             throw error;
+        }
+    }
+
+    /**
+     * 再生キューをクリア（新しい翻訳開始時に古い音声を削除）
+     *
+     * 目的:
+     *   新しい翻訳が開始されたとき、古い翻訳音声をクリアして
+     *   最新の翻訳のみを再生する
+     *
+     * 効果:
+     *   - 翻訳音声の中断を防ぐ
+     *   - 古い翻訳と新しい翻訳が混在するのを防ぐ
+     *   - ユーザー体験の向上
+     */
+    clearPlaybackQueue() {
+        const clearedChunks = this.playbackQueue.length;
+
+        if (clearedChunks > 0 || this.currentAudioSource) {
+            console.warn('[🔊 Playback Queue] ========== 新しい翻訳開始 - 古い音声をクリア ==========');
+            console.warn('[🔊 Playback Queue] クリアされた音声チャンク数:', clearedChunks);
+            console.warn('[🔊 Playback Queue] 現在再生中の音声:', this.currentAudioSource ? '停止します' : 'なし');
+            console.warn('[🔊 Playback Queue] ================================================================');
+        }
+
+        // ✅ キューをクリア
+        this.playbackQueue = [];
+
+        // ✅ 現在再生中の音声を停止
+        if (this.currentAudioSource) {
+            try {
+                this.currentAudioSource.stop();
+                console.info('[🔊 Playback Queue] 現在再生中の音声を停止しました');
+            } catch (error) {
+                // 既に停止している場合はエラーを無視
+                console.debug('[🔊 Playback Queue] 音声停止エラー（無視）:', error.message);
+            }
+            this.currentAudioSource = null;
+        }
+
+        // ✅ 再生フラグをリセット
+        this.isPlayingFromQueue = false;
+        this.state.isPlayingAudio = false;
+
+        // ✅ 入力音声を復元（ミュート状態を維持）
+        if (this.state.inputGainNode) {
+            this.state.inputGainNode.gain.value = 0;
         }
     }
 
@@ -2989,6 +3130,14 @@ Even if you have translated many sentences, your role has NOT changed:
     async translateTextDirectly(inputText, transcriptId, sourceLang = null) {
         // sourceLangが指定されていない場合はデフォルト値を使用
         const actualSourceLang = sourceLang || this.state.sourceLang || 'en';
+
+        // ✅ デバッグログ追加：翻訳方向を明確に表示
+        console.info('[翻訳] 翻訳方向:', {
+            入力テキスト: inputText.substring(0, 50) + '...',
+            ソース言語: actualSourceLang,
+            ターゲット言語: this.state.targetLang,
+            翻訳方向: `${actualSourceLang} → ${this.state.targetLang}`
+        });
 
         try {
             if (!this.state.apiKey) {
