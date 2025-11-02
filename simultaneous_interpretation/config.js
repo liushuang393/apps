@@ -2,9 +2,12 @@
  * VoiceTranslate Pro - 設定ファイル
  *
  * 目的: すべての設定を一箇所に集中管理
- * - Firebase設定
+ * - Supabase設定
  * - Stripe設定
+ * - Vercel API設定
  * - アプリケーション設定
+ *
+ * 注意: Service Worker（background.js）とHTML pagesの両方で使用可能
  */
 
 const CONFIG = {
@@ -22,6 +25,16 @@ const CONFIG = {
 
         // Price ID
         priceId: 'price_1SNVvsD2OGoEQuqPEgPmOBmi'
+    },
+
+    // Vercel API エンドポイント
+    api: {
+        baseUrl: 'https://apps-five-woad.vercel.app',
+        endpoints: {
+            createCheckoutSession: '/api/create-checkout-session',
+            checkSubscription: '/api/check-subscription',
+            stripeWebhook: '/api/stripe-webhook'
+        }
     },
 
     // アプリケーション設定
@@ -42,5 +55,20 @@ const CONFIG = {
     }
 };
 
-// グローバルに公開
-window.CONFIG = CONFIG;
+/**
+ * グローバルに公開
+ *
+ * Service Worker環境とブラウザ環境の両方に対応
+ * - Service Worker: self.CONFIG
+ * - Browser: window.CONFIG
+ * - 共通: globalThis.CONFIG
+ */
+if (typeof self !== 'undefined') {
+    self.CONFIG = CONFIG;
+}
+if (typeof window !== 'undefined') {
+    window.CONFIG = CONFIG;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.CONFIG = CONFIG;
+}

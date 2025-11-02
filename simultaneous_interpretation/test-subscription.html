@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Subscription</title>
+    <script src="config.js"></script>
+    <script src="vendor/stripe-wrapper.js"></script>
+</head>
+<body>
+    <h1>Testing Subscription.js</h1>
+    <button id="subscribeBtn">Test Subscribe</button>
+    <div id="loadingOverlay" style="display:none;">Loading...</div>
+    <div id="errorMessage" style="display:none; color:red;"></div>
+
+    <script>
+        // 测试脚本加载
+        console.log('=== Testing Script Loading ===');
+        console.log('CONFIG:', typeof globalThis.CONFIG, globalThis.CONFIG);
+        console.log('Stripe:', typeof globalThis.Stripe);
+        console.log('chrome.runtime:', typeof chrome?.runtime);
+        
+        // 模拟 chrome.runtime.id
+        if (typeof chrome === 'undefined') {
+            window.chrome = {
+                runtime: {
+                    id: 'test-extension-id',
+                    getURL: (path) => `chrome-extension://test-extension-id/${path}`
+                }
+            };
+        }
+        
+        console.log('chrome.runtime.id:', chrome.runtime.id);
+    </script>
+    
+    <script src="subscription.js"></script>
+    
+    <script>
+        // 测试按钮点击
+        setTimeout(() => {
+            console.log('=== Testing Button Click ===');
+            const btn = document.getElementById('subscribeBtn');
+            console.log('Button found:', !!btn);
+            console.log('Button listeners:', btn);
+        }, 1000);
+    </script>
+</body>
+</html>
+

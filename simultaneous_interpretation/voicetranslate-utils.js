@@ -366,14 +366,14 @@ const CONFIG = {
 
     VAD: {
         MICROPHONE: {
-            LOW: { threshold: 0.008, debounce: 400 },
-            MEDIUM: { threshold: 0.004, debounce: 250 },
-            HIGH: { threshold: 0.002, debounce: 150 }
+            LOW: { threshold: 0.008, debounce: 600 }, // ✅ 400 → 600ms (音声結巴を防ぐ)
+            MEDIUM: { threshold: 0.004, debounce: 500 }, // ✅ 250 → 500ms (音声結巴を防ぐ)
+            HIGH: { threshold: 0.002, debounce: 300 } // ✅ 150 → 300ms (音声結巴を防ぐ)
         },
         SYSTEM: {
-            LOW: { threshold: 0.015, debounce: 500 },
-            MEDIUM: { threshold: 0.01, debounce: 350 },
-            HIGH: { threshold: 0.006, debounce: 250 }
+            LOW: { threshold: 0.015, debounce: 700 }, // ✅ 500 → 700ms (音声結巴を防ぐ)
+            MEDIUM: { threshold: 0.01, debounce: 600 }, // ✅ 350 → 600ms (音声結巴を防ぐ)
+            HIGH: { threshold: 0.006, debounce: 400 } // ✅ 250 → 400ms (音声結巴を防ぐ)
         }
     }
 };

@@ -277,6 +277,7 @@ class AudioCaptureStrategyFactory {
      * @param {Object} options.config - 音声設定
      * @param {string} options.sourceId - 音声ソースID（Electron環境のみ）
      * @param {MediaStream} options.preSelectedStream - 事前選択されたストリーム（ブラウザ環境のみ）
+     * @param {string} options.deviceId - 音声入力デバイスID（マイクモードのみ）
      * @returns {AudioCaptureStrategy} - 音声キャプチャ戦略
      */
     static createStrategy(options) {

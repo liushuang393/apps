@@ -15,7 +15,9 @@
 
   "host_permissions": [
     "https://api.openai.com/*",
-    "wss://api.openai.com/*"
+    "wss://api.openai.com/*",
+    "https://axtpvqdzagnnuacgkchr.supabase.co/*",
+    "https://apps-five-woad.vercel.app/*"
   ],
 
   "background": {
@@ -40,12 +42,22 @@
   },
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' wss://api.openai.com https://api.openai.com https://*.firebaseio.com https://*.googleapis.com https://js.stripe.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' wss://api.openai.com https://api.openai.com https://*.supabase.co https://apps-five-woad.vercel.app https://checkout.stripe.com;"
   },
 
   "web_accessible_resources": [
     {
-      "resources": ["voicetranslate-pro.js", "teams-realtime-translator.html", "subscription.html", "success.html", "config.js"],
+      "resources": [
+        "voicetranslate-pro.js",
+        "teams-realtime-translator.html",
+        "subscription.html",
+        "subscription.js",
+        "success.html",
+        "success.js",
+        "config.js",
+        "vendor/supabase-wrapper.js",
+        "vendor/stripe-wrapper.js"
+      ],
       "matches": ["https://*/*"]
     }
   ]

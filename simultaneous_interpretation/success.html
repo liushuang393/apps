@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>サブスクリプション登録完了 - VoiceTranslate Pro</title>
+
+    <!-- 設定ファイルを読み込み -->
+    <script src="config.js"></script>
+
     <style>
         * {
             margin: 0;
@@ -127,23 +131,23 @@
 <body>
     <div class="container">
         <div class="success-icon">🎉</div>
-        <h1>サブスクリプション登録完了！</h1>
-        <p class="subtitle">VoiceTranslate Pro へようこそ</p>
+        <h1 id="pageTitle">サブスクリプション登録完了！</h1>
+        <p class="subtitle" id="pageSubtitle">VoiceTranslate Pro へようこそ</p>
 
-        <div class="info-box">
+        <div class="info-box" id="infoBox">
             <div class="info-item">
                 <span class="info-label">プラン</span>
-                <span class="info-value">VoiceTranslate Pro</span>
+                <span class="info-value" id="planName">VoiceTranslate Pro</span>
             </div>
-            <div class="info-item">
+            <div class="info-item" id="priceItem">
                 <span class="info-label">料金</span>
                 <span class="info-value">$3/月</span>
             </div>
-            <div class="info-item">
+            <div class="info-item" id="trialItem">
                 <span class="info-label">無料トライアル</span>
                 <span class="info-value">7日間</span>
             </div>
-            <div class="info-item">
+            <div class="info-item" id="billingItem">
                 <span class="info-label">次回請求日</span>
                 <span class="info-value" id="nextBillingDate">計算中...</span>
             </div>
@@ -167,21 +171,35 @@
     </div>
 
     <script>
-        // 次回請求日を計算（7日後）
-        const nextBillingDate = new Date();
-        nextBillingDate.setDate(nextBillingDate.getDate() + 7);
-        document.getElementById('nextBillingDate').textContent = 
-            nextBillingDate.toLocaleDateString('ja-JP', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-            });
+        // URLパラメータから無料モードかどうかを判定
+        const urlParams = new URLSearchParams(globalThis.location.search);
+        const isFreeMode = urlParams.get('mode') === 'free';
 
-        // 翻訳開始ボタン
-        document.getElementById('startBtn').addEventListener('click', () => {
-            window.location.href = 'teams-realtime-translator.html';
-        });
+        if (isFreeMode) {
+            // 無料モードの場合、表示を変更
+            document.getElementById('pageTitle').textContent = '無料モードで開始！';
+            document.getElementById('pageSubtitle').textContent = 'VoiceTranslate Pro を無料でお試しください';
+            document.getElementById('planName').textContent = '無料プラン';
+
+            // 料金と請求日の項目を非表示
+            document.getElementById('priceItem').style.display = 'none';
+            document.getElementById('billingItem').style.display = 'none';
+            document.getElementById('trialItem').style.display = 'none';
+        } else {
+            // 有料モードの場合、次回請求日を計算（7日後）
+            const nextBillingDate = new Date();
+            nextBillingDate.setDate(nextBillingDate.getDate() + 7);
+            document.getElementById('nextBillingDate').textContent =
+                nextBillingDate.toLocaleDateString('ja-JP', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+        }
     </script>
+
+    <!-- 支払い成功ロジック -->
+    <script src="success.js"></script>
 </body>
 </html>
 

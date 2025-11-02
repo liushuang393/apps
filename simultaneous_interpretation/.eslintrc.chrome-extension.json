@@ -1,0 +1,50 @@
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "webextensions": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-undef": "error",
+    "no-restricted-globals": [
+      "error",
+      {
+        "name": "window",
+        "message": "使用 globalThis 代替 window（Service Worker兼容性）"
+      },
+      {
+        "name": "self",
+        "message": "使用 globalThis 代替 self（Service Worker兼容性）"
+      }
+    ],
+    "no-console": "off"
+  },
+  "overrides": [
+    {
+      "files": ["background.js", "config.js"],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "window",
+            "message": "❌ Service Worker中不能使用window！使用globalThis代替"
+          },
+          {
+            "name": "document",
+            "message": "❌ Service Worker中不能使用document！"
+          },
+          {
+            "name": "localStorage",
+            "message": "❌ Service Worker中不能使用localStorage！使用chrome.storage代替"
+          }
+        ]
+      }
+    }
+  ]
+}
+

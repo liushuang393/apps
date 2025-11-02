@@ -828,32 +828,52 @@ class VoicePathProcessor {
                     }
 
                     // ✅ 翻訳テキストデルタ受信（段階的にテキストを蓄積）
-                    if (
-                        message.type === 'response.audio_transcript.delta' &&
-                        message.delta
-                    ) {
-                        textData += message.delta;
-                        console.info('[Path2] 翻訳テキストデルタ受信:', {
+                    // ✅ 重要: responseId をチェックして、このセグメント専用のメッセージのみ処理
+                    if (message.type === 'response.audio_transcript.delta') {
+                        // ✅ デバッグ: すべての delta を記録
+                        console.info('[Path2] Delta 受信（全て）:', {
                             segmentId: segment.id,
+                            expectedResponseId: responseId,
+                            actualResponseId: message.response_id,
                             delta: message.delta,
-                            currentLength: textData.length
+                            match: message.response_id === responseId
                         });
+
+                        if (message.delta && message.response_id === responseId) {
+                            textData += message.delta;
+                            console.info('[Path2] 翻訳テキストデルタ蓄積:', {
+                                segmentId: segment.id,
+                                responseId: responseId,
+                                delta: message.delta,
+                                currentText: textData,
+                                currentLength: textData.length
+                            });
+                        }
                     }
 
                     // ✅ 翻訳テキスト受信完了
-                    if (message.type === 'response.audio_transcript.done') {
+                    if (
+                        message.type === 'response.audio_transcript.done' &&
+                        message.response_id === responseId
+                    ) {
                         console.info('[Path2] 翻訳テキスト受信完了:', {
                             segmentId: segment.id,
+                            responseId: responseId,
                             text: textData.substring(0, 50) + '...',
                             totalLength: textData.length
                         });
                     }
 
                     // 翻訳音声受信完了
-                    if (message.type === 'response.audio.done') {
+                    // ✅ 重要: responseId をチェックして、このセグメント専用のメッセージのみ処理
+                    if (
+                        message.type === 'response.audio.done' &&
+                        message.response_id === responseId
+                    ) {
                         audioData = 'queued'; // 実際の音声データは再生キューにある
                         console.info('[Path2] 翻訳音声受信完了:', {
-                            segmentId: segment.id
+                            segmentId: segment.id,
+                            responseId: responseId
                         });
                     }
 

@@ -36,25 +36,45 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // リクエストボディから認証トークンを取得
-    const { token } = req.body;
+    // リクエストボディからパラメータを取得
+    const { token, userId, successUrl, cancelUrl } = req.body;
 
-    if (!token) {
-      return res.status(401).json({ error: 'Unauthorized: No token provided' });
+    let userEmail = null;
+    let userIdToUse = null;
+
+    // モード1: Supabase認証（トークンあり）
+    if (token) {
+      console.log('[Auth] Supabase認証モード');
+
+      // Supabase でトークンを検証
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+      if (authError || !user) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+      }
+
+      userEmail = user.email;
+      userIdToUse = user.id;
+      console.log(`[Auth] Supabase user authenticated: ${user.id}`);
     }
-
-    // Supabase でトークンを検証
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    // モード2: Chrome拡張機能モード（トークンなし）
+    else if (userId) {
+      console.log('[Auth] Chrome拡張機能モード（認証なし）');
+      userIdToUse = userId;
+      // Chrome拡張機能の場合、メールアドレスは不要（後で入力可能）
+      console.log(`[Auth] Extension user ID: ${userId}`);
+    }
+    // どちらのパラメータもない場合はエラー
+    else {
+      return res.status(400).json({
+        error: 'Bad Request: Either token or userId must be provided'
+      });
     }
 
     // Stripe Checkout セッションを作成
-    const session = await stripe.checkout.sessions.create({
+    const sessionConfig = {
       payment_method_types: ['card'],
       mode: 'subscription',
-      customer_email: user.email,
       line_items: [
         {
           price: process.env.STRIPE_PRICE_ID,
@@ -62,25 +82,32 @@ module.exports = async function handler(req, res) {
         },
       ],
       metadata: {
-        userId: user.id,
+        userId: userIdToUse,
       },
       subscription_data: {
         trial_period_days: 7, // 7日間無料トライアル
         metadata: {
-          userId: user.id,
+          userId: userIdToUse,
         },
       },
-      success_url: `${req.headers.origin || 'chrome-extension://YOUR_EXTENSION_ID'}/success.html?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin || 'chrome-extension://YOUR_EXTENSION_ID'}/subscription.html`,
-    });
+      success_url: successUrl || `${req.headers.origin || 'chrome-extension://YOUR_EXTENSION_ID'}/success.html?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: cancelUrl || `${req.headers.origin || 'chrome-extension://YOUR_EXTENSION_ID'}/subscription.html`,
+    };
 
-    console.log(`Checkout session created for user ${user.id}: ${session.id}`);
+    // メールアドレスがある場合のみ設定
+    if (userEmail) {
+      sessionConfig.customer_email = userEmail;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
+
+    console.log(`[Stripe] Checkout session created for user ${userIdToUse}: ${session.id}`);
 
     return res.status(200).json({
       sessionId: session.id,
     });
   } catch (error) {
-    console.error('Error creating checkout session:', error);
+    console.error('[Error] Failed to create checkout session:', error);
     return res.status(500).json({
       error: 'Internal server error',
       message: error.message,

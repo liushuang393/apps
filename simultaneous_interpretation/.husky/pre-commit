@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Chrome Extension コード品質チェック
+echo "🔍 Chrome Extension コード品質チェック実行中..."
+node check-chrome-extension.js
+
+if [ $? -ne 0 ]; then
+  echo "❌ コード品質チェックに失敗しました。修正してからコミットしてください。"
+  exit 1
+fi
+
+echo "✅ コード品質チェック完了"
+

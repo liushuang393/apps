@@ -28,15 +28,16 @@
     "build:extension": "tsc -p browser-extension/tsconfig.json",
     "build:all": "npm run build:core && npm run build:electron && npm run build:extension",
     "pack:extension": "node build-extension.js",
+    "check:extension": "node check-chrome-extension.js",
     "electron": "npm run build:electron && npm run electron:run",
     "electron:run": "chcp 65001 >nul 2>&1 && electron .",
     "electron:dev": "chcp 65001 >nul 2>&1 && cross-env NODE_ENV=development npm run electron",
     "pack": "npm run build:electron && electron-builder --dir",
-    "dist": "npm run build:electron && electron-builder",
+    "dist": "npm run build:electron && electron-builder --dir",
     "dist:win": "npm run build:electron && electron-builder --win",
     "dist:mac": "npm run build:electron && electron-builder --mac",
     "dist:linux": "npm run build:electron && electron-builder --linux",
-    "quality": "npm run type-check && npm run lint && npm run format:check"
+    "quality": "npm run type-check && npm run lint && npm run format:check && npm run check:extension"
   },
   "keywords": [],
   "author": "",

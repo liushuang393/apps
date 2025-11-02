@@ -362,37 +362,58 @@ class AudioQueue {
      * @returns {AudioSegment|null} 返却セグメント或null（如果被拒绝）
      */
     enqueue(audioData, metadata = {}) {
+        // ✅ デバッグ：enqueue呼び出し確認
+        console.warn('[AudioQueue] ========== enqueue呼び出し ==========');
+        console.warn('[AudioQueue] audioDataType:', audioData?.constructor?.name);
+        console.warn('[AudioQueue] audioDataSize:', audioData?.length || audioData?.byteLength);
+        console.warn('[AudioQueue] duration:', metadata.duration + 'ms');
+        console.warn('[AudioQueue] sampleRate:', metadata.sampleRate);
+        console.warn('[AudioQueue] minSegmentDuration:', this.config.minSegmentDuration + 'ms');
+        console.warn('[AudioQueue] maxSegmentDuration:', this.config.maxSegmentDuration + 'ms');
+        console.warn('[AudioQueue] ==========================================');
+
         // ✅ 時長チェック
         if (metadata.duration < this.config.minSegmentDuration) {
-            console.warn('[AudioQueue] 音声が短すぎる、スキップ:', {
+            console.debug('[AudioQueue] 音声が短すぎる、スキップ:', {
                 duration: metadata.duration + 'ms',
-                minRequired: this.config.minSegmentDuration + 'ms'
+                minRequired: this.config.minSegmentDuration + 'ms',
+                note: '短い音声は通常ノイズのため、スキップは正常動作です'
             });
             this.stats.droppedSegments++;
             return null;
         }
 
+        // ✅ 長音声チェック（警告のみ、分割は後で実装）
         if (metadata.duration > this.config.maxSegmentDuration) {
             console.warn('[AudioQueue] 音声が長すぎる:', {
                 duration: metadata.duration + 'ms',
                 maxAllowed: this.config.maxSegmentDuration + 'ms',
                 note: '分割が必要（TODO）'
             });
-            // TODO: 音声分割処理
+            // TODO: 音声分割処理（後で実装）
         }
 
         // ✅ キュー容量チェック
         if (this.queue.size >= this.config.maxQueueSize) {
-            console.error('[AudioQueue] キューが満杯:', {
-                currentSize: this.queue.size,
-                maxSize: this.config.maxQueueSize
+            console.error('[AudioQueue] ========== セグメント破棄 ==========');
+            console.error('[AudioQueue] キューが満杯です！');
+            console.error('[AudioQueue] 現在のキューサイズ:', this.queue.size);
+            console.error('[AudioQueue] 最大キューサイズ:', this.config.maxQueueSize);
+            console.error('[AudioQueue] 破棄されたセグメント情報:', {
+                duration: metadata.duration + 'ms',
+                timestamp: metadata.timestamp,
+                sampleRate: metadata.sampleRate
             });
+            this.stats.droppedSegments++;
+            console.error('[AudioQueue] 累計破棄数:', this.stats.droppedSegments);
+            console.error('[AudioQueue] 破棄率:',
+                ((this.stats.droppedSegments / this.stats.totalSegments) * 100).toFixed(2) + '%');
+            console.error('[AudioQueue] ========================================');
 
             if (this.listeners.onQueueFull !== null) {
                 this.listeners.onQueueFull(this.queue.size);
             }
 
-            this.stats.droppedSegments++;
             return null;
         }
 
