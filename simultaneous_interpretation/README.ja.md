@@ -81,7 +81,7 @@ OpenAI Realtime API を活用した、会議・通話の同時通訳アプリケ
 
 | 環境 | 会話履歴保存 | 実装状況 | 備考 |
 |------|------------|---------|------|
-| **Electron アプリ** | ✅ SQLite データベース | ⚠️ **未統合** | `ConversationDatabase.ts` は定義済み |
+| **Electron アプリ** | ✅ SQLite データベース | ✅ **完了** | 完全統合済み |
 | **ブラウザ（Chrome 拡張）** | ❌ 使用しない | ✅ 仕様通り | 画面表示のみ、保存なし |
 
 #### 実装状況の詳細
@@ -93,35 +93,100 @@ OpenAI Realtime API を活用した、会議・通話の同時通訳アプリケ
   - SQLite による永続化
   - 統計情報の取得
   - 古いセッションの自動削除
-
-**❌ 未完了の部分**:
+- `electron/main.ts` での IPC ハンドラー実装
+  - `conversation:start-session` - セッション開始
+  - `conversation:end-session` - セッション終了
+  - `conversation:add-turn` - ターン追加
+  - `conversation:get-all-sessions` - セッション一覧取得
+  - `conversation:get-session-turns` - セッション詳細取得
 - `voicetranslate-pro.js` への統合
-- 翻訳結果の自動保存
+  - 接続時の自動セッション開始
+  - 切断時の自動セッション終了
+  - 音声入力の自動保存（`voicetranslate-ui-mixin.js`）
+  - **注意**: 音声入力（user）のみ保存、音声出力（assistant）は保存しない
 - UI からの履歴表示機能
-- Electron メインプロセスとの IPC 通信
+  - 履歴ボタン（`teams-realtime-translator.html`）
+  - モーダルダイアログでセッション一覧表示
+  - セッション詳細表示（ターン一覧）
+  - ブラウザ環境では情報メッセージ表示
 
 #### データベース保存場所（Electron 環境）
 
+##### デフォルト保存場所
+
+データベースファイルは**アプリケーションディレクトリの`db`フォルダ**に自動的に作成されます：
+
 ```
-優先順位:
-1. 引数で指定されたパス
-2. 環境変数 CONVERSATION_DB_PATH
-3. デフォルトパス: userData/conversations.db
-   - Windows: C:\Users\{ユーザー名}\AppData\Roaming\VoiceTranslate Pro\conversations.db
-   - macOS: ~/Library/Application Support/VoiceTranslate Pro/conversations.db
-   - Linux: ~/.config/VoiceTranslate Pro/conversations.db
+{アプリディレクトリ}/db/conversations.db
 ```
 
-#### 今後の実装予定
+例：
+- 開発環境: `d:\apps\simultaneous_interpretation\db\conversations.db`
+- 本番環境: アプリインストールディレクトリ内の`db`フォルダ
 
-1. **Electron 環境での統合**（優先度: 高）
-   - IPC ハンドラーの実装
-   - 翻訳完了時の自動保存
-   - 履歴表示 UI の追加
+##### カスタム保存場所の設定方法
 
-2. **ブラウザ環境での対応**（優先度: 低）
-   - 仕様上、保存機能は不要
-   - 画面表示のみで十分
+環境変数 `CONVERSATION_DB_PATH` を設定することで、データベースの保存場所を変更できます。
+
+**Windows（PowerShell）**:
+```powershell
+# 一時的に設定（現在のセッションのみ）
+$env:CONVERSATION_DB_PATH = "D:\MyData\conversations.db"
+npm run dev
+
+# 永続的に設定（ユーザー環境変数）
+[System.Environment]::SetEnvironmentVariable("CONVERSATION_DB_PATH", "D:\MyData\conversations.db", "User")
+```
+
+**Windows（コマンドプロンプト）**:
+```cmd
+# 一時的に設定
+set CONVERSATION_DB_PATH=D:\MyData\conversations.db
+npm run dev
+
+# 永続的に設定
+setx CONVERSATION_DB_PATH "D:\MyData\conversations.db"
+```
+
+**macOS / Linux（bash / zsh）**:
+```bash
+# 一時的に設定
+export CONVERSATION_DB_PATH="$HOME/Documents/conversations.db"
+npm run dev
+
+# 永続的に設定（~/.bashrc または ~/.zshrc に追加）
+echo 'export CONVERSATION_DB_PATH="$HOME/Documents/conversations.db"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+##### パス決定の優先順位
+
+データベースパスは以下の優先順位で決定されます：
+
+1. **環境変数 `CONVERSATION_DB_PATH`** - 最優先
+2. **デフォルトパス** - `userData/conversations.db`
+
+> **注意**: カスタムパスを指定する場合、ディレクトリが存在しない場合は自動的に作成されます。
+
+#### 使用方法
+
+##### Electron アプリでの履歴表示
+
+1. アプリを起動して接続
+2. 会話を開始（自動的にセッションが作成されます）
+3. 画面右側の「📚 履歴」ボタンをクリック
+4. セッション一覧が表示されます
+5. セッションをクリックすると詳細（ターン一覧）が表示されます
+
+##### ブラウザ版での動作
+
+ブラウザ版では「📚 履歴」ボタンをクリックすると、以下のメッセージが表示されます：
+
+```
+会話履歴機能について
+会話履歴機能はElectronアプリ版でのみ利用可能です。
+ブラウザ版では履歴は保存されません。
+```
 
 詳細は [`docs/P1_CONVERSATION_CONTEXT.md`](./docs/P1_CONVERSATION_CONTEXT.md) を参照してください。
 

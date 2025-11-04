@@ -214,6 +214,8 @@ const UIMixin = {
 
         // 表示可否チェック
         if (!this.shouldShowTranscript(type)) {
+            // ✅ 表示しない場合でもデータベースには保存
+            this.saveTranscriptToDatabase(type, text, transcriptId);
             return;
         }
 
@@ -252,7 +254,69 @@ const UIMixin = {
             this.elements.charCount.textContent = this.state.charCount.toLocaleString();
         }
 
+        // ✅ Electron環境: データベースに保存
+        this.saveTranscriptToDatabase(type, text, transcriptId);
+
         return message;
+    },
+
+    /**
+     * トランスクリプトをデータベースに保存
+     *
+     * 目的:
+     *   Electron環境でのみ、会話履歴をSQLiteデータベースに保存
+     *   音声入力（input）のみ保存、音声出力（output）は保存しない
+     *
+     * @param {string} type - 'input' または 'output'
+     * @param {string} text - テキスト
+     * @param {number} transcriptId - トランスクリプトID
+     */
+    async saveTranscriptToDatabase(type, text, transcriptId) {
+        // ✅ 音声入力のみ保存（音声出力は保存しない）
+        if (type !== 'input') {
+            return;
+        }
+
+        // Electron環境チェック
+        const isElectron =
+            typeof globalThis.window !== 'undefined' &&
+            globalThis.window.electronAPI &&
+            globalThis.window.electronAPI.conversation;
+
+        if (!isElectron) {
+            return;
+        }
+
+        // セッションIDチェック
+        if (!this.state.currentSessionId) {
+            console.warn('[Conversation] セッションIDがありません - 保存スキップ');
+            return;
+        }
+
+        try {
+            // ✅ 音声入力として保存（role = user）
+            const role = 'user';
+
+            // 言語情報取得
+            const language = this.state.sourceLang || 'auto';
+
+            // ターン追加
+            await globalThis.window.electronAPI.conversation.addTurn({
+                role: role,
+                content: text,
+                language: language,
+                timestamp: transcriptId || Date.now()
+            });
+
+            console.info('[Conversation] 音声入力保存完了:', {
+                role,
+                language,
+                contentLength: text.length,
+                transcriptId
+            });
+        } catch (error) {
+            console.error('[Conversation] ターン保存エラー:', error);
+        }
     },
 
     /**

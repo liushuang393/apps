@@ -71,31 +71,59 @@ export class ConversationDatabase {
      * 優先順位:
      * 1. 引数で指定されたパス
      * 2. 環境変数 CONVERSATION_DB_PATH
-     * 3. デフォルトパス: userData/conversations.db
+     * 3. デフォルトパス: アプリディレクトリ/db/conversations.db
      */
     constructor(dbPath?: string) {
+        console.info('[ConversationDB] データベース初期化開始');
+
         // ✅ パス決定ロジック
         if (!dbPath) {
             // 環境変数から読み込み
-            dbPath = process.env['CONVERSATION_DB_PATH'];
+            const envPath = process.env['CONVERSATION_DB_PATH'];
+            if (envPath) {
+                dbPath = envPath;
+                console.info('[ConversationDB] 環境変数からパス取得:', dbPath);
+            } else {
+                console.info('[ConversationDB] 環境変数 CONVERSATION_DB_PATH は設定されていません');
+            }
         }
 
         if (!dbPath) {
-            // デフォルトパス: userData/conversations.db
+            // デフォルトパス: アプリディレクトリ/db/conversations.db
             const { app } = require('electron');
-            const userDataPath = app.getPath('userData');
-            dbPath = path.join(userDataPath, 'conversations.db');
+
+            // 開発環境と本番環境で異なるパスを使用
+            // 開発環境: process.cwd() (D:\apps\simultaneous_interpretation)
+            // 本番環境: app.getAppPath() (パッケージディレクトリ)
+            const isDev = !app.isPackaged;
+            const appPath = isDev ? process.cwd() : app.getAppPath();
+
+            dbPath = path.join(appPath, 'db', 'conversations.db');
+            console.info('[ConversationDB] デフォルトパス使用:', {
+                isDev: isDev,
+                appPath: appPath,
+                dbPath: dbPath
+            });
         }
 
         // ディレクトリが存在しない場合は作成
         const dir = path.dirname(dbPath);
-        if (!fs.existsSync(dir)) {
+        console.info('[ConversationDB] ディレクトリチェック:', dir);
+
+        if (fs.existsSync(dir)) {
+            console.info('[ConversationDB] ディレクトリは既に存在します:', dir);
+        } else {
+            console.info('[ConversationDB] ディレクトリが存在しないため作成します:', dir);
             fs.mkdirSync(dir, { recursive: true });
+            console.info('[ConversationDB] ディレクトリ作成完了:', dir);
         }
 
-        console.info('[ConversationDB] データベース初期化:', dbPath);
+        console.info('[ConversationDB] 最終的なデータベースパス:', dbPath);
         this.db = new Database(dbPath);
+        console.info('[ConversationDB] データベース接続完了');
+
         this.initializeTables();
+        console.info('[ConversationDB] テーブル初期化完了');
     }
 
     /**

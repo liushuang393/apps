@@ -546,6 +546,28 @@ class VoiceTranslateApp {
             this.clearTranscript('both');
         });
 
+        // ✅ 履歴ボタン
+        const historyBtn = document.getElementById('historyBtn');
+        if (historyBtn) {
+            historyBtn.addEventListener('click', () => this.showHistory());
+        }
+
+        // ✅ 履歴モーダル閉じるボタン
+        const closeHistoryModal = document.getElementById('closeHistoryModal');
+        if (closeHistoryModal) {
+            closeHistoryModal.addEventListener('click', () => this.closeHistoryModal());
+        }
+
+        // ✅ モーダルオーバーレイクリックで閉じる
+        const historyModal = document.getElementById('historyModal');
+        if (historyModal) {
+            historyModal.addEventListener('click', (e) => {
+                if (e.target === historyModal) {
+                    this.closeHistoryModal();
+                }
+            });
+        }
+
         // ページ離脱時
         globalThis.addEventListener('beforeunload', () => {
             if (this.state.isConnected) {
@@ -990,6 +1012,21 @@ class VoiceTranslateApp {
             const isElectron =
                 typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
 
+            // ✅ Electron環境: 会話セッション開始
+            if (isElectron && globalThis.window.electronAPI.conversation) {
+                try {
+                    const sessionId = await globalThis.window.electronAPI.conversation.startSession(
+                        this.state.sourceLang || 'auto',
+                        this.state.targetLang || 'ja'
+                    );
+                    this.state.currentSessionId = sessionId;
+                    console.info('[Conversation] セッション開始:', sessionId);
+                } catch (error) {
+                    console.error('[Conversation] セッション開始エラー:', error);
+                    // セッション開始失敗でも接続は続行
+                }
+            }
+
             if (isElectron) {
                 // Electronの場合、mainプロセス経由で接続（Authorizationヘッダー付き）
                 console.info('[Connect] Electron環境: mainプロセス経由で接続します');
@@ -1054,6 +1091,17 @@ class VoiceTranslateApp {
     async disconnect() {
         const isElectron =
             typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
+
+        // ✅ Electron環境: 会話セッション終了
+        if (isElectron && globalThis.window.electronAPI.conversation && this.state.currentSessionId) {
+            try {
+                await globalThis.window.electronAPI.conversation.endSession();
+                console.info('[Conversation] セッション終了:', this.state.currentSessionId);
+                this.state.currentSessionId = null;
+            } catch (error) {
+                console.error('[Conversation] セッション終了エラー:', error);
+            }
+        }
 
         if (isElectron) {
             // Electron環境
@@ -3561,6 +3609,241 @@ VoiceTranslateApp.prototype.stopPathConsumers = function () {
         clearInterval(this.path2ConsumerInterval);
         this.path2ConsumerInterval = null;
     }
+};
+
+/**
+ * 履歴モーダルを表示
+ *
+ * 目的:
+ *   Electron環境では会話履歴を表示、ブラウザ環境では情報メッセージを表示
+ */
+VoiceTranslateApp.prototype.showHistory = async function () {
+    const modal = document.getElementById('historyModal');
+    const modalBody = document.getElementById('historyModalBody');
+
+    if (!modal || !modalBody) {
+        console.error('[History] モーダル要素が見つかりません');
+        return;
+    }
+
+    // Electron環境チェック
+    const isElectron =
+        typeof globalThis.window !== 'undefined' &&
+        globalThis.window.electronAPI &&
+        globalThis.window.electronAPI.conversation;
+
+    if (!isElectron) {
+        // ブラウザ環境: 情報メッセージを表示
+        modalBody.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">ℹ️</div>
+                <div class="empty-text">
+                    <p style="font-size: 16px; margin-bottom: 8px;">会話履歴機能について</p>
+                    <p>会話履歴機能はElectronアプリ版でのみ利用可能です。</p>
+                    <p>ブラウザ版では履歴は保存されません。</p>
+                </div>
+            </div>
+        `;
+        modal.classList.add('active');
+        return;
+    }
+
+    // Electron環境: セッション一覧を表示
+    try {
+        modalBody.innerHTML = '<div style="text-align: center; padding: 40px;">読み込み中...</div>';
+        modal.classList.add('active');
+
+        const sessions = await globalThis.window.electronAPI.conversation.getAllSessions(50);
+
+        if (!sessions || sessions.length === 0) {
+            modalBody.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <div class="empty-text">
+                        <p>会話履歴がありません</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        // セッション一覧を表示
+        this.renderSessionList(sessions);
+    } catch (error) {
+        console.error('[History] セッション取得エラー:', error);
+        modalBody.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">❌</div>
+                <div class="empty-text">
+                    <p>履歴の読み込みに失敗しました</p>
+                    <p style="font-size: 12px; color: var(--text-secondary);">${error.message}</p>
+                </div>
+            </div>
+        `;
+    }
+};
+
+/**
+ * セッション一覧を表示
+ *
+ * @param {Array} sessions - セッション配列
+ */
+VoiceTranslateApp.prototype.renderSessionList = function (sessions) {
+    const modalBody = document.getElementById('historyModalBody');
+
+    const sessionListHTML = sessions
+        .map((session) => {
+            // ✅ キャメルケースとスネークケースの両方に対応
+            const startTime = new Date(session.startTime || session.start_time);
+            const endTime = session.endTime || session.end_time
+                ? new Date(session.endTime || session.end_time)
+                : null;
+            const turnCount = session.turnCount || session.turn_count || 0;
+            const sourceLanguage = session.sourceLanguage || session.source_language || 'auto';
+            const targetLanguage = session.targetLanguage || session.target_language || 'ja';
+
+            // ✅ 継続時間計算
+            const duration = endTime
+                ? Math.round((endTime - startTime) / 1000)
+                : Math.round((Date.now() - startTime) / 1000);
+
+            const formatDuration = (seconds) => {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                if (hours > 0) {
+                    return `${hours}時間${minutes}分`;
+                } else if (minutes > 0) {
+                    return `${minutes}分${secs}秒`;
+                } else {
+                    return `${secs}秒`;
+                }
+            };
+
+            return `
+                <div class="session-item" data-session-id="${session.id}">
+                    <div class="session-header">
+                        <div class="session-time">${startTime.toLocaleString('ja-JP')}</div>
+                        <div class="session-badge">${turnCount}ターン</div>
+                    </div>
+                    <div class="session-info">
+                        <span>⏱️ ${formatDuration(duration)}</span>
+                        <span>🌐 ${sourceLanguage} → ${targetLanguage}</span>
+                    </div>
+                </div>
+            `;
+        })
+        .join('');
+
+    modalBody.innerHTML = `<div class="session-list">${sessionListHTML}</div>`;
+
+    // セッションクリックイベント
+    const sessionItems = modalBody.querySelectorAll('.session-item');
+    sessionItems.forEach((item) => {
+        item.addEventListener('click', () => {
+            const sessionId = Number.parseInt(item.dataset.sessionId, 10);
+            this.showSessionDetails(sessionId);
+        });
+    });
+};
+
+/**
+ * セッション詳細を表示
+ *
+ * @param {number} sessionId - セッションID
+ */
+VoiceTranslateApp.prototype.showSessionDetails = async function (sessionId) {
+    const modalBody = document.getElementById('historyModalBody');
+
+    try {
+        modalBody.innerHTML = '<div style="text-align: center; padding: 40px;">読み込み中...</div>';
+
+        const turns = await globalThis.window.electronAPI.conversation.getSessionTurns(sessionId);
+
+        if (!turns || turns.length === 0) {
+            modalBody.innerHTML = `
+                <button class="back-button">← 戻る</button>
+                <div class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <div class="empty-text">
+                        <p>このセッションにはターンがありません</p>
+                    </div>
+                </div>
+            `;
+            this.addBackButtonListener();
+            return;
+        }
+
+        // ターン一覧を表示
+        const turnListHTML = turns
+            .map((turn) => {
+                const time = new Date(turn.timestamp);
+                return `
+                    <div class="turn-item">
+                        <div class="turn-header">
+                            <div class="turn-role ${turn.role}">${turn.role === 'user' ? 'ユーザー' : 'アシスタント'}</div>
+                            <div class="turn-time">${time.toLocaleTimeString('ja-JP')}</div>
+                        </div>
+                        <div class="turn-content">${this.escapeHtml(turn.content)}</div>
+                    </div>
+                `;
+            })
+            .join('');
+
+        modalBody.innerHTML = `
+            <button class="back-button">← 戻る</button>
+            <div class="turn-list">${turnListHTML}</div>
+        `;
+
+        this.addBackButtonListener();
+    } catch (error) {
+        console.error('[History] ターン取得エラー:', error);
+        modalBody.innerHTML = `
+            <button class="back-button">← 戻る</button>
+            <div class="empty-state">
+                <div class="empty-icon">❌</div>
+                <div class="empty-text">
+                    <p>ターンの読み込みに失敗しました</p>
+                    <p style="font-size: 12px; color: var(--text-secondary);">${error.message}</p>
+                </div>
+            </div>
+        `;
+        this.addBackButtonListener();
+    }
+};
+
+/**
+ * 戻るボタンのイベントリスナーを追加
+ */
+VoiceTranslateApp.prototype.addBackButtonListener = function () {
+    const backButton = document.querySelector('.back-button');
+    if (backButton) {
+        backButton.addEventListener('click', () => {
+            this.showHistory();
+        });
+    }
+};
+
+/**
+ * 履歴モーダルを閉じる
+ */
+VoiceTranslateApp.prototype.closeHistoryModal = function () {
+    const modal = document.getElementById('historyModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+};
+
+/**
+ * HTMLエスケープ
+ *
+ * @param {string} text - エスケープするテキスト
+ * @returns {string} エスケープされたテキスト
+ */
+VoiceTranslateApp.prototype.escapeHtml = function (text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 };
 
 // 拡張機能用のエクスポート

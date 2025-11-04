@@ -901,6 +901,186 @@
         .empty-text {
             font-size: 14px;
         }
+
+        /* 履歴モーダル */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--card-bg);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 32px var(--shadow);
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: var(--dark);
+            color: var(--text-primary);
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .session-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .session-item {
+            background: var(--dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .session-item:hover {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .session-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .session-time {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .session-badge {
+            background: var(--primary);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .session-info {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .turn-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .turn-item {
+            background: var(--dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .turn-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .turn-role {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .turn-role.user {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+
+        .turn-role.assistant {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--primary);
+        }
+
+        .turn-time {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .turn-content {
+            color: var(--text-primary);
+            line-height: 1.6;
+            word-wrap: break-word;
+        }
+
+        .back-button {
+            background: var(--dark);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 16px;
+            transition: all 0.2s;
+        }
+
+        .back-button:hover {
+            background: var(--border);
+        }
     </style>
 </head>
 <body>
@@ -1098,6 +1278,14 @@
                             <span>停止</span>
                         </button>
                     </div>
+
+                    <!-- 履歴ボタン -->
+                    <div style="margin-top: 12px;">
+                        <button id="historyBtn" class="btn btn-secondary" style="width: 100%;">
+                            <span>📚</span>
+                            <span>履歴</span>
+                        </button>
+                    </div>
                 </div>
             </aside>
             
@@ -1178,7 +1366,23 @@
         <div class="notification-title" id="notificationTitle"></div>
         <div class="notification-message" id="notificationMessage"></div>
     </div>
-    
+
+    <!-- 履歴モーダル -->
+    <div class="modal-overlay" id="historyModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>📚</span>
+                    <span>会話履歴</span>
+                </div>
+                <button class="modal-close" id="closeHistoryModal">×</button>
+            </div>
+            <div class="modal-body" id="historyModalBody">
+                <!-- セッション一覧またはセッション詳細がここに表示される -->
+            </div>
+        </div>
+    </div>
+
     <!-- SimpleQueue - 简化的队列管理（MQ方式） -->
     <!-- VoiceTranslate Pro JavaScript (ResponseQueue included) -->
     <!-- ユーティリティモジュール（最初に読み込む） -->
