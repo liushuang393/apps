@@ -502,11 +502,11 @@ class TextPathProcessor {
             this.app.elements.detectedLanguageCode = element;
         }
 
-        // 言語コードから言語名へ変換（対応言語: 英語、日本語、中国語、ベトナム語のみ）
+        // 言語コードから言語名へ変換（対応言語: 英語、日本語、簡体中文、ベトナム語のみ）
         const languageNames = {
             ja: '日本語',
             en: 'English',
-            zh: '中文',
+            zh: '简体中文',
             vi: 'Tiếng Việt',
             auto: '待機中...'
         };
@@ -558,11 +558,11 @@ class TextPathProcessor {
             this.app.elements.sourceLangDisplay = element;
         }
 
-        // 言語コードから言語名へ変換（対応言語: 英語、日本語、中国語、ベトナム語のみ）
+        // 言語コードから言語名へ変換（対応言語: 英語、日本語、簡体中文、ベトナム語のみ）
         const languageNames = {
             ja: '日本語',
             en: 'English',
-            zh: '中文',
+            zh: '简体中文',
             vi: 'Tiếng Việt',
             auto: '🔄 自動'
         };

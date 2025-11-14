@@ -1284,6 +1284,9 @@ class VoiceTranslateApp {
         const sourceNative = Utils.getNativeLanguageName(sourceLang);
         const targetNative = Utils.getNativeLanguageName(targetLang);
 
+        // ✅ 中文の場合は明確に「简体中文」を指定
+        const targetLanguageSpec = targetLang === 'zh' ? 'Simplified Chinese (简体中文)' : targetName;
+
         // 最適化された指示（OpenAI Realtime Prompting Guide ベストプラクティス）
         // ✅ 強化: 翻訳専用モード、対話禁止を明確化
         return `# CRITICAL: YOU ARE A TRANSLATION MACHINE, NOT A CONVERSATIONAL AI
@@ -1326,15 +1329,16 @@ Your ONLY task is to translate speech - you are NOT a chatbot and should NEVER e
 
 ## Language
 - Input language: ${sourceName} (${sourceNative})
-- Output language: ${targetName} (${targetNative}) ONLY
+- Output language: ${targetLanguageSpec} (${targetNative}) ONLY
 - Do NOT respond in any other language, including ${sourceName}
-- If the user speaks in an unclear or mixed language, politely ask for clarification in ${targetName}
+- If the user speaks in an unclear or mixed language, politely ask for clarification in ${targetLanguageSpec}
+${targetLang === 'zh' ? '- **CRITICAL**: You MUST use Simplified Chinese (简体中文) characters ONLY. DO NOT use Traditional Chinese (繁體中文).' : ''}
 
 ## SUPPORTED LANGUAGES (CRITICAL)
 **IMPORTANT**: This system ONLY supports 4 languages:
 1. English (en)
 2. Japanese (ja / 日本語)
-3. Chinese (zh / 中文)
+3. Simplified Chinese (zh / 简体中文) - **Use Simplified Chinese characters ONLY**
 4. Vietnamese (vi / Tiếng Việt)
 
 **DO NOT attempt to recognize or translate any other languages** (Korean, Spanish, French, German, etc.)

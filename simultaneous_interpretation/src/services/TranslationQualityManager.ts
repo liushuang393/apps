@@ -538,7 +538,7 @@ export class TranslationInstructionGenerator {
         const languageMap: Record<string, string> = {
             en: '英語',
             ja: '日本語',
-            zh: '中国語',
+            zh: '简体中文',
             ko: '韓国語',
             es: 'スペイン語',
             fr: 'フランス語',

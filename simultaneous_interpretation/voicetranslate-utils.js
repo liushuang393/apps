@@ -431,7 +431,7 @@ const AudioUtils = {
         const languages = {
             ja: '日本語',
             en: 'English',
-            zh: '中文',
+            zh: '简体中文',
             ko: '한국어',
             es: 'Español',
             fr: 'Français',
@@ -447,7 +447,7 @@ const AudioUtils = {
         const nativeNames = {
             ja: '日本語',
             en: 'English',
-            zh: '中文',
+            zh: '简体中文',
             ko: '한국어',
             es: 'Español',
             fr: 'Français',

@@ -75,23 +75,23 @@ export function formatTime(seconds: number): string {
 
 /**
  * 言語コードマッピング（英語名）
- * 対応言語: 英語、日本語、中国語、ベトナム語のみ
+ * 対応言語: 英語、日本語、簡体中文、ベトナム語のみ
  */
 const LANGUAGE_NAMES: Record<string, string> = {
     ja: 'Japanese',
     en: 'English',
-    zh: 'Chinese',
+    zh: 'Simplified Chinese',
     vi: 'Vietnamese'
 };
 
 /**
  * 言語コードマッピング（ネイティブ名）
- * 対応言語: 英語、日本語、中国語、ベトナム語のみ
+ * 対応言語: 英語、日本語、簡体中文、ベトナム語のみ
  */
 const NATIVE_LANGUAGE_NAMES: Record<string, string> = {
     ja: '日本語',
     en: 'English',
-    zh: '中文',
+    zh: '简体中文',
     vi: 'Tiếng Việt'
 };
 
