@@ -1,0 +1,133 @@
+import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/logger.dart';
+import '../models/purchase_model.dart';
+
+/// Purchase remote data source interface
+/// 目的: 定义购买相关的API调用接口
+abstract class PurchaseRemoteDataSource {
+  Future<PurchaseModel> createPurchase(CreatePurchaseRequest request);
+  Future<List<PurchaseModel>> getPurchaseHistory({
+    String? campaignId,
+    int? limit,
+    int? offset,
+  });
+  Future<PurchaseModel> getPurchaseById(String purchaseId);
+  Future<PurchaseModel> confirmPayment(String purchaseId);
+  Future<void> cancelPurchase(String purchaseId);
+}
+
+/// Purchase remote data source implementation
+/// 目的: 实现购买相关的API调用
+/// I/O: 通过ApiClient与后端API通信
+/// 注意点: 处理错误、日志记录、数据转换
+class PurchaseRemoteDataSourceImpl implements PurchaseRemoteDataSource {
+  final ApiClient apiClient;
+
+  PurchaseRemoteDataSourceImpl({required this.apiClient});
+
+  @override
+  Future<PurchaseModel> createPurchase(CreatePurchaseRequest request) async {
+    try {
+      AppLogger.info('Creating purchase for campaign: ${request.campaignId}');
+
+      final response = await apiClient.post(
+        '/api/purchases',
+        data: request.toJson(),
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final purchase = PurchaseModel.fromJson(data['data'] as Map<String, dynamic>);
+
+      AppLogger.info('Purchase created successfully: ${purchase.purchaseId}');
+      return purchase;
+    } catch (e) {
+      AppLogger.error('Failed to create purchase', e);
+      throw Exception('購入の作成に失敗しました: $e');
+    }
+  }
+
+  @override
+  Future<List<PurchaseModel>> getPurchaseHistory({
+    String? campaignId,
+    int? limit,
+    int? offset,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (campaignId != null) queryParams['campaign_id'] = campaignId;
+      if (limit != null) queryParams['limit'] = limit;
+      if (offset != null) queryParams['offset'] = offset;
+
+      AppLogger.info('Fetching purchase history');
+
+      final response = await apiClient.get(
+        '/api/purchases/me',
+        queryParameters: queryParams,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final purchases = (data['data'] as List<dynamic>)
+          .map((e) => PurchaseModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      AppLogger.info('Fetched ${purchases.length} purchases');
+      return purchases;
+    } catch (e) {
+      AppLogger.error('Failed to fetch purchase history', e);
+      throw Exception('購入履歴の取得に失敗しました: $e');
+    }
+  }
+
+  @override
+  Future<PurchaseModel> getPurchaseById(String purchaseId) async {
+    try {
+      AppLogger.info('Fetching purchase: $purchaseId');
+
+      final response = await apiClient.get('/api/purchases/$purchaseId');
+
+      final data = response.data as Map<String, dynamic>;
+      final purchase = PurchaseModel.fromJson(data['data'] as Map<String, dynamic>);
+
+      AppLogger.info('Purchase fetched successfully');
+      return purchase;
+    } catch (e) {
+      AppLogger.error('Failed to fetch purchase', e);
+      throw Exception('購入情報の取得に失敗しました: $e');
+    }
+  }
+
+  @override
+  Future<PurchaseModel> confirmPayment(String purchaseId) async {
+    try {
+      AppLogger.info('Confirming payment for purchase: $purchaseId');
+
+      final response = await apiClient.post(
+        '/api/payment/confirm',
+        data: {'purchase_id': purchaseId},
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final purchase = PurchaseModel.fromJson(data['data'] as Map<String, dynamic>);
+
+      AppLogger.info('Payment confirmed successfully');
+      return purchase;
+    } catch (e) {
+      AppLogger.error('Failed to confirm payment', e);
+      throw Exception('決済の確認に失敗しました: $e');
+    }
+  }
+
+  @override
+  Future<void> cancelPurchase(String purchaseId) async {
+    try {
+      AppLogger.info('Canceling purchase: $purchaseId');
+
+      await apiClient.post('/api/purchases/$purchaseId/cancel');
+
+      AppLogger.info('Purchase canceled successfully');
+    } catch (e) {
+      AppLogger.error('Failed to cancel purchase', e);
+      throw Exception('購入のキャンセルに失敗しました: $e');
+    }
+  }
+}

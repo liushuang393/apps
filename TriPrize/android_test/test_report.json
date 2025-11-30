@@ -1,0 +1,63 @@
+{
+  "timestamp": "2025-11-26T04:31:10.560Z",
+  "device": "Android (Samsung Galaxy S21 - Pixel 7 emulation)",
+  "resolution": "412 x 915",
+  "results": [
+    {
+      "name": "環境確認",
+      "status": "passed",
+      "duration": 5849
+    },
+    {
+      "name": "スプラッシュ・役割選択",
+      "status": "passed",
+      "duration": 5483
+    },
+    {
+      "name": "UI操作",
+      "status": "passed",
+      "duration": 1029
+    },
+    {
+      "name": "API認証",
+      "status": "passed",
+      "duration": 367
+    },
+    {
+      "name": "キャンペーン作成",
+      "status": "passed",
+      "duration": 1
+    },
+    {
+      "name": "顧客購入",
+      "status": "passed",
+      "duration": 16
+    },
+    {
+      "name": "エラーハンドリング",
+      "status": "passed",
+      "duration": 24
+    },
+    {
+      "name": "キャンペーン一覧UI",
+      "status": "passed",
+      "duration": 12598
+    },
+    {
+      "name": "パフォーマンス",
+      "status": "passed",
+      "duration": 5628
+    },
+    {
+      "name": "入力バリデーション",
+      "status": "passed",
+      "duration": 1
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0
+  },
+  "bugs": []
+}
