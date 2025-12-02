@@ -1,6 +1,7 @@
 import request from 'supertest';
-import app from '../../src/app';
+import { createApp } from '../../src/app';
 import { pool } from '../../src/config/database.config';
+import { UserRole } from '../../src/models/user.entity';
 import Stripe from 'stripe';
 import crypto from 'node:crypto';
 
@@ -67,6 +68,7 @@ function createMockCharge(
  * 目的: 验证支付Webhook处理的正确性和幂等性
  */
 describe('Payment Webhook Integration Tests', () => {
+  let app: ReturnType<typeof createApp>;
   let testCampaignId: string;
   let testUserId: string;
   let testPositionId: string;
@@ -78,6 +80,8 @@ describe('Payment Webhook Integration Tests', () => {
   jest.setTimeout(60000);
 
   beforeAll(async () => {
+    // Initialize Express application for integration tests
+    app = createApp();
     // 清理测试数据 - 按照外键依赖顺序删除
     await pool.query('DELETE FROM payment_transactions WHERE transaction_id::text LIKE \'test-%\'');
     await pool.query('DELETE FROM purchases WHERE user_id IN (SELECT user_id FROM users WHERE email LIKE \'test-webhook%\')');
@@ -104,12 +108,13 @@ describe('Payment Webhook Integration Tests', () => {
     // 创建测试用户 (使用唯一email避免冲突)
     const firebaseUid = `test-webhook-${Date.now()}`;
     const uniqueEmail = `${firebaseUid}@example.com`;
+	    // user_id must match firebase_uid for role.middleware to find the user
 	    const { rows: userRows } = await pool.query(
 	      `INSERT INTO users (user_id, firebase_uid, email, display_name, role)
-	       VALUES (gen_random_uuid(), $1, $2, $3, $4)
+	       VALUES ($1, $2, $3, $4, $5)
 	       RETURNING user_id`,
-	      // 使用有效的角色值 'customer' (与 UserRole.CUSTOMER 对应)
-	      [firebaseUid, uniqueEmail, 'Test Webhook User', 'customer']
+	      // 使用有效的角色值 UserRole.CUSTOMER
+	      [firebaseUid, firebaseUid, uniqueEmail, 'Test Webhook User', UserRole.CUSTOMER]
 	    );
     testUserId = userRows[0].user_id;
 
@@ -133,7 +138,7 @@ describe('Payment Webhook Integration Tests', () => {
         new Date(),
         new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         testUserId,
-        'active'
+        'published' // 有効なステータス値を使用
       ]
     );
     testCampaignId = campaignRows[0].campaign_id;

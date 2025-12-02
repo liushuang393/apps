@@ -2,7 +2,12 @@ import request from 'supertest';
 import { createApp } from '../../src/app';
 
 describe('Campaigns API Integration Tests', () => {
-	  const app = createApp();
+  let app: ReturnType<typeof createApp>;
+
+  beforeAll(() => {
+    // Initialize Express application for integration tests
+    app = createApp();
+  });
 
   describe('GET /api/campaigns', () => {
     it('should return list of campaigns', async () => {
@@ -86,7 +91,7 @@ describe('Campaigns API Integration Tests', () => {
       expect(response.body).toHaveProperty('error', 'UNAUTHORIZED');
     });
 
-    it('should require authentication', async () => {
+    it('should reject invalid campaign data even with authentication', async () => {
       const invalidData = {
         name: 'Test',
         // Missing required fields

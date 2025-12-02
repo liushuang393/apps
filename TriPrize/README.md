@@ -150,9 +150,8 @@ API が http://localhost:3000 で起動します。
 新しいターミナルを開いて:
 
 ```bash
-cd mobile
-
 # 依存関係のインストール (初回のみ)
+cd mobile
 flutter pub global activate flutterfire_cli
 flutterfire configure --platforms=android,ios,web
 flutter clean
@@ -202,7 +201,7 @@ npm test
 
 # カバレッジレポート
 npm test -- --coverage
-
+npm test -- --coverage --coverageReporters=json-summary --coverageReporters=text
 # 特定のテストのみ
 npm test -- payment-webhook.test.ts
 ```
@@ -447,6 +446,22 @@ REDIS_URL=redis://localhost:6379
 STRIPE_SECRET_KEY=sk_test_xxx (本番では sk_live_xxx)
 STRIPE_PUBLISHABLE_KEY=pk_test_xxx (本番では pk_live_xxx)
 ```
+
+**⚠️ DB クライアントツール（DBeaver、pgAdmin など）で接続する場合:**
+- **ホスト**: `host.docker.internal` または `127.0.0.1`（`localhost` が動作しない場合）
+- **ポート**: `5432`
+- **データベース**: `triprize`
+- **ユーザー**: `triprize`
+- **パスワード**: `triprize_password`
+
+**📌 Node.js API と Java アプリケーションについて:**
+- **Node.js API**: `localhost` / `127.0.0.1` で動作 ✅
+- **Java アプリ (Spring Boot)**: `localhost` では**動作しない** ❌、**`host.docker.internal` を使用** ✅
+- **DB クライアントツール**: `host.docker.internal` または `127.0.0.1` を推奨 ✅
+
+詳細は以下を参照してください：
+- [`docs/DOCKER_NETWORK_EXPLANATION.md`](./docs/DOCKER_NETWORK_EXPLANATION.md) - Docker ネットワークの詳細説明
+- [`docs/DATABASE_CONNECTION_HOSTS.md`](./docs/DATABASE_CONNECTION_HOSTS.md) - 接続ホスト名の選択ガイド
 
 ### Mobile (.env)
 

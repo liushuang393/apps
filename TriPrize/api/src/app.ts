@@ -44,8 +44,8 @@ export function createApp(): Application {
         return callback(null, true);
       }
 
-      // Allow all localhost and 127.0.0.1 origins with any port
-      if (origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+      // Allow all localhost and 127.0.0.1 origins with any port (http and https)
+      if (origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
         return callback(null, true);
       }
 

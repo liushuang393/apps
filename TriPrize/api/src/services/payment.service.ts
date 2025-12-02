@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { pool } from '../config/database.config';
-import { stripe } from '../config/stripe.config';
+import { stripe, PAYMENT_CONFIG } from '../config/stripe.config';
+import mockPaymentService from './mock-payment.service';
 import {
   PaymentTransaction,
   PaymentMethod,
@@ -43,9 +44,24 @@ export class PaymentService {
         throw new Error('FORBIDDEN');
       }
 
-      // Check if purchase already has a payment
+      // Check if purchase already has a payment or is being processed
+      // 目的: 防止为同一购买创建重复的 PaymentIntent
+      // 注意点: 检查 COMPLETED, PROCESSING 状态和已存在的 PaymentIntent
       if (purchase.status === PurchaseStatus.COMPLETED) {
         throw new Error('Purchase already paid');
+      }
+
+      // Check for existing active payment transactions
+      // 目的: 防止重复支付 - 如果已有 pending/processing 状态的支付交易，则拒绝创建新的
+      const { rows: existingTransactions } = await client.query<{ count: string }>(
+        `SELECT COUNT(*) as count FROM payment_transactions
+         WHERE purchase_id = $1
+           AND payment_status IN ('pending', 'processing', 'requires_action')`,
+        [dto.purchase_id]
+      );
+
+      if (Number.parseInt(existingTransactions[0].count, 10) > 0) {
+        throw new Error('A payment is already in progress for this purchase');
       }
 
       // Create Stripe Payment Intent
@@ -74,7 +90,31 @@ export class PaymentService {
         };
       }
 
-      const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+      // Generate Stripe idempotency key
+      // 目的: 确保 Stripe API 调用的幂等性，防止因网络重试导致重复创建 PaymentIntent
+      // 注意点: 使用 purchase_id + user_id + timestamp 生成唯一的幂等性 key
+      const stripeIdempotencyKey = `pi_${purchase.purchase_id}_${userId}_${Date.now()}`;
+
+      // 根据环境选择使用真实 Stripe 或假支付
+      // 目的: 开发环境可以使用假支付（用于单元测试），生产环境强制使用真实支付
+      // 注意点: PAYMENT_CONFIG.useMockPayment 在生产环境已被强制设为 false
+      let paymentIntent: Stripe.PaymentIntent;
+      
+      if (PAYMENT_CONFIG.useMockPayment) {
+        logger.info('Using mock payment service', {
+          purchaseId: purchase.purchase_id,
+          paymentMethod: dto.payment_method,
+        });
+        paymentIntent = await mockPaymentService.createPaymentIntent(paymentIntentParams);
+      } else {
+        if (!stripe) {
+          throw new Error('Stripe client is not initialized');
+        }
+        paymentIntent = await stripe.paymentIntents.create(
+          paymentIntentParams,
+          { idempotencyKey: stripeIdempotencyKey }
+        );
+      }
 
       // Create payment transaction record
       const transactionId = generateUUID();
@@ -135,14 +175,29 @@ export class PaymentService {
 
   /**
    * Confirm a payment (for card payments)
+   * 目的: 确认支付（用于卡支付）
+   * I/O: 调用 Stripe API 或假支付服务确认支付
+   * 注意点: 根据环境自动切换使用真实或假支付
    */
   async confirmPayment(paymentIntentId: string, paymentMethodId: string): Promise<Stripe.PaymentIntent> {
     try {
-      const paymentIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
-        payment_method: paymentMethodId,
-      });
+      let paymentIntent: Stripe.PaymentIntent;
 
-      logger.info('Payment confirmed', { paymentIntentId });
+      // 根据环境选择使用真实 Stripe 或假支付
+      if (PAYMENT_CONFIG.useMockPayment) {
+        paymentIntent = await mockPaymentService.confirmPaymentIntent(paymentIntentId, {
+          payment_method: paymentMethodId,
+        });
+        logger.info('Payment confirmed (mock)', { paymentIntentId });
+      } else {
+        if (!stripe) {
+          throw new Error('Stripe client is not initialized');
+        }
+        paymentIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
+          payment_method: paymentMethodId,
+        });
+        logger.info('Payment confirmed', { paymentIntentId });
+      }
 
       return paymentIntent;
     } catch (error: unknown) {
@@ -157,28 +212,51 @@ export class PaymentService {
 
   /**
    * Get konbini payment details
+   * 目的: 获取 Konbini 支付详情（支付编号、过期时间等）
+   * I/O: 从 Stripe 或假支付服务获取支付信息
+   * 注意点: 根据环境自动切换使用真实或假支付
    */
   async getKonbiniPaymentInfo(paymentIntentId: string): Promise<KonbiniPaymentInfo | null> {
     try {
-      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      let paymentIntent: Stripe.PaymentIntent;
+      let paymentMethod: Stripe.PaymentMethod | null = null;
 
-      if (paymentIntent.payment_method) {
-        const paymentMethod = await stripe.paymentMethods.retrieve(
-          paymentIntent.payment_method as string
-        );
-
-        if (paymentMethod.type === 'konbini' && paymentMethod.konbini) {
-          const konbini = paymentMethod.konbini as { store?: string; confirmation_number?: string } | undefined;
-          const expiresAt = paymentIntent.created + (4 * 24 * 60 * 60); // 4 days
-
-          return {
-            store_type: konbini?.store || 'unknown',
-            confirmation_number: konbini?.confirmation_number || '',
-            payment_code: konbini?.confirmation_number || '',
-            expires_at: new Date(expiresAt * 1000),
-            instructions_url: paymentIntent.next_action?.konbini_display_details?.hosted_voucher_url || '',
-          };
+      // 根据环境选择使用真实 Stripe 或假支付
+      if (PAYMENT_CONFIG.useMockPayment) {
+        paymentIntent = await mockPaymentService.retrievePaymentIntent(paymentIntentId);
+        if (paymentIntent.payment_method) {
+          try {
+            paymentMethod = await mockPaymentService.retrievePaymentMethod(
+              paymentIntent.payment_method as string
+            );
+          } catch {
+            // Payment method might not exist in mock service
+          }
         }
+      } else {
+        if (!stripe) {
+          throw new Error('Stripe client is not initialized');
+        }
+        paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+        if (paymentIntent.payment_method) {
+          paymentMethod = await stripe.paymentMethods.retrieve(
+            paymentIntent.payment_method as string
+          );
+        }
+      }
+
+      if (paymentMethod && paymentMethod.type === 'konbini' && paymentMethod.konbini) {
+        const konbini = paymentMethod.konbini as { store?: string; confirmation_number?: string } | undefined;
+        const expiresAt = paymentIntent.created + (4 * 24 * 60 * 60); // 4 days
+
+        return {
+          store_type: konbini?.store || 'unknown',
+          confirmation_number: konbini?.confirmation_number || '',
+          payment_code: konbini?.confirmation_number || '',
+          expires_at: new Date(expiresAt * 1000),
+          instructions_url: paymentIntent.next_action?.konbini_display_details?.hosted_voucher_url || '',
+        };
       }
 
       return null;
@@ -263,6 +341,21 @@ export class PaymentService {
         });
         await client.query('ROLLBACK');
         return;
+      }
+
+      // Validate payment amount matches transaction amount
+      // 目的: 确保 Webhook 返回的金额与数据库记录一致（安全验证）
+      // 注意点: 如果金额不一致，记录警告但继续处理（可能是汇率或手续费差异）
+      if (paymentIntent.amount !== transaction.amount) {
+        logger.warn('Payment amount mismatch detected', {
+          transactionId: transaction.transaction_id,
+          paymentIntentId: paymentIntent.id,
+          paymentIntentAmount: paymentIntent.amount,
+          transactionAmount: transaction.amount,
+          difference: paymentIntent.amount - transaction.amount,
+        });
+        // Continue processing but log the discrepancy for investigation
+        // In production, you might want to alert or take additional action
       }
 
       // Update transaction status
@@ -532,7 +625,10 @@ export class PaymentService {
   }
 
   /**
-   * Handle charge refund
+   * Handle charge refund (supports both full and partial refunds)
+   * 目的: 处理 Stripe 退款 Webhook 事件
+   * I/O: Stripe Charge 对象 → 更新数据库状态
+   * 注意点: 区分全额退款和部分退款，只有全额退款才释放位置
    */
   private async handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
     const client = await pool.connect();
@@ -547,13 +643,14 @@ export class PaymentService {
       );
 
       if (transactionRows.length === 0) {
+        logger.warn('Transaction not found for refund', { chargeId: charge.id });
         await client.query('ROLLBACK');
         return;
       }
 
       const transaction = mapRowToPaymentTransaction(transactionRows[0]);
 
-      // Idempotency check: Skip if already processed
+      // Idempotency check: Skip if already fully processed
       if (transaction.payment_status === PaymentStatus.REFUNDED) {
         logger.info('Refund already processed, skipping', {
           transactionId: transaction.transaction_id,
@@ -563,65 +660,143 @@ export class PaymentService {
         return;
       }
 
-      // Update transaction status
-      await client.query(
-        `UPDATE payment_transactions
-         SET payment_status = 'refunded',
-             updated_at = NOW()
-         WHERE transaction_id = $1`,
-        [transaction.transaction_id]
-      );
+      // Get refund amount and validate
+      // 目的: 验证退款金额的有效性
+      const refundedAmount = charge.amount_refunded || 0;
+      const originalAmount = charge.amount;
+      const isFullRefund = refundedAmount >= originalAmount;
 
-      // Update purchase status
-      await purchaseService.updatePurchaseStatus(
-        transaction.purchase_id,
-        PurchaseStatus.REFUNDED
-      );
+      // Validate refund amount does not exceed original payment
+      // 目的: 防止退款金额超过原支付金额（安全验证）
+      if (refundedAmount > originalAmount) {
+        logger.error('Refund amount exceeds original payment', {
+          chargeId: charge.id,
+          refundedAmount,
+          originalAmount,
+          transactionAmount: transaction.amount,
+        });
+        await client.query('ROLLBACK');
+        throw new Error('Invalid refund: amount exceeds original payment');
+      }
 
-      // Release position back to available
-      await client.query(
-        `UPDATE positions
-         SET status = 'available', updated_at = NOW()
-         WHERE position_id = (
-           SELECT position_id FROM purchases WHERE purchase_id = $1
-         ) AND status = 'sold'`,
-        [transaction.purchase_id]
-      );
+      // Validate transaction amount matches Stripe charge amount
+      // 目的: 确保数据库记录与 Stripe 数据一致
+      if (transaction.amount !== originalAmount) {
+        logger.warn('Transaction amount mismatch with Stripe charge', {
+          transactionId: transaction.transaction_id,
+          transactionAmount: transaction.amount,
+          chargeAmount: originalAmount,
+        });
+        // Continue processing but log the discrepancy
+      }
 
-      // Rollback campaign statistics
-      await client.query(
-        `UPDATE campaigns
-         SET positions_sold = GREATEST(positions_sold - 1, 0),
-             total_revenue = GREATEST(total_revenue - $1, 0),
-             updated_at = NOW()
-         WHERE campaign_id = (
-           SELECT campaign_id FROM purchases WHERE purchase_id = $2
-         )`,
-        [transaction.amount, transaction.purchase_id]
-      );
+      logger.info('Processing refund', {
+        transactionId: transaction.transaction_id,
+        chargeId: charge.id,
+        refundedAmount,
+        originalAmount,
+        isFullRefund,
+      });
+
+      if (isFullRefund) {
+        // Full refund: Update status to refunded
+        // 目的: 全额退款时，标记交易为已退款
+        await client.query(
+          `UPDATE payment_transactions
+           SET payment_status = 'refunded',
+               refunded_amount = $1,
+               updated_at = NOW()
+           WHERE transaction_id = $2`,
+          [refundedAmount, transaction.transaction_id]
+        );
+
+        // Update purchase status
+        await purchaseService.updatePurchaseStatus(
+          transaction.purchase_id,
+          PurchaseStatus.REFUNDED
+        );
+
+        // Release position back to available (only for full refund)
+        // 目的: 全额退款时释放位置，部分退款保留位置
+        await client.query(
+          `UPDATE positions
+           SET status = 'available', updated_at = NOW()
+           WHERE position_id = (
+             SELECT position_id FROM purchases WHERE purchase_id = $1
+           ) AND status = 'sold'`,
+          [transaction.purchase_id]
+        );
+
+        // Rollback campaign statistics (full refund)
+        await client.query(
+          `UPDATE campaigns
+           SET positions_sold = GREATEST(positions_sold - 1, 0),
+               total_revenue = GREATEST(total_revenue - $1, 0),
+               updated_at = NOW()
+           WHERE campaign_id = (
+             SELECT campaign_id FROM purchases WHERE purchase_id = $2
+           )`,
+          [transaction.amount, transaction.purchase_id]
+        );
+      } else {
+        // Partial refund: Only update refunded_amount, keep position and status
+        // 目的: 部分退款时，只记录退款金额，不改变状态
+        await client.query(
+          `UPDATE payment_transactions
+           SET refunded_amount = $1,
+               updated_at = NOW()
+           WHERE transaction_id = $2`,
+          [refundedAmount, transaction.transaction_id]
+        );
+
+        // Partially refund revenue (but keep position_sold count)
+        // 目的: 部分退款时，减少收入但保留位置
+        await client.query(
+          `UPDATE campaigns
+           SET total_revenue = GREATEST(total_revenue - $1, 0),
+               updated_at = NOW()
+           WHERE campaign_id = (
+             SELECT campaign_id FROM purchases WHERE purchase_id = $2
+           )`,
+          [refundedAmount, transaction.purchase_id]
+        );
+
+        logger.info('Partial refund processed', {
+          transactionId: transaction.transaction_id,
+          refundedAmount,
+          remainingAmount: originalAmount - refundedAmount,
+        });
+      }
 
       await client.query('COMMIT');
 
-      logger.info('Payment refunded', {
+      logger.info('Payment refund processed', {
         transactionId: transaction.transaction_id,
         purchaseId: transaction.purchase_id,
-        amount: charge.amount_refunded,
+        refundedAmount,
+        isFullRefund,
       });
 
       // Send notification to user
       try {
         const purchase = await purchaseService.getPurchaseById(transaction.purchase_id);
         if (purchase) {
+          const notificationTitle = isFullRefund ? '返金が完了しました' : '一部返金が完了しました';
+          const notificationBody = isFullRefund
+            ? `返金処理が完了しました。返金額: ¥${refundedAmount.toLocaleString()}`
+            : `一部返金処理が完了しました。返金額: ¥${refundedAmount.toLocaleString()}`;
+
           await notificationService.sendToUser(
             purchase.user_id,
             NotificationType.PAYMENT_COMPLETED,
             {
-              title: '返金が完了しました',
-              body: `返金処理が完了しました。返金額: ¥${charge.amount_refunded?.toLocaleString() || '0'}`,
+              title: notificationTitle,
+              body: notificationBody,
               data: {
                 purchase_id: purchase.purchase_id,
                 transaction_id: transaction.transaction_id,
-                refund_amount: charge.amount_refunded?.toString() || '0',
+                refund_amount: refundedAmount.toString(),
+                is_full_refund: isFullRefund.toString(),
                 type: 'refund',
               },
             }
@@ -699,6 +874,280 @@ export class PaymentService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Initiate a refund (Admin function)
+   * 目的: 管理员主动发起退款
+   * I/O: transactionId, amount(可选), reason → Stripe Refund 对象
+   * 注意点: 只有 ADMIN 用户可以调用，验证金额，支持部分退款
+   */
+  async initiateRefund(
+    transactionId: string,
+    amount?: number,
+    reason?: string
+  ): Promise<Stripe.Refund> {
+    try {
+      // Get transaction
+      const transaction = await this.getTransactionById(transactionId);
+
+      if (!transaction) {
+        throw new Error('TRANSACTION_NOT_FOUND');
+      }
+
+      // Validate transaction status
+      if (transaction.payment_status !== PaymentStatus.SUCCEEDED) {
+        throw new Error(`Cannot refund transaction with status: ${transaction.payment_status}`);
+      }
+
+      // Validate charge ID exists
+      if (!transaction.stripe_charge_id) {
+        throw new Error('No charge ID found for this transaction');
+      }
+
+      // Validate refund amount
+      const refundAmount = amount || transaction.amount;
+      if (refundAmount <= 0) {
+        throw new Error('Refund amount must be positive');
+      }
+
+      if (refundAmount > transaction.amount) {
+        throw new Error('Refund amount exceeds original payment amount');
+      }
+
+      // Create Stripe refund
+      // 目的: 通过 Stripe API 发起退款
+      const refundParams: Stripe.RefundCreateParams = {
+        charge: transaction.stripe_charge_id,
+        amount: refundAmount,
+        reason: 'requested_by_customer',
+        metadata: {
+          transaction_id: transaction.transaction_id,
+          purchase_id: transaction.purchase_id,
+          admin_reason: reason || 'Admin initiated refund',
+          refund_type: refundAmount === transaction.amount ? 'full' : 'partial',
+        },
+      };
+
+      // Generate idempotency key for Stripe refund
+      const stripeIdempotencyKey = `refund_${transactionId}_${refundAmount}_${Date.now()}`;
+
+      // 根据环境选择使用真实 Stripe 或假支付
+      let refund: Stripe.Refund;
+      if (PAYMENT_CONFIG.useMockPayment) {
+        // 使用假支付服务创建退款
+        // 注意点: 假支付服务需要 payment_intent_id，我们需要从 transaction 获取
+        if (!transaction.stripe_payment_intent_id) {
+          throw new Error('No payment intent ID found for mock refund');
+        }
+        refund = await mockPaymentService.createRefund(
+          transaction.stripe_payment_intent_id,
+          { amount: refundAmount, reason }
+        );
+        logger.info('Refund created (mock)', {
+          refundId: refund.id,
+          transactionId,
+          amount: refundAmount,
+        });
+      } else {
+        if (!stripe) {
+          throw new Error('Stripe client is not initialized');
+        }
+        refund = await stripe.refunds.create(
+          refundParams,
+          { idempotencyKey: stripeIdempotencyKey }
+        );
+        logger.info('Refund created', {
+          refundId: refund.id,
+          transactionId,
+          amount: refundAmount,
+        });
+      }
+
+      logger.info('Refund initiated successfully', {
+        transactionId,
+        refundId: refund.id,
+        amount: refundAmount,
+        reason,
+      });
+
+      // Note: The actual database updates will be handled by the webhook
+      // when Stripe sends the charge.refunded event
+
+      return refund;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to initiate refund', {
+        error: errorMessage,
+        transactionId,
+        amount,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get transaction by purchase ID
+   * 目的: 通过购买 ID 查询支付交易
+   */
+  async getTransactionByPurchaseId(purchaseId: string): Promise<PaymentTransaction | null> {
+    try {
+      const { rows } = await pool.query<PaymentTransaction>(
+        `SELECT * FROM payment_transactions
+         WHERE purchase_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [purchaseId]
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return mapRowToPaymentTransaction(rows[0]);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to get transaction by purchase ID', {
+        error: errorMessage,
+        purchaseId,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up expired Konbini payments
+   * 目的: 清理过期的 Konbini 支付，释放位置
+   * I/O: 无输入 → 清理的交易数量
+   * 注意点: Konbini 支付有效期为4天，过期后自动取消
+   */
+  async cleanupExpiredKonbiniPayments(): Promise<number> {
+    const client = await pool.connect();
+    let cleanedCount = 0;
+
+    try {
+      await client.query('BEGIN');
+
+      // Find expired Konbini transactions
+      // 目的: 查找超过4天未完成的 Konbini 支付
+      const { rows: expiredTransactions } = await client.query<PaymentTransaction>(
+        `SELECT * FROM payment_transactions
+         WHERE payment_method = 'konbini'
+           AND payment_status IN ('pending', 'requires_action')
+           AND created_at < NOW() - INTERVAL '4 days'
+         FOR UPDATE SKIP LOCKED`
+      );
+
+      logger.info('Found expired Konbini payments', {
+        count: expiredTransactions.length,
+      });
+
+      for (const transaction of expiredTransactions) {
+        try {
+          // Cancel the PaymentIntent in Stripe
+          // 目的: 在 Stripe 端取消未完成的支付
+          // 注意点: stripe が null の場合（Mock モード）はスキップ
+          if (transaction.stripe_payment_intent_id && stripe) {
+            try {
+              await stripe.paymentIntents.cancel(transaction.stripe_payment_intent_id);
+            } catch (stripeError: unknown) {
+              const errorMsg = stripeError instanceof Error ? stripeError.message : 'Unknown';
+              // PaymentIntent may already be canceled or expired
+              logger.warn('Failed to cancel PaymentIntent in Stripe', {
+                paymentIntentId: transaction.stripe_payment_intent_id,
+                error: errorMsg,
+              });
+            }
+          }
+
+          // Update transaction status
+          await client.query(
+            `UPDATE payment_transactions
+             SET payment_status = 'cancelled',
+                 error_message = 'Konbini payment expired',
+                 updated_at = NOW()
+             WHERE transaction_id = $1`,
+            [transaction.transaction_id]
+          );
+
+          // Update purchase status
+          await purchaseService.updatePurchaseStatus(
+            transaction.purchase_id,
+            PurchaseStatus.CANCELLED
+          );
+
+          // Release position back to available
+          await client.query(
+            `UPDATE positions
+             SET status = 'available', user_id = NULL, updated_at = NOW()
+             WHERE position_id = (
+               SELECT position_id FROM purchases WHERE purchase_id = $1
+             ) AND status = 'reserved'`,
+            [transaction.purchase_id]
+          );
+
+          cleanedCount++;
+
+          logger.info('Cleaned up expired Konbini payment', {
+            transactionId: transaction.transaction_id,
+            purchaseId: transaction.purchase_id,
+          });
+        } catch (txError: unknown) {
+          const errorMsg = txError instanceof Error ? txError.message : 'Unknown';
+          logger.error('Failed to clean up individual Konbini payment', {
+            transactionId: transaction.transaction_id,
+            error: errorMsg,
+          });
+          // Continue with other transactions
+        }
+      }
+
+      await client.query('COMMIT');
+
+      logger.info('Konbini cleanup completed', {
+        cleanedCount,
+        totalExpired: expiredTransactions.length,
+      });
+
+      return cleanedCount;
+    } catch (error: unknown) {
+      await client.query('ROLLBACK');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to cleanup expired Konbini payments', {
+        error: errorMessage,
+      });
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Start scheduled cleanup task
+   * 目的: 启动定时任务清理过期的 Konbini 支付
+   * 注意点: 每小时运行一次
+   */
+  startScheduledCleanup(): void {
+    // Run cleanup every hour
+    const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+    logger.info('Starting Konbini payment cleanup scheduler', {
+      intervalMs: CLEANUP_INTERVAL_MS,
+    });
+
+    // Run immediately on startup
+    this.cleanupExpiredKonbiniPayments().catch((err: unknown) => {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown';
+      logger.error('Initial Konbini cleanup failed', { error: errorMsg });
+    });
+
+    // Schedule periodic cleanup
+    setInterval(() => {
+      this.cleanupExpiredKonbiniPayments().catch((err: unknown) => {
+        const errorMsg = err instanceof Error ? err.message : 'Unknown';
+        logger.error('Scheduled Konbini cleanup failed', { error: errorMsg });
+      });
+    }, CLEANUP_INTERVAL_MS);
   }
 }
 

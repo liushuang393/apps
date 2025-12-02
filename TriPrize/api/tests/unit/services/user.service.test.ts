@@ -1,6 +1,6 @@
 import { UserService } from '../../../src/services/user.service';
 import { pool } from '../../../src/config/database.config';
-import { CreateUserDto, UpdateUserDto } from '../../../src/models/user.entity';
+import { CreateUserDto, UpdateUserDto, UserRole } from '../../../src/models/user.entity';
 
 // Mock dependencies
 jest.mock('../../../src/config/database.config');
@@ -35,7 +35,14 @@ describe('UserService', () => {
         user_id: 'firebase-123',
         email: 'test@example.com',
         display_name: 'Test User',
-        role: 'user',
+        photo_url: null, // DBカラム名
+        fcm_token: null,
+        role: UserRole.CUSTOMER, // デフォルトロールは'customer'
+        notification_enabled: true,
+        total_purchases: 0,
+        total_spent: 0,
+        prizes_won: 0,
+        last_login_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -47,9 +54,10 @@ describe('UserService', () => {
       expect(result).toBeDefined();
       expect(result.user_id).toBe('firebase-123');
       expect(result.email).toBe('test@example.com');
+      expect(result.role).toBe(UserRole.CUSTOMER); // デフォルトロールを確認
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO users'),
-        expect.arrayContaining(['firebase-123', 'test@example.com', 'Test User'])
+        expect.arrayContaining(['firebase-123', 'test@example.com', 'Test User', 'customer'])
       );
     });
 
@@ -74,7 +82,7 @@ describe('UserService', () => {
         user_id: 'user-123',
         email: 'test@example.com',
         display_name: 'Test User',
-        role: 'user',
+        role: 'customer', // 正しいロール値
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -85,6 +93,7 @@ describe('UserService', () => {
 
       expect(result).toBeDefined();
       expect(result?.user_id).toBe('user-123');
+      expect(result?.role).toBe(UserRole.CUSTOMER);
     });
 
     it('should return null when user not found', async () => {
@@ -109,7 +118,13 @@ describe('UserService', () => {
         display_name: 'Updated Name',
 	        // DBカラム photo_url を利用して avatar_url にマッピングされるため、テスト行でも photo_url を指定する
 	        photo_url: 'http://example.com/avatar.png',
-        role: 'user',
+        fcm_token: null,
+        role: 'customer', // 正しいロール値
+        notification_enabled: true,
+        total_purchases: 0,
+        total_spent: 0,
+        prizes_won: 0,
+        last_login_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };

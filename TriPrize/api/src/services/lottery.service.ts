@@ -44,9 +44,23 @@ export class LotteryService {
         throw new Error('CAMPAIGN_NOT_FOUND');
       }
 
-      // Verify campaign is closed
-      if (campaign.status !== CampaignStatus.CLOSED) {
-        throw new Error('Campaign must be closed before drawing lottery');
+      // Verify campaign can be drawn
+      // 目的: キャンペーンが開獎可能な状態かチェック
+      // 注意点: 自動開獎の場合はpublished状態でも開獎可能、手動開獎の場合はclosed状態が必要
+      const canDraw = campaign.status === CampaignStatus.CLOSED || 
+                      campaign.status === CampaignStatus.PUBLISHED;
+      
+      if (!canDraw) {
+        throw new Error(`Campaign must be closed or published before drawing lottery. Current status: ${campaign.status}`);
+      }
+
+      // キャンペーンが終了しているか、全て売り切れているかチェック
+      const now = new Date();
+      const isEnded = campaign.end_date && new Date(campaign.end_date) <= now;
+      const isSoldOut = campaign.positions_sold >= campaign.positions_total;
+
+      if (!isEnded && !isSoldOut) {
+        throw new Error('Campaign must be ended or sold out before drawing lottery');
       }
 
       // Check if already drawn

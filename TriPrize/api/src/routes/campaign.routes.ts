@@ -58,6 +58,13 @@ const listCampaignsSchema = z.object({
   offset: z.string().optional().transform((val) => (val ? parseInt(val, 10) : 0)),
 });
 
+// Positions query schema
+// 目的: 位置情報取得のクエリパラメータを検証
+const positionsQuerySchema = z.object({
+  status: z.enum(['available', 'reserved', 'sold']).optional(),
+  limit: z.string().optional().transform((val) => (val ? parseInt(val, 10) : 100)),
+});
+
 /**
  * Routes
  */
@@ -81,6 +88,15 @@ router.get(
   '/:campaignId/stats',
   validateParams(campaignIdSchema),
   campaignController.getCampaignStats
+);
+
+// Get campaign positions (public)
+// 目的: キャンペーンの位置情報を取得する
+router.get(
+  '/:campaignId/positions',
+  validateParams(campaignIdSchema),
+  validateQuery(positionsQuerySchema),
+  campaignController.getPositions
 );
 
 // Create campaign (admin only)

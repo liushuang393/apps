@@ -3,6 +3,7 @@ import type { Application } from 'express';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/database.config';
 import { getRedisClient } from '../../src/config/redis.config';
+import { UserRole } from '../../src/models/user.entity';
 import crypto from 'node:crypto';
 
 /**
@@ -51,11 +52,12 @@ jest.setTimeout(60000);
 	  beforeEach(async () => {
 	    // 创建测试用户 (使用UUID作为内部user_id, 同时作为Firebase UID)
 	    const userId = crypto.randomUUID();
+	    // user_id must match firebase_uid for role.middleware to find the user
 	    const { rows: userRows } = await pool.query(
-	      `INSERT INTO users (user_id, email, display_name, role, created_at, updated_at)
-	       VALUES ($1, $2, $3, $4, NOW(), NOW())
+	      `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
+	       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
 	       RETURNING user_id`,
-	      [userId, 'test-validation@example.com', 'Test Validation User', 'customer']
+	      [userId, userId, 'test-validation@example.com', 'Test Validation User', UserRole.CUSTOMER]
 	    );
 	    testUserId = userRows[0].user_id;
 
@@ -85,7 +87,7 @@ jest.setTimeout(60000);
         new Date(),
         new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         testUserId,
-        'active'
+        'published' // 購入可能にするため 'published' ステータスを設定
       ]
     );
     testCampaignId = campaignRows[0].campaign_id;

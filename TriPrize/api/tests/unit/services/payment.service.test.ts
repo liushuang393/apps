@@ -10,7 +10,38 @@ import Stripe from 'stripe';
 
 // Mock dependencies
 jest.mock('../../../src/config/database.config');
-jest.mock('../../../src/config/stripe.config');
+jest.mock('../../../src/config/stripe.config', () => ({
+  stripe: {
+    paymentIntents: {
+      create: jest.fn(),
+      retrieve: jest.fn(),
+      cancel: jest.fn(),
+      confirm: jest.fn(),
+    },
+    paymentMethods: {
+      create: jest.fn(),
+      retrieve: jest.fn(),
+      attach: jest.fn(),
+    },
+    customers: {
+      create: jest.fn(),
+      update: jest.fn(),
+      del: jest.fn(),
+    },
+    refunds: {
+      create: jest.fn(),
+    },
+    webhooks: {
+      constructEvent: jest.fn(),
+    },
+  },
+  PAYMENT_CONFIG: {
+    useMockPayment: false,
+    isProduction: false,
+    isTestMode: true,
+    isLiveMode: false,
+  },
+}));
 jest.mock('../../../src/services/purchase.service');
 jest.mock('../../../src/services/notification.service');
 jest.mock('../../../src/utils/crypto.util');
@@ -90,7 +121,7 @@ describe('PaymentService', () => {
       };
 
       (purchaseService.getPurchaseById as jest.Mock).mockResolvedValueOnce(mockPurchase);
-      (stripe.paymentIntents.create as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
+      (stripe!.paymentIntents.create as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
 
       mockClient.query
         .mockResolvedValueOnce({ rows: [] }) // BEGIN
@@ -102,7 +133,7 @@ describe('PaymentService', () => {
       expect(result).toBeDefined();
       expect(result.paymentIntent.id).toBe('pi_123');
       expect(result.transaction.transaction_id).toBe('transaction-uuid-123');
-      expect(stripe.paymentIntents.create).toHaveBeenCalledWith(
+      expect(stripe!.paymentIntents.create).toHaveBeenCalledWith(
         expect.objectContaining({
           amount: 1000,
           currency: 'jpy',
@@ -154,7 +185,7 @@ describe('PaymentService', () => {
       };
 
       (purchaseService.getPurchaseById as jest.Mock).mockResolvedValueOnce(mockPurchase);
-      (stripe.paymentIntents.create as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
+      (stripe!.paymentIntents.create as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
 
       mockClient.query
         .mockResolvedValueOnce({ rows: [] }) // BEGIN
@@ -163,7 +194,7 @@ describe('PaymentService', () => {
 
       await service.createPaymentIntent(konbiniDto, 'user-123');
 
-      expect(stripe.paymentIntents.create).toHaveBeenCalledWith(
+      expect(stripe!.paymentIntents.create).toHaveBeenCalledWith(
         expect.objectContaining({
           payment_method_types: ['konbini'],
           payment_method_options: {
@@ -367,12 +398,12 @@ describe('PaymentService', () => {
         status: 'succeeded',
       } as unknown as Stripe.PaymentIntent;
 
-      (stripe.paymentIntents.confirm as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
+      (stripe!.paymentIntents.confirm as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
 
       const result = await service.confirmPayment('pi_123', 'pm_card_123');
 
       expect(result.status).toBe('succeeded');
-      expect(stripe.paymentIntents.confirm).toHaveBeenCalledWith('pi_123', {
+      expect(stripe!.paymentIntents.confirm).toHaveBeenCalledWith('pi_123', {
         payment_method: 'pm_card_123',
       });
     });

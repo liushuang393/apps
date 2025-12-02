@@ -5,6 +5,7 @@ import { pool } from '../../src/config/database.config';
 import campaignService from '../../src/services/campaign.service';
 import purchaseService from '../../src/services/purchase.service';
 import { PaymentMethod } from '../../src/models/payment.entity';
+import { UserRole } from '../../src/models/user.entity';
 
 /**
  * Purchase flow integration tests
@@ -79,11 +80,12 @@ import { PaymentMethod } from '../../src/models/payment.entity';
   describe('Complete Purchase Flow', () => {
     it('should complete full purchase flow: create campaign -> create purchase -> create payment -> confirm payment', async () => {
       const firebaseUid = 'test-purchase-uid-001';
+      // user_id must match firebase_uid for role.middleware to find the user
       const userResult = await pool.query(
         `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), NOW())
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
          RETURNING user_id`,
-        [firebaseUid, 'test-purchase-test@example.com', 'Test User', 'admin'],
+        [firebaseUid, firebaseUid, 'test-purchase-test@example.com', 'Test User', 'admin'],
       );
       const testUserId = userResult.rows[0].user_id;
       const authToken = `mock-token-${firebaseUid}`;
@@ -119,6 +121,9 @@ import { PaymentMethod } from '../../src/models/payment.entity';
       );
 
       const testCampaignId = campaign.campaign_id;
+
+      // キャンペーンを公開状態にする（購入可能にするため）
+      await campaignService.publishCampaign(testCampaignId);
 
       const positionsResponse = await request(app)
         .get(`/api/campaigns/${testCampaignId}/positions`)
@@ -178,11 +183,12 @@ import { PaymentMethod } from '../../src/models/payment.entity';
 
     it('should prevent concurrent purchase of same position', async () => {
       const firebaseUid = 'test-purchase-uid-002';
+      // user_id must match firebase_uid for role.middleware to find the user
       const userResult = await pool.query(
         `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), NOW())
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
          RETURNING user_id`,
-        [firebaseUid, 'test-purchase-test-2@example.com', 'Test User 2', 'admin'],
+        [firebaseUid, firebaseUid, 'test-purchase-test-2@example.com', 'Test User 2', UserRole.ADMIN],
       );
       const testUserId = userResult.rows[0].user_id;
       const authToken = `mock-token-${firebaseUid}`;

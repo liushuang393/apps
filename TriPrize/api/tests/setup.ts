@@ -1,17 +1,11 @@
-// Jest setup file
-// Runs before each test suite
-
-// Set test environment variables
-process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || 'postgresql://triprize:triprize_password@localhost:5432/triprize';
-process.env.REDIS_URL = process.env.TEST_REDIS_URL || 'redis://localhost:6379';
-process.env.JWT_SECRET = 'test-secret-key-for-testing-only';
-// Deterministic Stripe test keys for jest environment (dummy, non-secret test values)
-process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy_key_for_jest_only';
-process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test_secret';
+/**
+ * Jest setup file (runs AFTER modules are loaded)
+ * 目的: Jest のモック設定を行う
+ * 注意点: 環境変数は setup-env.ts で設定済み（setupFiles で先に実行される）
+ */
 
 // Increase timeout for integration tests
-jest.setTimeout(10000);
+jest.setTimeout(30000);
 
 // Mock Firebase Admin (used indirectly by firebase.config in non-mocked paths)
 jest.mock('firebase-admin', () => {
@@ -35,6 +29,23 @@ jest.mock('firebase-admin', () => {
 	      })),
 	    })),
 	  };
+});
+
+// Mock stripe.config.ts to provide deterministic payment behaviour in tests
+// 目的: Stripe 設定をモック化し、実際の API キー検証を回避
+jest.mock('../src/config/stripe.config', () => {
+  return {
+    stripe: null, // テストではモック支払いを使用
+    STRIPE_WEBHOOK_SECRET: 'whsec_test_secret',
+    STRIPE_PUBLISHABLE_KEY: 'pk_test_dummy',
+    PAYMENT_CONFIG: {
+      isProduction: false,
+      useMockPayment: true,
+      isTestMode: true,
+      isLiveMode: false,
+    },
+    default: null,
+  };
 });
 
 // Mock firebase.config to provide deterministic auth behaviour in tests
@@ -250,24 +261,110 @@ jest.mock('redis', () => {
 });
 
 // Mock redis.config.ts to return a mocked client, overriding its actual connection logic
-jest.mock('../src/config/redis.config', () => ({
-		  getRedisClient: jest.fn(() => ({
-		    on: jest.fn(),
-		    connect: jest.fn().mockResolvedValue(undefined),
-		    isOpen: true,
-		    quit: jest.fn().mockResolvedValue(undefined),
-		    // Methods used by rate limiting and idempotency logic
-		    get: jest.fn().mockResolvedValue(null), // Default to no existing count
-		    setEx: jest.fn().mockResolvedValue(true),
-		    incr: jest.fn().mockResolvedValue(1),
-		    decr: jest.fn().mockResolvedValue(0),
-		    expire: jest.fn().mockResolvedValue(true),
-		    ttl: jest.fn().mockResolvedValue(100),
-		    // Methods used in purchase-validation tests for cleaning idempotency keys
-		    keys: jest.fn().mockResolvedValue([]),
-		    del: jest.fn().mockResolvedValue(0),
-		  })),
-		  closeRedis: jest.fn().mockResolvedValue(undefined),
-		}));
+// 目的: Redis 接続をモック化してテストを高速化
+// 注意点: idempotency.service.ts が使用するすべてのメソッドを実装する必要がある
+jest.mock('../src/config/redis.config', () => {
+  // インメモリストア（テスト間でリセットされる）
+  const store: Record<string, { value: string; expireAt?: number }> = {};
+
+  const mockRedisClient = {
+    on: jest.fn(),
+    connect: jest.fn().mockResolvedValue(undefined),
+    isOpen: true,
+    quit: jest.fn().mockResolvedValue(undefined),
+
+    // GET - キー取得
+    get: jest.fn().mockImplementation(async (key: string) => {
+      const item = store[key];
+      if (!item) return null;
+      if (item.expireAt && Date.now() > item.expireAt) {
+        delete store[key];
+        return null;
+      }
+      return item.value;
+    }),
+
+    // SET - キー設定（NX, EX オプション対応）
+    // idempotency ロック用: redis.set(key, value, {NX: true, EX: ttl})
+    set: jest.fn().mockImplementation(async (key: string, value: string, options?: { NX?: boolean; EX?: number }) => {
+      if (options?.NX && store[key]) {
+        // NX: キーが存在しない場合のみ設定
+        return null;
+      }
+      store[key] = {
+        value,
+        expireAt: options?.EX ? Date.now() + options.EX * 1000 : undefined,
+      };
+      return 'OK';
+    }),
+
+    // SETEX - TTL 付き設定
+    setEx: jest.fn().mockImplementation(async (key: string, ttl: number, value: string) => {
+      store[key] = {
+        value,
+        expireAt: Date.now() + ttl * 1000,
+      };
+      return 'OK';
+    }),
+
+    // INCR - インクリメント
+    incr: jest.fn().mockImplementation(async (key: string) => {
+      const current = store[key]?.value ? parseInt(store[key].value, 10) : 0;
+      store[key] = { ...store[key], value: String(current + 1) };
+      return current + 1;
+    }),
+
+    // DECR - デクリメント
+    decr: jest.fn().mockImplementation(async (key: string) => {
+      const current = store[key]?.value ? parseInt(store[key].value, 10) : 0;
+      store[key] = { ...store[key], value: String(current - 1) };
+      return current - 1;
+    }),
+
+    // EXPIRE - TTL 設定
+    expire: jest.fn().mockImplementation(async (key: string, ttl: number) => {
+      if (store[key]) {
+        store[key].expireAt = Date.now() + ttl * 1000;
+        return 1;
+      }
+      return 0;
+    }),
+
+    // TTL - 残り時間取得
+    ttl: jest.fn().mockImplementation(async (key: string) => {
+      const item = store[key];
+      if (!item || !item.expireAt) return -1;
+      return Math.max(0, Math.floor((item.expireAt - Date.now()) / 1000));
+    }),
+
+    // DEL - キー削除
+    del: jest.fn().mockImplementation(async (key: string | string[]) => {
+      const keys = Array.isArray(key) ? key : [key];
+      let count = 0;
+      for (const k of keys) {
+        if (store[k]) {
+          delete store[k];
+          count++;
+        }
+      }
+      return count;
+    }),
+
+    // KEYS - パターンマッチング
+    keys: jest.fn().mockImplementation(async (pattern: string) => {
+      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+      return Object.keys(store).filter(k => regex.test(k));
+    }),
+  };
+
+  return {
+    getRedisClient: jest.fn().mockResolvedValue(mockRedisClient),
+    closeRedis: jest.fn().mockResolvedValue(undefined),
+  };
+});
+
+// NOTE: database.config.ts is NOT mocked - tests connect to real Docker PostgreSQL
+// 目的: 統合テストは実際のDocker DBに接続する
+// 注意点: docker-compose up で PostgreSQL を起動してからテストを実行すること
 
 // NOTE: Avoid console.log here to keep test output clean and respect project logging rules.

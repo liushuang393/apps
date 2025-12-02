@@ -5,6 +5,8 @@ import paymentController from '../controllers/payment.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { loadUser } from '../middleware/role.middleware';
 import { validateBody, validateParams, validateQuery, commonSchemas } from '../middleware/validation.middleware';
+import { rateLimits } from '../middleware/rate-limit.middleware';
+import { idempotencyMiddleware } from '../services/idempotency.service';
 
 const router = Router();
 
@@ -41,6 +43,15 @@ const listTransactionsSchema = z.object({
   offset: z.string().optional().transform((val) => (val ? parseInt(val, 10) : 0)),
 });
 
+// Initiate refund schema (Admin only)
+// 目的: 验证退款请求参数
+// 注意点: amount 可选（默认全额退款），reason 可选
+const initiateRefundSchema = z.object({
+  transaction_id: commonSchemas.uuid,
+  amount: z.number().positive().int().optional(),
+  reason: z.string().max(500).optional(),
+});
+
 /**
  * Routes
  */
@@ -56,9 +67,13 @@ router.post(
 router.use(authenticate);
 router.use(loadUser);
 
-// Create payment intent
+// Create payment intent (with rate limiting and idempotency)
+// 目的: 防止重复请求和滥用
+// 注意点: 24小时幂等性窗口，每分钟最多5次请求
 router.post(
   '/create-intent',
+  rateLimits.purchase,
+  idempotencyMiddleware(24 * 60 * 60), // 24小时幂等性窗口
   validateBody(createPaymentIntentSchema),
   paymentController.createPaymentIntent
 );
@@ -89,6 +104,15 @@ router.get(
   '/transactions/:transactionId',
   validateParams(transactionIdSchema),
   paymentController.getTransaction
+);
+
+// Initiate refund (Admin only)
+// 目的: 管理员主动发起退款
+// 注意点: 需要 ADMIN 角色，支持全额和部分退款
+router.post(
+  '/refund',
+  validateBody(initiateRefundSchema),
+  paymentController.initiateRefund
 );
 
 export default router;

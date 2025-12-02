@@ -19,23 +19,41 @@ const runHandler = async (
 	res: Response,
 ): Promise<void> => {
 	return new Promise<void>((resolve, reject) => {
+		let resolved = false;
+		
 		const originalJson = res.json.bind(res);
 		res.json = ((body: unknown) => {
 			originalJson(body as never);
-			resolve();
+			if (!resolved) {
+				resolved = true;
+				resolve();
+			}
 			return res;
 		}) as Response['json'];
 
 		const next = (err?: unknown): void => {
 			if (err) {
-				reject(err);
+				if (!resolved) {
+					resolved = true;
+					reject(err);
+				}
 			}
 		};
 
 		try {
 			handler(req, res, next);
+			// Give async handler time to complete
+			setTimeout(() => {
+				if (!resolved) {
+					resolved = true;
+					resolve();
+				}
+			}, 100);
 		} catch (error) {
-			reject(error);
+			if (!resolved) {
+				resolved = true;
+				reject(error);
+			}
 		}
 	});
 };

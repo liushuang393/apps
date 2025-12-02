@@ -28,6 +28,8 @@ describe('LotteryService', () => {
     name: 'Test Campaign',
     status: CampaignStatus.CLOSED,
     positions_total: 10,
+    positions_sold: 10, // 售罄状态
+    end_date: new Date(Date.now() - 1000), // 已结束
     prizes: [
       { prize_id: 'prize-1', rank: 1, quantity: 1, name: 'Prize 1' },
       { prize_id: 'prize-2', rank: 2, quantity: 1, name: 'Prize 2' },
@@ -90,14 +92,19 @@ describe('LotteryService', () => {
     });
 
     it('should throw error if campaign not closed', async () => {
-      (campaignService.getCampaignDetail as jest.Mock).mockResolvedValue({ ...mockCampaign, status: CampaignStatus.PUBLISHED });
+      (campaignService.getCampaignDetail as jest.Mock).mockResolvedValue({ 
+        ...mockCampaign, 
+        status: CampaignStatus.PUBLISHED,
+        positions_sold: 5, // 未售罄
+        end_date: new Date(Date.now() + 1000), // 未结束
+      });
        mockClient.query.mockImplementation(async (query: string) => {
         if (query.includes('pg_try_advisory_xact_lock')) return { rows: [{ locked: true }] };
         return { rows: [] };
       });
 
       await expect(service.drawLottery('campaign-123')).rejects.toThrow(
-        'Campaign must be closed before drawing lottery'
+        'Campaign must be ended or sold out before drawing lottery'
       );
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');

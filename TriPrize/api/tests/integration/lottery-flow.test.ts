@@ -6,6 +6,7 @@ import campaignService from '../../src/services/campaign.service';
 import purchaseService from '../../src/services/purchase.service';
 import { CampaignStatus } from '../../src/models/campaign.entity';
 import { PurchaseStatus } from '../../src/models/purchase.entity';
+import { UserRole } from '../../src/models/user.entity';
 
 /**
  * 抽奖流程集成测试
@@ -32,12 +33,13 @@ import { PurchaseStatus } from '../../src/models/purchase.entity';
 
     // 创建共享的管理员用户
     const firebaseUid = 'test-admin-lottery-shared';
+	    // user_id must match firebase_uid for role.middleware to find the user
 	    const adminResult = await pool.query(
 	      `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
-	       VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), NOW())
+	       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
 	       RETURNING user_id`,
-	      // 使用有效的管理员角色值 'admin' (与 UserRole.ADMIN 对应)
-	      [firebaseUid, 'test-lottery-admin-shared@example.com', 'Test Admin', 'admin']
+	      // 使用有效的管理员角色值 UserRole.ADMIN
+	      [firebaseUid, firebaseUid, 'test-lottery-admin-shared@example.com', 'Test Admin', UserRole.ADMIN]
 	    );
     adminUserId = adminResult.rows[0].user_id;
     adminToken = `mock-token-${firebaseUid}`;
@@ -94,12 +96,13 @@ import { PurchaseStatus } from '../../src/models/purchase.entity';
 
       const testUserIds: string[] = [];
 	      for (const user of users) {
+	        // user_id must match firebase_uid for role.middleware to find the user
 	        const userResult = await pool.query(
 	          `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
-	           VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), NOW())
+	           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
 	           RETURNING user_id`,
-	          // 使用有效的普通用户角色值 'customer' (与 UserRole.CUSTOMER 对应)
-	          [user.firebase_uid, user.email, user.name, 'customer']
+	          // 使用有效的普通用户角色值 UserRole.CUSTOMER
+	          [user.firebase_uid, user.firebase_uid, user.email, user.name, UserRole.CUSTOMER]
 	        );
         testUserIds.push(userResult.rows[0].user_id);
       }

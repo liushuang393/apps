@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { pool, testConnection } from './config/database.config';
 import { getRedisClient, closeRedis } from './config/redis.config';
 import { getFirebaseApp } from './config/firebase.config';
+import paymentService from './services/payment.service';
 import logger from './utils/logger.util';
 import * as dotenv from 'dotenv';
 
@@ -34,6 +35,13 @@ async function startServer(): Promise<void> {
 
     // Create Express app
     const app = createApp();
+
+    // Start scheduled tasks
+    // 目的: 启动定时任务清理过期的 Konbini 支付
+    // 注意点: 服务器启动后自动启动，每小时运行一次
+    logger.info('Starting scheduled tasks...');
+    paymentService.startScheduledCleanup();
+    logger.info('✓ Scheduled tasks started');
 
     // Start listening
     const server = app.listen(PORT, HOST, () => {

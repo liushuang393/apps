@@ -14,6 +14,8 @@
     "test:unit": "jest --testPathPattern=tests/unit --no-watchman",
     "test:integration": "jest --testPathPattern=tests/integration --no-watchman",
     "test:contract": "jest --testPathPattern=tests/contract --no-watchman",
+    "test:comprehensive": "jest --coverage --no-watchman --testPathPattern=comprehensive",
+    "test:db": "ts-node scripts/test-db-connection.ts",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write \"src/**/*.ts\""

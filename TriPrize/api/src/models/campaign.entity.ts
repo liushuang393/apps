@@ -16,6 +16,7 @@ export interface Campaign {
   start_date: Date | null;
   end_date: Date | null;
   status: CampaignStatus;
+  auto_draw: boolean; // 自動開獎フラグ（デフォルト: true）
   created_at: Date;
   updated_at: Date;
   drawn_at: Date | null;
@@ -98,6 +99,7 @@ export interface CreateCampaignDto {
   purchase_limit?: number;
   start_date?: Date;
   end_date?: Date;
+  auto_draw?: boolean; // 自動開獎フラグ（デフォルト: true）
   prizes: CreatePrizeDto[];
 }
 
@@ -125,6 +127,7 @@ export interface UpdateCampaignDto {
   start_date?: Date;
   end_date?: Date;
   status?: CampaignStatus;
+  auto_draw?: boolean; // 自動開獎フラグ
 }
 
 /**
@@ -170,6 +173,7 @@ export function mapRowToCampaign(row: QueryResultRow): Campaign {
     start_date: row.start_date ? new Date(row.start_date as string | number | Date) : null,
     end_date: row.end_date ? new Date(row.end_date as string | number | Date) : null,
     status: row.status as CampaignStatus,
+    auto_draw: row.auto_draw !== undefined ? Boolean(row.auto_draw) : true, // デフォルト: true
     created_at: new Date(row.created_at as string | number | Date),
     updated_at: new Date(row.updated_at as string | number | Date),
     drawn_at: row.drawn_at ? new Date(row.drawn_at as string | number | Date) : null,

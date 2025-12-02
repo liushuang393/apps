@@ -152,19 +152,50 @@ class UserController {
         // 本番認証: 後端で Firebase ユーザーを作成
         const auth = admin.auth();
         if (!auth) {
-          throw new Error('Firebase Auth is not initialized');
+          const errorMsg = 'Firebase Auth is not initialized. Please check Firebase configuration and server time synchronization.';
+          logger.error(errorMsg, {
+            hasProjectId: !!process.env.FIREBASE_PROJECT_ID,
+            hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+            hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+          });
+          throw new Error(errorMsg);
         }
 
-        // Firebase にユーザー作成
-        const userRecord = await auth.createUser({
-          email: email,
-          password: password,
-          displayName: display_name,
-        });
-        firebaseUid = userRecord.uid;
-        firebaseUserCreated = true;
+        try {
+          // Firebase にユーザー作成
+          const userRecord = await auth.createUser({
+            email: email,
+            password: password,
+            displayName: display_name,
+          });
+          firebaseUid = userRecord.uid;
+          firebaseUserCreated = true;
 
-        logger.info('Firebase user created', { firebaseUid, email });
+          logger.info('Firebase user created', { firebaseUid, email });
+        } catch (firebaseError: unknown) {
+          const firebaseErrorMessage = firebaseError instanceof Error ? firebaseError.message : 'Unknown error';
+          const firebaseErrorCode = firebaseError && typeof firebaseError === 'object' && 'code' in firebaseError
+            ? (firebaseError as { code: string }).code
+            : undefined;
+
+          logger.error('Firebase user creation failed', {
+            error: firebaseErrorMessage,
+            errorCode: firebaseErrorCode,
+            email,
+          });
+
+          // Provide user-friendly error messages
+          if (firebaseErrorCode === 'auth/email-already-exists') {
+            throw new Error('このメールアドレスは既に登録されています');
+          } else if (firebaseErrorCode === 'auth/invalid-email') {
+            throw new Error('無効なメールアドレスです');
+          } else if (firebaseErrorCode === 'auth/weak-password') {
+            throw new Error('パスワードが弱すぎます。6文字以上で設定してください');
+          } else {
+            // Generic error with helpful message
+            throw new Error(`Firebase認証エラー: ${firebaseErrorMessage}。Firebase設定とサーバーの時刻同期を確認してください。`);
+          }
+        }
       }
 
       // DB にユーザー作成
@@ -280,8 +311,17 @@ class UserController {
           errorCode,
           stack: error instanceof Error ? error.stack : undefined,
         });
-        
-        throw error;
+
+        // Provide user-friendly error messages
+        if (errorCode === 'auth/id-token-expired') {
+          throw new Error('ログイントークンの有効期限が切れています。再度ログインしてください。');
+        } else if (errorCode === 'auth/id-token-revoked') {
+          throw new Error('ログイントークンが無効化されました。再度ログインしてください。');
+        } else if (errorCode === 'auth/argument-error') {
+          throw new Error('無効なログイントークンです。再度ログインしてください。');
+        } else {
+          throw new Error(`ログイン認証エラー: ${errorMessage}。Firebase設定を確認してください。`);
+        }
       }
     }
 
@@ -443,7 +483,7 @@ class UserController {
    * @access  Public
    * 目的: 管理者ユーザーが存在するかチェック（登録画面で使用）
    */
-  checkAdminExists = asyncHandler(async (req: Request, res: Response) => {
+  checkAdminExists = asyncHandler(async (_req: Request, res: Response) => {
     const hasAdmin = await userService.hasAdminUser();
     
     return res.status(200).json({

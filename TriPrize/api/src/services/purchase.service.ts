@@ -10,6 +10,9 @@ import {
 // import { PositionStatus } from '../models/campaign.entity';
 import { generateUUID, sha256 } from '../utils/crypto.util';
 import logger from '../utils/logger.util';
+import lotteryService from './lottery.service';
+import campaignService from './campaign.service';
+import { CampaignStatus } from '../models/campaign.entity';
 
 /**
  * Purchase service for handling position purchases
@@ -86,23 +89,32 @@ export class PurchaseService {
       // Calculate total amount
       const totalAmount = positionRows.reduce((sum, pos) => sum + pos.price, 0);
 
-      // Generate idempotency key if not provided
-      const effectiveIdempotencyKey = idempotencyKey || sha256(
+      // Generate base idempotency key if not provided
+      // 目的: 冪等性キーの基盤を生成（各ポジションごとにユニークにする）
+      const baseIdempotencyKey = idempotencyKey || sha256(
         JSON.stringify({ userId, campaignId: dto.campaign_id, positionIds: dto.position_ids, timestamp: Date.now() })
       );
 
       // Create purchase records
+      // 目的: 購入レコードを作成し、ポジションを予約状態にする
+      // 注意点: APIの payment_method ('card'|'konbini') を
+      //         DBの purchase_method ('credit_card'|'debit_card'|'konbini') に変換
       const purchases: Purchase[] = [];
+      // 'card' -> 'credit_card' に変換（DB CHECK制約に対応）
+      const purchaseMethod = dto.payment_method === 'card' ? 'credit_card' : (dto.payment_method || 'credit_card');
       for (const position of positionRows) {
         const purchaseId = generateUUID();
+        // 各ポジションごとにユニークな idempotency_key を生成
+        // 注意点: DB の UNIQUE 制約を満たすため、position_id を追加
+        const positionIdempotencyKey = sha256(`${baseIdempotencyKey}-${position.position_id}`);
 
         // Insert purchase
         const { rows: purchaseRows } = await client.query<Purchase>(
           `INSERT INTO purchases (
             purchase_id, user_id, campaign_id, position_id,
             quantity, price_per_position, total_amount, status,
-            idempotency_key, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, NOW(), NOW())
+            purchase_method, idempotency_key, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, NOW(), NOW())
           RETURNING *`,
           [
             purchaseId,
@@ -112,7 +124,8 @@ export class PurchaseService {
             1,
             position.price,
             position.price,
-            effectiveIdempotencyKey,
+            purchaseMethod,
+            positionIdempotencyKey,
           ]
         );
 
@@ -315,6 +328,20 @@ export class PurchaseService {
         paymentIntentId,
       });
 
+      // 自動開獎チェック: 購買完了後、トランザクション外で実行
+      // 目的: キャンペーンのauto_drawがtrueの場合、購買完了後に自動的に開獎を実行
+      // 注意点: エラーが発生しても購買完了はロールバックしない（非同期で実行）
+      if (status === PurchaseStatus.COMPLETED) {
+        this.checkAndAutoDraw(purchase.campaign_id, purchaseId).catch((err: unknown) => {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          logger.error('Failed to check auto-draw after purchase completion', {
+            error: errorMessage,
+            campaignId: purchase.campaign_id,
+            purchaseId,
+          });
+        });
+      }
+
       return purchase;
     } catch (error: unknown) {
       await client.query('ROLLBACK');
@@ -327,6 +354,50 @@ export class PurchaseService {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  /**
+   * Check and auto-draw lottery if conditions are met
+   * 目的: キャンペーンのauto_drawがtrueで、条件を満たす場合に自動開獎を実行
+   * I/O: campaignId → void (非同期)
+   * 注意点: エラーが発生してもログに記録するのみ
+   */
+  private async checkAndAutoDraw(campaignId: string, purchaseId: string): Promise<void> {
+    try {
+      // トランザクション外でキャンペーン情報を取得
+      const campaign = await campaignService.getCampaignById(campaignId);
+      if (!campaign || !campaign.auto_draw) {
+        return; // 自動開獎が無効な場合は何もしない
+      }
+
+      // キャンペーンが全て売り切れた場合、またはキャンペーン終了後に自動開獎
+      const now = new Date();
+      const isSoldOut = campaign.positions_sold >= campaign.positions_total;
+      const isEnded = campaign.end_date && new Date(campaign.end_date) <= now;
+      const canAutoDraw = isSoldOut || isEnded;
+
+      if (canAutoDraw && campaign.status !== CampaignStatus.DRAWN) {
+        logger.info('Auto-drawing lottery after purchase completion', {
+          campaignId,
+          purchaseId,
+          reason: isSoldOut ? 'sold_out' : 'ended',
+          positionsSold: campaign.positions_sold,
+          positionsTotal: campaign.positions_total,
+        });
+
+        // 非同期で実行（awaitしない）
+        await lotteryService.drawLottery(campaignId);
+      }
+    } catch (autoDrawError: unknown) {
+      // 自動開獎のエラーはログに記録するが、購買完了は成功とする
+      const errorMessage = autoDrawError instanceof Error ? autoDrawError.message : 'Unknown error';
+      logger.error('Auto-draw failed after purchase completion', {
+        error: errorMessage,
+        campaignId,
+        purchaseId,
+      });
+      // エラーを再スローしない（購買完了は成功とする）
     }
   }
 

@@ -8,6 +8,8 @@ import {
   UpdateCampaignDto,
   Layer,
   Prize,
+  Position,
+  PositionStatus,
   mapRowToCampaign,
   mapRowToLayer,
   mapRowToPrize,
@@ -72,12 +74,15 @@ export class CampaignService {
       const campaignId = generateUUID();
 
       // Insert campaign
+      // 目的: キャンペーンを作成し、auto_drawフラグを設定（デフォルト: true）
+      // I/O: CreateCampaignDto → CampaignDetail
+      const autoDraw = dto.auto_draw !== undefined ? dto.auto_draw : true; // デフォルト: 自動開獎
       const { rows: campaignRows } = await client.query<Campaign>(
         `INSERT INTO campaigns (
           campaign_id, name, description, base_length, positions_total,
           layer_prices, profit_margin_percent, purchase_limit,
-          start_date, end_date, status, created_by, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft', $11, NOW(), NOW())
+          start_date, end_date, status, auto_draw, created_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft', $11, $12, NOW(), NOW())
         RETURNING *`,
         [
           campaignId,
@@ -90,6 +95,7 @@ export class CampaignService {
           dto.purchase_limit || null,
           dto.start_date || null,
           dto.end_date || null,
+          autoDraw,
           creatorId,
         ]
       );
@@ -306,7 +312,7 @@ export class CampaignService {
       }
 
       const updates: string[] = [];
-      const values: (string | number | null | Record<string, number> | Date)[] = [];
+      const values: (string | number | boolean | null | Record<string, number> | Date)[] = [];
       let paramIndex = 1;
 
       if (dto.name !== undefined) {
@@ -367,6 +373,11 @@ export class CampaignService {
       if (dto.status !== undefined) {
         updates.push(`status = $${paramIndex++}`);
         values.push(dto.status);
+      }
+
+      if (dto.auto_draw !== undefined) {
+        updates.push(`auto_draw = $${paramIndex++}`);
+        values.push(dto.auto_draw);
       }
 
       if (updates.length === 0) {
@@ -500,6 +511,72 @@ export class CampaignService {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to get campaign stats', { error: errorMessage, campaignId });
+      throw error;
+    }
+  }
+
+  /**
+   * Get positions for a campaign
+   * 目的: キャンペーンの位置情報を取得する
+   * I/O: campaignId, status (optional), limit (optional) -> Position[]
+   */
+  async getPositions(
+    campaignId: string,
+    status?: string,
+    limit: number = 100
+  ): Promise<Position[]> {
+    try {
+      // キャンペーンの存在確認
+      const campaign = await this.getCampaignById(campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
+
+      let query = `
+        SELECT 
+          position_id,
+          campaign_id,
+          layer_id,
+          layer_number,
+          row_number,
+          col_number,
+          price,
+          status,
+          user_id,
+          created_at,
+          updated_at
+        FROM positions
+        WHERE campaign_id = $1
+      `;
+      
+      const params: (string | number)[] = [campaignId];
+      
+      if (status) {
+        query += ' AND status = $2';
+        params.push(status);
+      }
+      
+      query += ' ORDER BY layer_number ASC, row_number ASC, col_number ASC';
+      query += ` LIMIT $${params.length + 1}`;
+      params.push(limit);
+
+      const { rows } = await pool.query(query, params);
+
+      return rows.map((row: Record<string, unknown>) => ({
+        position_id: String(row.position_id),
+        campaign_id: String(row.campaign_id),
+        layer_number: Number.parseInt(String(row.layer_number), 10),
+        row_number: Number.parseInt(String(row.row_number), 10),
+        col_number: Number.parseInt(String(row.col_number), 10),
+        price: Number.parseInt(String(row.price), 10),
+        status: String(row.status) as PositionStatus,
+        user_id: row.user_id ? String(row.user_id) : null,
+        created_at: new Date(String(row.created_at)),
+        updated_at: new Date(String(row.updated_at)),
+      }));
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to get positions', { error: errorMessage, campaignId, status });
       throw error;
     }
   }

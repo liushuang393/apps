@@ -164,6 +164,11 @@ export class PaymentController {
 
     try {
       // Verify webhook signature
+      // 目的: Stripe Webhook の署名を検証
+      // 注意点: stripe が null の場合は Mock Payment モード
+      if (!stripe) {
+        throw errors.serviceUnavailable('Stripe is not initialized. Webhook verification is not available in mock payment mode.');
+      }
       event = stripe.webhooks.constructEvent(
         req.body as string | Buffer,
         signature,
@@ -181,6 +186,56 @@ export class PaymentController {
     await paymentService.handleWebhook(event);
 
     res.json({ received: true });
+  });
+
+  /**
+   * Initiate refund (Admin only)
+   * POST /api/payments/refund
+   * 目的: 管理员主动发起退款
+   * I/O: transaction_id, amount(可选), reason(可选) → refund 信息
+   * 注意点: 只有 ADMIN 角色可以调用
+   */
+  initiateRefund = asyncHandler(async (req: AuthorizedRequest, res: Response): Promise<void> => {
+    if (!req.dbUser) {
+      throw errors.unauthorized();
+    }
+
+    // Check admin role
+    if (req.dbUser.role !== UserRole.ADMIN) {
+      throw errors.forbidden('Only administrators can initiate refunds');
+    }
+
+    const body = req.body as {
+      transaction_id: string;
+      amount?: number;
+      reason?: string;
+    };
+
+    const refund = await paymentService.initiateRefund(
+      body.transaction_id,
+      body.amount,
+      body.reason
+    );
+
+    logger.info('Admin initiated refund', {
+      adminUserId: req.dbUser.user_id,
+      transactionId: body.transaction_id,
+      refundId: refund.id,
+      amount: body.amount,
+      reason: body.reason,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        refund_id: refund.id,
+        transaction_id: body.transaction_id,
+        amount: refund.amount,
+        currency: refund.currency,
+        status: refund.status,
+        created: refund.created,
+      },
+    });
   });
 }
 

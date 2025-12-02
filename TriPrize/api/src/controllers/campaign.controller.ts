@@ -166,6 +166,30 @@ export class CampaignController {
       data: stats,
     });
   });
+
+  /**
+   * Get campaign positions
+   * GET /api/campaigns/:campaignId/positions
+   * 目的: キャンペーンの位置情報を取得する
+   * I/O: campaignId, status (query), limit (query) -> Position[]
+   */
+  getPositions = asyncHandler(async (req: AuthorizedRequest, res: Response): Promise<void> => {
+    const campaignId = String(req.params.campaignId);
+    const { status, limit } = req.query as { status?: string; limit?: string };
+
+    const limitNum = limit ? Number.parseInt(limit, 10) : 100;
+
+    const positions = await campaignService.getPositions(campaignId, status, limitNum);
+
+    res.json({
+      success: true,
+      data: positions,
+      pagination: {
+        limit: limitNum,
+        total: positions.length,
+      },
+    });
+  });
 }
 
 export default new CampaignController();

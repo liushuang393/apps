@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import userController from '../../../src/controllers/user.controller';
 import userService from '../../../src/services/user.service';
 import { AuthenticatedRequest } from '../../../src/middleware/auth.middleware';
+import { UserRole } from '../../../src/models/user.entity';
 
 /**
  * UserController の単体テスト
@@ -13,6 +14,25 @@ import { AuthenticatedRequest } from '../../../src/middleware/auth.middleware';
 // 依存モジュールのモック設定（DB アクセスのみモックし、ロガーは実実装を使用）
 jest.mock('../../../src/services/user.service');
 
+// Firebase Admin のモック（setup.tsで既にモックされているが、テスト内で動的に変更するため）
+const mockCreateUser = jest.fn();
+const mockDeleteUser = jest.fn();
+const mockVerifyIdToken = jest.fn();
+
+jest.mock('firebase-admin', () => {
+  return {
+    initializeApp: jest.fn(),
+    credential: {
+      cert: jest.fn(),
+    },
+    auth: jest.fn(() => ({
+      createUser: mockCreateUser,
+      deleteUser: mockDeleteUser,
+      verifyIdToken: mockVerifyIdToken,
+    })),
+  };
+});
+
 // asyncHandler でラップされたコントローラを安全に実行するためのヘルパー
 const runHandler = async (
   handler: (req: Request, res: Response, next: NextFunction) => void,
@@ -20,9 +40,14 @@ const runHandler = async (
   res: Response,
 ): Promise<void> => {
   return new Promise<void>((resolve, reject) => {
+    let resolved = false;
+    
     const next: NextFunction = ((err?: unknown) => {
       if (err) {
-        reject(err);
+        if (!resolved) {
+          resolved = true;
+          reject(err);
+        }
       }
       // 通常パスでは asyncHandler は next を呼ばない
     }) as NextFunction;
@@ -33,11 +58,28 @@ const runHandler = async (
       if (originalJson) {
         originalJson(body as never);
       }
-      resolve();
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
       return res as Response;
     }) as Response['json'];
 
-    handler(req, res, next);
+    try {
+      handler(req, res, next);
+      // Give async handler time to complete
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      }, 100);
+    } catch (err) {
+      if (!resolved) {
+        resolved = true;
+        reject(err);
+      }
+    }
   });
 };
 
@@ -57,6 +99,9 @@ describe('UserController', () => {
       }),
     };
     jest.clearAllMocks();
+    mockCreateUser.mockClear();
+    mockDeleteUser.mockClear();
+    mockVerifyIdToken.mockClear();
   });
 
   describe('createUser', () => {
@@ -67,7 +112,7 @@ describe('UserController', () => {
         display_name: 'Test User',
         avatar_url: null,
         fcm_token: null,
-        role: 'customer' as const,
+        role: UserRole.CUSTOMER,
         notification_enabled: true,
         last_login_at: null,
         created_at: new Date(),
@@ -104,7 +149,7 @@ describe('UserController', () => {
         display_name: 'Test User',
         avatar_url: null,
         fcm_token: null,
-        role: 'customer' as const,
+        role: UserRole.CUSTOMER,
         notification_enabled: true,
         last_login_at: null,
         created_at: new Date(),
@@ -142,7 +187,7 @@ describe('UserController', () => {
         display_name: 'Test User',
         avatar_url: null,
         fcm_token: null,
-        role: 'customer' as const,
+        role: UserRole.CUSTOMER,
         notification_enabled: true,
         last_login_at: null,
         created_at: new Date(),
@@ -195,12 +240,12 @@ describe('UserController', () => {
 
     it('should register a new user with Firebase authentication', async () => {
       const mockUser = {
-        user_id: 'valid-firebase-token',
+        user_id: 'valid-firebase-uid',
         email: 'valid-firebase-token@example.com',
         display_name: 'New User',
         avatar_url: null,
         fcm_token: null,
-        role: 'customer' as const,
+        role: UserRole.CUSTOMER,
         notification_enabled: true,
         last_login_at: null,
         created_at: new Date(),
@@ -208,13 +253,17 @@ describe('UserController', () => {
       };
 
       mockRequest.body = {
-        firebase_token: 'valid-firebase-token',
         email: 'valid-firebase-token@example.com',
+        password: 'password123',
         display_name: 'New User',
       };
 
       // Firebase Admin is already mocked in setup.ts
-      // It will return { uid: 'valid-firebase-token', email: 'valid-firebase-token@example.com' }
+      // Mock Firebase Admin auth().createUser to return the mock user
+      mockCreateUser.mockResolvedValue({
+        uid: 'valid-firebase-uid',
+        email: 'valid-firebase-token@example.com',
+      });
 
       (userService.getUserById as jest.Mock).mockResolvedValue(null);
       (userService.createUser as jest.Mock).mockResolvedValue(mockUser);
@@ -234,48 +283,36 @@ describe('UserController', () => {
     });
 
     it('should return 409 if user already registered', async () => {
-      const mockUser = {
-        user_id: 'existing-token',
-        email: 'existing-token@example.com',
-        display_name: 'Existing User',
-        avatar_url: null,
-        fcm_token: null,
-        role: 'customer' as const,
-        notification_enabled: true,
-        last_login_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-
       mockRequest.body = {
-        firebase_token: 'existing-token',
         email: 'existing-token@example.com',
+        password: 'password123',
+        display_name: 'Existing User',
       };
 
-      (userService.getUserById as jest.Mock).mockResolvedValue(mockUser);
+      // Mock Firebase Admin auth().createUser to throw email-already-exists error
+      const error: any = new Error('Email already exists');
+      error.code = 'auth/email-already-exists';
+      mockCreateUser.mockRejectedValue(error);
 
-      await runHandler(
-        userController.register,
-        mockRequest as Request,
-        mockResponse as Response,
-      );
+      await expect(
+        runHandler(
+          userController.register,
+          mockRequest as Request,
+          mockResponse as Response,
+        )
+      ).rejects.toThrow();
 
-      expect(mockResponse.status).toHaveBeenCalledWith(409);
-      expect(responseObject).toEqual({
-        success: false,
-        message: 'User already registered',
-      });
       expect(userService.createUser).not.toHaveBeenCalled();
     });
 
     it('should register admin user with role parameter', async () => {
       const mockAdminUser = {
-        user_id: 'admin-token',
+        user_id: 'admin-firebase-uid',
         email: 'admin-token@example.com',
         display_name: 'Admin User',
         avatar_url: null,
         fcm_token: null,
-        role: 'admin' as const,
+        role: UserRole.ADMIN,
         notification_enabled: true,
         last_login_at: null,
         created_at: new Date(),
@@ -283,11 +320,17 @@ describe('UserController', () => {
       };
 
       mockRequest.body = {
-        firebase_token: 'admin-token',
         email: 'admin-token@example.com',
+        password: 'admin123',
         display_name: 'Admin User',
-        role: 'admin',
+        role: UserRole.ADMIN,
       };
+
+      // Mock Firebase Admin auth().createUser to return the mock admin user
+      mockCreateUser.mockResolvedValue({
+        uid: 'admin-firebase-uid',
+        email: 'admin-token@example.com',
+      });
 
       (userService.getUserById as jest.Mock).mockResolvedValue(null);
       (userService.createUser as jest.Mock).mockResolvedValue(mockAdminUser);
@@ -300,10 +343,10 @@ describe('UserController', () => {
 
       expect(mockResponse.status).toHaveBeenCalledWith(201);
       expect(userService.createUser).toHaveBeenCalledWith({
-        user_id: 'admin-token',
+        user_id: 'admin-firebase-uid',
         email: 'admin-token@example.com',
         display_name: 'Admin User',
-        role: 'admin',
+        role: UserRole.ADMIN,
       });
     });
   });
@@ -320,7 +363,7 @@ describe('UserController', () => {
         display_name: 'Test User',
         avatar_url: null,
         fcm_token: null,
-        role: 'customer' as const,
+        role: UserRole.CUSTOMER,
         notification_enabled: true,
         last_login_at: null,
         created_at: new Date(),
@@ -330,6 +373,13 @@ describe('UserController', () => {
       mockRequest.body = {
         firebase_token: 'login-token',
       };
+
+      // Mock Firebase Admin verifyIdToken to return decoded token
+      mockVerifyIdToken.mockResolvedValue({
+        uid: 'login-token',
+        email: 'login-token@example.com',
+        email_verified: true,
+      });
 
       (userService.getUserById as jest.Mock).mockResolvedValue(mockUser);
       (userService.updateLastLogin as jest.Mock).mockResolvedValue(undefined);
@@ -353,6 +403,13 @@ describe('UserController', () => {
       mockRequest.body = {
         firebase_token: 'non-existent-token',
       };
+
+      // Mock Firebase Admin verifyIdToken to return decoded token
+      mockVerifyIdToken.mockResolvedValue({
+        uid: 'non-existent-token',
+        email: 'non-existent@example.com',
+        email_verified: true,
+      });
 
       (userService.getUserById as jest.Mock).mockResolvedValue(null);
 

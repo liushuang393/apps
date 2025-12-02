@@ -1,6 +1,7 @@
 import request from 'supertest';
-import app from '../../src/app';
+import { createApp } from '../../src/app';
 import { pool } from '../../src/config/database.config';
+import { UserRole } from '../../src/models/user.entity';
 
 /**
  * 用户认证流程集成测试
@@ -18,10 +19,13 @@ import { pool } from '../../src/config/database.config';
 jest.setTimeout(60000);
 
 describe('Authentication Flow Integration Tests', () => {
+  let app: ReturnType<typeof createApp>;
   let testUserId: string;
   let validToken: string;
 
   beforeAll(async () => {
+    // Initialize Express application for integration tests
+    app = createApp();
     // 清理测试数据
     await pool.query('DELETE FROM users WHERE email LIKE \'test-auth%\'');
   });
@@ -38,11 +42,11 @@ describe('Authentication Flow Integration Tests', () => {
   });
 
   describe('User Registration', () => {
-    it('should register new user with valid Firebase UID', async () => {
+    it('should register new user with valid Firebase token', async () => {
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-001',
+          firebase_token: 'mock_test-auth-001@example.com',
           email: 'test-auth-001@example.com',
           display_name: 'Test Auth User 001',
         });
@@ -62,7 +66,7 @@ describe('Authentication Flow Integration Tests', () => {
       await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-002',
+          firebase_token: 'mock_test-auth-002@example.com',
           email: 'test-auth-002@example.com',
           display_name: 'Test Auth User 002',
         });
@@ -71,7 +75,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-003',
+          firebase_token: 'mock_test-auth-002-duplicate@example.com',
           email: 'test-auth-002@example.com',
           display_name: 'Test Auth User 003',
         });
@@ -84,7 +88,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-004',
+          firebase_token: 'mock_test-auth-004@example.com',
           // missing email and display_name
         });
 
@@ -95,7 +99,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-005',
+          firebase_token: 'mock_invalid-email',
           email: 'invalid-email',
           display_name: 'Test Auth User 005',
         });
@@ -111,7 +115,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-login-001',
+          firebase_token: 'mock_test-auth-login@example.com',
           email: 'test-auth-login@example.com',
           display_name: 'Test Auth Login User',
         });
@@ -124,7 +128,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/login')
         .send({
-          firebase_uid: 'test-firebase-uid-login-001',
+          firebase_token: 'mock_test-auth-login@example.com',
         });
 
       expect(response.status).toBe(200);
@@ -138,7 +142,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/login')
         .send({
-          firebase_uid: 'non-existent-firebase-uid',
+          firebase_token: 'mock_non-existent@example.com',
         });
 
       expect(response.status).toBe(404);
@@ -149,7 +153,7 @@ describe('Authentication Flow Integration Tests', () => {
       await request(app)
         .post('/api/auth/login')
         .send({
-          firebase_uid: 'test-firebase-uid-login-001',
+          firebase_token: 'mock_test-auth-login@example.com',
         });
 
       // 验证last_login_at已更新
@@ -168,7 +172,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-token-001',
+          firebase_token: 'mock_test-auth-token@example.com',
           email: 'test-auth-token@example.com',
           display_name: 'Test Auth Token User',
         });
@@ -250,7 +254,7 @@ describe('Authentication Flow Integration Tests', () => {
       const adminResponse = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-admin-001',
+          firebase_token: 'mock_test-auth-admin@example.com',
           email: 'test-auth-admin@example.com',
           display_name: 'Test Auth Admin User',
         });
@@ -261,14 +265,14 @@ describe('Authentication Flow Integration Tests', () => {
       // 设置为管理员
       await pool.query(
         'UPDATE users SET role = $1 WHERE user_id = $2',
-        ['admin', adminUserId]
+        [UserRole.ADMIN, adminUserId]
       );
 
       // 创建普通用户
       const regularResponse = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-regular-001',
+          firebase_token: 'mock_test-auth-regular@example.com',
           email: 'test-auth-regular@example.com',
           display_name: 'Test Auth Regular User',
         });
@@ -319,7 +323,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-verified-001',
+          firebase_token: 'mock_test-auth-verified@example.com',
           email: 'test-auth-verified@example.com',
           display_name: 'Test Auth Verified User',
           email_verified: true,
@@ -346,7 +350,7 @@ describe('Authentication Flow Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          firebase_uid: 'test-firebase-uid-unverified-001',
+          firebase_token: 'mock_test-auth-unverified@example.com',
           email: 'test-auth-unverified@example.com',
           display_name: 'Test Auth Unverified User',
           email_verified: false,

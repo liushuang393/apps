@@ -18,12 +18,13 @@ jest.mock('../../src/services/payment.service', () => ({
  * 
  * 注意: 需要配置STRIPE_WEBHOOK_SECRET环境变量
  */
-	const app = createApp();
-
-	describe('Stripe Webhook Contract Tests', () => {
+describe('Stripe Webhook Contract Tests', () => {
+  let app: ReturnType<typeof createApp>;
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test_secret';
 
   beforeAll(async () => {
+    // Initialize Express application for integration tests
+    app = createApp();
     // 清理测试数据
 	    await pool.query(
 	      "DELETE FROM payment_transactions WHERE stripe_payment_intent_id LIKE 'pi_test_%'",

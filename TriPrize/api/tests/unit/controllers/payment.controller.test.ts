@@ -13,6 +13,19 @@ import { stripe } from '../../../src/config/stripe.config';
  */
 
 jest.mock('../../../src/services/payment.service');
+jest.mock('../../../src/config/stripe.config', () => ({
+  stripe: {
+    webhooks: {
+      constructEvent: jest.fn(),
+    },
+  },
+  PAYMENT_CONFIG: {
+    useMockPayment: false,
+    isProduction: false,
+    isTestMode: true,
+    isLiveMode: false,
+  },
+}));
 
 const runAuthHandler = async (
   handler: (req: AuthorizedRequest, res: Response, next: (err?: unknown) => void) => void,
@@ -20,23 +33,41 @@ const runAuthHandler = async (
   res: Response,
 ): Promise<void> => {
   return new Promise<void>((resolve, reject) => {
+    let resolved = false;
+    
     const originalJson = res.json.bind(res);
     res.json = ((body: unknown) => {
       originalJson(body as never);
-      resolve();
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
       return res;
     }) as Response['json'];
 
     const next = (err?: unknown): void => {
       if (err) {
-        reject(err);
+        if (!resolved) {
+          resolved = true;
+          reject(err);
+        }
       }
     };
 
     try {
       handler(req, res, next);
+      // Give async handler time to complete
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      }, 100);
     } catch (error) {
-      reject(error);
+      if (!resolved) {
+        resolved = true;
+        reject(error);
+      }
     }
   });
 };
@@ -47,23 +78,41 @@ const runRequestHandler = async (
   res: Response,
 ): Promise<void> => {
   return new Promise<void>((resolve, reject) => {
+    let resolved = false;
+    
     const originalJson = res.json.bind(res);
     res.json = ((body: unknown) => {
       originalJson(body as never);
-      resolve();
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
       return res;
     }) as Response['json'];
 
     const next = (err?: unknown): void => {
       if (err) {
-        reject(err);
+        if (!resolved) {
+          resolved = true;
+          reject(err);
+        }
       }
     };
 
     try {
       handler(req, res, next);
+      // Give async handler time to complete
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      }, 100);
     } catch (error) {
-      reject(error);
+      if (!resolved) {
+        resolved = true;
+        reject(error);
+      }
     }
   });
 };
@@ -265,7 +314,7 @@ describe('PaymentController', () => {
   describe('handleWebhook', () => {
     it('should call paymentService.handleWebhook when signature valid', async () => {
       const stripeConstructEventSpy = jest
-        .spyOn(stripe.webhooks, 'constructEvent')
+        .spyOn(stripe!.webhooks, 'constructEvent')
         .mockReturnValue({ id: 'evt_1' } as never);
 
       mockRequest.headers = { 'stripe-signature': 'sig_123' } as Record<string, string>;

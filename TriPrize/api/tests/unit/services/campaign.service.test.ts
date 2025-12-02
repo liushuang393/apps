@@ -73,8 +73,10 @@ describe('CampaignService', () => {
         profit_margin_percent: 10,
         purchase_limit: 5,
         status: 'draft',
+        auto_draw: true, // mapRowToCampaignに必要なフィールド
         start_date: null,
         end_date: null,
+        drawn_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -138,12 +140,18 @@ describe('CampaignService', () => {
       const mockRow = {
         campaign_id: 'campaign-123',
         name: 'Test Campaign',
+        description: 'Test Description',
         base_length: 3,
         positions_total: 6,
         positions_sold: 0,
         layer_prices: { '1': 100, '2': 200, '3': 300 },
         profit_margin_percent: 10,
+        purchase_limit: null,
         status: 'published',
+        auto_draw: true, // mapRowToCampaignに必要なフィールド
+        start_date: null,
+        end_date: null,
+        drawn_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -231,12 +239,18 @@ describe('CampaignService', () => {
       const existingCampaign = {
         campaign_id: 'campaign-123',
         name: 'Old Name',
+        description: 'Old Description',
         status: CampaignStatus.DRAFT,
         base_length: 3,
         positions_total: 6,
         positions_sold: 0,
         layer_prices: { '1': 100, '2': 200, '3': 300 },
         profit_margin_percent: 10,
+        purchase_limit: null,
+        auto_draw: true,
+        start_date: null,
+        end_date: null,
+        drawn_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -260,12 +274,19 @@ describe('CampaignService', () => {
     it('should not allow updating layer prices after published', async () => {
       const publishedCampaign = {
         campaign_id: 'campaign-123',
+        name: 'Published Campaign',
+        description: 'Description',
         status: CampaignStatus.PUBLISHED,
         base_length: 3,
         positions_total: 6,
         positions_sold: 0,
         layer_prices: { '1': 100, '2': 200, '3': 300 },
         profit_margin_percent: 10,
+        purchase_limit: null,
+        auto_draw: true,
+        start_date: null,
+        end_date: null,
+        drawn_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -287,12 +308,19 @@ describe('CampaignService', () => {
     it('should delete draft campaign', async () => {
       const draftCampaign = {
         campaign_id: 'campaign-123',
+        name: 'Draft Campaign',
+        description: 'Description',
         status: CampaignStatus.DRAFT,
         base_length: 3,
         positions_total: 6,
         positions_sold: 0,
         layer_prices: { '1': 100, '2': 200, '3': 300 },
         profit_margin_percent: 10,
+        purchase_limit: null,
+        auto_draw: true,
+        start_date: null,
+        end_date: null,
+        drawn_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -316,12 +344,19 @@ describe('CampaignService', () => {
     it('should not delete published campaign', async () => {
       const publishedCampaign = {
         campaign_id: 'campaign-123',
+        name: 'Published Campaign',
+        description: 'Description',
         status: CampaignStatus.PUBLISHED,
         base_length: 3,
         positions_total: 6,
         positions_sold: 0,
         layer_prices: { '1': 100, '2': 200, '3': 300 },
         profit_margin_percent: 10,
+        purchase_limit: null,
+        auto_draw: true,
+        start_date: null,
+        end_date: null,
+        drawn_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -343,12 +378,19 @@ describe('CampaignService', () => {
     it('should change status from draft to published', async () => {
       const draftCampaign = {
         campaign_id: 'campaign-123',
+        name: 'Draft Campaign',
+        description: 'Description',
         status: CampaignStatus.DRAFT,
         base_length: 3,
         positions_total: 6,
         positions_sold: 0,
         layer_prices: { '1': 100, '2': 200, '3': 300 },
         profit_margin_percent: 10,
+        purchase_limit: null,
+        auto_draw: true,
+        start_date: null,
+        end_date: null,
+        drawn_at: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
