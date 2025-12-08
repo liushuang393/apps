@@ -21,3 +21,6 @@ process.env.JWT_SECRET = 'test-secret-key-for-testing-only';
 process.env.USE_MOCK_PAYMENT = 'true';
 process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy_key_for_jest_only';
 process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test_secret';
+
+// Mock Auth（Firebase認証のモック）
+process.env.USE_MOCK_AUTH = 'true';

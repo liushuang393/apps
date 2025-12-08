@@ -122,9 +122,11 @@ describe('PaymentService', () => {
 
       (purchaseService.getPurchaseById as jest.Mock).mockResolvedValueOnce(mockPurchase);
       (stripe!.paymentIntents.create as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
+      (purchaseService.updatePurchaseStatus as jest.Mock).mockResolvedValueOnce(undefined);
 
       mockClient.query
         .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // 既存のトランザクションをチェック
         .mockResolvedValueOnce({ rows: [mockTransaction] }) // INSERT transaction
         .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
@@ -133,12 +135,20 @@ describe('PaymentService', () => {
       expect(result).toBeDefined();
       expect(result.paymentIntent.id).toBe('pi_123');
       expect(result.transaction.transaction_id).toBe('transaction-uuid-123');
+      // Stripe.paymentIntents.create は params と options の 2 つの引数で呼ばれる
       expect(stripe!.paymentIntents.create).toHaveBeenCalledWith(
         expect.objectContaining({
           amount: 1000,
           currency: 'jpy',
           payment_method_types: ['card'],
           return_url: 'https://example.com/return',
+          metadata: expect.objectContaining({
+            purchase_id: 'purchase-123',
+            user_id: 'user-123',
+          }),
+        }),
+        expect.objectContaining({
+          idempotencyKey: expect.any(String),
         })
       );
       expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
@@ -186,14 +196,17 @@ describe('PaymentService', () => {
 
       (purchaseService.getPurchaseById as jest.Mock).mockResolvedValueOnce(mockPurchase);
       (stripe!.paymentIntents.create as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
+      (purchaseService.updatePurchaseStatus as jest.Mock).mockResolvedValueOnce(undefined);
 
       mockClient.query
         .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // 既存のトランザクションをチェック
         .mockResolvedValueOnce({ rows: [mockTransaction] }) // INSERT
         .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
       await service.createPaymentIntent(konbiniDto, 'user-123');
 
+      // Stripe.paymentIntents.create は params と options の 2 つの引数で呼ばれる
       expect(stripe!.paymentIntents.create).toHaveBeenCalledWith(
         expect.objectContaining({
           payment_method_types: ['konbini'],
@@ -202,6 +215,13 @@ describe('PaymentService', () => {
               expires_after_days: 4,
             },
           },
+          metadata: expect.objectContaining({
+            purchase_id: 'purchase-123',
+            user_id: 'user-123',
+          }),
+        }),
+        expect.objectContaining({
+          idempotencyKey: expect.any(String),
         })
       );
     });
@@ -211,8 +231,9 @@ describe('PaymentService', () => {
 
       mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
 
+      // 実際のエラーメッセージに合わせて修正
       await expect(service.createPaymentIntent(validDto, 'user-123')).rejects.toThrow(
-        'PURCHASE_NOT_FOUND'
+        'Purchase not found'
       );
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
@@ -237,7 +258,10 @@ describe('PaymentService', () => {
 
       mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
 
-      await expect(service.createPaymentIntent(validDto, 'user-123')).rejects.toThrow('FORBIDDEN');
+      // 実際のエラーメッセージに合わせて修正
+      await expect(service.createPaymentIntent(validDto, 'user-123')).rejects.toThrow(
+        'You do not have permission to pay for this purchase'
+      );
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     });
@@ -277,6 +301,7 @@ describe('PaymentService', () => {
           object: {
             id: 'pi_123',
             latest_charge: 'ch_123',
+            amount: 1000,
             metadata: {
               purchase_id: 'purchase-123',
             },
@@ -287,14 +312,15 @@ describe('PaymentService', () => {
       const mockTransaction = {
         transaction_id: 'transaction-123',
         purchase_id: 'purchase-123',
+        user_id: 'user-123',
+        amount: 1000,
+        currency: 'jpy',
+        payment_method: 'card',
         stripe_payment_intent_id: 'pi_123',
         payment_status: 'pending',
+        created_at: new Date(),
+        updated_at: new Date(),
       };
-
-      mockClient.query.mockResolvedValue({ rows: [mockTransaction] });
-      (purchaseService.updatePurchaseStatus as jest.Mock).mockResolvedValue({});
-
-      await service.handleWebhook(mockEvent);
 
       const mockPurchase = {
         purchase_id: 'purchase-123',
@@ -303,8 +329,13 @@ describe('PaymentService', () => {
         position_id: 'position-1',
       };
 
-      (purchaseService.getPurchaseById as jest.Mock).mockResolvedValueOnce(mockPurchase);
-      (notificationService.sendToUser as jest.Mock).mockResolvedValueOnce(undefined);
+      // Mock のセットアップは handleWebhook 呼び出し前に行う
+      mockClient.query.mockResolvedValue({ rows: [mockTransaction] });
+      (purchaseService.updatePurchaseStatus as jest.Mock).mockResolvedValue({});
+      (purchaseService.getPurchaseById as jest.Mock).mockResolvedValue(mockPurchase);
+      (notificationService.sendToUser as jest.Mock).mockResolvedValue(undefined);
+
+      await service.handleWebhook(mockEvent);
 
       expect(purchaseService.updatePurchaseStatus).toHaveBeenCalledWith(
         'purchase-123',
@@ -332,7 +363,7 @@ describe('PaymentService', () => {
           object: {
             id: 'pi_456',
             metadata: {
-              purchase_id: 'purchase-456',
+              purchase_id: 'purchase-123',
             },
             last_payment_error: { message: 'Card declined' }
           } as unknown as Stripe.PaymentIntent,
@@ -341,27 +372,33 @@ describe('PaymentService', () => {
 
       const mockTransaction = {
         transaction_id: 'transaction-456',
-        purchase_id: 'purchase-456',
+        purchase_id: 'purchase-123',
+        user_id: 'user-123',
+        amount: 1000,
+        currency: 'jpy',
+        payment_method: 'card',
         stripe_payment_intent_id: 'pi_456',
         payment_status: 'pending',
+        created_at: new Date(),
+        updated_at: new Date(),
       };
 
+      const mockPurchase = {
+        purchase_id: 'purchase-123',
+        user_id: 'user-123',
+        campaign_id: 'campaign-123',
+      };
+
+      // Mock のセットアップは handleWebhook 呼び出し前に行う
       mockClient.query.mockResolvedValue({ rows: [mockTransaction] });
       (purchaseService.updatePurchaseStatus as jest.Mock).mockResolvedValue({});
+      (purchaseService.getPurchaseById as jest.Mock).mockResolvedValue(mockPurchase);
+      (notificationService.sendToUser as jest.Mock).mockResolvedValue(undefined);
 
       await service.handleWebhook(mockEvent);
 
-      const mockPurchase = {
-        purchase_id: 'purchase-456',
-        user_id: 'user-456',
-        campaign_id: 'campaign-456',
-      };
-
-      (purchaseService.getPurchaseById as jest.Mock).mockResolvedValueOnce(mockPurchase);
-      (notificationService.sendToUser as jest.Mock).mockResolvedValueOnce(undefined);
-
       expect(purchaseService.updatePurchaseStatus).toHaveBeenCalledWith(
-        'purchase-456',
+        'purchase-123',
         PurchaseStatus.FAILED
       );
        expect(mockClient.query).toHaveBeenCalledWith(
@@ -370,7 +407,7 @@ describe('PaymentService', () => {
       );
       // Verify notification was sent
       expect(notificationService.sendToUser).toHaveBeenCalledWith(
-        'user-456',
+        'user-123',
         expect.any(String),
         expect.objectContaining({
           title: '決済に失敗しました',

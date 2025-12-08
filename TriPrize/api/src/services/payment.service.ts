@@ -15,6 +15,7 @@ import purchaseService from './purchase.service';
 import notificationService, { NotificationType } from './notification.service';
 import { generateUUID } from '../utils/crypto.util';
 import logger from '../utils/logger.util';
+import { errors } from '../middleware/error.middleware';
 
 /**
  * Payment service for handling Stripe payments
@@ -36,19 +37,19 @@ export class PaymentService {
       const purchase = await purchaseService.getPurchaseById(dto.purchase_id);
 
       if (!purchase) {
-        throw new Error('PURCHASE_NOT_FOUND');
+        throw errors.notFound('Purchase');
       }
 
       // Verify ownership
       if (purchase.user_id !== userId) {
-        throw new Error('FORBIDDEN');
+        throw errors.forbidden('You do not have permission to pay for this purchase');
       }
 
       // Check if purchase already has a payment or is being processed
       // 目的: 防止为同一购买创建重复的 PaymentIntent
       // 注意点: 检查 COMPLETED, PROCESSING 状态和已存在的 PaymentIntent
       if (purchase.status === PurchaseStatus.COMPLETED) {
-        throw new Error('Purchase already paid');
+        throw errors.badRequest('Purchase already paid');
       }
 
       // Check for existing active payment transactions
@@ -61,7 +62,7 @@ export class PaymentService {
       );
 
       if (Number.parseInt(existingTransactions[0].count, 10) > 0) {
-        throw new Error('A payment is already in progress for this purchase');
+        throw errors.badRequest('A payment is already in progress for this purchase');
       }
 
       // Create Stripe Payment Intent
@@ -177,7 +178,7 @@ export class PaymentService {
    * Confirm a payment (for card payments)
    * 目的: 确认支付（用于卡支付）
    * I/O: 调用 Stripe API 或假支付服务确认支付
-   * 注意点: 根据环境自动切换使用真实或假支付
+   * 注意点: 根据环境自动切换使用真实或假支付。Mock モードでは DB も更新する。
    */
   async confirmPayment(paymentIntentId: string, paymentMethodId: string): Promise<Stripe.PaymentIntent> {
     try {
@@ -189,6 +190,23 @@ export class PaymentService {
           payment_method: paymentMethodId,
         });
         logger.info('Payment confirmed (mock)', { paymentIntentId });
+
+        // Mock モードでは Webhook が来ないため、直接 DB を更新する
+        // 注意点: 本番環境では Webhook 経由で更新されるため、この処理は不要
+        if (paymentIntent.status === 'succeeded') {
+          // Mock 用の charge_id を生成（refund テストで必要）
+          const mockChargeId = `ch_mock_${paymentIntentId.replace('pi_', '')}`;
+          await pool.query(
+            `UPDATE payment_transactions
+             SET payment_status = 'succeeded',
+                 stripe_charge_id = $1,
+                 paid_at = NOW(),
+                 updated_at = NOW()
+             WHERE stripe_payment_intent_id = $2`,
+            [mockChargeId, paymentIntentId]
+          );
+          logger.info('Mock: Updated transaction status to succeeded', { paymentIntentId, mockChargeId });
+        }
       } else {
         if (!stripe) {
           throw new Error('Stripe client is not initialized');
@@ -376,9 +394,10 @@ export class PaymentService {
       );
 
       // Update position status to 'sold'
+      // 注意: sold_timestamp_consistency 約束により、status='sold' の場合は sold_at も設定する必要がある
       await client.query(
         `UPDATE positions
-         SET status = 'sold', updated_at = NOW()
+         SET status = 'sold', sold_at = NOW(), updated_at = NOW()
          WHERE position_id = (
            SELECT position_id FROM purchases WHERE purchase_id = $1
          )`,
@@ -892,27 +911,31 @@ export class PaymentService {
       const transaction = await this.getTransactionById(transactionId);
 
       if (!transaction) {
-        throw new Error('TRANSACTION_NOT_FOUND');
+        throw errors.notFound('Transaction');
       }
 
       // Validate transaction status
+      // 注意点: REFUNDED 状態のトランザクションは再度退款できない
+      if (transaction.payment_status === PaymentStatus.REFUNDED) {
+        throw errors.badRequest('Transaction has already been fully refunded');
+      }
       if (transaction.payment_status !== PaymentStatus.SUCCEEDED) {
-        throw new Error(`Cannot refund transaction with status: ${transaction.payment_status}`);
+        throw errors.badRequest(`Cannot refund transaction with status: ${transaction.payment_status}`);
       }
 
       // Validate charge ID exists
       if (!transaction.stripe_charge_id) {
-        throw new Error('No charge ID found for this transaction');
+        throw errors.badRequest('No charge ID found for this transaction');
       }
 
       // Validate refund amount
       const refundAmount = amount || transaction.amount;
       if (refundAmount <= 0) {
-        throw new Error('Refund amount must be positive');
+        throw errors.badRequest('Refund amount must be positive');
       }
 
       if (refundAmount > transaction.amount) {
-        throw new Error('Refund amount exceeds original payment amount');
+        throw errors.badRequest('Refund amount exceeds original payment amount');
       }
 
       // Create Stripe refund
@@ -971,8 +994,27 @@ export class PaymentService {
         reason,
       });
 
-      // Note: The actual database updates will be handled by the webhook
-      // when Stripe sends the charge.refunded event
+      // Mock モードでは Webhook が来ないため、直接 DB を更新する
+      // 注意点: 本番環境では Webhook 経由で更新されるため、この処理は不要
+      if (PAYMENT_CONFIG.useMockPayment) {
+        // 全額退款の場合は REFUNDED、部分退款の場合は SUCCEEDED のまま（refunded_amount で追跡）
+        const newStatus = refundAmount === transaction.amount
+          ? PaymentStatus.REFUNDED
+          : PaymentStatus.SUCCEEDED;
+        await pool.query(
+          `UPDATE payment_transactions
+           SET payment_status = $1,
+               refunded_amount = COALESCE(refunded_amount, 0) + $2,
+               updated_at = NOW()
+           WHERE transaction_id = $3`,
+          [newStatus, refundAmount, transactionId]
+        );
+        logger.info('Mock: Updated transaction status after refund', {
+          transactionId,
+          newStatus,
+          refundAmount
+        });
+      }
 
       return refund;
     } catch (error: unknown) {

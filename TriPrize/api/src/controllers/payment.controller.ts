@@ -155,6 +155,7 @@ export class PaymentController {
    */
   handleWebhook = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const signature = req.headers['stripe-signature'] as string;
+    const useMockPayment = process.env.USE_MOCK_PAYMENT === 'true';
 
     if (!signature) {
       throw errors.badRequest('Missing stripe-signature header');
@@ -165,15 +166,31 @@ export class PaymentController {
     try {
       // Verify webhook signature
       // 目的: Stripe Webhook の署名を検証
-      // 注意点: stripe が null の場合は Mock Payment モード
+      // 注意点: stripe が null の場合は Mock Payment モードで署名検証をスキップ
       if (!stripe) {
-        throw errors.serviceUnavailable('Stripe is not initialized. Webhook verification is not available in mock payment mode.');
+        if (useMockPayment) {
+          // Mock Payment モード: 署名検証をスキップして JSON をパース
+          logger.info('Mock payment mode: skipping webhook signature verification');
+          // req.body は Buffer, string, または既にパースされたオブジェクトの可能性がある
+          let bodyStr: string;
+          if (Buffer.isBuffer(req.body)) {
+            bodyStr = req.body.toString('utf8');
+          } else if (typeof req.body === 'string') {
+            bodyStr = req.body;
+          } else {
+            bodyStr = JSON.stringify(req.body);
+          }
+          event = JSON.parse(bodyStr) as Stripe.Event;
+        } else {
+          throw errors.serviceUnavailable('Stripe is not initialized. Webhook verification is not available.');
+        }
+      } else {
+        event = stripe.webhooks.constructEvent(
+          req.body as string | Buffer,
+          signature,
+          STRIPE_WEBHOOK_SECRET
+        );
       }
-      event = stripe.webhooks.constructEvent(
-        req.body as string | Buffer,
-        signature,
-        STRIPE_WEBHOOK_SECRET
-      );
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Webhook signature verification failed', {

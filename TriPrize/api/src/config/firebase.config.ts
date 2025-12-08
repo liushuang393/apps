@@ -37,9 +37,16 @@ export function initializeFirebase(): admin.app.App | null {
 
     // Check server time synchronization (JWT signature errors often caused by clock skew)
     const serverTime = new Date();
+    const serverTimeISO = serverTime.toISOString();
     const timeDiff = Math.abs(serverTime.getTime() - Date.now());
     if (timeDiff > 60000) { // More than 1 minute difference
-      logger.warn('Server time may be out of sync', { timeDiff });
+      logger.warn('Server time may be out of sync', { 
+        timeDiff,
+        serverTime: serverTimeISO,
+        warning: 'JWT signature errors may occur if server time is not properly synced'
+      });
+    } else {
+      logger.info('Server time synchronized', { serverTime: serverTimeISO });
     }
 
     const serviceAccount = {

@@ -36,11 +36,12 @@ export class UserService {
       logger.info(`Creating user with role: ${roleValue} (dto.role: ${dto.role})`);
 
       const { rows } = await pool.query<User>(
-        `INSERT INTO users (user_id, email, display_name, photo_url, fcm_token, role, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        `INSERT INTO users (user_id, firebase_uid, email, display_name, photo_url, fcm_token, role, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
          RETURNING *`,
         [
           dto.user_id,
+          dto.user_id,  // firebase_uid と user_id は同じ値を使用
           dto.email,
           dto.display_name || null,
           dto.avatar_url || null,  // Map avatar_url to photo_url

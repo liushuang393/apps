@@ -6,6 +6,12 @@ import logger from '../utils/logger.util';
 import { mapUserToProfile } from '../models/user.entity';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+
+// JWT シークレットキー（環境変数から取得）
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key-for-development';
+// JWT 有効期限（秒単位）: 7日 = 604800秒
+const JWT_EXPIRES_IN_SECONDS = Number.parseInt(process.env.JWT_EXPIRES_IN_SECONDS || '604800', 10);
 
 class UserController {
   /**
@@ -96,11 +102,12 @@ class UserController {
    *   - モック環境: Firebase を使わず、直接 DB に登録
    */
   register = asyncHandler(async (req: Request, res: Response) => {
-    const { email, password, display_name, role } = req.body as {
+    const { email, password, display_name, role, firebase_token } = req.body as {
       email: string;
-      password: string;
+      password?: string;
       display_name?: string;
       role?: 'customer' | 'admin';
+      firebase_token?: string;
     };
 
     logger.info('Registration request received', {
@@ -108,6 +115,7 @@ class UserController {
       role,
       has_display_name: !!display_name,
       has_password: !!password,
+      has_firebase_token: !!firebase_token,
     });
 
     const useMockAuth = process.env.USE_MOCK_AUTH === 'true';
@@ -143,8 +151,17 @@ class UserController {
     });
 
     try {
-      if (useMockAuth) {
-        // モック認証: Firebase を使わず、メールから ID を生成
+      if (useMockAuth && firebase_token) {
+        // モック認証 (firebase_tokenモード): トークンからメールを抽出してIDを生成
+        // firebase_token形式: mock_email@example.com
+        const extractedEmail = firebase_token.startsWith('mock_')
+          ? firebase_token.substring(5)
+          : email;
+        const hash = crypto.createHash('md5').update(extractedEmail).digest('hex');
+        firebaseUid = `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+        logger.info(`Mock registration (token mode): ${firebaseUid} (${extractedEmail})`);
+      } else if (useMockAuth) {
+        // モック認証 (email/passwordモード): メールから ID を生成
         const hash = crypto.createHash('md5').update(email).digest('hex');
         firebaseUid = `mock-${hash.substring(0, 24)}`;
         logger.info(`Mock registration: ${firebaseUid} (${email})`);
@@ -178,10 +195,17 @@ class UserController {
             ? (firebaseError as { code: string }).code
             : undefined;
 
+          // Check for JWT signature errors (invalid_grant)
+          const isJwtSignatureError = firebaseErrorMessage.includes('invalid_grant') || 
+                                      firebaseErrorMessage.includes('Invalid JWT Signature') ||
+                                      firebaseErrorMessage.includes('JWT Signature');
+
           logger.error('Firebase user creation failed', {
             error: firebaseErrorMessage,
             errorCode: firebaseErrorCode,
             email,
+            isJwtSignatureError,
+            serverTime: new Date().toISOString(),
           });
 
           // Provide user-friendly error messages
@@ -191,6 +215,17 @@ class UserController {
             throw new Error('無効なメールアドレスです');
           } else if (firebaseErrorCode === 'auth/weak-password') {
             throw new Error('パスワードが弱すぎます。6文字以上で設定してください');
+          } else if (isJwtSignatureError) {
+            // Detailed error message for JWT signature errors
+            const detailedMessage = `Firebase認証エラー: ${firebaseErrorMessage}\n\n` +
+              `考えられる原因:\n` +
+              `(1) サーバーの時刻同期が正しくない\n` +
+              `(2) Firebaseサービスアカウントキーが無効になっている\n\n` +
+              `解決方法:\n` +
+              `(1) サーバーの時刻同期を確認してください\n` +
+              `(2) Firebase Console (https://console.firebase.google.com/iam-admin/serviceaccounts/project) でキーIDを確認し、` +
+              `無効な場合は新しいキーを生成してください (https://console.firebase.google.com/project/_/settings/serviceaccounts/adminsdk)`;
+            throw new Error(detailedMessage);
           } else {
             // Generic error with helpful message
             throw new Error(`Firebase認証エラー: ${firebaseErrorMessage}。Firebase設定とサーバーの時刻同期を確認してください。`);
@@ -212,10 +247,24 @@ class UserController {
         role: effectiveRole,
       });
 
+      // JWT トークンを生成
+      const token = jwt.sign(
+        {
+          user_id: user.user_id,
+          email: user.email,
+          role: user.role,
+        },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN_SECONDS }
+      );
+
       return res.status(201).json({
         success: true,
         message: 'User registered successfully',
-        data: user,
+        data: {
+          ...user,
+          token,
+        },
       });
 
     } catch (error: unknown) {
@@ -247,6 +296,14 @@ class UserController {
       // エラーメッセージをクライアント向けに変換
       if (errorCode === 'auth/email-already-exists') {
         return res.status(409).json({
+          success: false,
+          message: 'An account with this email already exists',
+        });
+      }
+
+      // DB の重複エラー（USER_ALREADY_EXISTS）を処理
+      if (errorMessage === 'USER_ALREADY_EXISTS') {
+        return res.status(400).json({
           success: false,
           message: 'An account with this email already exists',
         });
@@ -334,16 +391,28 @@ class UserController {
     // Update last login
     await userService.updateLastLogin(firebaseUid);
 
+    // JWT トークンを生成
+    const token = jwt.sign(
+      {
+        user_id: user.user_id,
+        email: user.email,
+        role: user.role,
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN_SECONDS }
+    );
+
     // Return user data including role for frontend navigation
-    return res.status(200).json({ 
-      success: true, 
-      message: 'User logged in successfully', 
+    return res.status(200).json({
+      success: true,
+      message: 'User logged in successfully',
       data: {
         user_id: user.user_id,
         email: user.email,
         display_name: user.display_name,
-        role: user.role, // ロール情報を含める
+        role: user.role,
         avatar_url: user.avatar_url,
+        token,
       }
     });
   });

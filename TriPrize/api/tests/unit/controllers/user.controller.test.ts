@@ -391,10 +391,17 @@ describe('UserController', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(200);
+      // コントローラーは部分的なユーザーデータのみを返す
       expect(responseObject).toEqual({
         success: true,
         message: 'User logged in successfully',
-        data: mockUser,
+        data: {
+          user_id: mockUser.user_id,
+          email: mockUser.email,
+          display_name: mockUser.display_name,
+          role: mockUser.role,
+          avatar_url: mockUser.avatar_url,
+        },
       });
       expect(userService.updateLastLogin).toHaveBeenCalledWith('login-token');
     });

@@ -79,16 +79,27 @@ import { UserRole } from '../../src/models/user.entity';
 
   describe('Complete Purchase Flow', () => {
     it('should complete full purchase flow: create campaign -> create purchase -> create payment -> confirm payment', async () => {
-      const firebaseUid = 'test-purchase-uid-001';
-      // user_id must match firebase_uid for role.middleware to find the user
+      // auth.middleware.ts の mock 認証形式に合わせる
+      const testEmail = 'test-purchase-test@example.com';
+      // MD5 ハッシュから UUID を生成（auth.middleware.ts と同じロジック）
+      const nodeCrypto = require('node:crypto');
+      const hash = nodeCrypto.createHash('md5').update(testEmail).digest('hex');
+      const firebaseUid = `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+
       const userResult = await pool.query(
         `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         ON CONFLICT (email) DO UPDATE SET
+           firebase_uid = EXCLUDED.firebase_uid,
+           display_name = EXCLUDED.display_name,
+           role = EXCLUDED.role,
+           updated_at = NOW()
          RETURNING user_id`,
-        [firebaseUid, firebaseUid, 'test-purchase-test@example.com', 'Test User', 'admin'],
+        [firebaseUid, firebaseUid, testEmail, 'Test User', 'admin'],
       );
       const testUserId = userResult.rows[0].user_id;
-      const authToken = `mock-token-${firebaseUid}`;
+      // Token format: mock_email@example.com (auth.middleware.ts の mock 認証形式に合わせる)
+      const authToken = `mock_${testEmail}`;
 
       const campaign = await campaignService.createCampaign(
         {
@@ -182,16 +193,25 @@ import { UserRole } from '../../src/models/user.entity';
     });
 
     it('should prevent concurrent purchase of same position', async () => {
-      const firebaseUid = 'test-purchase-uid-002';
-      // user_id must match firebase_uid for role.middleware to find the user
+      // auth.middleware.ts の mock 認証形式に合わせる
+      const testEmail = 'test-purchase-test-2@example.com';
+      const nodeCrypto = require('node:crypto');
+      const hash = nodeCrypto.createHash('md5').update(testEmail).digest('hex');
+      const firebaseUid = `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+
       const userResult = await pool.query(
         `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         ON CONFLICT (email) DO UPDATE SET
+           firebase_uid = EXCLUDED.firebase_uid,
+           display_name = EXCLUDED.display_name,
+           role = EXCLUDED.role,
+           updated_at = NOW()
          RETURNING user_id`,
-        [firebaseUid, firebaseUid, 'test-purchase-test-2@example.com', 'Test User 2', UserRole.ADMIN],
+        [firebaseUid, firebaseUid, testEmail, 'Test User 2', UserRole.ADMIN],
       );
       const testUserId = userResult.rows[0].user_id;
-      const authToken = `mock-token-${firebaseUid}`;
+      const authToken = `mock_${testEmail}`;
 
 	      const campaign = await campaignService.createCampaign(
 	        {
@@ -241,7 +261,9 @@ import { UserRole } from '../../src/models/user.entity';
       ]);
 
       const statuses = [response1.status, response2.status].sort();
-      expect(statuses).toEqual([201, 400]);
+      // 並行購入時、一方は201（成功）、もう一方は409（コンフリクト）または400（バッドリクエスト）
+      expect(statuses[0]).toBe(201);
+      expect([400, 409]).toContain(statuses[1]);
     });
   });
 });

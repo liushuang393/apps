@@ -265,13 +265,14 @@ export class PurchaseService {
       await client.query('BEGIN');
 
       // Update purchase
+      // 注意点: $1::text で明示的に型を指定し、PostgreSQL の型推論エラーを回避
       const { rows: purchaseRows } = await client.query<Purchase>(
         `UPDATE purchases
-         SET status = $1,
-             payment_intent_id = COALESCE($2, payment_intent_id),
-             completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END,
+         SET status = $1::text,
+             payment_intent_id = COALESCE($2::text, payment_intent_id),
+             completed_at = CASE WHEN $1::text = 'completed' THEN NOW() ELSE completed_at END,
              updated_at = NOW()
-         WHERE purchase_id = $3
+         WHERE purchase_id = $3::uuid
          RETURNING *`,
         [status, paymentIntentId || null, purchaseId]
       );

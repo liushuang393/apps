@@ -1,5 +1,5 @@
 -- TriPrize Database Schema
--- Migration: 002_update_user_role
+-- Migration: 010_update_user_role
 -- Created: 2025-11-24
 -- 目的: ユーザーの役割を'user'から'customer'に更新
 

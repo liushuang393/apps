@@ -34,6 +34,16 @@ describe('LotteryService', () => {
       { prize_id: 'prize-1', rank: 1, quantity: 1, name: 'Prize 1' },
       { prize_id: 'prize-2', rank: 2, quantity: 1, name: 'Prize 2' },
     ],
+    created_by: 'creator-123',
+    base_length: 3,
+    layer_prices: { '1': 100, '2': 200, '3': 300 },
+    profit_margin_percent: 10,
+    purchase_limit: null,
+    auto_draw: false,
+    start_date: null,
+    drawn_at: null,
+    created_at: new Date(),
+    updated_at: new Date(),
   };
 
   const mockSoldPositions = [
@@ -96,7 +106,8 @@ describe('LotteryService', () => {
         ...mockCampaign, 
         status: CampaignStatus.PUBLISHED,
         positions_sold: 5, // 未售罄
-        end_date: new Date(Date.now() + 1000), // 未结束
+        positions_total: 10, // 总数大于已售
+        end_date: new Date(Date.now() + 1000), // 未结束（未来日期）
       });
        mockClient.query.mockImplementation(async (query: string) => {
         if (query.includes('pg_try_advisory_xact_lock')) return { rows: [{ locked: true }] };
@@ -111,10 +122,11 @@ describe('LotteryService', () => {
     });
 
     it('should throw error if advisory lock cannot be acquired', async () => {
-        mockClient.query.mockImplementation(async (query: string) => {
-            if (query.includes('pg_try_advisory_xact_lock')) return { rows: [{ locked: false }] };
-            return { rows: [] };
-        });
+      (campaignService.getCampaignDetail as jest.Mock).mockResolvedValue(mockCampaign);
+      mockClient.query.mockImplementation(async (query: string) => {
+        if (query.includes('pg_try_advisory_xact_lock')) return { rows: [{ locked: false }] };
+        return { rows: [] };
+      });
 
       await expect(service.drawLottery('campaign-123')).rejects.toThrow(
         'Lottery draw already in progress for this campaign'

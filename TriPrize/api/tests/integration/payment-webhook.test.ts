@@ -203,12 +203,13 @@ describe('Payment Webhook Integration Tests', () => {
 
     await pool.query(
       `INSERT INTO payment_transactions (
-         purchase_id, amount, currency,
-         payment_method_type, status, stripe_payment_intent_id
+         purchase_id, user_id, amount, currency,
+         payment_method, payment_status, stripe_payment_intent_id
        )
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         testPurchaseId,
+        testUserId,
         100,
         'JPY',
         'card',
@@ -267,10 +268,10 @@ describe('Payment Webhook Integration Tests', () => {
 
       // 验证支付交易状态已更新
       const { rows: transactionRows } = await pool.query(
-        'SELECT status, stripe_charge_id FROM payment_transactions WHERE stripe_payment_intent_id = $1',
+        'SELECT payment_status, stripe_charge_id FROM payment_transactions WHERE stripe_payment_intent_id = $1',
         [testPaymentIntentId]
       );
-      expect(transactionRows[0].status).toBe('succeeded');
+      expect(transactionRows[0].payment_status).toBe('succeeded');
       expect(transactionRows[0].stripe_charge_id).toBe(testChargeId);
 
       // 验证购买状态已更新
@@ -383,10 +384,10 @@ describe('Payment Webhook Integration Tests', () => {
 
       // 验证支付交易状态已更新
       const { rows: transactionRows } = await pool.query(
-        'SELECT status, error_message FROM payment_transactions WHERE stripe_payment_intent_id = $1',
+        'SELECT payment_status, error_message FROM payment_transactions WHERE stripe_payment_intent_id = $1',
         [testPaymentIntentId]
       );
-      expect(transactionRows[0].status).toBe('failed');
+      expect(transactionRows[0].payment_status).toBe('failed');
       expect(transactionRows[0].error_message).toContain('declined');
 
       // 验证购买状态已更新
@@ -458,10 +459,10 @@ describe('Payment Webhook Integration Tests', () => {
 
   describe('charge.refunded Event', () => {
     it('should handle refund and rollback position status and campaign statistics', async () => {
-      // 先设置为已支付状态 (使用正确的列名'status')
+      // 先设置为已支付状态 (使用正确的列名 'payment_status')
       await pool.query(
         `UPDATE payment_transactions
-         SET status = 'succeeded', stripe_charge_id = $1
+         SET payment_status = 'succeeded', stripe_charge_id = $1
          WHERE stripe_payment_intent_id = $2`,
         [testChargeId, testPaymentIntentId]
       );
@@ -507,10 +508,10 @@ describe('Payment Webhook Integration Tests', () => {
 
       // 验证支付交易状态已更新
       const { rows: transactionRows } = await pool.query(
-        'SELECT status FROM payment_transactions WHERE stripe_charge_id = $1',
+        'SELECT payment_status FROM payment_transactions WHERE stripe_charge_id = $1',
         [testChargeId]
       );
-      expect(transactionRows[0].status).toBe('refunded');
+      expect(transactionRows[0].payment_status).toBe('refunded');
 
       // 验证购买状态已更新
       const { rows: purchaseRows } = await pool.query(

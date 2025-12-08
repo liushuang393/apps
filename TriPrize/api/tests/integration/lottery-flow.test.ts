@@ -31,18 +31,28 @@ import { UserRole } from '../../src/models/user.entity';
       console.error('BeforeAll cleanup error:', error);
     }
 
-    // 创建共享的管理员用户
-    const firebaseUid = 'test-admin-lottery-shared';
-	    // user_id must match firebase_uid for role.middleware to find the user
-	    const adminResult = await pool.query(
-	      `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
-	       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-	       RETURNING user_id`,
-	      // 使用有效的管理员角色值 UserRole.ADMIN
-	      [firebaseUid, firebaseUid, 'test-lottery-admin-shared@example.com', 'Test Admin', UserRole.ADMIN]
-	    );
+    // 创建共享的管理员用户（使用 UPSERT 避免重复键错误）
+    // 注意: auth.middleware.ts の mock 認証は mock_email@example.com 形式を期待
+    const adminEmail = 'test-lottery-admin-shared@example.com';
+    // MD5 ハッシュから UUID を生成（auth.middleware.ts と同じロジック）
+    const nodeCrypto = require('node:crypto');
+    const hash = nodeCrypto.createHash('md5').update(adminEmail).digest('hex');
+    const firebaseUid = `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+
+    const adminResult = await pool.query(
+      `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+       ON CONFLICT (email) DO UPDATE SET
+         firebase_uid = EXCLUDED.firebase_uid,
+         display_name = EXCLUDED.display_name,
+         role = EXCLUDED.role,
+         updated_at = NOW()
+       RETURNING user_id`,
+      [firebaseUid, firebaseUid, adminEmail, 'Test Admin', UserRole.ADMIN]
+    );
     adminUserId = adminResult.rows[0].user_id;
-    adminToken = `mock-token-${firebaseUid}`;
+    // Token format: mock_email@example.com (auth.middleware.ts の mock 認証形式に合わせる)
+    adminToken = `mock_${adminEmail}`;
   });
 
   afterAll(async () => {
@@ -95,15 +105,21 @@ import { UserRole } from '../../src/models/user.entity';
       ];
 
       const testUserIds: string[] = [];
-	      for (const user of users) {
-	        // user_id must match firebase_uid for role.middleware to find the user
-	        const userResult = await pool.query(
-	          `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
-	           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-	           RETURNING user_id`,
-	          // 使用有效的普通用户角色值 UserRole.CUSTOMER
-	          [user.firebase_uid, user.firebase_uid, user.email, user.name, UserRole.CUSTOMER]
-	        );
+      for (const user of users) {
+        // user_id must match firebase_uid for role.middleware to find the user
+        // UPSERT を使用して重複キーエラーを回避
+        const userResult = await pool.query(
+          `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+           ON CONFLICT (email) DO UPDATE SET
+             firebase_uid = EXCLUDED.firebase_uid,
+             display_name = EXCLUDED.display_name,
+             role = EXCLUDED.role,
+             updated_at = NOW()
+           RETURNING user_id`,
+          // 使用有效的普通用户角色值 UserRole.CUSTOMER
+          [user.firebase_uid, user.firebase_uid, user.email, user.name, UserRole.CUSTOMER]
+        );
         testUserIds.push(userResult.rows[0].user_id);
       }
 
