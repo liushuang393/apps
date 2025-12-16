@@ -134,6 +134,8 @@ OpenAI Realtime API を活用した、会議・通話の同時通訳アプリケ
 $env:CONVERSATION_DB_PATH = "D:\MyData\conversations.db"
 npm run dev
 
+ npm run build:all
+
 # 永続的に設定（ユーザー環境変数）
 [System.Environment]::SetEnvironmentVariable("CONVERSATION_DB_PATH", "D:\MyData\conversations.db", "User")
 ```

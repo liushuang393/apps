@@ -1,0 +1,20 @@
+# 目的: 開発・テスト用の依存関係
+# 注意: 本番環境には不要
+
+# テストフレームワーク
+pytest==8.0.0
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# AWS サービスのモック
+moto[all]==5.0.0
+
+# コード品質
+pylint==3.0.3
+black==24.1.1
+mypy==1.8.0
+
+# 型チェック用スタブ
+boto3-stubs[s3,translate,comprehend,bedrock-runtime]==1.34.50
+types-PyYAML==6.0.12.12
+

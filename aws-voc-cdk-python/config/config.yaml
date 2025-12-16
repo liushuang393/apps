@@ -1,0 +1,52 @@
+project:
+  prefix: softroad-voc
+  region: ap-northeast-1
+
+buckets:
+  raw: "${prefix}-raw-apne1"
+  textract: "${prefix}-textract-apne1"
+  processed: "${prefix}-processed-apne1"
+  quicksight: "${prefix}-quicksight-apne1"
+  archive: "${prefix}-archive-apne1"
+
+pipeline:
+  mode: "s3_direct"   # s3_direct | textract
+
+etl:
+  mode: "lambda"      # lambda | glue
+  glue_job_name: "json-to-parquet-job"
+  glue_worker_type: "G.1X"
+  glue_number_workers: 2
+  glue_script_path: "s3://${prefix}-archive-apne1/glue-scripts/json_to_parquet.py"
+
+bedrock:
+  model_id: "anthropic.claude-3-sonnet-20240229-v1:0"
+  target_lang: "ja"
+
+athena:
+  workgroup_name: "VOC-WorkGroup"
+  result_location_s3: "s3://${prefix}-quicksight-apne1/athena-results/"
+  database_name: "db_voc"
+  crawler_name: "crawler-voc-processed"
+
+quicksight:
+  account_id: "057392968899"
+  principal_arn: "arn:aws:quicksight:ap-northeast-1:057392968899:user/default/ryushuang"
+  dataset_name: "voc_dataset"
+  data_source_name: "voc_athena_ds"
+  dashboard_name: "voc_dashboard"
+  spice_daily_jst: "07:00"
+
+
+# モニタリング設定
+monitoring:
+  alert_email: "admin@example.com"  # アラート通知先メールアドレス
+  log_retention_days: 30  # CloudWatch Logsの保持期間（日数）
+
+# コスト最適化設定
+cost_optimization:
+  s3_lifecycle_rules:
+    raw_archive_days: 90  # Rawバケットのアーカイブ日数
+    processed_archive_days: 365  # Processedバケットのアーカイブ日数
+  lambda:
+    reserved_concurrent_executions: 10  # Lambda予約同時実行数（nullで無制限）
