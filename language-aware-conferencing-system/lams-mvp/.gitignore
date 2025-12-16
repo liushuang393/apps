@@ -1,0 +1,16 @@
+# 環境変数・シークレット
+.env
+secrets.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Node.js
+node_modules/
+dist/
+.vite/
+
+# ログ・OS
+*.log
+.DS_Store

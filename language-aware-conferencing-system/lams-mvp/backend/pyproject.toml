@@ -1,0 +1,97 @@
+# ===========================================
+# LAMS Backend - Python プロジェクト設定
+# ===========================================
+
+[project]
+name = "lams-backend"
+version = "1.0.0"
+description = "Language-Aware Meeting System Backend"
+requires-python = ">=3.10"
+
+dependencies = [
+    # Web Framework
+    "fastapi==0.124.4",
+    "uvicorn[standard]==0.34.0",
+    "python-multipart==0.0.19",
+    # Database
+    "sqlalchemy==2.0.36",
+    "asyncpg==0.30.0",
+    # Cache
+    "redis==5.2.1",
+    # Authentication
+    "python-jose[cryptography]==3.3.0",
+    "passlib[bcrypt]==1.7.4",
+    # AI Providers
+    "google-genai==1.0.0",
+    "openai==2.12.0",
+    # Validation
+    "pydantic[email]==2.10.3",
+    "pydantic-settings==2.7.0",
+    # WebSocket
+    "websockets==14.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.8.4",
+]
+
+# ===========================================
+# Ruff - Python Linter & Formatter
+# ===========================================
+[tool.ruff]
+# Python バージョン（3.10互換）
+target-version = "py310"
+
+# 行の最大長
+line-length = 88
+
+# 除外ディレクトリ
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "*.pyc",
+]
+
+[tool.ruff.lint]
+# 有効なルール
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+]
+
+# 無視するルール
+ignore = [
+    "E501",   # 行の長さ（formatterに任せる）
+    "B008",   # Depends() のデフォルト引数
+    "B904",   # raise from
+]
+
+# 自動修正可能なルール
+fixable = ["ALL"]
+
+[tool.ruff.format]
+# フォーマット設定
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# ===========================================
+# MyPy - 型チェック（オプション）
+# ===========================================
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+

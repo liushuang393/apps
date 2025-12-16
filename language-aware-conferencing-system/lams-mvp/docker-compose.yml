@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lams
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-lams_secret_2024}
+      POSTGRES_DB: lams
+    ports:
+      - "${DB_PORT:-5433}:5432"  # ホストの5433 → コンテナの5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lams"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lams-network
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6380}:6379"  # ホストの6380 → コンテナの6379
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lams-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      # データベース・キャッシュ
+      - DATABASE_URL=postgresql://lams:${DB_PASSWORD:-lams_secret_2024}@postgres:5432/lams
+      - REDIS_URL=redis://redis:6379/0
+      # 認証
+      - JWT_SECRET=${JWT_SECRET:-lams-jwt-secret-change-in-production}
+      # AIプロバイダー設定
+      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      # Gemini設定
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_BASE_URL=${GEMINI_BASE_URL:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-models/gemini-2.5-flash-native-audio-preview-12-2025}
+      # OpenAI Realtime設定
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL:-gpt-realtime-2025-08-28}
+      # 環境
+      - ENV=development
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./secrets.json:/app/secrets.json:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - lams-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src:ro
+      - ./frontend/index.html:/app/index.html:ro
+    depends_on:
+      - backend
+    networks:
+      - lams-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  lams-network:
+    driver: bridge

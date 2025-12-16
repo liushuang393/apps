@@ -1,0 +1,1433 @@
+[
+    {
+        "label": "asyncio",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "asyncio",
+        "description": "asyncio",
+        "detail": "asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "hashlib",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "hashlib",
+        "description": "hashlib",
+        "detail": "hashlib",
+        "documentation": {}
+    },
+    {
+        "label": "logging",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "logging",
+        "description": "logging",
+        "detail": "logging",
+        "documentation": {}
+    },
+    {
+        "label": "dataclass",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "dataclass",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "dataclass",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "field",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "asdict",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "dataclass",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "asdict",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "redis.asyncio",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "redis.asyncio",
+        "description": "redis.asyncio",
+        "detail": "redis.asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "get_ai_provider",
+        "importPath": "app.ai_pipeline.providers",
+        "description": "app.ai_pipeline.providers",
+        "isExtraImport": true,
+        "detail": "app.ai_pipeline.providers",
+        "documentation": {}
+    },
+    {
+        "label": "QoSController",
+        "importPath": "app.ai_pipeline.qos",
+        "description": "app.ai_pipeline.qos",
+        "isExtraImport": true,
+        "detail": "app.ai_pipeline.qos",
+        "documentation": {}
+    },
+    {
+        "label": "QoSMetrics",
+        "importPath": "app.ai_pipeline.qos",
+        "description": "app.ai_pipeline.qos",
+        "isExtraImport": true,
+        "detail": "app.ai_pipeline.qos",
+        "documentation": {}
+    },
+    {
+        "label": "settings",
+        "importPath": "app.config",
+        "description": "app.config",
+        "isExtraImport": true,
+        "detail": "app.config",
+        "documentation": {}
+    },
+    {
+        "label": "settings",
+        "importPath": "app.config",
+        "description": "app.config",
+        "isExtraImport": true,
+        "detail": "app.config",
+        "documentation": {}
+    },
+    {
+        "label": "settings",
+        "importPath": "app.config",
+        "description": "app.config",
+        "isExtraImport": true,
+        "detail": "app.config",
+        "documentation": {}
+    },
+    {
+        "label": "settings",
+        "importPath": "app.config",
+        "description": "app.config",
+        "isExtraImport": true,
+        "detail": "app.config",
+        "documentation": {}
+    },
+    {
+        "label": "settings",
+        "importPath": "app.config",
+        "description": "app.config",
+        "isExtraImport": true,
+        "detail": "app.config",
+        "documentation": {}
+    },
+    {
+        "label": "settings",
+        "importPath": "app.config",
+        "description": "app.config",
+        "isExtraImport": true,
+        "detail": "app.config",
+        "documentation": {}
+    },
+    {
+        "label": "settings",
+        "importPath": "app.config",
+        "description": "app.config",
+        "isExtraImport": true,
+        "detail": "app.config",
+        "documentation": {}
+    },
+    {
+        "label": "ABC",
+        "importPath": "abc",
+        "description": "abc",
+        "isExtraImport": true,
+        "detail": "abc",
+        "documentation": {}
+    },
+    {
+        "label": "abstractmethod",
+        "importPath": "abc",
+        "description": "abc",
+        "isExtraImport": true,
+        "detail": "abc",
+        "documentation": {}
+    },
+    {
+        "label": "time",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "time",
+        "description": "time",
+        "detail": "time",
+        "documentation": {}
+    },
+    {
+        "label": "deque",
+        "importPath": "collections",
+        "description": "collections",
+        "isExtraImport": true,
+        "detail": "collections",
+        "documentation": {}
+    },
+    {
+        "label": "Enum",
+        "importPath": "enum",
+        "description": "enum",
+        "isExtraImport": true,
+        "detail": "enum",
+        "documentation": {}
+    },
+    {
+        "label": "Depends",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "HTTPException",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "status",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "APIRouter",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "Depends",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "HTTPException",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "status",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "APIRouter",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "Depends",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "HTTPException",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "status",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "APIRouter",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "Query",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "WebSocket",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "WebSocketDisconnect",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "FastAPI",
+        "importPath": "fastapi",
+        "description": "fastapi",
+        "isExtraImport": true,
+        "detail": "fastapi",
+        "documentation": {}
+    },
+    {
+        "label": "HTTPAuthorizationCredentials",
+        "importPath": "fastapi.security",
+        "description": "fastapi.security",
+        "isExtraImport": true,
+        "detail": "fastapi.security",
+        "documentation": {}
+    },
+    {
+        "label": "HTTPBearer",
+        "importPath": "fastapi.security",
+        "description": "fastapi.security",
+        "isExtraImport": true,
+        "detail": "fastapi.security",
+        "documentation": {}
+    },
+    {
+        "label": "select",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "select",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "JSON",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "Boolean",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "DateTime",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "ForeignKey",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "String",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "Text",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "select",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "select",
+        "importPath": "sqlalchemy",
+        "description": "sqlalchemy",
+        "isExtraImport": true,
+        "detail": "sqlalchemy",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncSession",
+        "importPath": "sqlalchemy.ext.asyncio",
+        "description": "sqlalchemy.ext.asyncio",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.ext.asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncSession",
+        "importPath": "sqlalchemy.ext.asyncio",
+        "description": "sqlalchemy.ext.asyncio",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.ext.asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncSession",
+        "importPath": "sqlalchemy.ext.asyncio",
+        "description": "sqlalchemy.ext.asyncio",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.ext.asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "async_sessionmaker",
+        "importPath": "sqlalchemy.ext.asyncio",
+        "description": "sqlalchemy.ext.asyncio",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.ext.asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "create_async_engine",
+        "importPath": "sqlalchemy.ext.asyncio",
+        "description": "sqlalchemy.ext.asyncio",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.ext.asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncSession",
+        "importPath": "sqlalchemy.ext.asyncio",
+        "description": "sqlalchemy.ext.asyncio",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.ext.asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "decode_token",
+        "importPath": "app.auth.jwt_handler",
+        "description": "app.auth.jwt_handler",
+        "isExtraImport": true,
+        "detail": "app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "Token",
+        "importPath": "app.auth.jwt_handler",
+        "description": "app.auth.jwt_handler",
+        "isExtraImport": true,
+        "detail": "app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "create_access_token",
+        "importPath": "app.auth.jwt_handler",
+        "description": "app.auth.jwt_handler",
+        "isExtraImport": true,
+        "detail": "app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "hash_password",
+        "importPath": "app.auth.jwt_handler",
+        "description": "app.auth.jwt_handler",
+        "isExtraImport": true,
+        "detail": "app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "verify_password",
+        "importPath": "app.auth.jwt_handler",
+        "description": "app.auth.jwt_handler",
+        "isExtraImport": true,
+        "detail": "app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "decode_token",
+        "importPath": "app.auth.jwt_handler",
+        "description": "app.auth.jwt_handler",
+        "isExtraImport": true,
+        "detail": "app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "get_db",
+        "importPath": "app.db.database",
+        "description": "app.db.database",
+        "isExtraImport": true,
+        "detail": "app.db.database",
+        "documentation": {}
+    },
+    {
+        "label": "get_db",
+        "importPath": "app.db.database",
+        "description": "app.db.database",
+        "isExtraImport": true,
+        "detail": "app.db.database",
+        "documentation": {}
+    },
+    {
+        "label": "get_db",
+        "importPath": "app.db.database",
+        "description": "app.db.database",
+        "isExtraImport": true,
+        "detail": "app.db.database",
+        "documentation": {}
+    },
+    {
+        "label": "async_session",
+        "importPath": "app.db.database",
+        "description": "app.db.database",
+        "isExtraImport": true,
+        "detail": "app.db.database",
+        "documentation": {}
+    },
+    {
+        "label": "init_db",
+        "importPath": "app.db.database",
+        "description": "app.db.database",
+        "isExtraImport": true,
+        "detail": "app.db.database",
+        "documentation": {}
+    },
+    {
+        "label": "User",
+        "importPath": "app.db.models",
+        "description": "app.db.models",
+        "isExtraImport": true,
+        "detail": "app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "User",
+        "importPath": "app.db.models",
+        "description": "app.db.models",
+        "isExtraImport": true,
+        "detail": "app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "Base",
+        "importPath": "app.db.models",
+        "description": "app.db.models",
+        "isExtraImport": true,
+        "detail": "app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "Room",
+        "importPath": "app.db.models",
+        "description": "app.db.models",
+        "isExtraImport": true,
+        "detail": "app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "User",
+        "importPath": "app.db.models",
+        "description": "app.db.models",
+        "isExtraImport": true,
+        "detail": "app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "Room",
+        "importPath": "app.db.models",
+        "description": "app.db.models",
+        "isExtraImport": true,
+        "detail": "app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "User",
+        "importPath": "app.db.models",
+        "description": "app.db.models",
+        "isExtraImport": true,
+        "detail": "app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "UTC",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "datetime",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "timedelta",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "UTC",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "datetime",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "UTC",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "datetime",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "JWTError",
+        "importPath": "jose",
+        "description": "jose",
+        "isExtraImport": true,
+        "detail": "jose",
+        "documentation": {}
+    },
+    {
+        "label": "jwt",
+        "importPath": "jose",
+        "description": "jose",
+        "isExtraImport": true,
+        "detail": "jose",
+        "documentation": {}
+    },
+    {
+        "label": "CryptContext",
+        "importPath": "passlib.context",
+        "description": "passlib.context",
+        "isExtraImport": true,
+        "detail": "passlib.context",
+        "documentation": {}
+    },
+    {
+        "label": "BaseModel",
+        "importPath": "pydantic",
+        "description": "pydantic",
+        "isExtraImport": true,
+        "detail": "pydantic",
+        "documentation": {}
+    },
+    {
+        "label": "BaseModel",
+        "importPath": "pydantic",
+        "description": "pydantic",
+        "isExtraImport": true,
+        "detail": "pydantic",
+        "documentation": {}
+    },
+    {
+        "label": "EmailStr",
+        "importPath": "pydantic",
+        "description": "pydantic",
+        "isExtraImport": true,
+        "detail": "pydantic",
+        "documentation": {}
+    },
+    {
+        "label": "BaseModel",
+        "importPath": "pydantic",
+        "description": "pydantic",
+        "isExtraImport": true,
+        "detail": "pydantic",
+        "documentation": {}
+    },
+    {
+        "label": "get_current_user",
+        "importPath": "app.auth.dependencies",
+        "description": "app.auth.dependencies",
+        "isExtraImport": true,
+        "detail": "app.auth.dependencies",
+        "documentation": {}
+    },
+    {
+        "label": "get_current_user",
+        "importPath": "app.auth.dependencies",
+        "description": "app.auth.dependencies",
+        "isExtraImport": true,
+        "detail": "app.auth.dependencies",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncGenerator",
+        "importPath": "collections.abc",
+        "description": "collections.abc",
+        "isExtraImport": true,
+        "detail": "collections.abc",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncGenerator",
+        "importPath": "collections.abc",
+        "description": "collections.abc",
+        "isExtraImport": true,
+        "detail": "collections.abc",
+        "documentation": {}
+    },
+    {
+        "label": "uuid",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "uuid",
+        "description": "uuid",
+        "detail": "uuid",
+        "documentation": {}
+    },
+    {
+        "label": "DeclarativeBase",
+        "importPath": "sqlalchemy.orm",
+        "description": "sqlalchemy.orm",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.orm",
+        "documentation": {}
+    },
+    {
+        "label": "Mapped",
+        "importPath": "sqlalchemy.orm",
+        "description": "sqlalchemy.orm",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.orm",
+        "documentation": {}
+    },
+    {
+        "label": "mapped_column",
+        "importPath": "sqlalchemy.orm",
+        "description": "sqlalchemy.orm",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.orm",
+        "documentation": {}
+    },
+    {
+        "label": "relationship",
+        "importPath": "sqlalchemy.orm",
+        "description": "sqlalchemy.orm",
+        "isExtraImport": true,
+        "detail": "sqlalchemy.orm",
+        "documentation": {}
+    },
+    {
+        "label": "json",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "json",
+        "description": "json",
+        "detail": "json",
+        "documentation": {}
+    },
+    {
+        "label": "Literal",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Literal",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "room_manager",
+        "importPath": "app.rooms.manager",
+        "description": "app.rooms.manager",
+        "isExtraImport": true,
+        "detail": "app.rooms.manager",
+        "documentation": {}
+    },
+    {
+        "label": "room_manager",
+        "importPath": "app.rooms.manager",
+        "description": "app.rooms.manager",
+        "isExtraImport": true,
+        "detail": "app.rooms.manager",
+        "documentation": {}
+    },
+    {
+        "label": "contextlib",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "contextlib",
+        "description": "contextlib",
+        "detail": "contextlib",
+        "documentation": {}
+    },
+    {
+        "label": "asynccontextmanager",
+        "importPath": "contextlib",
+        "description": "contextlib",
+        "isExtraImport": true,
+        "detail": "contextlib",
+        "documentation": {}
+    },
+    {
+        "label": "ai_pipeline",
+        "importPath": "app.ai_pipeline.pipeline",
+        "description": "app.ai_pipeline.pipeline",
+        "isExtraImport": true,
+        "detail": "app.ai_pipeline.pipeline",
+        "documentation": {}
+    },
+    {
+        "label": "os",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "os",
+        "description": "os",
+        "detail": "os",
+        "documentation": {}
+    },
+    {
+        "label": "lru_cache",
+        "importPath": "functools",
+        "description": "functools",
+        "isExtraImport": true,
+        "detail": "functools",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "BaseSettings",
+        "importPath": "pydantic_settings",
+        "description": "pydantic_settings",
+        "isExtraImport": true,
+        "detail": "pydantic_settings",
+        "documentation": {}
+    },
+    {
+        "label": "CORSMiddleware",
+        "importPath": "fastapi.middleware.cors",
+        "description": "fastapi.middleware.cors",
+        "isExtraImport": true,
+        "detail": "fastapi.middleware.cors",
+        "documentation": {}
+    },
+    {
+        "label": "router",
+        "importPath": "app.auth.routes",
+        "description": "app.auth.routes",
+        "isExtraImport": true,
+        "detail": "app.auth.routes",
+        "documentation": {}
+    },
+    {
+        "label": "router",
+        "importPath": "app.rooms.routes",
+        "description": "app.rooms.routes",
+        "isExtraImport": true,
+        "detail": "app.rooms.routes",
+        "documentation": {}
+    },
+    {
+        "label": "router",
+        "importPath": "app.websocket.handler",
+        "description": "app.websocket.handler",
+        "isExtraImport": true,
+        "detail": "app.websocket.handler",
+        "documentation": {}
+    },
+    {
+        "label": "ProcessedAudio",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "description": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "peekOfCode": "class ProcessedAudio:\n    \"\"\"処理済み音声データ\"\"\"\n    speaker_id: str\n    source_language: str\n    target_language: str\n    original_text: str\n    translated_text: str\n    audio_data: bytes | None\n    metrics: QoSMetrics\nclass AIPipeline:",
+        "detail": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "documentation": {}
+    },
+    {
+        "label": "AIPipeline",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "description": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "peekOfCode": "class AIPipeline:\n    \"\"\"\n    AI処理パイプライン\n    機能:\n    - 音声認識（ASR）\n    - テキスト翻訳\n    - 音声合成（TTS）※オプション\n    - 結果キャッシュ\n    - QoS監視\n    \"\"\"",
+        "detail": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "documentation": {}
+    },
+    {
+        "label": "logger",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "description": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "peekOfCode": "logger = logging.getLogger(__name__)\n@dataclass\nclass ProcessedAudio:\n    \"\"\"処理済み音声データ\"\"\"\n    speaker_id: str\n    source_language: str\n    target_language: str\n    original_text: str\n    translated_text: str\n    audio_data: bytes | None",
+        "detail": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "documentation": {}
+    },
+    {
+        "label": "ai_pipeline",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "description": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "peekOfCode": "ai_pipeline = AIPipeline()",
+        "detail": "lams-mvp.backend.app.ai_pipeline.pipeline",
+        "documentation": {}
+    },
+    {
+        "label": "TranslationResult",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.providers",
+        "description": "lams-mvp.backend.app.ai_pipeline.providers",
+        "peekOfCode": "class TranslationResult:\n    \"\"\"翻訳結果データクラス\"\"\"\n    source_language: str\n    target_language: str\n    original_text: str\n    translated_text: str\n    audio_data: bytes | None = None  # TTS音声データ（オプション）\nclass AIProvider(ABC):\n    \"\"\"\n    AIプロバイダー基底クラス",
+        "detail": "lams-mvp.backend.app.ai_pipeline.providers",
+        "documentation": {}
+    },
+    {
+        "label": "AIProvider",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.providers",
+        "description": "lams-mvp.backend.app.ai_pipeline.providers",
+        "peekOfCode": "class AIProvider(ABC):\n    \"\"\"\n    AIプロバイダー基底クラス\n    すべてのAIプロバイダーはこのクラスを継承し、\n    translate_audio と transcribe_audio メソッドを実装する必要がある。\n    \"\"\"\n    @abstractmethod\n    async def translate_audio(\n        self,\n        audio_data: bytes,",
+        "detail": "lams-mvp.backend.app.ai_pipeline.providers",
+        "documentation": {}
+    },
+    {
+        "label": "GeminiProvider",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.providers",
+        "description": "lams-mvp.backend.app.ai_pipeline.providers",
+        "peekOfCode": "class GeminiProvider(AIProvider):\n    \"\"\"\n    Gemini 2.5 Flash Native Audio プロバイダー\n    google-genai SDK v1.0+ を使用。\n    公式ドキュメント: https://ai.google.dev/gemini-api/docs\n    対応モデル:\n    - models/gemini-2.5-flash-native-audio-preview-12-2025\n    機能:\n    - 音声認識（ASR）: Native Audio のマルチモーダル機能\n    - テキスト翻訳: Gemini 2.5 Flash",
+        "detail": "lams-mvp.backend.app.ai_pipeline.providers",
+        "documentation": {}
+    },
+    {
+        "label": "OpenAIRealtimeProvider",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.providers",
+        "description": "lams-mvp.backend.app.ai_pipeline.providers",
+        "peekOfCode": "class OpenAIRealtimeProvider(AIProvider):\n    \"\"\"\n    OpenAI GPT Realtime プロバイダー\n    openai SDK v2.x を使用。\n    公式ドキュメント: https://platform.openai.com/docs/guides/realtime\n    対応モデル:\n    - gpt-realtime-2025-08-28\n    - gpt-realtime-mini-2025-10-06\n    機能:\n    - Realtime API による音声認識・翻訳",
+        "detail": "lams-mvp.backend.app.ai_pipeline.providers",
+        "documentation": {}
+    },
+    {
+        "label": "get_ai_provider",
+        "kind": 2,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.providers",
+        "description": "lams-mvp.backend.app.ai_pipeline.providers",
+        "peekOfCode": "def get_ai_provider() -> AIProvider:\n    \"\"\"\n    設定に基づいてAIプロバイダーを取得\n    環境変数 AI_PROVIDER で切り替え:\n    - gemini: Gemini 2.5 Flash（デフォルト）\n    - openai_realtime: OpenAI GPT Realtime\n    Returns:\n        AIProvider: 設定されたプロバイダーインスタンス\n    \"\"\"\n    if settings.ai_provider == \"openai_realtime\":",
+        "detail": "lams-mvp.backend.app.ai_pipeline.providers",
+        "documentation": {}
+    },
+    {
+        "label": "logger",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.providers",
+        "description": "lams-mvp.backend.app.ai_pipeline.providers",
+        "peekOfCode": "logger = logging.getLogger(__name__)\n# 対応言語マッピング（AIへの指示用）\nLANGUAGE_NAMES: dict[str, str] = {\n    \"ja\": \"日本語\",\n    \"en\": \"English\",\n    \"zh\": \"中文\",\n    \"vi\": \"Tiếng Việt\",\n}\n@dataclass\nclass TranslationResult:",
+        "detail": "lams-mvp.backend.app.ai_pipeline.providers",
+        "documentation": {}
+    },
+    {
+        "label": "DegradationLevel",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.qos",
+        "description": "lams-mvp.backend.app.ai_pipeline.qos",
+        "peekOfCode": "class DegradationLevel(Enum):\n    \"\"\"\n    品質劣化レベル\n    NONE: 正常\n    LIGHT: 軽度（遅延注意）\n    MODERATE: 中度（字幕推奨）\n    SEVERE: 重度（音声停止、字幕のみ）\n    \"\"\"\n    NONE = \"none\"\n    LIGHT = \"light\"",
+        "detail": "lams-mvp.backend.app.ai_pipeline.qos",
+        "documentation": {}
+    },
+    {
+        "label": "QoSMetrics",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.qos",
+        "description": "lams-mvp.backend.app.ai_pipeline.qos",
+        "peekOfCode": "class QoSMetrics:\n    \"\"\"QoS測定結果\"\"\"\n    start_time_ms: float = 0.0\n    end_time_ms: float = 0.0\n    total_latency_ms: float = 0.0\n    jitter_ms: float = 0.0\n    degradation_level: DegradationLevel = DegradationLevel.NONE\n    should_fallback_to_subtitle: bool = False\n@dataclass\nclass QoSState:",
+        "detail": "lams-mvp.backend.app.ai_pipeline.qos",
+        "documentation": {}
+    },
+    {
+        "label": "QoSState",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.qos",
+        "description": "lams-mvp.backend.app.ai_pipeline.qos",
+        "peekOfCode": "class QoSState:\n    \"\"\"QoS内部状態\"\"\"\n    latency_history: deque[float] = field(default_factory=lambda: deque(maxlen=20))\n    last_latency_ms: float = 0.0\nclass QoSController:\n    \"\"\"\n    QoS品質管理コントローラー\n    主な機能:\n    - 遅延測定\n    - ジッター計算",
+        "detail": "lams-mvp.backend.app.ai_pipeline.qos",
+        "documentation": {}
+    },
+    {
+        "label": "QoSController",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.ai_pipeline.qos",
+        "description": "lams-mvp.backend.app.ai_pipeline.qos",
+        "peekOfCode": "class QoSController:\n    \"\"\"\n    QoS品質管理コントローラー\n    主な機能:\n    - 遅延測定\n    - ジッター計算\n    - 品質劣化判定\n    - フォールバック判断\n    \"\"\"\n    def __init__(self) -> None:",
+        "detail": "lams-mvp.backend.app.ai_pipeline.qos",
+        "documentation": {}
+    },
+    {
+        "label": "security",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.auth.dependencies",
+        "description": "lams-mvp.backend.app.auth.dependencies",
+        "peekOfCode": "security = HTTPBearer()\nasync def get_current_user(\n    credentials: HTTPAuthorizationCredentials = Depends(security),\n    db: AsyncSession = Depends(get_db),\n) -> User:\n    \"\"\"\n    現在の認証済みユーザーを取得\n    無効なトークンの場合は401エラー\n    \"\"\"\n    token_data = decode_token(credentials.credentials)",
+        "detail": "lams-mvp.backend.app.auth.dependencies",
+        "documentation": {}
+    },
+    {
+        "label": "TokenData",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.auth.jwt_handler",
+        "description": "lams-mvp.backend.app.auth.jwt_handler",
+        "peekOfCode": "class TokenData(BaseModel):\n    \"\"\"トークンに含まれるユーザー情報\"\"\"\n    user_id: str\n    email: str\n    native_language: str = \"ja\"\nclass Token(BaseModel):\n    \"\"\"認証トークンレスポンス\"\"\"\n    access_token: str\n    token_type: str = \"bearer\"\ndef verify_password(plain_password: str, hashed_password: str) -> bool:",
+        "detail": "lams-mvp.backend.app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "Token",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.auth.jwt_handler",
+        "description": "lams-mvp.backend.app.auth.jwt_handler",
+        "peekOfCode": "class Token(BaseModel):\n    \"\"\"認証トークンレスポンス\"\"\"\n    access_token: str\n    token_type: str = \"bearer\"\ndef verify_password(plain_password: str, hashed_password: str) -> bool:\n    \"\"\"パスワード検証\"\"\"\n    return pwd_context.verify(plain_password, hashed_password)\ndef hash_password(password: str) -> str:\n    \"\"\"パスワードハッシュ化\"\"\"\n    return pwd_context.hash(password)",
+        "detail": "lams-mvp.backend.app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "verify_password",
+        "kind": 2,
+        "importPath": "lams-mvp.backend.app.auth.jwt_handler",
+        "description": "lams-mvp.backend.app.auth.jwt_handler",
+        "peekOfCode": "def verify_password(plain_password: str, hashed_password: str) -> bool:\n    \"\"\"パスワード検証\"\"\"\n    return pwd_context.verify(plain_password, hashed_password)\ndef hash_password(password: str) -> str:\n    \"\"\"パスワードハッシュ化\"\"\"\n    return pwd_context.hash(password)\ndef create_access_token(data: dict[str, str]) -> str:\n    \"\"\"\n    JWTアクセストークン生成\n    有効期限: settings.jwt_expire_minutes",
+        "detail": "lams-mvp.backend.app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "hash_password",
+        "kind": 2,
+        "importPath": "lams-mvp.backend.app.auth.jwt_handler",
+        "description": "lams-mvp.backend.app.auth.jwt_handler",
+        "peekOfCode": "def hash_password(password: str) -> str:\n    \"\"\"パスワードハッシュ化\"\"\"\n    return pwd_context.hash(password)\ndef create_access_token(data: dict[str, str]) -> str:\n    \"\"\"\n    JWTアクセストークン生成\n    有効期限: settings.jwt_expire_minutes\n    \"\"\"\n    to_encode = data.copy()\n    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)",
+        "detail": "lams-mvp.backend.app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "create_access_token",
+        "kind": 2,
+        "importPath": "lams-mvp.backend.app.auth.jwt_handler",
+        "description": "lams-mvp.backend.app.auth.jwt_handler",
+        "peekOfCode": "def create_access_token(data: dict[str, str]) -> str:\n    \"\"\"\n    JWTアクセストークン生成\n    有効期限: settings.jwt_expire_minutes\n    \"\"\"\n    to_encode = data.copy()\n    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)\n    to_encode[\"exp\"] = expire\n    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)\ndef decode_token(token: str) -> TokenData | None:",
+        "detail": "lams-mvp.backend.app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "decode_token",
+        "kind": 2,
+        "importPath": "lams-mvp.backend.app.auth.jwt_handler",
+        "description": "lams-mvp.backend.app.auth.jwt_handler",
+        "peekOfCode": "def decode_token(token: str) -> TokenData | None:\n    \"\"\"\n    JWTトークン検証・デコード\n    無効な場合はNoneを返す\n    \"\"\"\n    try:\n        payload = jwt.decode(\n            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]\n        )\n        return TokenData(",
+        "detail": "lams-mvp.backend.app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "pwd_context",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.auth.jwt_handler",
+        "description": "lams-mvp.backend.app.auth.jwt_handler",
+        "peekOfCode": "pwd_context = CryptContext(schemes=[\"bcrypt\"], deprecated=\"auto\")\nclass TokenData(BaseModel):\n    \"\"\"トークンに含まれるユーザー情報\"\"\"\n    user_id: str\n    email: str\n    native_language: str = \"ja\"\nclass Token(BaseModel):\n    \"\"\"認証トークンレスポンス\"\"\"\n    access_token: str\n    token_type: str = \"bearer\"",
+        "detail": "lams-mvp.backend.app.auth.jwt_handler",
+        "documentation": {}
+    },
+    {
+        "label": "UserCreate",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.auth.routes",
+        "description": "lams-mvp.backend.app.auth.routes",
+        "peekOfCode": "class UserCreate(BaseModel):\n    \"\"\"ユーザー登録リクエスト\"\"\"\n    email: EmailStr\n    password: str\n    display_name: str\n    native_language: str = \"ja\"\nclass UserLogin(BaseModel):\n    \"\"\"ログインリクエスト\"\"\"\n    email: EmailStr\n    password: str",
+        "detail": "lams-mvp.backend.app.auth.routes",
+        "documentation": {}
+    },
+    {
+        "label": "UserLogin",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.auth.routes",
+        "description": "lams-mvp.backend.app.auth.routes",
+        "peekOfCode": "class UserLogin(BaseModel):\n    \"\"\"ログインリクエスト\"\"\"\n    email: EmailStr\n    password: str\nclass UserResponse(BaseModel):\n    \"\"\"ユーザー情報レスポンス\"\"\"\n    id: str\n    email: str\n    display_name: str\n    native_language: str",
+        "detail": "lams-mvp.backend.app.auth.routes",
+        "documentation": {}
+    },
+    {
+        "label": "UserResponse",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.auth.routes",
+        "description": "lams-mvp.backend.app.auth.routes",
+        "peekOfCode": "class UserResponse(BaseModel):\n    \"\"\"ユーザー情報レスポンス\"\"\"\n    id: str\n    email: str\n    display_name: str\n    native_language: str\n    class Config:\n        from_attributes = True\n@router.post(\"/register\", response_model=Token)\nasync def register(data: UserCreate, db: AsyncSession = Depends(get_db)) -> Token:",
+        "detail": "lams-mvp.backend.app.auth.routes",
+        "documentation": {}
+    },
+    {
+        "label": "router",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.auth.routes",
+        "description": "lams-mvp.backend.app.auth.routes",
+        "peekOfCode": "router = APIRouter()\nclass UserCreate(BaseModel):\n    \"\"\"ユーザー登録リクエスト\"\"\"\n    email: EmailStr\n    password: str\n    display_name: str\n    native_language: str = \"ja\"\nclass UserLogin(BaseModel):\n    \"\"\"ログインリクエスト\"\"\"\n    email: EmailStr",
+        "detail": "lams-mvp.backend.app.auth.routes",
+        "documentation": {}
+    },
+    {
+        "label": "_db_url",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.db.database",
+        "description": "lams-mvp.backend.app.db.database",
+        "peekOfCode": "_db_url = settings.database_url.replace(\"postgresql://\", \"postgresql+asyncpg://\")\nengine = create_async_engine(\n    _db_url,\n    echo=(settings.env == \"development\"),\n    pool_pre_ping=True,\n)\n# セッションファクトリ\nasync_session = async_sessionmaker(\n    engine,\n    class_=AsyncSession,",
+        "detail": "lams-mvp.backend.app.db.database",
+        "documentation": {}
+    },
+    {
+        "label": "engine",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.db.database",
+        "description": "lams-mvp.backend.app.db.database",
+        "peekOfCode": "engine = create_async_engine(\n    _db_url,\n    echo=(settings.env == \"development\"),\n    pool_pre_ping=True,\n)\n# セッションファクトリ\nasync_session = async_sessionmaker(\n    engine,\n    class_=AsyncSession,\n    expire_on_commit=False,",
+        "detail": "lams-mvp.backend.app.db.database",
+        "documentation": {}
+    },
+    {
+        "label": "async_session",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.db.database",
+        "description": "lams-mvp.backend.app.db.database",
+        "peekOfCode": "async_session = async_sessionmaker(\n    engine,\n    class_=AsyncSession,\n    expire_on_commit=False,\n)\nasync def init_db() -> None:\n    \"\"\"データベース初期化（テーブル作成）\"\"\"\n    async with engine.begin() as conn:\n        await conn.run_sync(Base.metadata.create_all)\nasync def get_db() -> AsyncGenerator[AsyncSession, None]:",
+        "detail": "lams-mvp.backend.app.db.database",
+        "documentation": {}
+    },
+    {
+        "label": "Base",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.db.models",
+        "description": "lams-mvp.backend.app.db.models",
+        "peekOfCode": "class Base(DeclarativeBase):\n    \"\"\"SQLAlchemy ベースクラス\"\"\"\n    pass\ndef generate_uid() -> str:\n    \"\"\"UUID生成ヘルパー\"\"\"\n    return str(uuid.uuid4())\ndef utc_now() -> datetime:\n    \"\"\"現在時刻（UTC）取得ヘルパー\"\"\"\n    return datetime.now(UTC)\nclass User(Base):",
+        "detail": "lams-mvp.backend.app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "User",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.db.models",
+        "description": "lams-mvp.backend.app.db.models",
+        "peekOfCode": "class User(Base):\n    \"\"\"\n    ユーザーモデル\n    社内メンバーの認証情報と言語設定を管理\n    \"\"\"\n    __tablename__ = \"users\"\n    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)\n    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)\n    password_hash: Mapped[str] = mapped_column(String(255))\n    display_name: Mapped[str] = mapped_column(String(100))",
+        "detail": "lams-mvp.backend.app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "Room",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.db.models",
+        "description": "lams-mvp.backend.app.db.models",
+        "peekOfCode": "class Room(Base):\n    \"\"\"\n    会議室モデル\n    会議の言語ポリシーを管理\n    \"\"\"\n    __tablename__ = \"rooms\"\n    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)\n    name: Mapped[str] = mapped_column(String(200))\n    description: Mapped[str | None] = mapped_column(Text, nullable=True)\n    creator_id: Mapped[str] = mapped_column(ForeignKey(\"users.id\"))",
+        "detail": "lams-mvp.backend.app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "generate_uid",
+        "kind": 2,
+        "importPath": "lams-mvp.backend.app.db.models",
+        "description": "lams-mvp.backend.app.db.models",
+        "peekOfCode": "def generate_uid() -> str:\n    \"\"\"UUID生成ヘルパー\"\"\"\n    return str(uuid.uuid4())\ndef utc_now() -> datetime:\n    \"\"\"現在時刻（UTC）取得ヘルパー\"\"\"\n    return datetime.now(UTC)\nclass User(Base):\n    \"\"\"\n    ユーザーモデル\n    社内メンバーの認証情報と言語設定を管理",
+        "detail": "lams-mvp.backend.app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "utc_now",
+        "kind": 2,
+        "importPath": "lams-mvp.backend.app.db.models",
+        "description": "lams-mvp.backend.app.db.models",
+        "peekOfCode": "def utc_now() -> datetime:\n    \"\"\"現在時刻（UTC）取得ヘルパー\"\"\"\n    return datetime.now(UTC)\nclass User(Base):\n    \"\"\"\n    ユーザーモデル\n    社内メンバーの認証情報と言語設定を管理\n    \"\"\"\n    __tablename__ = \"users\"\n    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)",
+        "detail": "lams-mvp.backend.app.db.models",
+        "documentation": {}
+    },
+    {
+        "label": "ParticipantPreference",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.rooms.manager",
+        "description": "lams-mvp.backend.app.rooms.manager",
+        "peekOfCode": "class ParticipantPreference:\n    \"\"\"\n    参加者の個人設定\n    - audio_mode: 原声(original) または 翻訳(translated)\n    - subtitle_enabled: 字幕表示の有無\n    - target_language: 翻訳先言語（audio_mode=translatedの場合に使用）\n    ※ デフォルトは原声モード（翻訳なし）\n    \"\"\"\n    user_id: str\n    display_name: str",
+        "detail": "lams-mvp.backend.app.rooms.manager",
+        "documentation": {}
+    },
+    {
+        "label": "RoomManager",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.rooms.manager",
+        "description": "lams-mvp.backend.app.rooms.manager",
+        "peekOfCode": "class RoomManager:\n    \"\"\"\n    会議室状態管理クラス\n    Redis を使用してリアルタイムで参加者状態を管理\n    \"\"\"\n    def __init__(self) -> None:\n        self._redis: redis.Redis | None = None\n    async def get_redis(self) -> redis.Redis:\n        \"\"\"Redis接続取得（遅延初期化）\"\"\"\n        if self._redis is None:",
+        "detail": "lams-mvp.backend.app.rooms.manager",
+        "documentation": {}
+    },
+    {
+        "label": "room_manager",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.rooms.manager",
+        "description": "lams-mvp.backend.app.rooms.manager",
+        "peekOfCode": "room_manager = RoomManager()",
+        "detail": "lams-mvp.backend.app.rooms.manager",
+        "documentation": {}
+    },
+    {
+        "label": "RoomCreate",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.rooms.routes",
+        "description": "lams-mvp.backend.app.rooms.routes",
+        "peekOfCode": "class RoomCreate(BaseModel):\n    \"\"\"会議室作成リクエスト\"\"\"\n    name: str\n    description: str | None = None\n    allowed_languages: list[str] = [\"ja\", \"en\", \"zh\", \"vi\"]\n    default_audio_mode: str = \"original\"  # デフォルトは原声\n    allow_mode_switch: bool = True\nclass RoomResponse(BaseModel):\n    \"\"\"会議室レスポンス\"\"\"\n    id: str",
+        "detail": "lams-mvp.backend.app.rooms.routes",
+        "documentation": {}
+    },
+    {
+        "label": "RoomResponse",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.rooms.routes",
+        "description": "lams-mvp.backend.app.rooms.routes",
+        "peekOfCode": "class RoomResponse(BaseModel):\n    \"\"\"会議室レスポンス\"\"\"\n    id: str\n    name: str\n    description: str | None\n    creator_id: str\n    allowed_languages: list[str]\n    default_audio_mode: str\n    allow_mode_switch: bool\n    is_active: bool",
+        "detail": "lams-mvp.backend.app.rooms.routes",
+        "documentation": {}
+    },
+    {
+        "label": "router",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.rooms.routes",
+        "description": "lams-mvp.backend.app.rooms.routes",
+        "peekOfCode": "router = APIRouter()\nclass RoomCreate(BaseModel):\n    \"\"\"会議室作成リクエスト\"\"\"\n    name: str\n    description: str | None = None\n    allowed_languages: list[str] = [\"ja\", \"en\", \"zh\", \"vi\"]\n    default_audio_mode: str = \"original\"  # デフォルトは原声\n    allow_mode_switch: bool = True\nclass RoomResponse(BaseModel):\n    \"\"\"会議室レスポンス\"\"\"",
+        "detail": "lams-mvp.backend.app.rooms.routes",
+        "documentation": {}
+    },
+    {
+        "label": "ConnectionManager",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.websocket.handler",
+        "description": "lams-mvp.backend.app.websocket.handler",
+        "peekOfCode": "class ConnectionManager:\n    \"\"\"\n    WebSocket接続管理クラス\n    各会議室の接続を管理\n    \"\"\"\n    def __init__(self) -> None:\n        # room_id -> user_id -> WebSocket\n        self.rooms: dict[str, dict[str, WebSocket]] = {}\n        self._lock = asyncio.Lock()\n    async def connect(self, room_id: str, user_id: str, ws: WebSocket) -> None:",
+        "detail": "lams-mvp.backend.app.websocket.handler",
+        "documentation": {}
+    },
+    {
+        "label": "logger",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.websocket.handler",
+        "description": "lams-mvp.backend.app.websocket.handler",
+        "peekOfCode": "logger = logging.getLogger(__name__)\nrouter = APIRouter()\nclass ConnectionManager:\n    \"\"\"\n    WebSocket接続管理クラス\n    各会議室の接続を管理\n    \"\"\"\n    def __init__(self) -> None:\n        # room_id -> user_id -> WebSocket\n        self.rooms: dict[str, dict[str, WebSocket]] = {}",
+        "detail": "lams-mvp.backend.app.websocket.handler",
+        "documentation": {}
+    },
+    {
+        "label": "router",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.websocket.handler",
+        "description": "lams-mvp.backend.app.websocket.handler",
+        "peekOfCode": "router = APIRouter()\nclass ConnectionManager:\n    \"\"\"\n    WebSocket接続管理クラス\n    各会議室の接続を管理\n    \"\"\"\n    def __init__(self) -> None:\n        # room_id -> user_id -> WebSocket\n        self.rooms: dict[str, dict[str, WebSocket]] = {}\n        self._lock = asyncio.Lock()",
+        "detail": "lams-mvp.backend.app.websocket.handler",
+        "documentation": {}
+    },
+    {
+        "label": "conn_mgr",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.websocket.handler",
+        "description": "lams-mvp.backend.app.websocket.handler",
+        "peekOfCode": "conn_mgr = ConnectionManager()\n@router.websocket(\"/room/{room_id}\")\nasync def websocket_room(\n    ws: WebSocket,\n    room_id: str,\n    token: str = Query(...),\n) -> None:\n    \"\"\"\n    会議室WebSocketエンドポイント\n    メッセージタイプ:",
+        "detail": "lams-mvp.backend.app.websocket.handler",
+        "documentation": {}
+    },
+    {
+        "label": "Settings",
+        "kind": 6,
+        "importPath": "lams-mvp.backend.app.config",
+        "description": "lams-mvp.backend.app.config",
+        "peekOfCode": "class Settings(BaseSettings):\n    \"\"\"\n    アプリケーション設定クラス\n    API Key優先順位: 環境変数 > .env > secrets.json\n    デフォルト値は開発環境用。本番環境では必ず環境変数で上書きすること。\n    \"\"\"\n    # ===========================================\n    # データベース設定\n    # ===========================================\n    database_url: str = \"postgresql://lams:lams_secret_2024@localhost:5432/lams\"",
+        "detail": "lams-mvp.backend.app.config",
+        "documentation": {}
+    },
+    {
+        "label": "get_settings",
+        "kind": 2,
+        "importPath": "lams-mvp.backend.app.config",
+        "description": "lams-mvp.backend.app.config",
+        "peekOfCode": "def get_settings() -> Settings:\n    \"\"\"\n    設定インスタンスを取得（キャッシュ済み）\n    API Key優先順位: 環境変数 > .env > secrets.json\n    Returns:\n        Settings: アプリケーション設定\n    \"\"\"\n    return Settings()\nsettings = get_settings()",
+        "detail": "lams-mvp.backend.app.config",
+        "documentation": {}
+    },
+    {
+        "label": "logger",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.config",
+        "description": "lams-mvp.backend.app.config",
+        "peekOfCode": "logger = logging.getLogger(__name__)\ndef _load_secrets_json() -> dict:\n    \"\"\"\n    secrets.json からシークレット情報を読み込む\n    検索パス:\n    1. 環境変数 SECRETS_JSON_PATH で指定されたパス\n    2. カレントディレクトリの secrets.json\n    3. backend/ ディレクトリの secrets.json\n    4. プロジェクトルートの secrets.json\n    Returns:",
+        "detail": "lams-mvp.backend.app.config",
+        "documentation": {}
+    },
+    {
+        "label": "_secrets",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.config",
+        "description": "lams-mvp.backend.app.config",
+        "peekOfCode": "_secrets = _load_secrets_json()\ndef _get_secret(key: str, default: str | None = None) -> str | None:\n    \"\"\"\n    シークレット値を取得（優先順位: 環境変数 > .env > secrets.json）\n    Args:\n        key: シークレットのキー名\n        default: デフォルト値\n    Returns:\n        シークレット値（見つからない場合はデフォルト値）\n    \"\"\"",
+        "detail": "lams-mvp.backend.app.config",
+        "documentation": {}
+    },
+    {
+        "label": "settings",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.config",
+        "description": "lams-mvp.backend.app.config",
+        "peekOfCode": "settings = get_settings()",
+        "detail": "lams-mvp.backend.app.config",
+        "documentation": {}
+    },
+    {
+        "label": "app",
+        "kind": 5,
+        "importPath": "lams-mvp.backend.app.main",
+        "description": "lams-mvp.backend.app.main",
+        "peekOfCode": "app = FastAPI(\n    title=\"LAMS API\",\n    description=\"言語感知型会議システム - Language-Aware Meeting System\",\n    version=\"0.1.0\",\n    lifespan=lifespan,\n)\n# CORSミドルウェア設定\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=settings.cors_origins,",
+        "detail": "lams-mvp.backend.app.main",
+        "documentation": {}
+    },
+    {
+        "label": "_Known",
+        "kind": 6,
+        "importPath": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "description": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "peekOfCode": "class _Known:\n    def __init__(self):\n        self.key = []\n        self.value = []\nclass _String:\n    def __init__(self, value):\n        self.value = value\ndef _array_keys(value):\n    keys = []\n    i = 0",
+        "detail": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "documentation": {}
+    },
+    {
+        "label": "_String",
+        "kind": 6,
+        "importPath": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "description": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "peekOfCode": "class _String:\n    def __init__(self, value):\n        self.value = value\ndef _array_keys(value):\n    keys = []\n    i = 0\n    for _ in value:\n        keys.append(i)\n        i += 1\n    return keys",
+        "detail": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "documentation": {}
+    },
+    {
+        "label": "parse",
+        "kind": 2,
+        "importPath": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "description": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "peekOfCode": "def parse(value, *args, **kwargs):\n    json = _json.loads(value, *args, **kwargs)\n    wrapped = []\n    for value in json:\n        wrapped.append(_wrap(value))\n    input = []\n    for value in wrapped:\n        if isinstance(value, _String):\n            input.append(value.value)\n        else:",
+        "detail": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "documentation": {}
+    },
+    {
+        "label": "stringify",
+        "kind": 2,
+        "importPath": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "description": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "peekOfCode": "def stringify(value, *args, **kwargs):\n    known = _Known()\n    input = []\n    output = []\n    i = int(_index(known, input, value))\n    while i < len(input):\n        output.append(_transform(known, input, input[i]))\n        i += 1\n    return _json.dumps(output, *args, **kwargs)",
+        "detail": "lams-mvp.frontend.node_modules.flatted.python.flatted",
+        "documentation": {}
+    }
+]
