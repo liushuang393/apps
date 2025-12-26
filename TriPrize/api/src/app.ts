@@ -3,19 +3,16 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import * as dotenv from 'dotenv';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { rateLimits } from './middleware/rate-limit.middleware';
 import logger from './utils/logger.util';
+import { APP_CONFIG, SERVER_CONFIG, SECURITY_CONFIG } from './config/app.config';
 import campaignRoutes from './routes/campaign.routes';
 import purchaseRoutes from './routes/purchase.routes';
 import paymentRoutes from './routes/payment.routes';
 import lotteryRoutes from './routes/lottery.routes';
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
-
-// Load environment variables
-dotenv.config();
 
 /**
  * Create and configure Express application
@@ -50,8 +47,7 @@ export function createApp(): Application {
       }
 
       // Check against configured origins
-      const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || [];
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      if (SECURITY_CONFIG.corsOrigins.includes(origin) || SECURITY_CONFIG.corsOrigins.includes('*')) {
         return callback(null, true);
       }
 
@@ -71,7 +67,7 @@ export function createApp(): Application {
   app.use(compression());
 
   // Request logging
-  if (process.env.NODE_ENV === 'development') {
+  if (SERVER_CONFIG.isDevelopment) {
     app.use(morgan('dev'));
   } else {
     app.use(morgan('combined', {
@@ -86,17 +82,18 @@ export function createApp(): Application {
     res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development',
+      environment: SERVER_CONFIG.nodeEnv,
+      app: APP_CONFIG.name,
     });
   });
 
   // API info endpoint
   app.get('/', (_req, res) => {
     res.json({
-      name: 'TriPrize API',
-      version: '1.0.0',
-      description: 'Triangle lottery campaign sales platform API',
-      documentation: '/api/docs',
+      name: `${APP_CONFIG.name} API`,
+      version: APP_CONFIG.version,
+      description: `${APP_CONFIG.description} API`,
+      documentation: APP_CONFIG.documentationUrl,
     });
   });
 

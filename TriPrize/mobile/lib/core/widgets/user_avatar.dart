@@ -125,7 +125,7 @@ class UserAvatar extends StatelessWidget {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
+                      color: Colors.black.withValues(alpha: 0.2),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -181,6 +181,12 @@ class UserAvatarWithInfo extends StatelessWidget {
     this.onTap,
   });
 
+  /// ロールのテキストを取得
+  /// 目的: roleに応じた表示テキストを返す
+  String _getRoleText() {
+    return role == 'admin' ? '管理者' : '顧客';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -225,8 +231,8 @@ class UserAvatarWithInfo extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: role == 'admin' 
-                  ? Colors.amber.withOpacity(0.2)
-                  : Colors.blue.withOpacity(0.2),
+                  ? Colors.amber.withValues(alpha: 0.2)
+                  : Colors.blue.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: role == 'admin' ? Colors.amber : Colors.blue,
@@ -243,7 +249,7 @@ class UserAvatarWithInfo extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  role == 'admin' ? '管理者' : '顧客',
+                  _getRoleText(),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

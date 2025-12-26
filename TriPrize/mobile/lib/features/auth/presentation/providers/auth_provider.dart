@@ -285,6 +285,38 @@ import '../../domain/repositories/auth_repository.dart';
     notifyListeners();
   }
 
+  /// Change password
+  /// 目的: パスワードを変更する
+  /// I/O: 現在のパスワードと新しいパスワードを受け取る
+  /// 注意点: 再認証が必要
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    if (_user == null || _user!.email == null) {
+      throw Exception('ユーザーがログインしていません');
+    }
+
+    try {
+      AppLogger.info('Changing password for user: ${_user!.email}');
+
+      // 現在のパスワードで再認証
+      final credential = EmailAuthProvider.credential(
+        email: _user!.email!,
+        password: currentPassword,
+      );
+      await _user!.reauthenticateWithCredential(credential);
+
+      // 新しいパスワードに更新
+      await _user!.updatePassword(newPassword);
+
+      AppLogger.info('Password changed successfully');
+    } on FirebaseAuthException catch (e) {
+      AppLogger.error('Password change failed', e, StackTrace.current);
+      throw Exception(_getFirebaseErrorMessage(e));
+    } catch (e, stackTrace) {
+      AppLogger.error('Password change failed', e, stackTrace);
+      throw Exception('パスワードの変更に失敗しました: $e');
+    }
+  }
+
   /// Get Firebase error message in Japanese
   /// 目的: 将Firebase错误转换为日语消息
   String _getFirebaseErrorMessage(FirebaseAuthException e) {

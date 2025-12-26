@@ -33,11 +33,18 @@ export enum PurchaseStatus {
 
 /**
  * Create purchase DTO
+ * 目的: 抽選チケット購入リクエストのデータ転送オブジェクト
+ * 注意点:
+ *   - quantity: 購入数量（1-10、デフォルト1）
+ *   - position_ids: 後方互換性のため残すが、quantityを優先
+ *   - idempotency_key: クライアントから受け取る冪等性キー
  */
 export interface CreatePurchaseDto {
   campaign_id: string;
-  position_ids: string[];
-  payment_method: 'card' | 'konbini';
+  quantity?: number;
+  position_ids?: string[];
+  payment_method?: 'card' | 'konbini';
+  idempotency_key?: string;
 }
 
 /**

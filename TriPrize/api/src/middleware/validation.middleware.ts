@@ -17,9 +17,14 @@ export function validateBody(schema: ZodSchema) {
           message: err.message,
         }));
 
-        logger.warn('Request validation failed', { errors });
+        logger.warn('Request validation failed', {
+          errors,
+          requestBody: JSON.stringify(req.body, null, 2),
+          path: req.path,
+        });
 
         res.status(400).json({
+          success: false,
           error: 'VALIDATION_ERROR',
           message: 'Invalid request data',
           details: errors,
@@ -29,6 +34,7 @@ export function validateBody(schema: ZodSchema) {
 
       logger.error('Validation middleware error', { error });
       res.status(500).json({
+        success: false,
         error: 'INTERNAL_ERROR',
         message: 'Validation failed',
       });
@@ -54,6 +60,7 @@ export function validateQuery(schema: ZodSchema) {
         logger.warn('Query validation failed', { errors, query: req.query });
 
         res.status(400).json({
+          success: false,
           error: 'VALIDATION_ERROR',
           message: 'Invalid query parameters',
           details: errors,
@@ -63,6 +70,7 @@ export function validateQuery(schema: ZodSchema) {
 
       logger.error('Query validation middleware error', { error });
       res.status(500).json({
+        success: false,
         error: 'INTERNAL_ERROR',
         message: 'Validation failed',
       });
@@ -88,6 +96,7 @@ export function validateParams(schema: ZodSchema) {
         logger.warn('Params validation failed', { errors, params: req.params });
 
         res.status(400).json({
+          success: false,
           error: 'VALIDATION_ERROR',
           message: 'Invalid path parameters',
           details: errors,
@@ -97,6 +106,7 @@ export function validateParams(schema: ZodSchema) {
 
       logger.error('Params validation middleware error', { error });
       res.status(500).json({
+        success: false,
         error: 'INTERNAL_ERROR',
         message: 'Validation failed',
       });

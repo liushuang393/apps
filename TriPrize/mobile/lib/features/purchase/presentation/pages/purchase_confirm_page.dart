@@ -6,15 +6,17 @@ import '../../../campaign/data/models/campaign_model.dart';
 import 'payment_processing_page.dart';
 
 /// Purchase confirmation page
-/// 目的: 确认购买信息并完成支付
-/// I/O: 接收campaign和layer信息，调用PurchaseProvider创建购买
-/// 注意点: 清晰展示价格、层信息，处理支付流程
+/// 目的: 抽選チケット購入確認
+/// I/O: キャンペーン情報を受け取り、統一価格で購入処理
+/// 注意点: 層選択は不要（抽選で自動割り当て）
 class PurchaseConfirmPage extends StatefulWidget {
   final CampaignDetailModel campaign;
-  final LayerModel selectedLayer;
+  final LayerModel? selectedLayer; // 抽選システムでは不要（後方互換性のため残す）
 
   const PurchaseConfirmPage({
-    required this.campaign, required this.selectedLayer, super.key,
+    required this.campaign,
+    this.selectedLayer,
+    super.key,
   });
 
   @override
@@ -89,56 +91,71 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
     );
   }
 
+  /// 抽選情報表示
+  /// 目的: 抽選チケット購入の詳細を表示
   Widget _buildLayerInfo(NumberFormat numberFormat) {
     final availablePositions =
-        widget.selectedLayer.positionsCount - widget.selectedLayer.positionsSold;
+        widget.campaign.positionsTotal - widget.campaign.positionsSold;
 
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        border: Border.all(color: AppTheme.borderColor),
-        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.primaryColor.withValues(alpha: 0.1),
+            AppTheme.secondaryColor.withValues(alpha: 0.05),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 抽選チケット情報
           Row(
             children: [
               Container(
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Text(
-                    'L${widget.selectedLayer.layerNumber}',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryColor,
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
+                  ],
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.confirmation_number,
+                    size: 28,
+                    color: AppTheme.primaryColor,
                   ),
                 ),
               ),
               const SizedBox(width: 16),
-              Expanded(
+              const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '選択した層',
+                    Text(
+                      '抽選チケット',
                       style: TextStyle(
                         fontSize: 14,
                         color: AppTheme.textSecondaryColor,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text(
-                      'Layer ${widget.selectedLayer.layerNumber}',
-                      style: const TextStyle(
+                      '1枚購入',
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -148,21 +165,22 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           const Divider(),
           const SizedBox(height: 16),
+          // 価格表示
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                '価格',
+                'チケット価格',
                 style: TextStyle(
                   fontSize: 14,
                   color: AppTheme.textSecondaryColor,
                 ),
               ),
               Text(
-                '¥${numberFormat.format(widget.selectedLayer.price)}',
+                '¥${numberFormat.format(widget.campaign.effectiveTicketPrice)}',
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -172,18 +190,19 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
             ],
           ),
           const SizedBox(height: 12),
+          // 残り枠数
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                '残りポジション',
+                '残り枠数',
                 style: TextStyle(
                   fontSize: 14,
                   color: AppTheme.textSecondaryColor,
                 ),
               ),
               Text(
-                '$availablePositions / ${widget.selectedLayer.positionsCount}',
+                '$availablePositions / ${widget.campaign.positionsTotal}',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -191,9 +210,93 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          // 賞品一覧プレビュー
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.emoji_events, color: Colors.amber, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      '当選賞品',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ...widget.campaign.layers.take(3).map((layer) {
+                  final prizeName = layer.prizeName ?? '${layer.layerNumber}等賞';
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _getPrizeIcon(layer.layerNumber),
+                          size: 16,
+                          color: _getPrizeColor(layer.layerNumber),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$prizeName (${layer.positionsCount}枠)',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                if (widget.campaign.layers.length > 3)
+                  Text(
+                    '...他${widget.campaign.layers.length - 3}種類',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondaryColor,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// 賞品アイコン取得
+  IconData _getPrizeIcon(int layerNumber) {
+    switch (layerNumber) {
+      case 1:
+        return Icons.emoji_events;
+      case 2:
+        return Icons.military_tech;
+      case 3:
+        return Icons.workspace_premium;
+      default:
+        return Icons.card_giftcard;
+    }
+  }
+
+  /// 賞品カラー取得
+  Color _getPrizeColor(int layerNumber) {
+    switch (layerNumber) {
+      case 1:
+        return const Color(0xFFFFD700);
+      case 2:
+        return const Color(0xFFC0C0C0);
+      case 3:
+        return const Color(0xFFCD7F32);
+      default:
+        return AppTheme.primaryColor;
+    }
   }
 
   Widget _buildPaymentMethodSelection() {
@@ -273,11 +376,11 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                '商品価格',
+                '抽選チケット',
                 style: TextStyle(fontSize: 16),
               ),
               Text(
-                '¥${numberFormat.format(widget.selectedLayer.price)}',
+                '¥${numberFormat.format(widget.campaign.effectiveTicketPrice)}',
                 style: const TextStyle(fontSize: 16),
               ),
             ],
@@ -310,7 +413,7 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
                 ),
               ),
               Text(
-                '¥${numberFormat.format(widget.selectedLayer.price)}',
+                '¥${numberFormat.format(widget.campaign.effectiveTicketPrice)}',
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -376,6 +479,7 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.all(16),
           textStyle: const TextStyle(fontSize: 18),
+          backgroundColor: AppTheme.primaryColor,
         ),
         child: _isProcessing
             ? const SizedBox(
@@ -386,8 +490,16 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               )
-            : Text(
-                '¥${numberFormat.format(widget.selectedLayer.price)} で購入する',
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.shopping_cart, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text(
+                    '¥${numberFormat.format(widget.campaign.effectiveTicketPrice)} で抽選に参加',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ],
               ),
       ),
     );
@@ -401,7 +513,6 @@ class _PurchaseConfirmPageState extends State<PurchaseConfirmPage> {
         MaterialPageRoute(
           builder: (context) => PaymentProcessingPage(
             campaign: widget.campaign,
-            selectedLayer: widget.selectedLayer,
             paymentMethod: _paymentMethod,
           ),
         ),

@@ -11,13 +11,19 @@ export function calculateTotalPositions(baseLength: number): number {
 
 /**
  * Calculate positions in a specific layer
- * Layer 1 (bottom) has baseLength positions, decreases by 1 for each upper layer
+ * 目的: レイヤー番号に対応する格子数を計算
+ * Layer 1 (top/1等) = 1 position
+ * Layer 2 (2等) = 2 positions
+ * Layer 3 (3等) = 3 positions
+ * ...
+ * Layer N (N等/bottom) = N positions
  */
 export function calculateLayerPositions(baseLength: number, layerNumber: number): number {
   if (layerNumber < 1 || layerNumber > baseLength) {
     throw new Error(`Layer number must be between 1 and ${baseLength}`);
   }
-  return baseLength - layerNumber + 1;
+  // 層番号 = その層の格子数
+  return layerNumber;
 }
 
 /**
@@ -85,6 +91,7 @@ export function validateLayerPrices(
 
 /**
  * Calculate total revenue for a campaign if all positions sold
+ * @deprecated Use calculateTicketPrice instead
  */
 export function calculateMaxRevenue(
   layerPrices: Record<string, number>,
@@ -99,6 +106,50 @@ export function calculateMaxRevenue(
   return total;
 }
 
+/**
+ * Calculate total prize cost
+ * 目的: 総奖品成本を計算
+ * I/O: layer_prices（各層の1人あたり奖品価値）→ 総成本
+ * 計算式: 総成本 = Σ (layer_prices[N] × N)
+ * 注意点: 層Nには N人いるので、layer_prices[N] × N が該当層の総成本
+ */
+export function calculateTotalPrizeCost(
+  layerPrices: Record<string, number>,
+  baseLength: number
+): number {
+  let total = 0;
+  for (let layer = 1; layer <= baseLength; layer++) {
+    const prizeValuePerPerson = layerPrices[layer.toString()] || 0;
+    const positionsInLayer = layer; // 層Nには N人
+    total += prizeValuePerPerson * positionsInLayer;
+  }
+  return total;
+}
+
+/**
+ * Calculate ticket price (uniform price for all positions)
+ * 目的: 抽奖单价を計算
+ * I/O: layer_prices, profit_margin_percent → 抽奖单价
+ * 計算式: 抽奖单价 = (総成本 / (1 - 利润率)) / 総格子数
+ */
+export function calculateTicketPrice(
+  layerPrices: Record<string, number>,
+  baseLength: number,
+  profitMarginPercent: number
+): number {
+  const totalPrizeCost = calculateTotalPrizeCost(layerPrices, baseLength);
+  const totalPositions = calculateTotalPositions(baseLength);
+
+  // 奖池金额 = 総成本 / (1 - 利润率/100)
+  const poolAmount = totalPrizeCost / (1 - profitMarginPercent / 100);
+
+  // 抽奖单价 = 奖池金额 / 総格子数
+  const ticketPrice = poolAmount / totalPositions;
+
+  // 切り上げて整数にする（円単位）
+  return Math.ceil(ticketPrice);
+}
+
 export default {
   calculateTotalPositions,
   calculateLayerPositions,
@@ -106,4 +157,6 @@ export default {
   generatePositions,
   validateLayerPrices,
   calculateMaxRevenue,
+  calculateTotalPrizeCost,
+  calculateTicketPrice,
 };

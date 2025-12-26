@@ -4,26 +4,70 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'core/di/injection.dart';
 import 'core/constants/app_theme.dart';
+import 'core/constants/app_config.dart';
+import 'core/network/api_client.dart';
 import 'core/utils/logger.dart';
 import 'features/auth/presentation/pages/role_selection_page.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/campaign/presentation/providers/campaign_provider.dart';
 import 'features/purchase/presentation/providers/purchase_provider.dart';
+import 'features/admin/presentation/providers/user_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 全体のエラーハンドリング（release モードで白画面を防ぐ）
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    if (kReleaseMode) {
+      // Release モードではログに記録
+      AppLogger.error('Flutter Error: ${details.exception}');
+    }
+  };
+
+  try {
+    await _initializeApp();
+    runApp(const MainApp());
+  } catch (e) {
+    AppLogger.error('App initialization failed: $e');
+    // エラー時にフォールバックUIを表示
+    runApp(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Text('アプリの初期化に失敗しました: $e'),
+        ),
+      ),
+    ));
+    if (kDebugMode) {
+      rethrow;
+    }
+  }
+}
+
+/// アプリ初期化処理
+/// 目的: main()からの初期化ロジック分離
+Future<void> _initializeApp() async {
   // Load environment variables
   try {
     await dotenv.load(fileName: '.env');
   } catch (e) {
     AppLogger.warning('.env not found, loading example.env');
-    await dotenv.load(fileName: 'example.env');
+    try {
+      await dotenv.load(fileName: 'example.env');
+    } catch (e2) {
+      AppLogger.warning('example.env also not found, using defaults');
+    }
   }
+
+  // Initialize date formatting for configured locale
+  // 目的: ロケールの日付フォーマットを使用するための初期化
+  await initializeDateFormatting(AppConfig.defaultLocale, null);
+  AppLogger.info('Date formatting initialized for ${AppConfig.defaultLocale}');
 
   // Initialize Firebase
   await Firebase.initializeApp(
@@ -31,17 +75,23 @@ void main() async {
   );
   AppLogger.info('Firebase initialized');
 
-  // Initialize Stripe (skip on web platform as flutter_stripe doesn't support web)
-  if (!kIsWeb) {
-    final stripePublishableKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'];
-    if (stripePublishableKey != null && stripePublishableKey.isNotEmpty) {
+  // Initialize Stripe
+  // 目的: Stripeを初期化（Web/モバイル両対応）
+  final stripePublishableKey = AppConfig.stripePublishableKey;
+  if (stripePublishableKey.isNotEmpty) {
+    try {
       Stripe.publishableKey = stripePublishableKey;
-      AppLogger.info('Stripe initialized');
-    } else {
-      AppLogger.warning('Stripe publishable key not found in .env');
+      if (kIsWeb) {
+        // Web環境ではmerchanctIdentifierを設定
+        await Stripe.instance.applySettings();
+      }
+      AppLogger.info(
+          'Stripe initialized (platform: ${kIsWeb ? 'web' : 'mobile'})');
+    } catch (e) {
+      AppLogger.warning('Stripe initialization failed: $e');
     }
   } else {
-    AppLogger.info('Stripe initialization skipped (not supported on web)');
+    AppLogger.warning('Stripe publishable key not found in .env');
   }
 
   // Configure dependency injection
@@ -63,17 +113,19 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-
-  runApp(const TriPrizeApp());
 }
 
-class TriPrizeApp extends StatelessWidget {
-  const TriPrizeApp({super.key});
+/// Main application widget
+/// アプリ名は AppConfig から取得
+class MainApp extends StatelessWidget {
+  const MainApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // ApiClient を Provider として提供（抽選結果表示などで使用）
+        Provider<ApiClient>.value(value: getIt<ApiClient>()),
         ChangeNotifierProvider(
           create: (_) => getIt<AuthProvider>()..initialize(),
         ),
@@ -83,9 +135,13 @@ class TriPrizeApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => getIt<PurchaseProvider>(),
         ),
+        // UserProvider を Provider として提供（配送先住所編集で使用）
+        ChangeNotifierProvider(
+          create: (_) => getIt<UserProvider>(),
+        ),
       ],
       child: MaterialApp(
-        title: 'TriPrize',
+        title: AppConfig.displayName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
@@ -149,20 +205,20 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            // App name
-            const Text(
-              'TriPrize',
-              style: TextStyle(
+            // App name (from config)
+            Text(
+              AppConfig.displayName,
+              style: const TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
             ),
             const SizedBox(height: 8),
-            // Tagline
-            const Text(
-              '三角形抽選販売プラットフォーム',
-              style: TextStyle(
+            // Tagline (from config)
+            Text(
+              AppConfig.description,
+              style: const TextStyle(
                 fontSize: 16,
                 color: Colors.white70,
               ),

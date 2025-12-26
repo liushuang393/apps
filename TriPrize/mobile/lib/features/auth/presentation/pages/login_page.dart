@@ -4,6 +4,7 @@ import '../../../../core/constants/app_theme.dart';
 import '../../../../core/utils/logger.dart';
 import '../providers/auth_provider.dart';
 import 'register_page.dart';
+import 'forgot_password_page.dart';
 import '../../../campaign/presentation/pages/campaign_list_page.dart';
 import '../../../admin/presentation/pages/admin_dashboard_page.dart';
 import 'dart:async' show unawaited;
@@ -150,7 +151,29 @@ class _LoginPageState extends State<LoginPage> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 8),
+
+                // Forgot password link
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const ForgotPasswordPage(),
+                        ),
+                      );
+                    },
+                    child: const Text(
+                      'パスワードを忘れた方',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
 
                 // Error message
                 Consumer<AuthProvider>(
@@ -215,42 +238,6 @@ class _LoginPageState extends State<LoginPage> {
                           : const Text('ログイン'),
                     );
                   },
-                ),
-                const SizedBox(height: 16),
-
-                // Anonymous login button (for testing)
-                Consumer<AuthProvider>(
-                  builder: (context, authProvider, child) {
-                    return OutlinedButton(
-                      onPressed: authProvider.isLoading
-                          ? null
-                          : () => _handleAnonymousLogin(context),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.all(16),
-                        textStyle: const TextStyle(fontSize: 16),
-                      ),
-                      child: const Text('ゲストとして続ける'),
-                    );
-                  },
-                ),
-                const SizedBox(height: 24),
-
-                // Divider
-                Row(
-                  children: [
-                    const Expanded(child: Divider()),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'または',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ),
-                    const Expanded(child: Divider()),
-                  ],
                 ),
                 const SizedBox(height: 24),
 
@@ -333,31 +320,6 @@ class _LoginPageState extends State<LoginPage> {
       );
     } else {
       AppLogger.warning('ログイン失敗: ${authProvider.errorMessage}');
-    }
-  }
-
-  Future<void> _handleAnonymousLogin(BuildContext context) async {
-    final authProvider = context.read<AuthProvider>();
-    authProvider.clearError();
-
-    final success = await authProvider.loginAnonymously();
-
-    if (!mounted) return;
-
-    if (success && mounted) {
-      // 匿名ログインは顧客として扱う
-      authProvider.setUserRole('customer');
-      
-      // Navigate to campaign list
-      // ignore: use_build_context_synchronously, unawaited_futures
-      unawaited(
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (context) => const CampaignListPage(),
-          ),
-          (route) => false,
-        ),
-      );
     }
   }
 }

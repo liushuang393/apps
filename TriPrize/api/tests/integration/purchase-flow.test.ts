@@ -170,11 +170,12 @@ import { UserRole } from '../../src/models/user.entity';
         });
 
       expect(paymentIntentResponse.status).toBe(201);
-      expect(paymentIntentResponse.body.data.paymentIntent).toBeDefined();
+      expect(paymentIntentResponse.body.data.client_secret).toBeDefined();
+      expect(paymentIntentResponse.body.data.payment_intent_id).toBeDefined();
 
       const purchase = await purchaseService.getPurchaseById(purchaseId);
       expect(purchase).toBeDefined();
-      expect(purchase?.status).toBe('pending');
+      expect(purchase?.status).toBe('processing');
 
       const reservedPositionsResponse = await request(app)
         .get(`/api/campaigns/${testCampaignId}/positions`)
@@ -184,12 +185,18 @@ import { UserRole } from '../../src/models/user.entity';
       expect(reservedPositionsResponse.body.data.length).toBeGreaterThanOrEqual(2);
 
       const userPurchasesResponse = await request(app)
-        .get('/api/purchases')
+        .get('/api/purchases/me')
         .set('Authorization', `Bearer ${authToken}`);
 
       expect(userPurchasesResponse.status).toBe(200);
       expect(userPurchasesResponse.body.data.length).toBeGreaterThan(0);
-      expect(userPurchasesResponse.body.data[0].purchase_id).toBe(purchaseId);
+
+      // Find the purchase we just created (should be the most recent one)
+      const foundPurchase = userPurchasesResponse.body.data.find(
+        (p: any) => p.purchase_id === purchaseId
+      );
+      expect(foundPurchase).toBeDefined();
+      expect(foundPurchase.purchase_id).toBe(purchaseId);
     });
 
     it('should prevent concurrent purchase of same position', async () => {

@@ -1,18 +1,22 @@
+# Docker Compose Configuration
+# 目的: ローカル開発環境のコンテナ定義
+# 注意点: APP_NAME 環境変数でコンテナ名を変更可能
+
 services:
   # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
-    container_name: triprize-postgres
+    container_name: ${APP_NAME:-triprize}-postgres
     environment:
-      POSTGRES_DB: triprize
-      POSTGRES_USER: triprize
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-triprize}
+      POSTGRES_USER: ${DB_USER:-triprize}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-triprize_password}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U triprize"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-triprize}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -20,9 +24,9 @@ services:
   # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: triprize-redis
+    container_name: ${APP_NAME:-triprize}-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -37,13 +41,18 @@ services:
     build:
       context: ./api
       dockerfile: Dockerfile
-    container_name: triprize-api
+    container_name: ${APP_NAME:-triprize}-api
     ports:
-      - "3000:3000"
+      - "${API_PORT:-3000}:3000"
     environment:
+      # App Config
+      APP_NAME: ${APP_NAME:-TriPrize}
+      APP_DISPLAY_NAME: ${APP_DISPLAY_NAME:-TriPrize}
+      APP_DESCRIPTION: ${APP_DESCRIPTION:-Triangle lottery campaign sales platform}
+
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://triprize:${DB_PASSWORD}@postgres:5432/triprize
+      DATABASE_URL: postgresql://${DB_USER:-triprize}:${DB_PASSWORD:-triprize_password}@postgres:5432/${DB_NAME:-triprize}
       REDIS_URL: redis://redis:6379
 
       # Firebase (from .env file)
@@ -82,4 +91,4 @@ volumes:
 
 networks:
   default:
-    name: triprize-network
+    name: ${APP_NAME:-triprize}-network

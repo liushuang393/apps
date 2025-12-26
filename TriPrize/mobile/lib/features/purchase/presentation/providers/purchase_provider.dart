@@ -29,13 +29,14 @@ class PurchaseProvider with ChangeNotifier {
   bool get hasError => _errorMessage != null;
 
   /// Create a new purchase
-  /// 目的: 创建购买订单
-  /// I/O: 发送购买请求到后端
+  /// 目的: 抽選チケット購入を作成
+  /// I/O: 購入リクエストをバックエンドに送信
+  /// 注意点: layerNumberはnull可（抽選システムではサーバー側で自動割り当て）
   /// 返回: true if successful
   Future<bool> createPurchase({
     required String campaignId,
-    required int layerNumber,
     required String paymentMethod,
+    int? layerNumber, // 抽選システムでは不要
   }) async {
     _isProcessing = true;
     _errorMessage = null;
@@ -46,7 +47,7 @@ class PurchaseProvider with ChangeNotifier {
       const uuid = Uuid();
       final idempotencyKey = uuid.v4();
 
-      AppLogger.info('Creating purchase for campaign: $campaignId, layer: $layerNumber');
+      AppLogger.info('Creating purchase for campaign: $campaignId');
 
       final request = CreatePurchaseRequest(
         campaignId: campaignId,
@@ -193,5 +194,41 @@ class PurchaseProvider with ChangeNotifier {
   void clearCurrentPurchase() {
     _currentPurchase = null;
     notifyListeners();
+  }
+
+  /// Create payment intent for Stripe card payment
+  /// 目的: Stripe決済用のPaymentIntentを作成
+  /// I/O: purchaseId, paymentMethodを受け取り、clientSecretを含むPaymentIntentを返す
+  /// 返回: PaymentIntentModel if successful, null otherwise
+  Future<PaymentIntentModel?> createPaymentIntent({
+    required String purchaseId,
+    required String paymentMethod,
+    String? returnUrl,
+  }) async {
+    _isProcessing = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      AppLogger.info('Creating payment intent for purchase: $purchaseId');
+
+      final paymentIntent = await repository.createPaymentIntent(
+        purchaseId: purchaseId,
+        paymentMethod: paymentMethod,
+        returnUrl: returnUrl,
+      );
+
+      AppLogger.info('Payment intent created: ${paymentIntent.paymentIntentId}');
+      _isProcessing = false;
+      notifyListeners();
+
+      return paymentIntent;
+    } catch (e) {
+      AppLogger.error('Failed to create payment intent', e);
+      _errorMessage = e.toString();
+      _isProcessing = false;
+      notifyListeners();
+      return null;
+    }
   }
 }

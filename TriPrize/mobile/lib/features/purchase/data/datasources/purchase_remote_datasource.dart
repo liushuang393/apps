@@ -14,6 +14,15 @@ abstract class PurchaseRemoteDataSource {
   Future<PurchaseModel> getPurchaseById(String purchaseId);
   Future<PurchaseModel> confirmPayment(String purchaseId);
   Future<void> cancelPurchase(String purchaseId);
+
+  /// Create payment intent for Stripe card payment
+  /// 目的: Stripe決済用のPaymentIntentを作成
+  /// I/O: purchaseId, paymentMethodを受け取り、clientSecretを含むPaymentIntentを返す
+  Future<PaymentIntentModel> createPaymentIntent({
+    required String purchaseId,
+    required String paymentMethod,
+    String? returnUrl,
+  });
 }
 
 /// Purchase remote data source implementation
@@ -128,6 +137,47 @@ class PurchaseRemoteDataSourceImpl implements PurchaseRemoteDataSource {
     } catch (e) {
       AppLogger.error('Failed to cancel purchase', e);
       throw Exception('購入のキャンセルに失敗しました: $e');
+    }
+  }
+
+  @override
+  Future<PaymentIntentModel> createPaymentIntent({
+    required String purchaseId,
+    required String paymentMethod,
+    String? returnUrl,
+  }) async {
+    try {
+      AppLogger.info('Creating payment intent for purchase: $purchaseId');
+
+      final requestData = <String, dynamic>{
+        'purchase_id': purchaseId,
+        'payment_method': paymentMethod,
+      };
+      if (returnUrl != null) {
+        requestData['return_url'] = returnUrl;
+      }
+
+      final response = await apiClient.post(
+        '/api/payments/create-intent',
+        data: requestData,
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final intentData = data['data'] as Map<String, dynamic>;
+
+      final paymentIntent = PaymentIntentModel(
+        paymentIntentId: intentData['payment_intent_id'] as String,
+        clientSecret: intentData['client_secret'] as String,
+        amount: intentData['amount'] as int,
+        currency: intentData['currency'] as String? ?? 'jpy',
+        status: intentData['status'] as String,
+      );
+
+      AppLogger.info('Payment intent created: ${paymentIntent.paymentIntentId}');
+      return paymentIntent;
+    } catch (e) {
+      AppLogger.error('Failed to create payment intent', e);
+      throw Exception('決済インテントの作成に失敗しました: $e');
     }
   }
 }

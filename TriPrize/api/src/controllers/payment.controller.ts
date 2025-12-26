@@ -27,6 +27,31 @@ export class PaymentController {
       req.dbUser.user_id
     );
 
+    // コンビニ決済の場合、支払い番号と期限を取得
+    // 目的: フロントエンドで支払い番号を表示するため
+    // 注意点: konbini の場合は next_action.konbini_display_details.stores から取得
+    let konbiniReference: string | null = null;
+    let konbiniExpiresAt: string | null = null;
+
+    if (dto.payment_method === 'konbini' && paymentIntent.next_action) {
+      const konbiniDetails = paymentIntent.next_action.konbini_display_details;
+      if (konbiniDetails) {
+        // Stripe の konbini_display_details.stores から支払い番号を取得
+        // 注意点: 各コンビニ店舗 (familymart, lawson, ministop, seicomart) から取得
+        const stores = konbiniDetails.stores;
+        const paymentCode = stores.familymart?.payment_code
+          || stores.lawson?.payment_code
+          || stores.ministop?.payment_code
+          || stores.seicomart?.payment_code
+          || null;
+        konbiniReference = paymentCode;
+        // 期限は konbiniDetails.expires_at から取得
+        if (konbiniDetails.expires_at) {
+          konbiniExpiresAt = new Date(konbiniDetails.expires_at * 1000).toISOString();
+        }
+      }
+    }
+
     res.status(201).json({
       success: true,
       data: {
@@ -36,6 +61,8 @@ export class PaymentController {
         amount: transaction.amount,
         currency: transaction.currency,
         status: paymentIntent.status,
+        konbini_reference: konbiniReference,
+        konbini_expires_at: konbiniExpiresAt,
       },
     });
   });

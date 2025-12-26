@@ -30,6 +30,8 @@ export class CampaignController {
   /**
    * Get campaign by ID
    * GET /api/campaigns/:campaignId
+   * 目的: キャンペーン詳細を取得
+   * 注意点: draftステータスのキャンペーンは管理者のみ閲覧可能
    */
   getCampaign = asyncHandler(async (req: AuthorizedRequest, res: Response): Promise<void> => {
     const { campaignId } = req.params;
@@ -37,6 +39,12 @@ export class CampaignController {
     const campaign = await campaignService.getCampaignDetail(campaignId);
 
     if (!campaign) {
+      throw errors.notFound('Campaign');
+    }
+
+    // draft ステータスのキャンペーンは管理者のみ閲覧可能
+    const isAdmin = req.dbUser?.role === 'admin';
+    if (campaign.status === 'draft' && !isAdmin) {
       throw errors.notFound('Campaign');
     }
 
@@ -49,6 +57,10 @@ export class CampaignController {
   /**
    * List campaigns
    * GET /api/campaigns
+   * 目的: キャンペーン一覧を取得
+   * 注意点:
+   *   - 管理者の場合は draft を含むすべてのキャンペーンを取得
+   *   - 一般ユーザーの場合は draft を除外
    */
   listCampaigns = asyncHandler(async (req: AuthorizedRequest, res: Response): Promise<void> => {
     const { status, limit, offset } = req.query as { status?: string; limit?: string; offset?: string };
@@ -56,10 +68,14 @@ export class CampaignController {
     const limitNum = limit ? Number.parseInt(limit, 10) : 50;
     const offsetNum = offset ? Number.parseInt(offset, 10) : 0;
 
+    // 管理者の場合はすべてのキャンペーンを表示（draft含む）
+    const isAdmin = req.dbUser?.role === 'admin';
+
     const campaigns = await campaignService.listCampaigns(
       status as CampaignStatus | undefined,
       limitNum,
-      offsetNum
+      offsetNum,
+      isAdmin // includeAll: 管理者の場合 true
     );
 
     res.json({
@@ -155,9 +171,23 @@ export class CampaignController {
   /**
    * Get campaign statistics
    * GET /api/campaigns/:campaignId/stats
+   * 目的: キャンペーン統計を取得
+   * 注意点: draftステータスのキャンペーンは管理者のみ閲覧可能
    */
   getCampaignStats = asyncHandler(async (req: AuthorizedRequest, res: Response): Promise<void> => {
     const campaignId = String(req.params.campaignId);
+
+    // draft チェックのためにキャンペーン情報を取得
+    const campaign = await campaignService.getCampaignDetail(campaignId);
+    if (!campaign) {
+      throw errors.notFound('Campaign');
+    }
+
+    // draft ステータスのキャンペーンは管理者のみ閲覧可能
+    const isAdmin = req.dbUser?.role === 'admin';
+    if (campaign.status === 'draft' && !isAdmin) {
+      throw errors.notFound('Campaign');
+    }
 
     const stats = await campaignService.getCampaignStats(campaignId);
 
@@ -171,11 +201,23 @@ export class CampaignController {
    * Get campaign positions
    * GET /api/campaigns/:campaignId/positions
    * 目的: キャンペーンの位置情報を取得する
-   * I/O: campaignId, status (query), limit (query) -> Position[]
+   * 注意点: draftステータスのキャンペーンは管理者のみ閲覧可能
    */
   getPositions = asyncHandler(async (req: AuthorizedRequest, res: Response): Promise<void> => {
     const campaignId = String(req.params.campaignId);
     const { status, limit } = req.query as { status?: string; limit?: string };
+
+    // draft チェックのためにキャンペーン情報を取得
+    const campaign = await campaignService.getCampaignDetail(campaignId);
+    if (!campaign) {
+      throw errors.notFound('Campaign');
+    }
+
+    // draft ステータスのキャンペーンは管理者のみ閲覧可能
+    const isAdmin = req.dbUser?.role === 'admin';
+    if (campaign.status === 'draft' && !isAdmin) {
+      throw errors.notFound('Campaign');
+    }
 
     const limitNum = limit ? Number.parseInt(limit, 10) : 100;
 

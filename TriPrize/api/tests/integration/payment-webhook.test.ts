@@ -262,6 +262,7 @@ describe('Payment Webhook Integration Tests', () => {
       const response = await request(app)
         .post('/api/payments/webhook')
         .set('stripe-signature', signature)
+        .set('Content-Type', 'application/json')
         .send(payload);
 
       expect(response.status).toBe(200);
@@ -321,6 +322,7 @@ describe('Payment Webhook Integration Tests', () => {
       const response1 = await request(app)
         .post('/api/payments/webhook')
         .set('stripe-signature', signature)
+        .set('Content-Type', 'application/json')
         .send(payload);
 
       expect(response1.status).toBe(200);
@@ -337,6 +339,7 @@ describe('Payment Webhook Integration Tests', () => {
       const response2 = await request(app)
         .post('/api/payments/webhook')
         .set('stripe-signature', signature)
+        .set('Content-Type', 'application/json')
         .send(payload);
 
       expect(response2.status).toBe(200);
@@ -378,6 +381,7 @@ describe('Payment Webhook Integration Tests', () => {
       const response = await request(app)
         .post('/api/payments/webhook')
         .set('stripe-signature', signature)
+        .set('Content-Type', 'application/json')
         .send(payload);
 
       expect(response.status).toBe(200);
@@ -431,6 +435,7 @@ describe('Payment Webhook Integration Tests', () => {
       await request(app)
         .post('/api/payments/webhook')
         .set('stripe-signature', signature)
+        .set('Content-Type', 'application/json')
         .send(payload);
 
       // 验证位置状态
@@ -444,6 +449,7 @@ describe('Payment Webhook Integration Tests', () => {
       const response2 = await request(app)
         .post('/api/payments/webhook')
         .set('stripe-signature', signature)
+        .set('Content-Type', 'application/json')
         .send(payload);
 
       expect(response2.status).toBe(200);
@@ -471,8 +477,8 @@ describe('Payment Webhook Integration Tests', () => {
         ['completed', testPurchaseId]
       );
       await pool.query(
-        'UPDATE positions SET status = $1, sold_at = $2 WHERE position_id = $3',
-        ['sold', new Date(), testPositionId]
+        'UPDATE positions SET status = $1, user_id = $2, sold_at = $3 WHERE position_id = $4',
+        ['sold', testUserId, new Date(), testPositionId]
       );
       await pool.query(
         'UPDATE campaigns SET positions_sold = 1, total_revenue = 100 WHERE campaign_id = $1',
@@ -502,6 +508,7 @@ describe('Payment Webhook Integration Tests', () => {
       const response = await request(app)
         .post('/api/payments/webhook')
         .set('stripe-signature', signature)
+        .set('Content-Type', 'application/json')
         .send(payload);
 
       expect(response.status).toBe(200);

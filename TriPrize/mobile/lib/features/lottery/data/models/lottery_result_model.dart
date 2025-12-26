@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 /// Lottery result model
 /// 目的: 抽選結果データの保持
+/// 注意点: isAdminはAPIから返される。管理者は全員の結果を見れる
 class LotteryResultModel extends Equatable {
   final String lotteryId;
   final String campaignId;
@@ -11,14 +12,18 @@ class LotteryResultModel extends Equatable {
   final List<WinnerModel> winners;
   final bool isUserWinner;
   final List<UserWinModel>? userWins; // User's wins in this campaign
+  final bool isAdmin; // 管理者かどうか
 
   const LotteryResultModel({
     required this.lotteryId,
     required this.campaignId,
     required this.campaignName,
     required this.status,
-    required this.winners, required this.isUserWinner, this.drawnAt,
+    required this.winners,
+    required this.isUserWinner,
+    this.drawnAt,
     this.userWins,
+    this.isAdmin = false,
   });
 
   factory LotteryResultModel.fromJson(Map<String, dynamic> json) {
@@ -38,6 +43,7 @@ class LotteryResultModel extends Equatable {
       userWins: (json['user_wins'] as List<dynamic>?)
           ?.map((e) => UserWinModel.fromJson(e as Map<String, dynamic>))
           .toList(),
+      isAdmin: json['is_admin'] as bool? ?? false,
     );
   }
 
@@ -51,6 +57,7 @@ class LotteryResultModel extends Equatable {
       'winners': winners.map((e) => e.toJson()).toList(),
       'is_user_winner': isUserWinner,
       'user_wins': userWins?.map((e) => e.toJson()).toList(),
+      'is_admin': isAdmin,
     };
   }
 
@@ -68,6 +75,7 @@ class LotteryResultModel extends Equatable {
         winners,
         isUserWinner,
         userWins,
+        isAdmin,
       ];
 }
 

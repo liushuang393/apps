@@ -59,6 +59,25 @@ router.get(
 );
 
 /**
+ * @route   PUT /api/users/me/address
+ * @desc    配送先住所を更新
+ * @access  Private
+ * @note    ユーザーが当選後に配送先住所を登録するためのエンドポイント
+ */
+router.put(
+  '/me/address',
+  authenticate,
+  validateBody(z.object({
+    postal_code: z.string().min(1, '郵便番号は必須です'),
+    prefecture: z.string().min(1, '都道府県は必須です'),
+    city: z.string().min(1, '市区町村は必須です'),
+    address_line1: z.string().min(1, '番地は必須です'),
+    address_line2: z.string().optional(),
+  })),
+  userController.updateAddress
+);
+
+/**
  * @route   GET /api/users
  * @desc    List all users (admin only)
  * @access  Private (Admin)

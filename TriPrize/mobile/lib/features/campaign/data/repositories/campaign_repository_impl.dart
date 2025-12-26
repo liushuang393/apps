@@ -51,4 +51,9 @@ class CampaignRepositoryImpl implements CampaignRepository {
   Future<void> deleteCampaign(String campaignId) async {
     return await remoteDataSource.deleteCampaign(campaignId);
   }
+
+  @override
+  Future<Map<String, dynamic>> drawLottery(String campaignId) async {
+    return await remoteDataSource.drawLottery(campaignId);
+  }
 }

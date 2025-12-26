@@ -1,12 +1,71 @@
 import request from 'supertest';
 import { createApp } from '../../src/app';
+import { pool } from '../../src/config/database.config';
+import campaignService from '../../src/services/campaign.service';
+import { UserRole } from '../../src/models/user.entity';
 
 describe('Campaigns API Integration Tests', () => {
   let app: ReturnType<typeof createApp>;
+  let adminUserId: string;
+  let testCampaignId: string;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Initialize Express application for integration tests
     app = createApp();
+
+    // Create a test admin user
+    const adminEmail = 'test-campaigns-admin@example.com';
+    const nodeCrypto = require('node:crypto');
+    const hash = nodeCrypto.createHash('md5').update(adminEmail).digest('hex');
+    const firebaseUid = `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+
+    const adminResult = await pool.query(
+      `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+       ON CONFLICT (email) DO UPDATE SET
+         firebase_uid = EXCLUDED.firebase_uid,
+         display_name = EXCLUDED.display_name,
+         role = EXCLUDED.role,
+         updated_at = NOW()
+       RETURNING user_id`,
+      [firebaseUid, firebaseUid, adminEmail, 'Test Admin', UserRole.ADMIN]
+    );
+    adminUserId = adminResult.rows[0].user_id;
+
+    // Create a test campaign
+    const campaign = await campaignService.createCampaign(
+      {
+        name: 'Test Campaign for Stats',
+        description: 'Test campaign for stats endpoint',
+        base_length: 3,
+        layer_prices: { '1': 100, '2': 200, '3': 300 },
+        profit_margin_percent: 10,
+        purchase_limit: 3,
+        prizes: [
+          { name: 'Prize 1', rank: 1, quantity: 1, value: 1000, description: 'Test prize', image_url: 'https://example.com/prize.jpg' },
+        ],
+      },
+      adminUserId
+    );
+    testCampaignId = campaign.campaign_id;
+
+    // Publish the campaign
+    await campaignService.publishCampaign(testCampaignId);
+  });
+
+  afterAll(async () => {
+    // Clean up test data
+    try {
+      await pool.query('DELETE FROM payment_transactions WHERE purchase_id IN (SELECT purchase_id FROM purchases WHERE campaign_id = $1)', [testCampaignId]);
+      await pool.query('DELETE FROM purchases WHERE campaign_id = $1', [testCampaignId]);
+      await pool.query('DELETE FROM positions WHERE campaign_id = $1', [testCampaignId]);
+      await pool.query('DELETE FROM prizes WHERE campaign_id = $1', [testCampaignId]);
+      await pool.query('DELETE FROM layers WHERE campaign_id = $1', [testCampaignId]);
+      await pool.query('DELETE FROM campaigns WHERE campaign_id = $1', [testCampaignId]);
+      await pool.query('DELETE FROM users WHERE user_id = $1', [adminUserId]);
+    } catch (error) {
+      console.error('Cleanup error:', error);
+    }
   });
 
   describe('GET /api/campaigns', () => {
@@ -109,23 +168,16 @@ describe('Campaigns API Integration Tests', () => {
 
   describe('GET /api/campaigns/:campaignId/stats', () => {
     it('should return campaign statistics', async () => {
-      // First get a campaign
-      const listResponse = await request(app).get('/api/campaigns');
+      const response = await request(app)
+        .get(`/api/campaigns/${testCampaignId}/stats`)
+        .expect(200);
 
-      if (listResponse.body.data.length > 0) {
-        const campaignId = listResponse.body.data[0].campaign_id;
-
-        const response = await request(app)
-          .get(`/api/campaigns/${campaignId}/stats`)
-          .expect(200);
-
-        expect(response.body.success).toBe(true);
-        expect(response.body.data).toHaveProperty('positions_total');
-        expect(response.body.data).toHaveProperty('positions_sold');
-        expect(response.body.data).toHaveProperty('progress_percent');
-        expect(response.body.data).toHaveProperty('unique_buyers');
-        expect(response.body.data).toHaveProperty('total_revenue');
-      }
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toHaveProperty('positions_total');
+      expect(response.body.data).toHaveProperty('positions_sold');
+      expect(response.body.data).toHaveProperty('progress_percent');
+      expect(response.body.data).toHaveProperty('unique_buyers');
+      expect(response.body.data).toHaveProperty('total_revenue');
     });
   });
 });

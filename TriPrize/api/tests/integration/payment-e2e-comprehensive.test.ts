@@ -848,7 +848,7 @@ describe('Payment E2E Comprehensive Tests', () => {
           position_ids: testPositionIds,
         });
 
-      const otherPurchaseId = purchaseResponse.body.data.purchase_id;
+      const otherPurchaseId = purchaseResponse.body.data?.purchase_id;
 
       // 尝试用当前用户创建支付意图应该失败
       const response = await request(app)
@@ -863,11 +863,19 @@ describe('Payment E2E Comprehensive Tests', () => {
 
       // 清理 - 按照外键依赖顺序删除
       // 注意: purchases 引用 positions，所以需要先删除 purchases
-      await pool.query('DELETE FROM payment_transactions WHERE purchase_id = $1', [otherPurchaseId]);
-      await pool.query('DELETE FROM purchases WHERE purchase_id = $1', [otherPurchaseId]);
-      // positions 引用 users，但 purchases 也引用 positions，所以需要先删除 purchases
+      // 注意: purchases 也引用 users，所以需要先删除 purchases
+      // 删除该用户的所有支付交易和购买
+      await pool.query('DELETE FROM payment_transactions WHERE purchase_id IN (SELECT purchase_id FROM purchases WHERE user_id = $1)', [otherUserId]);
+      await pool.query('DELETE FROM purchases WHERE user_id = $1', [otherUserId]);
+      // positions 引用 users，但 purchases 也引用 positions，所以需要先削除 purchases
       // 然后可以安全地删除 positions 和 users
-      await pool.query('UPDATE positions SET user_id = NULL WHERE user_id = $1', [otherUserId]);
+      // 注意: position_user_consistency 約束により、status='sold' の場合は user_id を NULL にできないため、
+      // status を 'available' に戻す必要がある
+      await pool.query(
+        'UPDATE positions SET status = $1, user_id = NULL, sold_at = NULL WHERE user_id = $2',
+        ['available', otherUserId]
+      );
+      // 最後に user を削除（purchases が削除されているので外键制約违反はない）
       await pool.query('DELETE FROM users WHERE user_id = $1', [otherUserId]);
     });
 

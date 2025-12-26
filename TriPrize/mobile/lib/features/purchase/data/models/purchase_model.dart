@@ -1,26 +1,25 @@
 import 'package:equatable/equatable.dart';
 
-/// Purchase model
-/// 目的: 购买记录的数据模型
-/// I/O: 从API获取或发送购买数据
-/// 注意点: 包含position、payment、campaign信息
+/// 購入モデル
+/// 目的: 購入記録のデータモデル
+/// I/O: APIから購入データを取得または送信
+/// 注意点: APIが返すフィールドとFlutterモデルの対応
 class PurchaseModel extends Equatable {
   final String purchaseId;
   final String userId;
   final String campaignId;
   final String positionId;
-  final int layerNumber;
-  final int rowNumber;
-  final int colNumber;
-  final int price;
-  final String paymentMethod;
-  final String paymentStatus;
+  final int quantity;
+  final int pricePerPosition;
+  final int totalAmount;
+  final String status; // pending, processing, completed, failed, cancelled, refunded
   final String? paymentIntentId;
   final String? idempotencyKey;
   final DateTime createdAt;
-  final DateTime? paidAt;
+  final DateTime updatedAt;
+  final DateTime? completedAt;
 
-  // Campaign info (optional, for list view)
+  /// キャンペーン情報（オプション、一覧表示用）
   final String? campaignName;
 
   const PurchaseModel({
@@ -28,16 +27,15 @@ class PurchaseModel extends Equatable {
     required this.userId,
     required this.campaignId,
     required this.positionId,
-    required this.layerNumber,
-    required this.rowNumber,
-    required this.colNumber,
-    required this.price,
-    required this.paymentMethod,
-    required this.paymentStatus,
+    required this.quantity,
+    required this.pricePerPosition,
+    required this.totalAmount,
+    required this.status,
     required this.createdAt,
+    required this.updatedAt,
     this.paymentIntentId,
     this.idempotencyKey,
-    this.paidAt,
+    this.completedAt,
     this.campaignName,
   });
 
@@ -47,17 +45,18 @@ class PurchaseModel extends Equatable {
       userId: json['user_id'] as String,
       campaignId: json['campaign_id'] as String,
       positionId: json['position_id'] as String,
-      layerNumber: json['layer_number'] as int,
-      rowNumber: json['row_number'] as int,
-      colNumber: json['col_number'] as int,
-      price: json['price'] as int,
-      paymentMethod: json['payment_method'] as String,
-      paymentStatus: json['payment_status'] as String,
+      quantity: json['quantity'] as int? ?? 1,
+      pricePerPosition: json['price_per_position'] as int? ?? 0,
+      totalAmount: json['total_amount'] as int? ?? 0,
+      status: json['status'] as String? ?? 'pending',
       paymentIntentId: json['payment_intent_id'] as String?,
       idempotencyKey: json['idempotency_key'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
-      paidAt: json['paid_at'] != null
-          ? DateTime.parse(json['paid_at'] as String)
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.now(),
+      completedAt: json['completed_at'] != null
+          ? DateTime.parse(json['completed_at'] as String)
           : null,
       campaignName: json['campaign_name'] as String?,
     );
@@ -69,32 +68,28 @@ class PurchaseModel extends Equatable {
       'user_id': userId,
       'campaign_id': campaignId,
       'position_id': positionId,
-      'layer_number': layerNumber,
-      'row_number': rowNumber,
-      'col_number': colNumber,
-      'price': price,
-      'payment_method': paymentMethod,
-      'payment_status': paymentStatus,
+      'quantity': quantity,
+      'price_per_position': pricePerPosition,
+      'total_amount': totalAmount,
+      'status': status,
       'payment_intent_id': paymentIntentId,
       'idempotency_key': idempotencyKey,
       'created_at': createdAt.toIso8601String(),
-      'paid_at': paidAt?.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'completed_at': completedAt?.toIso8601String(),
       'campaign_name': campaignName,
     };
   }
 
-  /// Check if payment is completed
-  bool get isPaid => paymentStatus == 'succeeded' || paymentStatus == 'paid';
+  /// 支払い完了かどうかを確認
+  bool get isPaid => status == 'completed';
 
-  /// Check if payment is pending
-  bool get isPending =>
-      paymentStatus == 'pending' || paymentStatus == 'processing';
+  /// 支払い保留中かどうかを確認
+  bool get isPending => status == 'pending' || status == 'processing';
 
-  /// Check if payment failed
+  /// 支払い失敗かどうかを確認
   bool get isFailed =>
-      paymentStatus == 'failed' ||
-      paymentStatus == 'canceled' ||
-      paymentStatus == 'refunded';
+      status == 'failed' || status == 'cancelled' || status == 'refunded';
 
   @override
   List<Object?> get props => [
@@ -102,42 +97,45 @@ class PurchaseModel extends Equatable {
         userId,
         campaignId,
         positionId,
-        layerNumber,
-        rowNumber,
-        colNumber,
-        price,
-        paymentMethod,
-        paymentStatus,
+        quantity,
+        pricePerPosition,
+        totalAmount,
+        status,
         paymentIntentId,
         idempotencyKey,
         createdAt,
-        paidAt,
+        updatedAt,
+        completedAt,
         campaignName,
       ];
 }
 
-/// Create purchase request DTO
-/// 目的: 购买请求的数据传输对象
+/// 購入リクエストDTO
+/// 目的: 抽選チケット購入リクエストのデータ転送オブジェクト
+/// 注意点: layerNumberはnull可（抽選システムではサーバー側で自動割り当て）
 class CreatePurchaseRequest extends Equatable {
   final String campaignId;
-  final int layerNumber;
+  final int? layerNumber; // 抽選システムでは不要
   final String paymentMethod;
   final String idempotencyKey;
 
   const CreatePurchaseRequest({
     required this.campaignId,
-    required this.layerNumber,
     required this.paymentMethod,
     required this.idempotencyKey,
+    this.layerNumber,
   });
 
   Map<String, dynamic> toJson() {
-    return {
+    final json = <String, dynamic>{
       'campaign_id': campaignId,
-      'layer_number': layerNumber,
       'payment_method': paymentMethod,
       'idempotency_key': idempotencyKey,
     };
+    if (layerNumber != null) {
+      json['layer_number'] = layerNumber;
+    }
+    return json;
   }
 
   @override
@@ -149,8 +147,8 @@ class CreatePurchaseRequest extends Equatable {
       ];
 }
 
-/// Payment intent model
-/// 目的: Stripe Payment Intent数据
+/// 支払いインテントモデル
+/// 目的: Stripe Payment Intentデータ
 class PaymentIntentModel extends Equatable {
   final String paymentIntentId;
   final String clientSecret;

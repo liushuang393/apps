@@ -19,12 +19,15 @@ import {
   calculateLayerPositions,
   generatePositions,
   validateLayerPrices,
+  calculateTicketPrice,
 } from '../utils/position-calculator.util';
 import logger from '../utils/logger.util';
 import { generateUUID } from '../utils/crypto.util';
+import { errors } from '../middleware/error.middleware';
 
 /**
- * Database row types for campaign queries
+ * キャンペーン一覧用の行データ
+ * 目的: listCampaigns クエリ結果のマッピング
  */
 interface CampaignListRow {
   campaign_id: string;
@@ -36,6 +39,9 @@ interface CampaignListRow {
   progress_percent: string;
   min_price: number;
   max_price: number;
+  ticket_price: number | null; // 統一抽選価格（自動計算値）
+  manual_ticket_price: number | null; // 手動設定の抽選価格（円）
+  effective_ticket_price: number | null; // 有効な抽選価格（手動優先）
   status: string;
   end_date: Date | null;
   created_at: Date;
@@ -64,25 +70,36 @@ export class CampaignService {
 
       // Validate layer prices
       if (!validateLayerPrices(dto.layer_prices, dto.base_length)) {
-        throw new Error('Invalid layer prices configuration');
+        throw errors.badRequest('Invalid layer prices configuration');
       }
 
       // Calculate total positions
       const positionsTotal = calculateTotalPositions(dto.base_length);
 
+      // Calculate uniform ticket price
+      // 目的: すべてのポジションに適用される統一抽選価格を計算
+      // 計算式: (総奖品成本 / (1 - 利润率)) / 総格子数
+      const ticketPrice = calculateTicketPrice(
+        dto.layer_prices,
+        dto.base_length,
+        dto.profit_margin_percent
+      );
+
       // Generate campaign ID
       const campaignId = generateUUID();
 
       // Insert campaign
-      // 目的: キャンペーンを作成し、auto_drawフラグを設定（デフォルト: true）
+      // 目的: キャンペーンを作成し、auto_drawフラグと統一価格を設定
       // I/O: CreateCampaignDto → CampaignDetail
-      const autoDraw = dto.auto_draw !== undefined ? dto.auto_draw : true; // デフォルト: 自動開獎
+      // 注意点: manual_ticket_price が設定されている場合、それを優先
+      const autoDraw = dto.auto_draw ?? true; // デフォルト: 自動開獎
+      const manualTicketPrice = dto.manual_ticket_price ?? null; // 手動設定価格（未設定はnull）
       const { rows: campaignRows } = await client.query<Campaign>(
         `INSERT INTO campaigns (
           campaign_id, name, description, base_length, positions_total,
           layer_prices, profit_margin_percent, purchase_limit,
-          start_date, end_date, status, auto_draw, created_by, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft', $11, $12, NOW(), NOW())
+          start_date, end_date, status, auto_draw, ticket_price, manual_ticket_price, created_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft', $11, $12, $13, $14, NOW(), NOW())
         RETURNING *`,
         [
           campaignId,
@@ -96,6 +113,8 @@ export class CampaignService {
           dto.start_date || null,
           dto.end_date || null,
           autoDraw,
+          ticketPrice, // 統一抽選価格（自動計算値）をDBに保存
+          manualTicketPrice, // 手動設定の抽選価格（円）
           creatorId,
         ]
       );
@@ -103,17 +122,20 @@ export class CampaignService {
       const campaign = mapRowToCampaign(campaignRows[0]);
 
       // Create layers and store layer_id mapping
+      // 目的: 各レイヤーを作成（price は奖品価値を保存、prize_name は顧客表示用）
       const layers: Layer[] = [];
       const layerIdMap: { [layerNumber: number]: string } = {};
       for (let layerNumber = 1; layerNumber <= dto.base_length; layerNumber++) {
         const positionsCount = calculateLayerPositions(dto.base_length, layerNumber);
-        const price = dto.layer_prices[layerNumber.toString()];
+        const prizeValue = dto.layer_prices[layerNumber.toString()]; // 该层奖品的价值
+        // 賞品名: layer_names から取得、なければデフォルト(N等賞)
+        const prizeName = dto.layer_names?.[layerNumber.toString()] || `${layerNumber}等賞`;
 
         const { rows: layerRows } = await client.query<Layer>(
-          `INSERT INTO layers (campaign_id, layer_number, positions_count, price, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, NOW(), NOW())
+          `INSERT INTO layers (campaign_id, layer_number, positions_count, price, prize_name, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
            RETURNING *`,
-          [campaignId, layerNumber, positionsCount, price]
+          [campaignId, layerNumber, positionsCount, prizeValue, prizeName]
         );
 
         const layer = mapRowToLayer(layerRows[0]);
@@ -122,37 +144,47 @@ export class CampaignService {
       }
 
       // Create positions with layer_id
+      // 目的: すべてのポジションに統一の ticket_price を設定
+      // 注意点: 手動価格が設定されている場合はそれを優先
+      const effectiveTicketPrice = manualTicketPrice ?? ticketPrice;
       const positions = generatePositions(dto.base_length);
       for (const pos of positions) {
-        const price = dto.layer_prices[pos.layerNumber.toString()];
         const layerId = layerIdMap[pos.layerNumber];
 
         await client.query(
           `INSERT INTO positions (campaign_id, layer_id, layer_number, row_number, col_number, price, status, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, 'available', NOW(), NOW())`,
-          [campaignId, layerId, pos.layerNumber, pos.rowNumber, pos.colNumber, price]
+          [campaignId, layerId, pos.layerNumber, pos.rowNumber, pos.colNumber, effectiveTicketPrice]
         );
       }
 
-      // Create prizes
+      // Create prizes - 自動生成：各層から1つの賞品を作成
+      // 目的: 等級と賞品を一対一で対応させる
+      // 注意点: layer_names と layer_prices から自動生成し、dto.prizes は無視
       const prizes: Prize[] = [];
-      for (const prizeDto of dto.prizes) {
-        const { rows: prizeRows } = await client.query<Prize>(
-          `INSERT INTO prizes (campaign_id, name, description, rank, quantity, value, image_url, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-           RETURNING *`,
-          [
-            campaignId,
-            prizeDto.name,
-            prizeDto.description || null,
-            prizeDto.rank,
-            prizeDto.quantity,
-            prizeDto.value,
-            prizeDto.image_url || null,
-          ]
-        );
+      for (let layerNumber = 1; layerNumber <= dto.base_length; layerNumber++) {
+        const prizeValue = dto.layer_prices[layerNumber.toString()];
+        const prizeName = dto.layer_names?.[layerNumber.toString()] || `${layerNumber}等賞`;
 
-        prizes.push(mapRowToPrize(prizeRows[0]));
+        // 賞品価値が設定されている層のみ賞品を作成
+        if (prizeValue && prizeValue > 0) {
+          const { rows: prizeRows } = await client.query<Prize>(
+            `INSERT INTO prizes (campaign_id, name, description, rank, quantity, value, image_url, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+             RETURNING *`,
+            [
+              campaignId,
+              prizeName,
+              `${layerNumber}等の賞品`, // デフォルト説明
+              layerNumber, // rank = layer_number
+              1, // quantity = 1（各層1人当選）
+              prizeValue,
+              null, // image_url
+            ]
+          );
+
+          prizes.push(mapRowToPrize(prizeRows[0]));
+        }
       }
 
       await client.query('COMMIT');
@@ -235,13 +267,20 @@ export class CampaignService {
 
   /**
    * List campaigns with filters
+   * 目的: キャンペーン一覧を取得
+   * 注意点:
+   *   - includeAll=false（デフォルト）の場合、draftを除外（顧客向け）
+   *   - includeAll=trueの場合、すべてのステータスを返す（管理者向け）
    */
   async listCampaigns(
     status?: CampaignStatus,
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    includeAll: boolean = false
   ): Promise<CampaignListItem[]> {
     try {
+      // 目的: キャンペーン一覧を取得（手動価格対応）
+      // 注意点: effective_ticket_price = COALESCE(manual_ticket_price, ticket_price)
       let query = `
         SELECT
           campaign_id,
@@ -253,6 +292,9 @@ export class CampaignService {
           ROUND((positions_sold::decimal / positions_total * 100), 2) as progress_percent,
           (layer_prices->>'1')::integer as min_price,
           (layer_prices->>base_length::text)::integer as max_price,
+          COALESCE(ticket_price, 0) as ticket_price,
+          manual_ticket_price,
+          COALESCE(manual_ticket_price, ticket_price, 0) as effective_ticket_price,
           status,
           end_date,
           created_at
@@ -260,10 +302,17 @@ export class CampaignService {
       `;
 
       const params: (CampaignStatus | number)[] = [];
+
+      // ステータスフィルタリング
       if (status) {
+        // 特定のステータスが指定された場合
         query += ' WHERE status = $1';
         params.push(status);
+      } else if (!includeAll) {
+        // includeAll=false の場合、draft を除外（顧客向け）
+        query += " WHERE status != 'draft'";
       }
+      // includeAll=true かつ status 未指定の場合は WHERE なし（管理者向け）
 
       query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
       params.push(limit, offset);
@@ -280,6 +329,9 @@ export class CampaignService {
         progress_percent: Number.parseFloat(String(row.progress_percent)),
         min_price: Number.parseInt(String(row.min_price), 10),
         max_price: Number.parseInt(String(row.max_price), 10),
+        ticket_price: Number.parseInt(String(row.ticket_price ?? 0), 10),
+        manual_ticket_price: row.manual_ticket_price ? Number.parseInt(String(row.manual_ticket_price), 10) : null,
+        effective_ticket_price: Number.parseInt(String(row.effective_ticket_price ?? 0), 10),
         status: row.status as CampaignStatus,
         end_date: row.end_date ? new Date(row.end_date) : null,
         created_at: new Date(row.created_at),
@@ -303,12 +355,12 @@ export class CampaignService {
       // Get existing campaign
       const existing = await this.getCampaignById(campaignId);
       if (!existing) {
-        throw new Error('CAMPAIGN_NOT_FOUND');
+        throw errors.notFound('Campaign');
       }
 
       // Don't allow updates to published/closed/drawn campaigns
       if (existing.status !== CampaignStatus.DRAFT && dto.layer_prices) {
-        throw new Error('Cannot update layer prices after campaign is published');
+        throw errors.badRequest('Cannot update layer prices after campaign is published');
       }
 
       const updates: string[] = [];
@@ -328,7 +380,7 @@ export class CampaignService {
       if (dto.layer_prices !== undefined) {
         // Validate new prices
         if (!validateLayerPrices(dto.layer_prices, existing.base_length)) {
-          throw new Error('Invalid layer prices configuration');
+          throw errors.badRequest('Invalid layer prices configuration');
         }
 
         updates.push(`layer_prices = $${paramIndex++}`);
@@ -380,6 +432,13 @@ export class CampaignService {
         values.push(dto.auto_draw);
       }
 
+      // 手動設定の抽選価格（円）を更新
+      // 注意点: null を明示的に設定すると自動計算に戻る
+      if (dto.manual_ticket_price !== undefined) {
+        updates.push(`manual_ticket_price = $${paramIndex++}`);
+        values.push(dto.manual_ticket_price);
+      }
+
       if (updates.length === 0) {
         await client.query('ROLLBACK');
         return existing;
@@ -396,6 +455,18 @@ export class CampaignService {
       `;
 
       const { rows } = await client.query<Campaign>(query, values);
+
+      // 手動価格が変更された場合、全てのポジションの価格も更新
+      // 目的: 購入時に正しい価格を使用できるようにする
+      if (dto.manual_ticket_price !== undefined) {
+        const updatedCampaign = mapRowToCampaign(rows[0]);
+        const effectivePrice = updatedCampaign.manual_ticket_price ?? updatedCampaign.ticket_price;
+        await client.query(
+          'UPDATE positions SET price = $1, updated_at = NOW() WHERE campaign_id = $2',
+          [effectivePrice, campaignId]
+        );
+        logger.info(`Updated all positions price to ${effectivePrice} for campaign ${campaignId}`);
+      }
 
       await client.query('COMMIT');
 
@@ -425,11 +496,11 @@ export class CampaignService {
       // Check if draft
       const campaign = await this.getCampaignById(campaignId);
       if (!campaign) {
-        throw new Error('CAMPAIGN_NOT_FOUND');
+        throw errors.notFound('Campaign');
       }
 
       if (campaign.status !== CampaignStatus.DRAFT) {
-        throw new Error('Only draft campaigns can be deleted');
+        throw errors.badRequest('Only draft campaigns can be deleted');
       }
 
       // Delete campaign (cascade will delete layers, positions, prizes)
@@ -494,7 +565,7 @@ export class CampaignService {
       );
 
       if (rows.length === 0) {
-        throw new Error('CAMPAIGN_NOT_FOUND');
+        throw errors.notFound('Campaign');
       }
 
       const row = rows[0];
@@ -529,7 +600,7 @@ export class CampaignService {
       // キャンペーンの存在確認
       const campaign = await this.getCampaignById(campaignId);
       if (!campaign) {
-        throw new Error('Campaign not found');
+        throw errors.notFound('Campaign');
       }
 
       let query = `

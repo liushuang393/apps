@@ -11,6 +11,7 @@ class CampaignModel extends Equatable {
   final double progressPercent;
   final int minPrice;
   final int maxPrice;
+  final int ticketPrice; // 統一抽選価格
   final String status;
   final DateTime? endDate;
   final DateTime createdAt;
@@ -18,7 +19,16 @@ class CampaignModel extends Equatable {
   const CampaignModel({
     required this.campaignId,
     required this.name,
-    required this.baseLength, required this.positionsTotal, required this.positionsSold, required this.progressPercent, required this.minPrice, required this.maxPrice, required this.status, required this.createdAt, this.description,
+    required this.baseLength,
+    required this.positionsTotal,
+    required this.positionsSold,
+    required this.progressPercent,
+    required this.minPrice,
+    required this.maxPrice,
+    required this.ticketPrice,
+    required this.status,
+    required this.createdAt,
+    this.description,
     this.endDate,
   });
 
@@ -33,6 +43,7 @@ class CampaignModel extends Equatable {
       progressPercent: (json['progress_percent'] as num).toDouble(),
       minPrice: json['min_price'] as int,
       maxPrice: json['max_price'] as int,
+      ticketPrice: json['ticket_price'] as int? ?? 0,
       status: json['status'] as String,
       endDate: json['end_date'] != null
           ? DateTime.parse(json['end_date'] as String)
@@ -52,6 +63,7 @@ class CampaignModel extends Equatable {
       'progress_percent': progressPercent,
       'min_price': minPrice,
       'max_price': maxPrice,
+      'ticket_price': ticketPrice,
       'status': status,
       'end_date': endDate?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
@@ -69,6 +81,7 @@ class CampaignModel extends Equatable {
         progressPercent,
         minPrice,
         maxPrice,
+        ticketPrice,
         status,
         endDate,
         createdAt,
@@ -76,6 +89,8 @@ class CampaignModel extends Equatable {
 }
 
 /// Campaign detail model
+/// 目的: キャンペーン詳細データを表現
+/// 注意点: effectiveTicketPrice は手動価格優先、なければ自動計算値
 class CampaignDetailModel extends Equatable {
   final String campaignId;
   final String name;
@@ -85,6 +100,8 @@ class CampaignDetailModel extends Equatable {
   final int positionsSold;
   final Map<String, int> layerPrices;
   final double profitMarginPercent;
+  final int ticketPrice; // 統一抽選価格（自動計算値）
+  final int? manualTicketPrice; // 手動設定の抽選価格（円）
   final int? purchaseLimit;
   final DateTime? startDate;
   final DateTime? endDate;
@@ -97,11 +114,27 @@ class CampaignDetailModel extends Equatable {
   const CampaignDetailModel({
     required this.campaignId,
     required this.name,
-    required this.baseLength, required this.positionsTotal, required this.positionsSold, required this.layerPrices, required this.profitMarginPercent, required this.status, required this.createdAt, required this.updatedAt, required this.layers, required this.prizes, this.description,
+    required this.baseLength,
+    required this.positionsTotal,
+    required this.positionsSold,
+    required this.layerPrices,
+    required this.profitMarginPercent,
+    required this.ticketPrice,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.layers,
+    required this.prizes,
+    this.description,
+    this.manualTicketPrice,
     this.purchaseLimit,
     this.startDate,
     this.endDate,
   });
+
+  /// 有効な抽選価格（手動設定優先、なければ自動計算値）
+  /// 目的: 支払い金額や表示に使用する最終的な価格
+  int get effectiveTicketPrice => manualTicketPrice ?? ticketPrice;
 
   factory CampaignDetailModel.fromJson(Map<String, dynamic> json) {
     return CampaignDetailModel(
@@ -114,6 +147,8 @@ class CampaignDetailModel extends Equatable {
       layerPrices: (json['layer_prices'] as Map<String, dynamic>)
           .map((k, v) => MapEntry(k, v as int)),
       profitMarginPercent: (json['profit_margin_percent'] as num).toDouble(),
+      ticketPrice: json['ticket_price'] as int? ?? 0,
+      manualTicketPrice: json['manual_ticket_price'] as int?, // 手動設定価格
       purchaseLimit: json['purchase_limit'] as int?,
       startDate: json['start_date'] != null
           ? DateTime.parse(json['start_date'] as String)
@@ -124,12 +159,17 @@ class CampaignDetailModel extends Equatable {
       status: json['status'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
-      layers: (json['layers'] as List<dynamic>)
-          .map((e) => LayerModel.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      prizes: (json['prizes'] as List<dynamic>)
-          .map((e) => PrizeModel.fromJson(e as Map<String, dynamic>))
-          .toList(),
+      // layers と prizes は null または未定義の場合は空リストを使用
+      layers: json['layers'] != null
+          ? (json['layers'] as List<dynamic>)
+              .map((e) => LayerModel.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : [],
+      prizes: json['prizes'] != null
+          ? (json['prizes'] as List<dynamic>)
+              .map((e) => PrizeModel.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : [],
     );
   }
 
@@ -143,6 +183,8 @@ class CampaignDetailModel extends Equatable {
         positionsSold,
         layerPrices,
         profitMarginPercent,
+        ticketPrice,
+        manualTicketPrice,
         purchaseLimit,
         startDate,
         endDate,
@@ -162,6 +204,7 @@ class LayerModel extends Equatable {
   final int positionsCount;
   final int positionsSold;
   final int price;
+  final String? prizeName; // 賞品名（顧客向け表示用）
 
   const LayerModel({
     required this.layerId,
@@ -170,6 +213,7 @@ class LayerModel extends Equatable {
     required this.positionsCount,
     required this.positionsSold,
     required this.price,
+    this.prizeName,
   });
 
   factory LayerModel.fromJson(Map<String, dynamic> json) {
@@ -180,6 +224,7 @@ class LayerModel extends Equatable {
       positionsCount: json['positions_count'] as int,
       positionsSold: json['positions_sold'] as int,
       price: json['price'] as int,
+      prizeName: json['prize_name'] as String?,
     );
   }
 
@@ -191,6 +236,7 @@ class LayerModel extends Equatable {
         positionsCount,
         positionsSold,
         price,
+        prizeName,
       ];
 }
 

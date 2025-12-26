@@ -10,16 +10,17 @@ import '../widgets/stripe_card_payment_widget.dart';
 import 'purchase_result_page.dart';
 
 /// Payment processing page
-/// 目的: 購入処理と決済を実行する
-/// I/O: campaign, layer, paymentMethodを受け取り、決済完了後に結果画面へ
-/// 注意点: カード決済とコンビニ決済で処理を分岐
+/// 目的: 抽選チケット購入処理と決済を実行する
+/// I/O: campaign, paymentMethodを受け取り、決済完了後に結果画面へ
+/// 注意点: カード決済とコンビニ決済で処理を分岐、層は抽選で自動割り当て
 class PaymentProcessingPage extends StatefulWidget {
   final CampaignDetailModel campaign;
-  final LayerModel selectedLayer;
   final String paymentMethod;
 
   const PaymentProcessingPage({
-    required this.campaign, required this.selectedLayer, required this.paymentMethod, super.key,
+    required this.campaign,
+    required this.paymentMethod,
+    super.key,
   });
 
   @override
@@ -93,11 +94,11 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
           const SizedBox(height: 16),
           _buildInfoRow('キャンペーン', widget.campaign.name),
           const SizedBox(height: 12),
-          _buildInfoRow('層', 'Layer ${widget.selectedLayer.layerNumber}'),
+          _buildInfoRow('商品', '抽選チケット 1枚'),
           const SizedBox(height: 12),
           _buildInfoRow(
             '金額',
-            '¥${numberFormat.format(widget.selectedLayer.price)}',
+            '¥${numberFormat.format(widget.campaign.effectiveTicketPrice)}',
           ),
           const SizedBox(height: 12),
           _buildInfoRow(
@@ -362,38 +363,66 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
   Future<void> _createPurchase() async {
     final purchaseProvider = context.read<PurchaseProvider>();
 
+    // 抽選システム: layerNumberは不要（サーバー側でランダム割り当て）
     final success = await purchaseProvider.createPurchase(
       campaignId: widget.campaign.campaignId,
-      layerNumber: widget.selectedLayer.layerNumber,
+      layerNumber: null, // 抽選で自動割り当て
       paymentMethod: widget.paymentMethod,
     );
 
     if (!mounted) return;
 
     if (success) {
-      setState(() {
-        _isPurchaseCreated = true;
-        // For now, we navigate directly to result for konbini
-        // Card payments will show the payment form
-        if (widget.paymentMethod == 'konbini') {
-          // Simulate payment intent for konbini (backend should return this)
-          _paymentIntent = PaymentIntentModel(
-            paymentIntentId: 'pi_konbini_${DateTime.now().millisecondsSinceEpoch}',
-            clientSecret: '',
-            amount: widget.selectedLayer.price,
-            currency: 'jpy',
-            status: 'pending',
-            konbiniReference: '123456789012',
-            konbiniExpiresAt: DateTime.now()
-                .add(const Duration(days: 4))
-                .toIso8601String(),
-          );
-        }
-      });
+      final purchase = purchaseProvider.currentPurchase;
+      if (purchase == null) {
+        setState(() {
+          _errorMessage = '購入情報の取得に失敗しました';
+        });
+        return;
+      }
 
-      // For konbini, navigate to result immediately
-      if (widget.paymentMethod == 'konbini') {
-        _navigateToResult();
+      // カード決済の場合、PaymentIntentを作成してclientSecretを取得
+      if (widget.paymentMethod == 'card') {
+        final paymentIntent = await purchaseProvider.createPaymentIntent(
+          purchaseId: purchase.purchaseId,
+          paymentMethod: 'card',
+        );
+
+        if (!mounted) return;
+
+        if (paymentIntent != null) {
+          setState(() {
+            _isPurchaseCreated = true;
+            _paymentIntent = paymentIntent;
+          });
+        } else {
+          setState(() {
+            _errorMessage =
+                purchaseProvider.errorMessage ?? '決済インテントの作成に失敗しました';
+          });
+        }
+      } else if (widget.paymentMethod == 'konbini') {
+        // コンビニ決済の場合、PaymentIntentを作成
+        final paymentIntent = await purchaseProvider.createPaymentIntent(
+          purchaseId: purchase.purchaseId,
+          paymentMethod: 'konbini',
+        );
+
+        if (!mounted) return;
+
+        if (paymentIntent != null) {
+          setState(() {
+            _isPurchaseCreated = true;
+            _paymentIntent = paymentIntent;
+          });
+          // コンビニ決済は支払い番号を表示（_buildKonbiniInstructionsSection）
+          // 結果画面への遷移は行わない - ユーザーが便利店で支払い後、Webhookで更新
+        } else {
+          setState(() {
+            _errorMessage =
+                purchaseProvider.errorMessage ?? '決済インテントの作成に失敗しました';
+          });
+        }
       }
     } else {
       setState(() {

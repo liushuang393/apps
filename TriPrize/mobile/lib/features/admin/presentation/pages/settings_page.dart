@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/constants/app_theme.dart';
 import '../../../../core/services/settings_service.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import 'address_edit_page.dart';
 import 'terms_of_service_page.dart';
 import 'privacy_policy_page.dart';
 
@@ -122,6 +123,37 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // アカウント設定セクション
+          _buildSectionTitle('アカウント設定'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.local_shipping),
+                  title: const Text('配送先住所'),
+                  subtitle: const Text('当選した賞品の配送先を設定'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const AddressEditPage(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.lock_outline),
+                  title: const Text('パスワード変更'),
+                  subtitle: const Text('ログインパスワードを変更'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showChangePasswordDialog(context),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
           // 通知設定セクション
           _buildSectionTitle('通知設定'),
           Card(
@@ -219,6 +251,8 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  /// ログアウト確認ダイアログを表示
+  /// 目的: ユーザーにログアウトの確認を求め、確認後にセッションをクリアしてログイン画面に戻る
   void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -235,10 +269,12 @@ class _SettingsPageState extends State<SettingsPage> {
               Navigator.of(context).pop(); // ダイアログを閉じる
               final authProvider = context.read<AuthProvider>();
               await authProvider.logout();
-              if (mounted) {
-                Navigator.of(context).pop(); // 設定画面も閉じる
-                // ログイン画面に戻る（必要に応じて実装）
-              }
+              if (!context.mounted) return;
+              // ログイン画面（役割選択画面）に戻る - 全ての画面スタックをクリア
+              await Navigator.of(context).pushNamedAndRemoveUntil(
+                '/',
+                (route) => false,
+              );
             },
             child: const Text(
               'ログアウト',
@@ -246,6 +282,127 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// パスワード変更ダイアログを表示
+  /// 目的: 現在のパスワードと新しいパスワードを入力させて変更
+  void _showChangePasswordDialog(BuildContext context) {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('パスワード変更'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: currentPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '現在のパスワード',
+                    prefixIcon: Icon(Icons.lock),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return '現在のパスワードを入力してください';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: newPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '新しいパスワード',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return '新しいパスワードを入力してください';
+                    }
+                    if (value.length < 8) {
+                      return 'パスワードは8文字以上必要です';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: confirmPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '新しいパスワード（確認）',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                  validator: (value) {
+                    if (value != newPasswordController.text) {
+                      return 'パスワードが一致しません';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.of(dialogContext).pop(),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+
+                      setDialogState(() => isLoading = true);
+
+                      try {
+                        final authProvider = context.read<AuthProvider>();
+                        await authProvider.changePassword(
+                          currentPasswordController.text,
+                          newPasswordController.text,
+                        );
+                        if (!dialogContext.mounted) return;
+                        Navigator.of(dialogContext).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('パスワードを変更しました'),
+                            backgroundColor: AppTheme.successColor,
+                          ),
+                        );
+                      } catch (e) {
+                        setDialogState(() => isLoading = false);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('パスワード変更に失敗しました: $e'),
+                            backgroundColor: AppTheme.errorColor,
+                          ),
+                        );
+                      }
+                    },
+              child: isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('変更する'),
+            ),
+          ],
+        ),
       ),
     );
   }

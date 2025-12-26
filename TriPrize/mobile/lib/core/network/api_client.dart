@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../constants/app_config.dart';
 import '../utils/logger.dart';
 import 'auth_interceptor.dart';
 
@@ -9,14 +9,12 @@ class ApiClient {
   final AuthInterceptor authInterceptor;
 
   ApiClient({required this.authInterceptor}) {
-    final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:3000';
-
     _dio = Dio(
       BaseOptions(
-        baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
-        sendTimeout: const Duration(seconds: 30),
+        baseUrl: AppConfig.apiBaseUrl,
+        connectTimeout: Duration(seconds: AppConfig.apiTimeout),
+        receiveTimeout: Duration(seconds: AppConfig.apiTimeout),
+        sendTimeout: Duration(seconds: AppConfig.apiTimeout),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',

@@ -10,6 +10,7 @@ import campaignService from './campaign.service';
 import notificationService, { NotificationType } from './notification.service';
 import { generateUUID } from '../utils/crypto.util';
 import logger from '../utils/logger.util';
+import { errors } from '../middleware/error.middleware';
 
 /**
  * Lottery service for drawing winners
@@ -34,24 +35,24 @@ export class LotteryService {
       );
 
       if (!lockRows[0].locked) {
-        throw new Error('Lottery draw already in progress for this campaign');
+        throw errors.conflict('Lottery draw already in progress for this campaign');
       }
 
       // Get campaign details
       const campaign = await campaignService.getCampaignDetail(campaignId);
 
       if (!campaign) {
-        throw new Error('CAMPAIGN_NOT_FOUND');
+        throw errors.notFound('Campaign');
       }
 
       // Verify campaign can be drawn
       // 目的: キャンペーンが開獎可能な状態かチェック
       // 注意点: 自動開獎の場合はpublished状態でも開獎可能、手動開獎の場合はclosed状態が必要
-      const canDraw = campaign.status === CampaignStatus.CLOSED || 
+      const canDraw = campaign.status === CampaignStatus.CLOSED ||
                       campaign.status === CampaignStatus.PUBLISHED;
-      
+
       if (!canDraw) {
-        throw new Error(`Campaign must be closed or published before drawing lottery. Current status: ${campaign.status}`);
+        throw errors.badRequest(`Campaign must be closed or published before drawing lottery. Current status: ${campaign.status}`);
       }
 
       // キャンペーンが終了しているか、全て売り切れているかチェック
@@ -60,7 +61,7 @@ export class LotteryService {
       const isSoldOut = campaign.positions_sold >= campaign.positions_total;
 
       if (!isEnded && !isSoldOut) {
-        throw new Error('Campaign must be ended or sold out before drawing lottery');
+        throw errors.badRequest('Campaign must be ended or sold out before drawing lottery');
       }
 
       // Check if already drawn
@@ -70,7 +71,7 @@ export class LotteryService {
       );
 
       if (Number.parseInt(existingResults[0].count, 10) > 0) {
-        throw new Error('Lottery already drawn for this campaign');
+        throw errors.conflict('Lottery already drawn for this campaign');
       }
 
       // Get all sold positions with user info
@@ -82,102 +83,123 @@ export class LotteryService {
         layer_number: number;
       }
 
-      const { rows: soldPositions } = await client.query<SoldPosition>(
-        `SELECT p.position_id, p.user_id, p.row_number, p.col_number, p.layer_number
-         FROM positions p
-         WHERE p.campaign_id = $1 AND p.status = 'sold' AND p.user_id IS NOT NULL
-         ORDER BY RANDOM()`,
+      // 販売済みポジション総数を取得
+      const { rows: soldCountRows } = await client.query<{ count: string }>(
+        `SELECT COUNT(*) as count FROM positions
+         WHERE campaign_id = $1 AND status = 'sold' AND user_id IS NOT NULL`,
         [campaignId]
       );
-
-      if (soldPositions.length === 0) {
-        throw new Error('No sold positions to draw from');
-      }
+      const soldPositionsCount = Number.parseInt(soldCountRows[0].count, 10);
 
       logger.info(`Drawing lottery for campaign ${campaignId}`, {
         totalPositions: campaign.positions_total,
-        soldPositions: soldPositions.length,
+        soldPositions: soldPositionsCount,
         prizes: campaign.prizes.length,
       });
 
-      // Sort prizes by rank (highest rank = best prize = drawn first)
-      const sortedPrizes = [...campaign.prizes].sort((a, b) => a.rank - b.rank);
-
       const winners: Winner[] = [];
-      let positionIndex = 0;
 
-      // Draw winners for each prize
-      for (const prize of sortedPrizes) {
-        for (let i = 0; i < prize.quantity; i++) {
-          if (positionIndex >= soldPositions.length) {
-            logger.warn('Not enough sold positions for all prizes', {
-              campaignId,
-              remainingPrizes: prize.quantity - i,
-            });
-            break;
-          }
+      // 抽選ロジック: 各レイヤーから1人を抽選
+      // 目的: layer_prices に設定された各層から当選者を選出
+      // 注意点: prizes テーブルに詳細があればそれを使用、なければ layer_prices の価値を使用
+      const layerPrices = campaign.layer_prices as Record<string, number>;
 
-          const winningPosition = soldPositions[positionIndex];
-          positionIndex++;
+      for (let layerNumber = 1; layerNumber <= campaign.base_length; layerNumber++) {
+        const prizeValue = layerPrices[layerNumber.toString()];
 
-          // Create lottery result
-          const resultId = generateUUID();
+        // 该层是否有设置奖品价值
+        if (!prizeValue || prizeValue <= 0) {
+          logger.info(`Layer ${layerNumber} has no prize value, skipping`, { campaignId });
+          continue;
+        }
 
-          await client.query(
-            `INSERT INTO lottery_results (
-              result_id, campaign_id, position_id, user_id, prize_id, prize_rank, drawn_at, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-            [
-              resultId,
-              campaignId,
-              winningPosition.position_id,
-              winningPosition.user_id,
-              prize.prize_id,
-              prize.rank,
-            ]
-          );
+        // このレイヤーの販売済みポジションを取得（ランダム順）
+        const { rows: layerPositions } = await client.query<SoldPosition>(
+          `SELECT p.position_id, p.user_id, p.row_number, p.col_number, p.layer_number
+           FROM positions p
+           WHERE p.campaign_id = $1
+             AND p.status = 'sold'
+             AND p.user_id IS NOT NULL
+             AND p.layer_number = $2
+           ORDER BY RANDOM()
+           LIMIT 1`,
+          [campaignId, layerNumber]
+        );
 
-          // Update user prizes_won count
-          await client.query(
-            'UPDATE users SET prizes_won = prizes_won + 1, updated_at = NOW() WHERE user_id = $1',
-            [winningPosition.user_id]
-          );
-
-          // Get user info for winner list
-          interface UserInfo {
-            user_id: string;
-            email: string;
-            display_name: string;
-          }
-
-          const { rows: userRows } = await client.query<UserInfo>(
-            'SELECT user_id, email, display_name FROM users WHERE user_id = $1',
-            [winningPosition.user_id]
-          );
-
-          if (userRows.length > 0) {
-            winners.push({
-              user_id: userRows[0].user_id,
-              user_email: userRows[0].email,
-              user_display_name: userRows[0].display_name,
-              position_row: winningPosition.row_number,
-              position_col: winningPosition.col_number,
-              position_layer: winningPosition.layer_number,
-              prize_id: prize.prize_id,
-              prize_name: prize.name,
-              prize_rank: prize.rank,
-              prize_image_url: prize.image_url,
-              drawn_at: new Date(),
-            });
-          }
-
-          logger.info(`Winner selected`, {
+        if (layerPositions.length === 0) {
+          logger.warn('No sold positions in layer, skipping', {
             campaignId,
-            userId: winningPosition.user_id,
-            prizeName: prize.name,
-            prizeRank: prize.rank,
+            layerNumber,
+          });
+          continue;
+        }
+
+        const winningPosition = layerPositions[0];
+
+        // prizes テーブルからこのランクの詳細を取得（あれば）
+        const matchingPrize = campaign.prizes.find(p => p.rank === layerNumber);
+        const prizeName = matchingPrize?.name || `${layerNumber}等賞`;
+        const prizeId = matchingPrize?.prize_id || null;
+        const prizeImageUrl = matchingPrize?.image_url || null;
+
+        // Create lottery result
+        const resultId = generateUUID();
+
+        await client.query(
+          `INSERT INTO lottery_results (
+            result_id, campaign_id, position_id, user_id, prize_id, prize_rank, drawn_at, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+          [
+            resultId,
+            campaignId,
+            winningPosition.position_id,
+            winningPosition.user_id,
+            prizeId,
+            layerNumber,
+          ]
+        );
+
+        // Update user prizes_won count
+        await client.query(
+          'UPDATE users SET prizes_won = prizes_won + 1, updated_at = NOW() WHERE user_id = $1',
+          [winningPosition.user_id]
+        );
+
+        // Get user info for winner list
+        interface UserInfo {
+          user_id: string;
+          email: string;
+          display_name: string;
+        }
+
+        const { rows: userRows } = await client.query<UserInfo>(
+          'SELECT user_id, email, display_name FROM users WHERE user_id = $1',
+          [winningPosition.user_id]
+        );
+
+        if (userRows.length > 0) {
+          winners.push({
+            user_id: userRows[0].user_id,
+            user_email: userRows[0].email,
+            user_display_name: userRows[0].display_name,
+            position_row: winningPosition.row_number,
+            position_col: winningPosition.col_number,
+            position_layer: winningPosition.layer_number,
+            prize_id: prizeId || resultId, // 如果没有 prize_id，使用 result_id
+            prize_name: prizeName,
+            prize_rank: layerNumber,
+            prize_image_url: prizeImageUrl,
+            drawn_at: new Date(),
           });
         }
+
+        logger.info(`Winner selected for layer ${layerNumber}`, {
+          campaignId,
+          userId: winningPosition.user_id,
+          layerNumber,
+          prizeName,
+          prizeValue,
+        });
       }
 
       // Update campaign status to drawn
@@ -204,7 +226,7 @@ export class LotteryService {
         campaign_id: campaignId,
         campaign_name: campaign.name,
         total_positions: campaign.positions_total,
-        sold_positions: soldPositions.length,
+        sold_positions: soldPositionsCount,
         total_prizes: campaign.prizes.reduce((sum, p) => sum + p.quantity, 0),
         winners_count: winners.length,
         drawn_at: new Date(),
@@ -232,12 +254,14 @@ export class LotteryService {
         user_id: string;
         user_email: string;
         user_display_name: string;
+        position_id: string;
         position_row: number;
         position_col: number;
         position_layer: number;
         prize_id: string;
         prize_name: string;
         prize_rank: number;
+        prize_value: number;
         prize_image_url: string | null;
         drawn_at: Date;
       }
@@ -247,12 +271,14 @@ export class LotteryService {
           u.user_id,
           u.email as user_email,
           u.display_name as user_display_name,
+          pos.position_id,
           pos.row_number as position_row,
           pos.col_number as position_col,
           pos.layer_number as position_layer,
           pr.prize_id,
           pr.name as prize_name,
           pr.rank as prize_rank,
+          pr.value as prize_value,
           pr.image_url as prize_image_url,
           lr.drawn_at
          FROM lottery_results lr
@@ -268,12 +294,14 @@ export class LotteryService {
         user_id: row.user_id,
         user_email: row.user_email,
         user_display_name: row.user_display_name,
+        position_id: row.position_id,
         position_row: row.position_row,
         position_col: row.position_col,
         position_layer: row.position_layer,
         prize_id: row.prize_id,
         prize_name: row.prize_name,
         prize_rank: row.prize_rank,
+        prize_value: row.prize_value,
         prize_image_url: row.prize_image_url,
         drawn_at: new Date(row.drawn_at),
       }));
@@ -319,12 +347,14 @@ export class LotteryService {
         user_id: string;
         user_email: string;
         user_display_name: string;
+        position_id: string;
         position_row: number;
         position_col: number;
         position_layer: number;
         prize_id: string;
         prize_name: string;
         prize_rank: number;
+        prize_value: number;
         prize_image_url: string | null;
         drawn_at: Date;
       }
@@ -334,12 +364,14 @@ export class LotteryService {
           u.user_id,
           u.email as user_email,
           u.display_name as user_display_name,
+          pos.position_id,
           pos.row_number as position_row,
           pos.col_number as position_col,
           pos.layer_number as position_layer,
           pr.prize_id,
           pr.name as prize_name,
           pr.rank as prize_rank,
+          pr.value as prize_value,
           pr.image_url as prize_image_url,
           lr.drawn_at
          FROM lottery_results lr
@@ -360,12 +392,14 @@ export class LotteryService {
         user_id: row.user_id,
         user_email: row.user_email,
         user_display_name: row.user_display_name,
+        position_id: row.position_id,
         position_row: row.position_row,
         position_col: row.position_col,
         position_layer: row.position_layer,
         prize_id: row.prize_id,
         prize_name: row.prize_name,
         prize_rank: row.prize_rank,
+        prize_value: row.prize_value,
         prize_image_url: row.prize_image_url,
         drawn_at: new Date(row.drawn_at),
       };
@@ -381,7 +415,10 @@ export class LotteryService {
   }
 
   /**
-   * Send notifications to winners
+   * 当選者に通知を送信
+   * 目的: 抽選結果を当選者に通知
+   * I/O: campaignId, winnersを受け取り、各当選者にプッシュ通知を送信
+   * 注意点: FCMトークンがない場合やエラー発生時も他の当選者への送信を継続
    */
   private async notifyWinners(campaignId: string, winners: Winner[]): Promise<void> {
     try {
@@ -396,8 +433,8 @@ export class LotteryService {
           winner.user_id,
           NotificationType.PRIZE_WON,
           {
-            title: '🎉 Congratulations! You won a prize!',
-            body: `You won "${winner.prize_name}" in "${campaign.name}"!`,
+            title: '🎉 おめでとうございます！当選しました！',
+            body: `「${campaign.name}」で「${winner.prize_name}」に当選しました！`,
             data: {
               campaign_id: campaignId,
               prize_id: winner.prize_id,
@@ -407,13 +444,13 @@ export class LotteryService {
         );
       }
 
-      logger.info('Winner notifications sent', {
+      logger.info('当選者への通知を送信しました', {
         campaignId,
         winnersCount: winners.length,
       });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Failed to notify winners', {
+      logger.error('当選者への通知送信に失敗しました', {
         error: errorMessage,
         campaignId,
       });

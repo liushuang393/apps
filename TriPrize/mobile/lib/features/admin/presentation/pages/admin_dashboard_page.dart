@@ -13,14 +13,73 @@ import 'settings_page.dart';
 
 /// 管理者ダッシュボード
 /// 目的: 管理者がキャンペーンを作成・管理する画面
-class AdminDashboardPage extends StatelessWidget {
+class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
+
+  @override
+  State<AdminDashboardPage> createState() => _AdminDashboardPageState();
+}
+
+class _AdminDashboardPageState extends State<AdminDashboardPage> {
+  late CampaignProvider _campaignProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    _campaignProvider = inject<CampaignProvider>();
+    // 統計データ用にキャンペーン一覧を取得
+    _refreshCampaigns();
+    // Providerの変更を監視してUIを更新
+    _campaignProvider.addListener(_onCampaignDataChanged);
+  }
+
+  @override
+  void dispose() {
+    _campaignProvider.removeListener(_onCampaignDataChanged);
+    super.dispose();
+  }
+
+  /// Provider のデータが変更されたときに UI を更新
+  void _onCampaignDataChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// キャンペーンデータを再取得
+  /// 目的: 統計情報を最新に更新
+  Future<void> _refreshCampaigns() async {
+    await _campaignProvider.fetchCampaigns();
+  }
+
+  /// 画面遷移後に統計を更新
+  /// 目的: 作成・編集・削除後にダッシュボードの統計を最新化
+  Future<void> _navigateAndRefresh(Widget page) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => ChangeNotifierProvider(
+          create: (_) => inject<CampaignProvider>(),
+          child: page,
+        ),
+      ),
+    );
+    // 作成・更新・削除などが成功した場合（true が返される）は統計を更新
+    if (result == true) {
+      await _refreshCampaigns();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final user = authProvider.user;
     final userRole = authProvider.userRole ?? 'customer';
+
+    // キャンペーン統計を計算
+    final campaigns = _campaignProvider.campaigns;
+    final totalCount = campaigns.length;
+    final draftCount = campaigns.where((c) => c.status == 'draft').length;
+    final publishedCount = campaigns.where((c) => c.status == 'published').length;
+    final closedCount = campaigns.where((c) => c.status == 'closed').length;
+    final drawnCount = campaigns.where((c) => c.status == 'drawn').length;
     
     return Scaffold(
       appBar: AppBar(
@@ -58,149 +117,103 @@ class AdminDashboardPage extends StatelessWidget {
           ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Welcome message
+            // Welcome message（コンパクト化）
             Card(
               color: AppTheme.primaryColor,
               child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        // ユーザーアバター（大きめ）
-                        UserAvatar(
-                          displayName: user?.displayName,
-                          email: user?.email ?? '',
-                          avatarUrl: user?.photoURL,
-                          role: userRole,
-                          radius: 32,
-                          showRoleBadge: true,
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'ようこそ、${user?.displayName ?? "管理者"}さん',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                userRole == 'admin' 
-                                    ? 'キャンペーンを管理しましょう'
-                                    : 'キャンペーンを閲覧しましょう',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
+                    UserAvatar(
+                      displayName: user?.displayName,
+                      email: user?.email ?? '',
+                      avatarUrl: user?.photoURL,
+                      role: userRole,
+                      radius: 24,
+                      showRoleBadge: true,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'ようこそ、${user?.displayName ?? "管理者"}さん',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                      ],
+                          Text(
+                            userRole == 'admin'
+                                ? 'キャンペーンを管理しましょう'
+                                : 'キャンペーンを閲覧しましょう',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
-            // Statistics Cards
+            // Statistics Cards（コンパクト化・横5列）
             Row(
               children: [
-                Expanded(
-                  child: _buildStatCard(
-                    '総キャンペーン数',
-                    '12',
-                    Icons.campaign,
-                    AppTheme.primaryColor,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatCard(
-                    '進行中',
-                    '5',
-                    Icons.play_circle,
-                    AppTheme.successColor,
-                  ),
-                ),
+                _buildCompactStatCard('$totalCount', '総数', Icons.campaign, AppTheme.primaryColor),
+                _buildCompactStatCard('$draftCount', '下書', Icons.edit_note, Colors.grey),
+                _buildCompactStatCard('$publishedCount', '公開', Icons.play_circle, AppTheme.successColor),
+                _buildCompactStatCard('$closedCount', '終了', Icons.stop_circle, AppTheme.warningColor),
+                _buildCompactStatCard('$drawnCount', '抽選', Icons.emoji_events, Colors.amber),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    '完了',
-                    '7',
-                    Icons.check_circle,
-                    AppTheme.warningColor,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatCard(
-                    '総売上',
-                    '¥1.2M',
-                    Icons.attach_money,
-                    AppTheme.errorColor,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 20),
 
             // Action Buttons
             ElevatedButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ChangeNotifierProvider(
-                      create: (_) => inject<CampaignProvider>(),
-                      child: const CreateCampaignPage(),
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.add),
+              onPressed: () => _navigateAndRefresh(const CreateCampaignPage()),
+              icon: const Icon(Icons.add, size: 20),
               label: const Text('新規キャンペーン作成'),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                textStyle: const TextStyle(fontSize: 16),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                textStyle: const TextStyle(fontSize: 14),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            // 編集中（下書き）一覧へのショートカット
             OutlinedButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ChangeNotifierProvider(
-                      create: (_) => inject<CampaignProvider>(),
-                      child: const AdminCampaignListPage(),
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.list),
+              onPressed: () => _navigateAndRefresh(
+                const AdminCampaignListPage(initialStatus: 'draft'),
+              ),
+              icon: const Icon(Icons.edit_note, size: 20),
+              label: const Text('編集中（下書き）'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                textStyle: const TextStyle(fontSize: 14),
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _navigateAndRefresh(const AdminCampaignListPage()),
+              icon: const Icon(Icons.list, size: 20),
               label: const Text('キャンペーン一覧'),
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                textStyle: const TextStyle(fontSize: 16),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                textStyle: const TextStyle(fontSize: 14),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () {
                 Navigator.of(context).push(
@@ -212,42 +225,48 @@ class AdminDashboardPage extends StatelessWidget {
                   ),
                 );
               },
-              icon: const Icon(Icons.people),
+              icon: const Icon(Icons.people, size: 20),
               label: const Text('ユーザー管理'),
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                textStyle: const TextStyle(fontSize: 16),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                textStyle: const TextStyle(fontSize: 14),
               ),
             ),
+            const SizedBox(height: 32), // 增加底部边距确保可滚动
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+  /// コンパクト統計カード（横5列表示用）
+  Widget _buildCompactStatCard(String value, String label, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 12),
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 4),
             Text(
               value,
               style: TextStyle(
-                fontSize: 24,
+                fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
             ),
-            const SizedBox(height: 4),
             Text(
-              title,
+              label,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 10,
                 color: AppTheme.textSecondaryColor,
               ),
             ),

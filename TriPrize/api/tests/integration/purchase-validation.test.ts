@@ -50,21 +50,26 @@ jest.setTimeout(60000);
 	  });
 
 	  beforeEach(async () => {
-	    // 创建测试用户 (使用UUID作为内部user_id, 同时作为Firebase UID)
-	    const userId = crypto.randomUUID();
-	    // user_id must match firebase_uid for role.middleware to find the user
+	    // 创建测试用户
+	    // Mock token格式: mock_email@example.com
+	    // auth middleware会从email生成确定性的UUID，所以这里也要使用相同的算法
+	    const email = 'test-validation@example.com';
+	    const hash = crypto.createHash('md5').update(email).digest('hex');
+	    const userId = `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+
+	    // 先删除可能存在的用户（因为email是唯一的）
+	    await pool.query('DELETE FROM users WHERE email = $1', [email]);
+
 	    const { rows: userRows } = await pool.query(
 	      `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
 	       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
 	       RETURNING user_id`,
-	      [userId, userId, 'test-validation@example.com', 'Test Validation User', UserRole.CUSTOMER]
+	      [userId, userId, email, 'Test Validation User', UserRole.CUSTOMER]
 	    );
 	    testUserId = userRows[0].user_id;
 
-	    // 模拟auth token (Firebase mock会解析这个token, 并将uid设置为去掉前缀的部分)
-	    // ここではFirebase UIDとuser_idを同一のUUID文字列として扱う
-	    const firebaseUid = userId;
-	    authToken = `Bearer mock-token-${firebaseUid}`;
+	    // 模拟auth token
+	    authToken = `Bearer mock_${email}`;
 
     // 创建测试活动 (使用gen_random_uuid()生成UUID)
     const { rows: campaignRows } = await pool.query(

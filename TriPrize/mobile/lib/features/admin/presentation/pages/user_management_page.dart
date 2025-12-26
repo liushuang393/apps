@@ -46,33 +46,45 @@ class _UserManagementPageState extends State<UserManagementPage> {
           }
 
           if (provider.hasError) {
+            // 403エラーの場合は権限不足を明示
+            final is403Error = provider.errorMessage?.contains('403') == true ||
+                provider.errorMessage?.contains('FORBIDDEN') == true ||
+                provider.errorMessage?.contains('Insufficient') == true;
+
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  Icon(
+                    is403Error ? Icons.lock_outline : Icons.error_outline,
+                    size: 64,
+                    color: is403Error ? Colors.orange : Colors.red,
+                  ),
                   const SizedBox(height: 16),
                   Text(
-                    'ユーザーの読み込みに失敗しました',
+                    is403Error ? 'アクセス権限がありません' : 'ユーザーの読み込みに失敗しました',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
                     child: Text(
-                      provider.errorMessage ?? '不明なエラー',
+                      is403Error
+                          ? 'この機能は管理者のみ利用可能です。\n管理者アカウントでログインしてください。'
+                          : (provider.errorMessage ?? '不明なエラー'),
                       style: Theme.of(context).textTheme.bodyMedium,
                       textAlign: TextAlign.center,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      provider.clearError();
-                      provider.fetchUsers();
-                    },
-                    child: const Text('再試行'),
-                  ),
+                  if (!is403Error)
+                    ElevatedButton(
+                      onPressed: () {
+                        provider.clearError();
+                        provider.fetchUsers();
+                      },
+                      child: const Text('再試行'),
+                    ),
                 ],
               ),
             );

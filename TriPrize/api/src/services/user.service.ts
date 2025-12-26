@@ -3,6 +3,7 @@ import {
   User,
   CreateUserDto,
   UpdateUserDto,
+  UpdateAddressDto,
   UserProfile,
   UserStats,
   mapRowToUser,
@@ -180,7 +181,8 @@ export class UserService {
   }
 
   /**
-   * Update last login timestamp
+   * 最終ログイン日時を更新
+   * 目的: ユーザーのログイン履歴を追跡
    */
   async updateLastLogin(userId: string): Promise<void> {
     try {
@@ -197,7 +199,53 @@ export class UserService {
   }
 
   /**
-   * Get user profile (public-safe)
+   * 配送先住所を更新
+   * 目的: ユーザーの配送先住所を登録・更新
+   * I/O: userId, UpdateAddressDtoを受け取り、更新後のUserProfileを返却
+   * 注意点: 郵便番号は必須、建物名は任意
+   */
+  async updateAddress(userId: string, dto: UpdateAddressDto): Promise<UserProfile> {
+    try {
+      const query = `
+        UPDATE users
+        SET postal_code = $1,
+            prefecture = $2,
+            city = $3,
+            address_line1 = $4,
+            address_line2 = $5,
+            updated_at = NOW()
+        WHERE user_id = $6
+        RETURNING *
+      `;
+
+      const values = [
+        dto.postal_code,
+        dto.prefecture,
+        dto.city,
+        dto.address_line1,
+        dto.address_line2 ?? null,
+        userId,
+      ];
+
+      const { rows } = await pool.query<User>(query, values);
+
+      if (rows.length === 0) {
+        throw new Error('USER_NOT_FOUND');
+      }
+
+      const user = mapRowToUser(rows[0]);
+      logger.info(`配送先住所を更新しました: ${userId}`);
+      return mapUserToProfile(user);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('配送先住所の更新に失敗しました', { error: errorMessage, userId });
+      throw error;
+    }
+  }
+
+  /**
+   * ユーザープロフィールを取得（公開情報のみ）
+   * 目的: 機密情報を除いたプロフィール情報を返却
    */
   async getUserProfile(userId: string): Promise<UserProfile | null> {
     const user = await this.getUserById(userId);

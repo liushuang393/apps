@@ -15,11 +15,16 @@ const router = Router();
 
 // Create purchase schema
 // 目的: 購入作成時のバリデーション
-// 注意点: payment_method は支払い意図作成時に指定するため、ここではオプション
+// 注意点:
+//   - quantity: 購入数量（1-10、デフォルト1）
+//   - payment_method: 支払い方法（card/konbini）
+//   - position_ids: 後方互換性のため残すが、非推奨
 const createPurchaseSchema = z.object({
   campaign_id: commonSchemas.uuid,
-  position_ids: z.array(commonSchemas.uuid).min(1).max(10),
+  quantity: z.number().int().min(1).max(10).optional().default(1),
+  position_ids: z.array(commonSchemas.uuid).min(1).max(10).optional(),
   payment_method: z.enum(['card', 'konbini']).optional(),
+  idempotency_key: z.string().optional(),
 });
 
 // Purchase ID param schema

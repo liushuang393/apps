@@ -40,7 +40,7 @@ class CampaignProvider with ChangeNotifier {
     try {
       AppLogger.info('Fetching campaigns with status: $status');
       _campaigns = await repository.getCampaigns(
-        status: status ?? 'published',
+        status: status, // null の場合はすべて取得
         limit: 50,
       );
       AppLogger.info('Successfully fetched ${_campaigns.length} campaigns');

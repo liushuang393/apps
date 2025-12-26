@@ -2,6 +2,36 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_theme.dart';
 import '../../data/models/campaign_model.dart';
 
+/// 層ごとの色定義（賞品リストと完全一致）
+/// 目的: 三角形と賞品リストで同じ色を使用
+class LayerColors {
+  static const List<Color> prizeColors = [
+    Color(0xFFFFD700), // 1等: ゴールド
+    Color(0xFFC0C0C0), // 2等: シルバー
+    Color(0xFFCD7F32), // 3等: ブロンズ
+    Color(0xFF4CAF50), // 4等: グリーン
+    Color(0xFF2196F3), // 5等: ブルー
+    Color(0xFF9C27B0), // 6等: パープル
+    Color(0xFFE91E63), // 7等: ピンク
+    Color(0xFF00BCD4), // 8等: シアン
+    Color(0xFFFF9800), // 9等: オレンジ
+    Color(0xFF795548), // 10等: ブラウン
+  ];
+
+  /// 層番号に応じた色を取得
+  static Color getColor(int layerNumber) {
+    if (layerNumber <= 0) return AppTheme.primaryColor;
+    final index = (layerNumber - 1) % prizeColors.length;
+    return prizeColors[index];
+  }
+
+  /// グラデーション用の色を取得
+  static List<Color> getGradientColors(int layerNumber) {
+    final baseColor = getColor(layerNumber);
+    return [baseColor, baseColor.withValues(alpha: 0.7)];
+  }
+}
+
 /// Triangle visualization widget
 /// 目的: 三角形の層構造を視覚的に表示
 /// I/O: 層データを受け取り、インタラクティブな三角形を描画
@@ -23,19 +53,22 @@ class TriangleWidget extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxWidth = constraints.maxWidth;
-        final triangleHeight = maxWidth * 0.8; // 三角形の高さ
+        // 三角形のサイズを1/4に縮小（幅・高さ両方）
+        final triangleSize = maxWidth * 0.25;
 
-        return SizedBox(
-          width: maxWidth,
-          height: triangleHeight,
-          child: CustomPaint(
-            painter: TrianglePainter(
-              baseLength: baseLength,
-              layers: layers,
-              selectedLayerNumber: selectedLayerNumber,
-            ),
-            child: Stack(
-              children: _buildLayerButtons(context, maxWidth, triangleHeight),
+        return Center(
+          child: SizedBox(
+            width: triangleSize,
+            height: triangleSize,
+            child: CustomPaint(
+              painter: TrianglePainter(
+                baseLength: baseLength,
+                layers: layers,
+                selectedLayerNumber: selectedLayerNumber,
+              ),
+              child: Stack(
+                children: _buildLayerButtons(context, triangleSize, triangleSize),
+              ),
             ),
           ),
         );
@@ -173,25 +206,19 @@ class TrianglePainter extends CustomPainter {
       // 層の販売進捗率
       final soldRatio = layer.positionsSold / layer.positionsCount;
 
-      // 層の色を計算
+      // 層の色を計算（下部の賞品リストと一致）
       Color layerColor;
       if (soldRatio >= 1.0) {
         // 完売
-        layerColor = Colors.grey.withValues(alpha: 0.5);
-      } else if (soldRatio >= 0.8) {
-        // 80%以上販売済み
-        layerColor = AppTheme.warningColor.withValues(alpha: 0.3);
-      } else if (soldRatio >= 0.5) {
-        // 50%以上販売済み
-        layerColor = AppTheme.successColor.withValues(alpha: 0.3);
+        layerColor = Colors.grey.withValues(alpha: 0.7);
       } else {
-        // 50%未満
-        layerColor = AppTheme.primaryColor.withValues(alpha: 0.2);
+        // 層番号に応じた色（賞品リストと一致）
+        layerColor = _getLayerColor(layerNumber);
       }
 
       // 選択されている層は明るく
       if (selectedLayerNumber == layerNumber) {
-        layerColor = AppTheme.primaryColor.withValues(alpha: 0.5);
+        layerColor = AppTheme.primaryColor.withValues(alpha: 0.7);
       }
 
       // 層の台形を描画
@@ -205,6 +232,11 @@ class TrianglePainter extends CustomPainter {
         layerColor,
       );
     }
+  }
+
+  /// 層番号に応じた色を取得（LayerColorsクラスを使用）
+  Color _getLayerColor(int layerNumber) {
+    return LayerColors.getColor(layerNumber).withValues(alpha: 0.85);
   }
 
   void _drawLayerTrapezoid(

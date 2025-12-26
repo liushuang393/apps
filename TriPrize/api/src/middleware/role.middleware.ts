@@ -37,6 +37,7 @@ export async function loadUser(
   try {
     if (!req.user) {
       res.status(401).json({
+        success: false,
         error: 'UNAUTHORIZED',
         message: 'Authentication required',
       });
@@ -51,6 +52,7 @@ export async function loadUser(
 
     if (rows.length === 0) {
       res.status(404).json({
+        success: false,
         error: 'USER_NOT_FOUND',
         message: 'User not found in database',
       });
@@ -72,9 +74,58 @@ export async function loadUser(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Failed to load user from database', { error: errorMessage });
     res.status(500).json({
+      success: false,
       error: 'INTERNAL_ERROR',
       message: 'Failed to load user information',
     });
+  }
+}
+
+/**
+ * Optional load user from database
+ * 目的: 認証がある場合のみユーザー情報を読み込む（公開APIで管理者判定に使用）
+ * 注意点: 認証なしでもエラーにならず、req.dbUser は undefined のまま
+ */
+export async function optionalLoadUser(
+  req: AuthorizedRequest,
+  _res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    // 認証がない場合はスキップ（エラーにしない）
+    if (!req.user) {
+      next();
+      return;
+    }
+
+    // Query user from database
+    const { rows } = await pool.query<UserRow>(
+      'SELECT user_id, email, role, display_name FROM users WHERE user_id = $1',
+      [req.user.uid]
+    );
+
+    if (rows.length === 0) {
+      // ユーザーがDBに存在しない場合もスキップ
+      next();
+      return;
+    }
+
+    // Attach database user to request
+    const userRow = rows[0];
+    req.dbUser = {
+      user_id: userRow.user_id,
+      email: userRow.email,
+      role: userRow.role as UserRole,
+      display_name: userRow.display_name,
+    };
+
+    logger.debug(`User optionally loaded from DB: ${req.dbUser.user_id} (${req.dbUser.role})`);
+    next();
+  } catch (error: unknown) {
+    // エラーが発生してもスキップ（公開APIなので）
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.warn('Failed to optionally load user', { error: errorMessage });
+    next();
   }
 }
 
@@ -85,6 +136,7 @@ export function requireRole(...allowedRoles: UserRole[]) {
   return (req: AuthorizedRequest, res: Response, next: NextFunction): void => {
     if (!req.dbUser) {
       res.status(401).json({
+        success: false,
         error: 'UNAUTHORIZED',
         message: 'User information not loaded',
       });
@@ -94,6 +146,7 @@ export function requireRole(...allowedRoles: UserRole[]) {
     if (!allowedRoles.includes(req.dbUser.role)) {
       logger.warn(`Access denied for user ${req.dbUser.user_id}: role ${req.dbUser.role} not in [${allowedRoles.join(', ')}]`);
       res.status(403).json({
+        success: false,
         error: 'FORBIDDEN',
         message: 'Insufficient permissions',
       });
@@ -124,6 +177,7 @@ export function requireOwnerOrAdmin(userIdParam: string = 'userId') {
   return (req: AuthorizedRequest, res: Response, next: NextFunction): void => {
     if (!req.dbUser) {
       res.status(401).json({
+        success: false,
         error: 'UNAUTHORIZED',
         message: 'User information not loaded',
       });
@@ -141,6 +195,7 @@ export function requireOwnerOrAdmin(userIdParam: string = 'userId') {
 
     logger.warn(`Access denied: user ${req.dbUser.user_id} attempted to access resource for ${resourceUserId}`);
     res.status(403).json({
+      success: false,
       error: 'FORBIDDEN',
       message: 'You can only access your own resources',
     });
@@ -149,6 +204,7 @@ export function requireOwnerOrAdmin(userIdParam: string = 'userId') {
 
 export default {
   loadUser,
+  optionalLoadUser,
   requireRole,
   requireAdmin,
   requireOwnerOrAdmin,

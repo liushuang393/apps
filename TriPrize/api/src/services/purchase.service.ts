@@ -13,6 +13,7 @@ import logger from '../utils/logger.util';
 import lotteryService from './lottery.service';
 import campaignService from './campaign.service';
 import { CampaignStatus } from '../models/campaign.entity';
+import { errors } from '../middleware/error.middleware';
 
 /**
  * Purchase service for handling position purchases
@@ -20,9 +21,16 @@ import { CampaignStatus } from '../models/campaign.entity';
 export class PurchaseService {
   /**
    * Create a new purchase with concurrency control
+   * 目的: 抽選チケット購入を作成（自動位置割り当て対応）
+   * 注意点:
+   *   - quantity: 購入数量を指定した場合、サーバーが自動で位置を割り当て
+   *   - position_ids: 後方互換性のため、指定された場合はそれを使用
    */
   async createPurchase(dto: CreatePurchaseDto, userId: string, idempotencyKey?: string): Promise<Purchase> {
     const client = await pool.connect();
+
+    // 購入数量を決定（quantity > position_ids > デフォルト1）
+    const requestedQuantity = dto.quantity || dto.position_ids?.length || 1;
 
     try {
       await client.query('BEGIN');
@@ -35,13 +43,21 @@ export class PurchaseService {
       );
 
       if (campaignRows.length === 0) {
-        throw new Error('CAMPAIGN_NOT_FOUND');
+        logger.warn('Campaign not found for purchase', { campaignId: dto.campaign_id });
+        throw errors.notFound('Campaign');
       }
 
       const campaign = campaignRows[0];
 
       if (campaign.status !== 'published') {
-        throw new Error('Campaign is not available for purchase');
+        logger.warn('Campaign is not available for purchase', {
+          campaignId: dto.campaign_id,
+          currentStatus: campaign.status,
+          requiredStatus: 'published',
+        });
+        throw errors.badRequest(
+          `Campaign is not available for purchase (current status: ${campaign.status}, required: published)`
+        );
       }
 
       // Check purchase limit
@@ -54,36 +70,76 @@ export class PurchaseService {
         );
 
         const currentPurchases = Number.parseInt(userPurchaseRows[0].count, 10);
-        if (currentPurchases + dto.position_ids.length > campaign.purchase_limit) {
-          throw new Error(`Purchase limit exceeded. You can only purchase ${campaign.purchase_limit} positions.`);
+        if (currentPurchases + requestedQuantity > campaign.purchase_limit) {
+          logger.warn('Purchase limit exceeded', {
+            userId,
+            campaignId: dto.campaign_id,
+            currentPurchases,
+            requestedQuantity,
+            purchaseLimit: campaign.purchase_limit,
+          });
+          throw errors.badRequest(
+            `Purchase limit exceeded. Current: ${currentPurchases}, Requested: ${requestedQuantity}, Limit: ${campaign.purchase_limit}`
+          );
         }
       }
 
-      // Lock and verify positions are available using FOR UPDATE SKIP LOCKED
-      const { rows: positionRows } = await client.query<{ position_id: string; price: number; status: string }>(
-        `SELECT position_id, price, status
-         FROM positions
-         WHERE position_id = ANY($1::uuid[])
-           AND campaign_id = $2
-           AND status = 'available'
-         FOR UPDATE SKIP LOCKED`,
-        [dto.position_ids, dto.campaign_id]
-      );
+      // 位置の取得: position_ids が指定されていればそれを使用、なければ自動割り当て
+      let positionRows: { position_id: string; price: number; status: string }[];
 
-      // Check if all positions were acquired
-      if (positionRows.length !== dto.position_ids.length) {
-        const acquiredIds = new Set(positionRows.map(r => r.position_id));
-        const failedIds = dto.position_ids.filter(id => !acquiredIds.has(id));
+      if (dto.position_ids && dto.position_ids.length > 0) {
+        // 後方互換性: 指定された position_ids を使用
+        const { rows } = await client.query<{ position_id: string; price: number; status: string }>(
+          `SELECT position_id, price, status
+           FROM positions
+           WHERE position_id = ANY($1::uuid[])
+             AND campaign_id = $2
+             AND status = 'available'
+           FOR UPDATE SKIP LOCKED`,
+          [dto.position_ids, dto.campaign_id]
+        );
+        positionRows = rows;
 
-        logger.warn('Some positions not available', {
-          userId,
-          campaignId: dto.campaign_id,
-          requestedCount: dto.position_ids.length,
-          acquiredCount: positionRows.length,
-          failedIds,
-        });
+        // Check if all positions were acquired
+        if (positionRows.length !== dto.position_ids.length) {
+          const acquiredIds = new Set(positionRows.map(r => r.position_id));
+          const failedIds = dto.position_ids.filter(id => !acquiredIds.has(id));
 
-        throw new Error('Some positions are no longer available');
+          logger.warn('Some positions not available', {
+            userId,
+            campaignId: dto.campaign_id,
+            requestedCount: dto.position_ids.length,
+            acquiredCount: positionRows.length,
+            failedIds,
+          });
+
+          throw errors.badRequest('Some positions are no longer available');
+        }
+      } else {
+        // 自動割り当て: 利用可能な位置からランダムに選択
+        const { rows } = await client.query<{ position_id: string; price: number; status: string }>(
+          `SELECT position_id, price, status
+           FROM positions
+           WHERE campaign_id = $1
+             AND status = 'available'
+           ORDER BY RANDOM()
+           LIMIT $2
+           FOR UPDATE SKIP LOCKED`,
+          [dto.campaign_id, requestedQuantity]
+        );
+        positionRows = rows;
+
+        // Check if enough positions were acquired
+        if (positionRows.length < requestedQuantity) {
+          logger.warn('Not enough positions available', {
+            userId,
+            campaignId: dto.campaign_id,
+            requestedCount: requestedQuantity,
+            acquiredCount: positionRows.length,
+          });
+
+          throw errors.badRequest(`Not enough positions available. Only ${positionRows.length} positions left.`);
+        }
       }
 
       // Calculate total amount
@@ -91,8 +147,9 @@ export class PurchaseService {
 
       // Generate base idempotency key if not provided
       // 目的: 冪等性キーの基盤を生成（各ポジションごとにユニークにする）
-      const baseIdempotencyKey = idempotencyKey || sha256(
-        JSON.stringify({ userId, campaignId: dto.campaign_id, positionIds: dto.position_ids, timestamp: Date.now() })
+      // 注意点: クライアントから受け取った idempotency_key を優先使用
+      const baseIdempotencyKey = dto.idempotency_key || idempotencyKey || sha256(
+        JSON.stringify({ userId, campaignId: dto.campaign_id, positionCount: positionRows.length, timestamp: Date.now() })
       );
 
       // Create purchase records
@@ -145,7 +202,7 @@ export class PurchaseService {
         `UPDATE campaigns
          SET positions_sold = positions_sold + $1, updated_at = NOW()
          WHERE campaign_id = $2`,
-        [dto.position_ids.length, dto.campaign_id]
+        [positionRows.length, dto.campaign_id]
       );
 
       // Update user stats
@@ -155,7 +212,7 @@ export class PurchaseService {
              total_spent = total_spent + $2,
              updated_at = NOW()
          WHERE user_id = $3`,
-        [dto.position_ids.length, totalAmount, userId]
+        [positionRows.length, totalAmount, userId]
       );
 
       await client.query('COMMIT');
@@ -163,7 +220,7 @@ export class PurchaseService {
       logger.info('Purchase created successfully', {
         userId,
         campaignId: dto.campaign_id,
-        positionCount: dto.position_ids.length,
+        positionCount: positionRows.length,
         totalAmount,
       });
 
@@ -284,20 +341,22 @@ export class PurchaseService {
       const purchase = mapRowToPurchase(purchaseRows[0]);
 
       // If completed, mark position as sold
+      // 注意: position_user_consistency と sold_timestamp_consistency 約束を満たすため、user_id と sold_at も設定
       if (status === PurchaseStatus.COMPLETED) {
         await client.query(
           `UPDATE positions
-           SET status = 'sold', updated_at = NOW()
-           WHERE position_id = $1`,
-          [purchase.position_id]
+           SET status = 'sold', user_id = $1, sold_at = NOW(), updated_at = NOW()
+           WHERE position_id = $2`,
+          [purchase.user_id, purchase.position_id]
         );
       }
 
       // If failed or refunded, mark position as available again
+      // 注意: sold_timestamp_consistency 約束により、status='available' の場合は sold_at を NULL にする必要がある
       if (status === PurchaseStatus.FAILED || status === PurchaseStatus.REFUNDED) {
         await client.query(
           `UPDATE positions
-           SET status = 'available', user_id = NULL, updated_at = NOW()
+           SET status = 'available', user_id = NULL, sold_at = NULL, updated_at = NOW()
            WHERE position_id = $1`,
           [purchase.position_id]
         );

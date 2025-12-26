@@ -10,4 +10,7 @@ abstract class CampaignRepository {
   Future<CampaignDetailModel> publishCampaign(String campaignId);
   Future<CampaignDetailModel> closeCampaign(String campaignId);
   Future<void> deleteCampaign(String campaignId);
+
+  /// 手動抽選を実行
+  Future<Map<String, dynamic>> drawLottery(String campaignId);
 }

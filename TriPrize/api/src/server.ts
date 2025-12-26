@@ -3,6 +3,7 @@ import { pool, testConnection } from './config/database.config';
 import { getRedisClient, closeRedis } from './config/redis.config';
 import { getFirebaseApp } from './config/firebase.config';
 import paymentService from './services/payment.service';
+import { runMigrations } from './utils/migrate';
 import logger from './utils/logger.util';
 import * as dotenv from 'dotenv';
 
@@ -22,6 +23,11 @@ async function startServer(): Promise<void> {
     logger.info('Testing database connection...');
     await testConnection();
     logger.info('✓ Database connection successful');
+
+    // Run database migrations
+    logger.info('Running database migrations...');
+    await runMigrations();
+    logger.info('✓ Database migrations completed');
 
     // Connect to Redis
     logger.info('Connecting to Redis...');

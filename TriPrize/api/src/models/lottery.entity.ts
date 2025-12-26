@@ -23,12 +23,14 @@ export interface Winner {
   user_id: string;
   user_email: string;
   user_display_name: string | null;
+  position_id?: string;
   position_row: number;
   position_col: number;
   position_layer: number;
   prize_id: string;
   prize_name: string;
   prize_rank: number;
+  prize_value?: number;
   prize_image_url: string | null;
   drawn_at: Date;
 }

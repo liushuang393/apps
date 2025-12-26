@@ -12,6 +12,11 @@ abstract class CampaignRemoteDataSource {
   Future<CampaignDetailModel> publishCampaign(String campaignId);
   Future<CampaignDetailModel> closeCampaign(String campaignId);
   Future<void> deleteCampaign(String campaignId);
+
+  /// 手動抽選を実行
+  /// 目的: 管理者が手動で抽選を実行
+  /// I/O: campaignId を受け取り、抽選結果を返す
+  Future<Map<String, dynamic>> drawLottery(String campaignId);
 }
 
 /// Campaign remote data source implementation
@@ -97,6 +102,10 @@ class CampaignRemoteDataSourceImpl implements CampaignRemoteDataSource {
       return campaign;
     } catch (e) {
       AppLogger.error('Failed to create campaign', e);
+      // エラー詳細をログに出力
+      if (e is ApiException && e.data != null) {
+        AppLogger.error('Campaign creation validation errors: ${e.data}');
+      }
       throw Exception('Failed to create campaign: $e');
     }
   }
@@ -141,6 +150,22 @@ class CampaignRemoteDataSourceImpl implements CampaignRemoteDataSource {
     } catch (e) {
       AppLogger.error('Failed to delete campaign', e);
       throw Exception('Failed to delete campaign: $e');
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> drawLottery(String campaignId) async {
+    try {
+      final response = await apiClient.post('/api/lottery/draw/$campaignId');
+
+      final data = response.data as Map<String, dynamic>;
+      final result = data['data'] as Map<String, dynamic>;
+
+      AppLogger.info('Drew lottery for campaign: $campaignId');
+      return result;
+    } catch (e) {
+      AppLogger.error('Failed to draw lottery', e);
+      throw Exception('Failed to draw lottery: $e');
     }
   }
 }

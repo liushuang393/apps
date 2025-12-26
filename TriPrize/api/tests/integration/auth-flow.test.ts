@@ -257,7 +257,6 @@ describe('Authentication Flow Integration Tests', () => {
 
   describe('Permission Control', () => {
     let adminUserId: string;
-    let _adminToken: string; // 使用下划线前缀表示未使用的变量
     let regularUserId: string;
     let regularToken: string;
     let adminEmail: string;
@@ -276,7 +275,6 @@ describe('Authentication Flow Integration Tests', () => {
 
       if (adminResponse.body.data) {
         adminUserId = adminResponse.body.data.user_id;
-        _adminToken = adminResponse.body.data.token;
 
         // 管理者に設定
         await pool.query(

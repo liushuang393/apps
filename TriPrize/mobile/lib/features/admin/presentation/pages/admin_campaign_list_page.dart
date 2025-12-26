@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -8,8 +9,13 @@ import '../../../campaign/presentation/pages/campaign_detail_page.dart';
 
 /// Admin campaign list page
 /// Shows all campaigns including drafts with management actions
+/// 目的: キャンペーン一覧を表示（フィルター付き）
+/// I/O: initialStatus で初期フィルターを指定可能
 class AdminCampaignListPage extends StatefulWidget {
-  const AdminCampaignListPage({super.key});
+  /// 初期フィルターステータス（null=すべて, 'published'=進行中, 'closed'=完了 など）
+  final String? initialStatus;
+
+  const AdminCampaignListPage({super.key, this.initialStatus});
 
   @override
   State<AdminCampaignListPage> createState() => _AdminCampaignListPageState();
@@ -17,20 +23,40 @@ class AdminCampaignListPage extends StatefulWidget {
 
 class _AdminCampaignListPageState extends State<AdminCampaignListPage> {
   String? _selectedStatus;
+  // データ変更フラグ（削除・公開・終了などの操作があった場合 true）
+  bool _hasDataChanged = false;
 
   @override
   void initState() {
     super.initState();
+    _selectedStatus = widget.initialStatus;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CampaignProvider>().fetchCampaigns(status: null);
+      context.read<CampaignProvider>().fetchCampaigns(status: _selectedStatus);
     });
+  }
+
+  /// データ変更をマーク（統計更新のため）
+  void _markDataChanged() {
+    _hasDataChanged = true;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('キャンペーン管理'),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          // データ変更フラグを渡して戻る
+          Navigator.of(context).pop(_hasDataChanged);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(_hasDataChanged),
+          ),
+          title: const Text('キャンペーン管理'),
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.filter_list),
@@ -127,6 +153,7 @@ class _AdminCampaignListPageState extends State<AdminCampaignListPage> {
             ),
           );
         },
+      ),
       ),
     );
   }
@@ -260,6 +287,18 @@ class _AdminCampaignListPageState extends State<AdminCampaignListPage> {
                             ],
                           ),
                         ),
+                      // 抽選可能なステータス（published または closed）で、まだ抽選済みでない場合
+                      if (campaign.status == 'published' || campaign.status == 'closed')
+                        const PopupMenuItem(
+                          value: 'draw',
+                          child: Row(
+                            children: [
+                              Icon(Icons.emoji_events, size: 20, color: Colors.amber),
+                              SizedBox(width: 8),
+                              Text('抽選実行', style: TextStyle(color: Colors.amber)),
+                            ],
+                          ),
+                        ),
                       const PopupMenuItem(
                         value: 'delete',
                         child: Row(
@@ -370,6 +409,9 @@ class _AdminCampaignListPageState extends State<AdminCampaignListPage> {
       case 'delete':
         _showDeleteDialog(context, campaign);
         break;
+      case 'draw':
+        _showDrawLotteryDialog(context, campaign);
+        break;
     }
   }
 
@@ -390,6 +432,7 @@ class _AdminCampaignListPageState extends State<AdminCampaignListPage> {
               try {
                 final repo = context.read<CampaignProvider>().repository;
                 await repo.publishCampaign(campaign.campaignId);
+                _markDataChanged(); // 統計更新用フラグ
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -434,6 +477,7 @@ class _AdminCampaignListPageState extends State<AdminCampaignListPage> {
               try {
                 final repo = context.read<CampaignProvider>().repository;
                 await repo.closeCampaign(campaign.campaignId);
+                _markDataChanged(); // 統計更新用フラグ
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -481,6 +525,7 @@ class _AdminCampaignListPageState extends State<AdminCampaignListPage> {
               try {
                 final repo = context.read<CampaignProvider>().repository;
                 await repo.deleteCampaign(campaign.campaignId);
+                _markDataChanged(); // 統計更新用フラグ
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -509,5 +554,160 @@ class _AdminCampaignListPageState extends State<AdminCampaignListPage> {
         ],
       ),
     );
+  }
+
+  /// 抽選確認ダイアログを表示
+  /// 目的: 管理者に抽選を実行する前に警告を表示
+  /// 注意点: 未販売分がある場合は損失の警告を表示
+  void _showDrawLotteryDialog(BuildContext context, CampaignModel campaign) {
+    final numberFormat = NumberFormat('#,###', 'ja_JP');
+    final unsoldCount = campaign.positionsTotal - campaign.positionsSold;
+    final hasUnsold = unsoldCount > 0;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.emoji_events, color: Colors.amber, size: 28),
+            SizedBox(width: 8),
+            Text('抽選を実行'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('「${campaign.name}」の抽選を実行しますか？'),
+            const SizedBox(height: 16),
+            // 販売状況
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.borderColor.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('販売済み:'),
+                      Text(
+                        '${campaign.positionsSold}/${campaign.positionsTotal}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('進捗率:'),
+                      Text(
+                        '${campaign.progressPercent.toStringAsFixed(1)}%',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // 未販売がある場合は警告表示
+            if (hasUnsold) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.warningColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.warningColor),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning, color: AppTheme.warningColor),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '未販売: ${numberFormat.format(unsoldCount)}枠\n'
+                        '今抽選すると未販売分は抽選対象外となり、その分の収益は得られません。',
+                        style: const TextStyle(
+                          color: AppTheme.warningColor,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _executeLotteryDraw(context, campaign);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber,
+            ),
+            child: const Text('抽選実行'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 抽選を実行
+  /// 目的: API を呼び出して抽選を実行
+  Future<void> _executeLotteryDraw(
+      BuildContext context, CampaignModel campaign) async {
+    // ローディング表示
+    unawaited(showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    ));
+
+    try {
+      final repo = context.read<CampaignProvider>().repository;
+      final result = await repo.drawLottery(campaign.campaignId);
+      _markDataChanged(); // 統計更新用フラグ
+
+      if (context.mounted) {
+        Navigator.of(context).pop(); // ローディングを閉じる
+
+        final winnersCount = result['winners_count'] ?? 0;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('抽選が完了しました！当選者: $winnersCount名'),
+            backgroundColor: AppTheme.successColor,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        await context.read<CampaignProvider>().fetchCampaigns(status: _selectedStatus);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop(); // ローディングを閉じる
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('抽選に失敗しました: $e'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
   }
 }

@@ -65,6 +65,35 @@ class UserProvider with ChangeNotifier {
     }
   }
 
+  /// 配送先住所を更新
+  /// 目的: ユーザーの配送先住所を登録・更新
+  /// I/O: 住所情報を受け取り、APIで更新
+  /// 注意点: 郵便番号、都道府県、市区町村、番地は必須
+  Future<void> updateAddress({
+    required String postalCode,
+    required String prefecture,
+    required String city,
+    required String addressLine1,
+    String? addressLine2,
+  }) async {
+    try {
+      AppLogger.info('配送先住所を更新中');
+      await repository.updateAddress(
+        postalCode: postalCode,
+        prefecture: prefecture,
+        city: city,
+        addressLine1: addressLine1,
+        addressLine2: addressLine2,
+      );
+      AppLogger.info('配送先住所を更新しました');
+    } catch (e) {
+      AppLogger.error('配送先住所の更新に失敗しました', e);
+      _errorMessage = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// Clear error message
   void clearError() {
     _errorMessage = null;

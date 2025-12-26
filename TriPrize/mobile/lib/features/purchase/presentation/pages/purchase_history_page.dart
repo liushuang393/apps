@@ -20,7 +20,7 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
   @override
   void initState() {
     super.initState();
-    // Fetch purchase history when page loads
+    // ページ読み込み時に購入履歴を取得
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PurchaseProvider>().fetchPurchaseHistory();
     });
@@ -214,7 +214,7 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
               ),
               const SizedBox(height: 12),
 
-              // Position info
+              // Ticket info
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -224,28 +224,18 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
                 child: Row(
                   children: [
                     const Icon(
-                      Icons.place,
+                      Icons.confirmation_number,
                       color: AppTheme.primaryColor,
                       size: 20,
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Layer ${purchase.layerNumber}',
+                      '抽選チケット ${purchase.quantity}枚',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: AppTheme.primaryColor,
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(
-                      '行 ${purchase.rowNumber}',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '列 ${purchase.colNumber}',
-                      style: const TextStyle(fontSize: 13),
                     ),
                   ],
                 ),
@@ -257,7 +247,7 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '¥${numberFormat.format(purchase.price)}',
+                    '¥${numberFormat.format(purchase.totalAmount)}',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -334,23 +324,18 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
 
               const Divider(height: 32),
 
-              // Position details
+              // Ticket details
               const Text(
-                'ポジション情報',
+                'チケット情報',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildPositionBox('層', '${purchase.layerNumber}'),
-                  _buildPositionBox('行', '${purchase.rowNumber}'),
-                  _buildPositionBox('列', '${purchase.colNumber}'),
-                ],
-              ),
+              _buildDetailRow('チケット数', '${purchase.quantity}枚'),
+              const SizedBox(height: 16),
+              _buildDetailRow('単価', '¥${numberFormat.format(purchase.pricePerPosition)}'),
               const SizedBox(height: 24),
 
               const Divider(height: 32),
@@ -364,11 +349,9 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              _buildDetailRow('金額', '¥${numberFormat.format(purchase.price)}'),
+              _buildDetailRow('合計金額', '¥${numberFormat.format(purchase.totalAmount)}'),
               const SizedBox(height: 16),
-              _buildDetailRow('決済方法', _getPaymentMethodText(purchase.paymentMethod)),
-              const SizedBox(height: 16),
-              _buildDetailRow('決済ステータス', _getPaymentStatusText(purchase.paymentStatus)),
+              _buildDetailRow('決済ステータス', _getPaymentStatusText(purchase.status)),
               const SizedBox(height: 24),
 
               const Divider(height: 32),
@@ -384,7 +367,7 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
               const SizedBox(height: 16),
               _buildDetailRow('購入日時', dateFormat.format(purchase.createdAt)),
               const SizedBox(height: 16),
-              _buildDetailRow('支払日時', purchase.paidAt != null ? dateFormat.format(purchase.paidAt!) : '未払い'),
+              _buildDetailRow('完了日時', purchase.completedAt != null ? dateFormat.format(purchase.completedAt!) : '未完了'),
               const SizedBox(height: 32),
 
               // Close button
@@ -428,51 +411,6 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
         ),
       ],
     );
-  }
-
-  Widget _buildPositionBox(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 14,
-            color: AppTheme.textSecondaryColor,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: AppTheme.primaryColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppTheme.primaryColor, width: 2),
-          ),
-          child: Center(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _getPaymentMethodText(String method) {
-    switch (method) {
-      case 'card':
-        return 'クレジットカード';
-      case 'konbini':
-        return 'コンビニ決済';
-      default:
-        return method;
-    }
   }
 
   String _getPaymentStatusText(String status) {

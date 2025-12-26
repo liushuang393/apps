@@ -6,10 +6,10 @@ import '../../../campaign/presentation/pages/campaign_list_page.dart';
 import '../../data/models/purchase_model.dart';
 import 'purchase_history_page.dart';
 
-/// Purchase result page
-/// 目的: 显示购买完成结果和position信息
-/// I/O: 接收purchase和campaign信息，展示给用户
-/// 注意点: 清晰显示position位置、支付状态、下一步操作
+/// 購入結果ページ
+/// 目的: 購入完了結果とポジション情報を表示
+/// I/O: purchaseとcampaign情報を受け取り、ユーザーに表示
+/// 注意点: ポジション位置、支払い状態、次の操作を明確に表示
 class PurchaseResultPage extends StatelessWidget {
   final PurchaseModel purchase;
   final CampaignDetailModel campaign;
@@ -41,22 +41,22 @@ class PurchaseResultPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Success icon
+            // 成功アイコン
             _buildSuccessHeader(),
 
-            // Purchase info card
+            // 購入情報カード
             _buildPurchaseInfo(numberFormat),
 
-            // Position info
+            // チケット情報
             _buildPositionInfo(),
 
-            // Payment status
+            // 支払い状態
             _buildPaymentStatus(),
 
-            // Next steps
+            // 次のステップ
             _buildNextSteps(),
 
-            // Action buttons
+            // アクションボタン
             _buildActionButtons(context),
 
             const SizedBox(height: 32),
@@ -122,13 +122,13 @@ class PurchaseResultPage extends StatelessWidget {
           _buildInfoRow('キャンペーン', campaign.name),
           const SizedBox(height: 12),
           _buildInfoRow(
-            '購入層',
-            'Layer ${purchase.layerNumber}',
+            'チケット数',
+            '${purchase.quantity}枚',
           ),
           const SizedBox(height: 12),
           _buildInfoRow(
             '支払い金額',
-            '¥${numberFormat.format(purchase.price)}',
+            '¥${numberFormat.format(purchase.totalAmount)}',
           ),
         ],
       ),
@@ -152,13 +152,13 @@ class PurchaseResultPage extends StatelessWidget {
           const Row(
             children: [
               Icon(
-                Icons.place,
+                Icons.confirmation_number,
                 color: AppTheme.primaryColor,
                 size: 20,
               ),
               SizedBox(width: 8),
               Text(
-                'あなたのポジション',
+                '抽選チケット',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -168,13 +168,15 @@ class PurchaseResultPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildPositionDetail('層', '${purchase.layerNumber}'),
-              _buildPositionDetail('行', '${purchase.rowNumber}'),
-              _buildPositionDetail('列', '${purchase.colNumber}'),
-            ],
+          Center(
+            child: Text(
+              '${purchase.quantity}枚購入',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primaryColor,
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           Container(
@@ -193,7 +195,7 @@ class PurchaseResultPage extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'このポジションで抽選に参加します',
+                    '抽選結果は抽選実施後に確認できます',
                     style: TextStyle(
                       fontSize: 13,
                       color: Colors.grey[700],
@@ -205,40 +207,6 @@ class PurchaseResultPage extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildPositionDetail(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 14,
-            color: AppTheme.textSecondaryColor,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppTheme.primaryColor, width: 2),
-          ),
-          child: Center(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 

@@ -278,6 +278,42 @@ class LotteryResultPage extends StatelessWidget {
   }
 
   Widget _buildWinnersSection() {
+    // 顧客で当選していない場合は残念メッセージを表示
+    if (!result.isAdmin && !result.isUserWinner) {
+      return Container(
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(
+                Icons.sentiment_dissatisfied_outlined,
+                size: 64,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '残念ながら今回は当選しませんでした',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '次回もぜひご参加ください！',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 管理者でも当選者がいない場合
     if (result.winners.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(32),
@@ -310,20 +346,32 @@ class LotteryResultPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '当選者一覧',
-            style: TextStyle(
+          Text(
+            result.isAdmin ? '当選者一覧' : 'あなたの当選結果',
+            style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            '合計 ${result.winners.length} 名',
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppTheme.textSecondaryColor,
-            ),
+          // 不重複の当選者数をカウント
+          Builder(
+            builder: (context) {
+              final uniqueWinners = result.winners
+                  .map((w) => w.userId)
+                  .where((id) => id != null)
+                  .toSet()
+                  .length;
+              return Text(
+                result.isAdmin
+                    ? '当選者 $uniqueWinners 名 / 賞品 ${result.winners.length} 件'
+                    : '',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textSecondaryColor,
+                ),
+              );
+            },
           ),
           const SizedBox(height: 16),
 
@@ -424,6 +472,17 @@ class LotteryResultPage extends StatelessWidget {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          // 管理者の場合は当選者名を表示
+                          if (result.isAdmin && winner.userName != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '当選者: ${winner.userName}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AppTheme.textSecondaryColor,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 4),
                           Text(
                             '¥${numberFormat.format(winner.prizeValue)}',

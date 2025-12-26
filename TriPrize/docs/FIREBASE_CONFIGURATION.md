@@ -1,299 +1,275 @@
 # Firebase 配置指南
 
-## 问题说明
+本指南说明如何配置 Firebase Admin SDK，适用于**本地开发**和**生产环境**。
 
-当前应用使用的是演示Firebase配置,无法进行真实的用户认证。需要配置真实的Firebase项目才能完成测试。
+---
 
-## 故障排除
+## 统一配置方式：Service Account JSON 文件
 
-### "Failed to parse private key: Error: Too few bytes to read ASN.1 value"
+我们采用 **Service Account JSON 文件** 方式配置 Firebase Admin SDK。
 
-**原因**: `.env` 文件中的私钥格式不正确，通常是因为换行符丢失或未正确转义。
+**优点**：
+- ✅ 本地开发和生产环境配置方式完全一致
+- ✅ 不需要在 `.env` 中处理复杂的私钥格式
+- ✅ JSON 文件可以直接从 Firebase Console 下载使用
+- ✅ 便于管理多个环境（dev / staging / prod）
 
-**解决**:
-1. 打开 `.env` 文件。
-2. 确保私钥包含 `-----BEGIN PRIVATE KEY-----` 和 `-----END PRIVATE KEY-----`。
-3. 确保私钥是**单行**字符串，原来的换行符替换为 `\n`。
-4. 整个私钥值用双引号包裹。
+---
 
-示例:
+## 第一步：下载 Service Account JSON
+
+1. 访问 [Firebase Console](https://console.firebase.google.com/)
+2. 选择你的项目（例如：`product-triprizeweb-dev`）
+3. 点击 **设置图标** ⚙️ → **项目设置**
+4. 选择 **服务账号** 标签页
+5. 点击 **生成新的私钥**
+6. 下载 JSON 文件，重命名为环境对应的名称：
+   - 开发环境：`product-triprizeweb-dev-firebase-adminsdk.json`
+   - 生产环境：`product-triprizeweb-prod-firebase-adminsdk.json`
+7. 将文件放到 `api/` 目录下
+
+---
+
+## 第二步：配置环境变量
+
+编辑 `api/.env`，设置 JSON 文件路径：
+
 ```env
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvQ...\n-----END PRIVATE KEY-----\n"
-```
+# 开发环境
+FIREBASE_SERVICE_ACCOUNT_KEY_PATH=./product-triprizeweb-dev-firebase-adminsdk.json
 
-## 快速解决方案: 使用Firebase Emulator (推荐)
-
-### 1. 安装Firebase CLI
-
-```powershell
-npm install -g firebase-tools
-```
-
-### 2. 登录Firebase
-
-```powershell
-firebase login
-```
-
-### 3. 初始化Firebase项目
-
-在项目根目录执行:
-
-```powershell
-cd d:\apps\TriPrize
-firebase init
-```
-
-选择以下选项:
-- ✅ Emulators
-- ✅ Authentication Emulator
-- ✅ Firestore Emulator (可选)
-
-### 4. 配置Emulator端口
-
-编辑 `firebase.json`:
-
-```json
-{
-  "emulators": {
-    "auth": {
-      "port": 9099
-    },
-    "firestore": {
-      "port": 8080
-    },
-    "ui": {
-      "enabled": true,
-      "port": 4000
-    }
-  }
-}
-```
-
-### 5. 启动Emulator
-
-```powershell
-firebase emulators:start
-```
-
-### 6. 更新应用配置连接到Emulator
-
-编辑 `mobile/lib/main.dart`,在Firebase初始化后添加:
-
-```dart
-// 在开发环境使用Firebase Emulator
-if (kDebugMode) {
-  await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
-}
-```
-
-### 7. 重新启动应用
-
-```powershell
-cd mobile
-flutter run -d chrome --web-port=8888
+# 生产环境（使用不同的文件）
+# FIREBASE_SERVICE_ACCOUNT_KEY_PATH=./product-triprizeweb-prod-firebase-adminsdk.json
 ```
 
 ---
 
-## 完整解决方案: 配置真实Firebase项目
+## 第三步：配置 GCP IAM 权限（必须）
 
-### 步骤1: 创建Firebase项目
+Service Account 需要正确的 IAM 权限才能调用 Firebase API。
 
-1. 访问 [Firebase Console](https://console.firebase.google.com/)
-2. 点击"添加项目"
-3. 输入项目名称: `triprize-prod` (或其他名称)
-4. 选择是否启用Google Analytics (可选)
-5. 创建项目
+### 方法一：使用 gcloud CLI（推荐）
 
-### 步骤2: 启用Authentication
-
-1. 在Firebase Console中,选择你的项目
-2. 点击左侧菜单的"Authentication"
-3. 点击"开始使用"
-4. 在"登录方法"标签页中:
-   - 启用"电子邮件/密码"
-   - 启用"匿名"(可选,用于测试)
-
-### 步骤3: 注册Web应用
-
-1. 在项目概览页面,点击"Web"图标 (</>)
-2. 输入应用昵称: `TriPrize Web`
-3. 不勾选"Firebase Hosting"
-4. 点击"注册应用"
-5. 复制配置信息
-
-### 步骤4: 更新Web配置
-
-编辑 `mobile/lib/firebase_options.dart`:
-
-```dart
-static const FirebaseOptions web = FirebaseOptions(
-  apiKey: 'YOUR_API_KEY',              // 从Firebase Console复制
-  appId: 'YOUR_APP_ID',                // 从Firebase Console复制
-  messagingSenderId: 'YOUR_SENDER_ID', // 从Firebase Console复制
-  projectId: 'YOUR_PROJECT_ID',        // 从Firebase Console复制
-  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-  storageBucket: 'YOUR_PROJECT_ID.appspot.com',
-);
-```
-
-### 步骤5: 配置Firebase Admin SDK (后端)
-
-1. 在Firebase Console中,点击设置图标 > 项目设置
-2. 选择"服务账号"标签页
-3. 点击"生成新的私钥"
-4. 下载JSON文件
-
-5. 从JSON文件中提取信息,更新 `api/.env`:
-
-```env
-FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n"
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
-```
-
-**注意**: 私钥中的换行符需要保留为 `\n`
-
-### 步骤6: 配置Android应用 (可选)
-
-1. 在Firebase Console中,点击Android图标
-2. 输入包名: `com.triprize.mobile`
-3. 下载 `google-services.json`
-4. 将文件放到 `mobile/android/app/` 目录
-
-### 步骤7: 配置iOS应用 (可选)
-
-1. 在Firebase Console中,点击iOS图标
-2. 输入Bundle ID: `com.triprize.mobile`
-3. 下载 `GoogleService-Info.plist`
-4. 将文件放到 `mobile/ios/Runner/` 目录
-
-### 步骤8: 重新构建应用
+#### 1. 安装 gcloud CLI
 
 ```powershell
-# 清理构建缓存
-cd mobile
-flutter clean
-
-# 重新获取依赖
-flutter pub get
-
-# 重新构建Web应用
-flutter build web
-
-# 或直接运行
-flutter run -d chrome --web-port=8888
+# Windows
+winget install Google.CloudSDK
 ```
 
-### 步骤9: 重启API服务器
+#### 2. 登录 gcloud
+
+```powershell
+gcloud auth login
+```
+
+浏览器会打开，选择你的 Google 账户完成授权。
+
+#### 3. 设置项目
+
+```powershell
+gcloud config set project product-triprizeweb-dev
+```
+
+#### 4. 添加必要权限
+
+```powershell
+# 添加 Service Usage Consumer 权限（必须）
+gcloud projects add-iam-policy-binding product-triprizeweb-dev \
+  --member="serviceAccount:firebase-adminsdk-fbsvc@product-triprizeweb-dev.iam.gserviceaccount.com" \
+  --role="roles/serviceusage.serviceUsageConsumer"
+```
+
+> **注意**：`--member` 中的 Service Account 邮箱可以在 JSON 文件的 `client_email` 字段找到。
+
+### 方法二：使用 GCP Console（备选）
+
+1. 打开 [GCP IAM Console](https://console.cloud.google.com/iam-admin/iam)
+2. 选择你的项目
+3. 点击 **授予访问权限（Grant Access）**
+4. **新的主账号**：输入 JSON 文件中的 `client_email`
+5. **选择角色**：`Service Usage Consumer`
+6. 点击 **保存**
+7. 等待 1-5 分钟让权限传播
+
+---
+
+## 第四步：验证配置
+
+运行诊断脚本确认配置正确：
+
+```powershell
+cd api
+npx ts-node src/utils/diagnose_firebase.ts
+```
+
+**成功输出**：
+```
+🔍 Diagnosing Firebase Configuration...
+✅ Service Account loaded successfully:
+   Project ID: product-triprizeweb-dev
+   Client Email: firebase-adminsdk-fbsvc@product-triprizeweb-dev.iam.gserviceaccount.com
+✅ Firebase Admin SDK initialized successfully!
+✅ Firebase Auth instance created successfully!
+🔄 Testing actual API call (listUsers) to verify permissions...
+✅ API call successful! Found 0 user(s).
+🎉 All configurations and permissions are correctly set up!
+```
+
+---
+
+## 第五步：启动服务
 
 ```powershell
 cd api
 npm run dev
 ```
 
----
-
-## 验证配置
-
-### 1. 检查API日志
-
-启动API后,应该看到:
+启动日志应显示：
 ```
-✓ Firebase Admin SDK initialized
+✓ Firebase Admin SDK initialized successfully
 ```
 
-如果看到警告:
+---
+
+## 生产环境部署
+
+生产环境使用相同的配置方式：
+
+### Docker 部署
+
+```dockerfile
+# Dockerfile
+COPY product-triprizeweb-prod-firebase-adminsdk.json /app/
+ENV FIREBASE_SERVICE_ACCOUNT_KEY_PATH=/app/product-triprizeweb-prod-firebase-adminsdk.json
 ```
-Firebase credentials not configured - running in test mode without Firebase
+
+### Kubernetes 部署
+
+```yaml
+# 使用 Secret 存储 JSON 内容
+apiVersion: v1
+kind: Secret
+metadata:
+  name: firebase-credentials
+type: Opaque
+stringData:
+  service-account.json: |
+    {
+      "type": "service_account",
+      "project_id": "product-triprizeweb-prod",
+      ...
+    }
+---
+# 挂载到 Pod
+volumes:
+  - name: firebase-credentials
+    secret:
+      secretName: firebase-credentials
+volumeMounts:
+  - name: firebase-credentials
+    mountPath: /secrets/firebase
+    readOnly: true
+env:
+  - name: FIREBASE_SERVICE_ACCOUNT_KEY_PATH
+    value: /secrets/firebase/service-account.json
 ```
-说明配置不正确。
 
-### 2. 测试Web注册
+### 云平台部署
 
-1. 打开 http://localhost:8888
-2. 选择"管理者"
-3. 点击"新規登録"
-4. 填写注册信息
-5. 点击"登録"
-
-如果成功,应该:
-- 不显示错误信息
-- 自动跳转到活动列表页面
-
-如果失败,检查:
-- 浏览器控制台的错误信息
-- API服务器的日志
-- Firebase Console的Authentication页面
+- **Google Cloud Run**：使用 Secret Manager 存储 JSON
+- **AWS ECS**：使用 Secrets Manager 或 Parameter Store
+- **Azure**：使用 Key Vault
 
 ---
 
-## 常见问题
+## 安全注意事项
 
-### Q1: "api-key-not-valid" 错误
+### 1. 不要提交 JSON 文件到 Git
 
-**原因**: API密钥无效或项目ID不匹配
+`.gitignore` 已配置忽略规则：
+```gitignore
+*-firebase-adminsdk*.json
+*firebase*adminsdk*.json
+serviceAccount*.json
+```
 
-**解决**:
-- 确认 `firebase_options.dart` 中的配置与Firebase Console一致
-- 确认项目ID正确
-- 重新构建应用
+### 2. 验证 JSON 文件未被追踪
 
-### Q2: "Authentication service not available" 错误
+```powershell
+git check-ignore -v api/product-triprizeweb-dev-firebase-adminsdk.json
+```
 
-**原因**: 后端Firebase Admin SDK未初始化
+应输出类似：
+```
+.gitignore:19:*firebase*adminsdk*.json  api/product-triprizeweb-dev-firebase-adminsdk.json
+```
 
-**解决**:
-- 检查 `api/.env` 中的Firebase配置
-- 确认私钥格式正确(包含 `\n` 换行符)
-- 重启API服务器
+### 3. 最小权限原则
 
-### Q3: CORS错误
-
-**原因**: Firebase项目未授权当前域名
-
-**解决**:
-1. 在Firebase Console > Authentication > Settings
-2. 在"授权域名"中添加 `localhost`
-
----
-
-## 推荐配置
-
-### 开发环境
-- 使用 **Firebase Emulator** (免费,本地运行)
-- 优点: 快速,可重置,无网络依赖
-
-### 测试环境
-- 使用 **真实Firebase项目** (免费套餐)
-- 优点: 真实环境,可以测试所有功能
-
-### 生产环境
-- 使用 **真实Firebase项目** (付费套餐)
-- 启用安全规则
-- 配置备份
-- 监控和日志
+只授予 Service Account 必要的权限：
+- `roles/serviceusage.serviceUsageConsumer`（必须）
+- `roles/firebaseauth.admin`（如需管理用户）
 
 ---
 
-## 下一步
+## 故障排除
 
-配置完成后:
+### 错误：PERMISSION_DENIED / USER_PROJECT_DENIED
 
-1. ✅ 重新运行测试
-2. ✅ 完成Web浏览器测试
-3. ✅ 完成iOS测试
-4. ✅ 完成Android测试
-5. ✅ 整理测试结果
-6. ✅ 准备上线
+**原因**：Service Account 缺少 `serviceusage.services.use` 权限
+
+**解决**：
+```powershell
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/serviceusage.serviceUsageConsumer"
+```
+
+### 错误：Invalid JWT Signature
+
+**原因**：服务器时间不同步
+
+**解决**：
+```powershell
+# Windows - 检查时间同步状态
+w32tm /query /status
+
+# 强制同步
+w32tm /resync
+```
+
+### 错误：Service account file not found
+
+**原因**：JSON 文件路径错误
+
+**解决**：
+1. 确认 `.env` 中的路径正确
+2. 确认 JSON 文件存在于指定位置
+3. 使用相对路径时，相对于 `api/` 目录
 
 ---
 
-**需要帮助?**
+## 多环境配置示例
 
-查看官方文档:
-- [Firebase Web Setup](https://firebase.google.com/docs/web/setup)
+```
+api/
+├── .env.development
+│   └── FIREBASE_SERVICE_ACCOUNT_KEY_PATH=./product-triprizeweb-dev-firebase-adminsdk.json
+├── .env.staging
+│   └── FIREBASE_SERVICE_ACCOUNT_KEY_PATH=./product-triprizeweb-staging-firebase-adminsdk.json
+├── .env.production
+│   └── FIREBASE_SERVICE_ACCOUNT_KEY_PATH=./product-triprizeweb-prod-firebase-adminsdk.json
+├── product-triprizeweb-dev-firebase-adminsdk.json
+├── product-triprizeweb-staging-firebase-adminsdk.json
+└── product-triprizeweb-prod-firebase-adminsdk.json
+```
+
+---
+
+## 参考文档
+
 - [Firebase Admin SDK Setup](https://firebase.google.com/docs/admin/setup)
-- [Firebase Emulator Suite](https://firebase.google.com/docs/emulator-suite)
+- [GCP IAM Roles](https://cloud.google.com/iam/docs/understanding-roles)
+- [gcloud CLI Reference](https://cloud.google.com/sdk/gcloud/reference)
 

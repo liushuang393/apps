@@ -13,6 +13,8 @@ class RegisterUseCase {
     required String displayName,
   }) async {
     // Validate inputs
+    // 目的: 入力値のバリデーション
+    // 注意点: セキュリティ強化のため、パスワード要件を厳格化
     if (email.isEmpty) {
       throw Exception('Email is required');
     }
@@ -21,8 +23,21 @@ class RegisterUseCase {
       throw Exception('Password is required');
     }
 
-    if (password.length < 6) {
-      throw Exception('Password must be at least 6 characters');
+    // パスワード強度チェック（セキュリティ強化）
+    if (password.length < 8) {
+      throw Exception('パスワードは8文字以上必要です');
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(password)) {
+      throw Exception('パスワードに大文字を含めてください');
+    }
+    if (!RegExp(r'[a-z]').hasMatch(password)) {
+      throw Exception('パスワードに小文字を含めてください');
+    }
+    if (!RegExp(r'[0-9]').hasMatch(password)) {
+      throw Exception('パスワードに数字を含めてください');
+    }
+    if (!RegExp(r"[!@#$%^&*(),.?:{}|<>_\-+=\[\]\\/`~';]").hasMatch(password)) {
+      throw Exception('パスワードに特殊文字（!@#\$%^&*など）を含めてください');
     }
 
     if (displayName.isEmpty) {

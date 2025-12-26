@@ -10,16 +10,14 @@ void main() {
       'user_id': 'user-123',
       'campaign_id': 'campaign-123',
       'position_id': 'position-123',
-      'layer_number': 1,
-      'row_number': 2,
-      'col_number': 3,
-      'price': 10000,
-      'payment_method': 'card',
-      'payment_status': 'succeeded',
+      'quantity': 1,
+      'price_per_position': 10000,
+      'total_amount': 10000,
+      'status': 'completed',
       'payment_intent_id': 'pi_123',
       'created_at': '2025-01-19T10:00:00.000Z',
-      'paid_at': '2025-01-19T10:00:00.000Z',
       'updated_at': '2025-01-19T10:00:00.000Z',
+      'completed_at': '2025-01-19T10:00:00.000Z',
     };
 
     final testPurchaseModel = PurchaseModel(
@@ -27,15 +25,14 @@ void main() {
       userId: 'user-123',
       campaignId: 'campaign-123',
       positionId: 'position-123',
-      layerNumber: 1,
-      rowNumber: 2,
-      colNumber: 3,
-      price: 10000,
-      paymentMethod: 'card',
-      paymentStatus: 'succeeded',
+      quantity: 1,
+      pricePerPosition: 10000,
+      totalAmount: 10000,
+      status: 'completed',
       paymentIntentId: 'pi_123',
       createdAt: testDateTime,
-      paidAt: testDateTime,
+      updatedAt: testDateTime,
+      completedAt: testDateTime,
     );
 
     test('should create PurchaseModel from JSON', () {
@@ -47,12 +44,10 @@ void main() {
       expect(result.userId, equals('user-123'));
       expect(result.campaignId, equals('campaign-123'));
       expect(result.positionId, equals('position-123'));
-      expect(result.layerNumber, equals(1));
-      expect(result.rowNumber, equals(2));
-      expect(result.colNumber, equals(3));
-      expect(result.price, equals(10000));
-      expect(result.paymentMethod, equals('card'));
-      expect(result.paymentStatus, equals('succeeded'));
+      expect(result.quantity, equals(1));
+      expect(result.pricePerPosition, equals(10000));
+      expect(result.totalAmount, equals(10000));
+      expect(result.status, equals('completed'));
       expect(result.paymentIntentId, equals('pi_123'));
     });
 
@@ -65,52 +60,45 @@ void main() {
       expect(result['user_id'], equals('user-123'));
       expect(result['campaign_id'], equals('campaign-123'));
       expect(result['position_id'], equals('position-123'));
-      expect(result['layer_number'], equals(1));
-      expect(result['row_number'], equals(2));
-      expect(result['col_number'], equals(3));
-      expect(result['price'], equals(10000));
-      expect(result['payment_method'], equals('card'));
-      expect(result['payment_status'], equals('succeeded'));
+      expect(result['quantity'], equals(1));
+      expect(result['price_per_position'], equals(10000));
+      expect(result['total_amount'], equals(10000));
+      expect(result['status'], equals('completed'));
       expect(result['payment_intent_id'], equals('pi_123'));
     });
 
-    test('isPaid should return true for succeeded status', () {
-      final purchase = testPurchaseModel.copyWith(paymentStatus: 'succeeded');
-      expect(purchase.isPaid, isTrue);
-    });
-
-    test('isPaid should return true for paid status', () {
-      final purchase = testPurchaseModel.copyWith(paymentStatus: 'paid');
+    test('isPaid should return true for completed status', () {
+      final purchase = testPurchaseModel.copyWith(status: 'completed');
       expect(purchase.isPaid, isTrue);
     });
 
     test('isPaid should return false for pending status', () {
-      final purchase = testPurchaseModel.copyWith(paymentStatus: 'pending');
+      final purchase = testPurchaseModel.copyWith(status: 'pending');
       expect(purchase.isPaid, isFalse);
     });
 
     test('isPending should return true for pending status', () {
-      final purchase = testPurchaseModel.copyWith(paymentStatus: 'pending');
+      final purchase = testPurchaseModel.copyWith(status: 'pending');
       expect(purchase.isPending, isTrue);
     });
 
     test('isPending should return true for processing status', () {
-      final purchase = testPurchaseModel.copyWith(paymentStatus: 'processing');
+      final purchase = testPurchaseModel.copyWith(status: 'processing');
       expect(purchase.isPending, isTrue);
     });
 
     test('isFailed should return true for failed status', () {
-      final purchase = testPurchaseModel.copyWith(paymentStatus: 'failed');
+      final purchase = testPurchaseModel.copyWith(status: 'failed');
       expect(purchase.isFailed, isTrue);
     });
 
-    test('isFailed should return true for canceled status', () {
-      final purchase = testPurchaseModel.copyWith(paymentStatus: 'canceled');
+    test('isFailed should return true for cancelled status', () {
+      final purchase = testPurchaseModel.copyWith(status: 'cancelled');
       expect(purchase.isFailed, isTrue);
     });
 
     test('isFailed should return true for refunded status', () {
-      final purchase = testPurchaseModel.copyWith(paymentStatus: 'refunded');
+      final purchase = testPurchaseModel.copyWith(status: 'refunded');
       expect(purchase.isFailed, isTrue);
     });
 
@@ -127,19 +115,17 @@ void main() {
         'user_id': 'user-123',
         'campaign_id': 'campaign-123',
         'position_id': 'position-123',
-        'layer_number': 1,
-        'row_number': 2,
-        'col_number': 3,
-        'price': 10000,
-        'payment_method': 'card',
-        'payment_status': 'succeeded',
+        'quantity': 1,
+        'price_per_position': 10000,
+        'total_amount': 10000,
+        'status': 'completed',
         'created_at': '2025-01-19T10:00:00.000Z',
-      'paid_at': '2025-01-19T10:00:00.000Z',
         'updated_at': '2025-01-19T10:00:00.000Z',
       };
 
       final result = PurchaseModel.fromJson(jsonWithoutOptional);
       expect(result.paymentIntentId, isNull);
+      expect(result.completedAt, isNull);
     });
   });
 
@@ -277,30 +263,32 @@ extension on PurchaseModel {
     String? userId,
     String? campaignId,
     String? positionId,
-    int? layerNumber,
-    int? rowNumber,
-    int? colNumber,
-    int? price,
-    String? paymentMethod,
-    String? paymentStatus,
+    int? quantity,
+    int? pricePerPosition,
+    int? totalAmount,
+    String? status,
     String? paymentIntentId,
+    String? idempotencyKey,
     DateTime? createdAt,
-    DateTime? paidAt,
+    DateTime? updatedAt,
+    DateTime? completedAt,
+    String? campaignName,
   }) {
     return PurchaseModel(
       purchaseId: purchaseId ?? this.purchaseId,
       userId: userId ?? this.userId,
       campaignId: campaignId ?? this.campaignId,
       positionId: positionId ?? this.positionId,
-      layerNumber: layerNumber ?? this.layerNumber,
-      rowNumber: rowNumber ?? this.rowNumber,
-      colNumber: colNumber ?? this.colNumber,
-      price: price ?? this.price,
-      paymentMethod: paymentMethod ?? this.paymentMethod,
-      paymentStatus: paymentStatus ?? this.paymentStatus,
+      quantity: quantity ?? this.quantity,
+      pricePerPosition: pricePerPosition ?? this.pricePerPosition,
+      totalAmount: totalAmount ?? this.totalAmount,
+      status: status ?? this.status,
       paymentIntentId: paymentIntentId ?? this.paymentIntentId,
+      idempotencyKey: idempotencyKey ?? this.idempotencyKey,
       createdAt: createdAt ?? this.createdAt,
-      paidAt: paidAt ?? this.paidAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      completedAt: completedAt ?? this.completedAt,
+      campaignName: campaignName ?? this.campaignName,
     );
   }
 }

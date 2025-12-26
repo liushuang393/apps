@@ -58,16 +58,16 @@ import { UserRole } from '../../src/models/user.entity';
   afterAll(async () => {
     // 清理测试数据 - 按正确顺序删除（从子表到父表）
     try {
-      // 删除所有测试活动相关数据
-      await pool.query('DELETE FROM payment_transactions WHERE purchase_id IN (SELECT purchase_id FROM purchases WHERE user_id = $1)', [adminUserId]);
-      await pool.query('DELETE FROM purchases WHERE user_id = $1', [adminUserId]);
+      // 删除所有测试活动相关数据（包括所有用户的购买）
+      await pool.query('DELETE FROM payment_transactions WHERE purchase_id IN (SELECT purchase_id FROM purchases WHERE campaign_id IN (SELECT campaign_id FROM campaigns WHERE created_by = $1))', [adminUserId]);
+      await pool.query('DELETE FROM purchases WHERE campaign_id IN (SELECT campaign_id FROM campaigns WHERE created_by = $1)', [adminUserId]);
       await pool.query('DELETE FROM positions WHERE campaign_id IN (SELECT campaign_id FROM campaigns WHERE created_by = $1)', [adminUserId]);
       await pool.query('DELETE FROM prizes WHERE campaign_id IN (SELECT campaign_id FROM campaigns WHERE created_by = $1)', [adminUserId]);
       await pool.query('DELETE FROM layers WHERE campaign_id IN (SELECT campaign_id FROM campaigns WHERE created_by = $1)', [adminUserId]);
       await pool.query('DELETE FROM campaigns WHERE created_by = $1', [adminUserId]);
 
-      // 删除管理员用户
-      await pool.query('DELETE FROM users WHERE user_id = $1', [adminUserId]);
+      // 删除所有测试用户
+      await pool.query('DELETE FROM users WHERE email LIKE \'%lottery%@example.com\'');
     } catch (error) {
       console.error('Cleanup error:', error);
     }
@@ -94,15 +94,25 @@ import { UserRole } from '../../src/models/user.entity';
 
       const testCampaignId = campaign.campaign_id;
 
-      // Step 2: 发布活动
-      await campaignService.publishCampaign(testCampaignId);
+      // Step 2: 发布活动 (设置end_date为过去，以便后续可以进行抽奖)
+      const pastDate = new Date(Date.now() - 1000); // 1秒前
+      await campaignService.updateCampaign(testCampaignId, {
+        status: CampaignStatus.PUBLISHED,
+        end_date: pastDate,
+      });
 
       // Step 3: 创建多个用户并购买位置 (直接在数据库中创建)
+      // 使用 MD5 ハッシュから UUID を生成（auth.middleware.ts と同じロジック）
+      const nodeCrypto = require('node:crypto');
       const users = [
-        { firebase_uid: 'test-user-lottery-001', email: 'test-lottery-user1@example.com', name: 'User 1' },
-        { firebase_uid: 'test-user-lottery-002', email: 'test-lottery-user2@example.com', name: 'User 2' },
-        { firebase_uid: 'test-user-lottery-003', email: 'test-lottery-user3@example.com', name: 'User 3' },
-      ];
+        { email: 'test-lottery-user1@example.com', name: 'User 1' },
+        { email: 'test-lottery-user2@example.com', name: 'User 2' },
+        { email: 'test-lottery-user3@example.com', name: 'User 3' },
+      ].map(user => {
+        const hash = nodeCrypto.createHash('md5').update(user.email).digest('hex');
+        const uuid = `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+        return { ...user, firebase_uid: uuid };
+      });
 
       const testUserIds: string[] = [];
       for (const user of users) {
@@ -177,23 +187,24 @@ import { UserRole } from '../../src/models/user.entity';
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(lotteryResponse.status).toBe(201);
-      expect(lotteryResponse.body.data.lottery_id).toBeDefined();
-      expect(lotteryResponse.body.data.total_winners).toBeGreaterThan(0);
-
-      const lotteryId = lotteryResponse.body.data.lottery_id;
+      // API返回的是 campaign_id 和 winners_count，不是 lottery_id 和 total_winners
+      expect(lotteryResponse.body.data.campaign_id).toBeDefined();
+      expect(lotteryResponse.body.data.winners_count).toBeGreaterThan(0);
 
       // Step 9: 获取抽奖结果
+      // 注意：lottery results的路由是 /api/lottery/results/:campaignId
       const resultsResponse = await request(app)
-        .get(`/api/campaigns/${testCampaignId}/lottery/results`);
+        .get(`/api/lottery/results/${testCampaignId}`);
 
       expect(resultsResponse.status).toBe(200);
-      expect(resultsResponse.body.data.lottery_id).toBe(lotteryId);
-      expect(resultsResponse.body.data.winners).toBeDefined();
-      expect(resultsResponse.body.data.winners.length).toBeGreaterThan(0);
+      // API返回的是winners数组
+      expect(resultsResponse.body.data).toBeDefined();
+      expect(Array.isArray(resultsResponse.body.data)).toBe(true);
+      expect(resultsResponse.body.data.length).toBeGreaterThan(0);
 
       // Step 10: 验证获奖者收到通知
       // 注意: 实际环境中会发送FCM推送通知
-      const winners = resultsResponse.body.data.winners;
+      const winners = resultsResponse.body.data;
       for (const winner of winners) {
         expect(testUserIds).toContain(winner.user_id);
       }
@@ -228,7 +239,9 @@ import { UserRole } from '../../src/models/user.entity';
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(lotteryResponse.status).toBe(400);
-      expect(lotteryResponse.body.error).toContain('closed');
+      // エラーメッセージに "closed" または "ended" が含まれることを確認
+      // (lottery.service.ts では "Campaign must be closed or published" または "Campaign must be ended or sold out" のエラーを返す)
+      expect(lotteryResponse.body.message).toMatch(/closed|ended|sold out/i);
     });
   });
 });

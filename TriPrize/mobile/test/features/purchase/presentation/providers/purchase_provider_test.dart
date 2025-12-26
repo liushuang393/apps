@@ -40,14 +40,12 @@ void main() {
         userId: 'user-123',
         campaignId: campaignId,
         positionId: 'position-123',
-        layerNumber: layerNumber,
-        rowNumber: 1,
-        colNumber: 1,
-        price: 10000,
-        paymentMethod: paymentMethod,
-        paymentStatus: 'pending',
+        quantity: 1,
+        pricePerPosition: 10000,
+        totalAmount: 10000,
+        status: 'pending',
         createdAt: DateTime.now(),
-        paidAt: DateTime.now(),
+        updatedAt: DateTime.now(),
       );
 
       when(mockRepository.createPurchase(any))
@@ -95,14 +93,12 @@ void main() {
         userId: 'user-123',
         campaignId: 'campaign-123',
         positionId: 'position-123',
-        layerNumber: 1,
-        rowNumber: 1,
-        colNumber: 1,
-        price: 10000,
-        paymentMethod: 'card',
-        paymentStatus: 'pending',
+        quantity: 1,
+        pricePerPosition: 10000,
+        totalAmount: 10000,
+        status: 'pending',
         createdAt: DateTime.now(),
-        paidAt: DateTime.now(),
+        updatedAt: DateTime.now(),
       );
 
       when(mockRepository.createPurchase(any))
@@ -136,14 +132,12 @@ void main() {
         userId: 'user-123',
         campaignId: 'campaign-123',
         positionId: 'position-123',
-        layerNumber: 1,
-        rowNumber: 1,
-        colNumber: 1,
-        price: 10000,
-        paymentMethod: 'card',
-        paymentStatus: 'pending',
+        quantity: 1,
+        pricePerPosition: 10000,
+        totalAmount: 10000,
+        status: 'pending',
         createdAt: DateTime.now(),
-        paidAt: DateTime.now(),
+        updatedAt: DateTime.now(),
       );
 
       when(mockRepository.createPurchase(any))
@@ -174,28 +168,24 @@ void main() {
           userId: 'user-123',
           campaignId: 'campaign-1',
           positionId: 'position-1',
-          layerNumber: 1,
-          rowNumber: 1,
-          colNumber: 1,
-          price: 10000,
-          paymentMethod: 'card',
-          paymentStatus: 'succeeded',
+          quantity: 1,
+          pricePerPosition: 10000,
+          totalAmount: 10000,
+          status: 'completed',
           createdAt: DateTime.now(),
-          paidAt: DateTime.now(),
+          updatedAt: DateTime.now(),
         ),
         PurchaseModel(
           purchaseId: 'purchase-2',
           userId: 'user-123',
           campaignId: 'campaign-2',
           positionId: 'position-2',
-          layerNumber: 2,
-          rowNumber: 1,
-          colNumber: 2,
-          price: 8000,
-          paymentMethod: 'konbini',
-          paymentStatus: 'pending',
+          quantity: 1,
+          pricePerPosition: 8000,
+          totalAmount: 8000,
+          status: 'pending',
           createdAt: DateTime.now(),
-          paidAt: DateTime.now(),
+          updatedAt: DateTime.now(),
         ),
       ];
 
@@ -293,14 +283,12 @@ void main() {
         userId: 'user-123',
         campaignId: 'campaign-123',
         positionId: 'position-123',
-        layerNumber: 1,
-        rowNumber: 1,
-        colNumber: 1,
-        price: 10000,
-        paymentMethod: 'card',
-        paymentStatus: 'succeeded',
+        quantity: 1,
+        pricePerPosition: 10000,
+        totalAmount: 10000,
+        status: 'completed',
         createdAt: DateTime.now(),
-        paidAt: DateTime.now(),
+        updatedAt: DateTime.now(),
       );
 
       when(mockRepository.getPurchaseById(purchaseId))
@@ -339,14 +327,13 @@ void main() {
         userId: 'user-123',
         campaignId: 'campaign-123',
         positionId: 'position-123',
-        layerNumber: 1,
-        rowNumber: 1,
-        colNumber: 1,
-        price: 10000,
-        paymentMethod: 'card',
-        paymentStatus: 'succeeded',
+        quantity: 1,
+        pricePerPosition: 10000,
+        totalAmount: 10000,
+        status: 'completed',
         createdAt: DateTime.now(),
-        paidAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        completedAt: DateTime.now(),
       );
 
       when(mockRepository.confirmPayment(purchaseId))
@@ -357,7 +344,7 @@ void main() {
 
       // Assert
       expect(result, isTrue);
-      expect(purchaseProvider.currentPurchase?.paymentStatus, equals('succeeded'));
+      expect(purchaseProvider.currentPurchase?.status, equals('completed'));
       expect(purchaseProvider.hasError, isFalse);
       verify(mockRepository.confirmPayment(purchaseId)).called(1);
     });

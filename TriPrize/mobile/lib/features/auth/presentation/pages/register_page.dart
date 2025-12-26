@@ -28,7 +28,9 @@ class _RegisterPageState extends State<RegisterPage> {
   final _displayNameController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  // ignore: unused_field
   bool _hasAdmin = false;
+  // ignore: unused_field
   bool _isCheckingAdmin = true;
   String? _selectedRole; // 'admin' or 'customer', null if admin exists
 
@@ -190,7 +192,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     labelText: 'パスワード',
-                    hintText: '6文字以上',
+                    hintText: '8文字以上、大小文字・数字・記号を含む',
                     prefixIcon: const Icon(Icons.lock_outlined),
                     suffixIcon: IconButton(
                       icon: Icon(
@@ -210,8 +212,20 @@ class _RegisterPageState extends State<RegisterPage> {
                     if (value == null || value.isEmpty) {
                       return 'パスワードを入力してください';
                     }
-                    if (value.length < 6) {
-                      return 'パスワードは6文字以上必要です';
+                    if (value.length < 8) {
+                      return 'パスワードは8文字以上必要です';
+                    }
+                    if (!RegExp(r'[A-Z]').hasMatch(value)) {
+                      return 'パスワードに大文字を含めてください';
+                    }
+                    if (!RegExp(r'[a-z]').hasMatch(value)) {
+                      return 'パスワードに小文字を含めてください';
+                    }
+                    if (!RegExp(r'[0-9]').hasMatch(value)) {
+                      return 'パスワードに数字を含めてください';
+                    }
+                    if (!RegExp(r"[!@#$%^&*(),.?:{}|<>_\-+=\[\]\\/`~';]").hasMatch(value)) {
+                      return 'パスワードに特殊文字（!@#\$%^&*など）を含めてください';
                     }
                     return null;
                   },
@@ -386,6 +400,7 @@ class _RegisterPageState extends State<RegisterPage> {
     if (success && mounted) {
       // データベースからユーザーの役割を取得
       await authProvider.fetchUserProfile();
+      if (!context.mounted) return;
       
       // データベースの役割に応じて画面遷移
       final userRole = authProvider.userRole ?? 'customer';
@@ -393,7 +408,6 @@ class _RegisterPageState extends State<RegisterPage> {
           ? const AdminDashboardPage()
           : const CampaignListPage();
       
-      // ignore: use_build_context_synchronously, unawaited_futures
       unawaited(
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
@@ -406,6 +420,7 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   /// 役割選択ウィジェット（管理者が存在しない場合のみ表示）
+  // ignore: unused_element
   Widget _buildRoleSelection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

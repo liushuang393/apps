@@ -395,13 +395,14 @@ export class PaymentService {
 
       // Update position status to 'sold'
       // 注意: sold_timestamp_consistency 約束により、status='sold' の場合は sold_at も設定する必要がある
+      // 注意: position_user_consistency 約束により、status='sold' の場合は user_id も設定する必要がある
       await client.query(
         `UPDATE positions
-         SET status = 'sold', sold_at = NOW(), updated_at = NOW()
+         SET status = 'sold', user_id = $1, sold_at = NOW(), updated_at = NOW()
          WHERE position_id = (
-           SELECT position_id FROM purchases WHERE purchase_id = $1
+           SELECT position_id FROM purchases WHERE purchase_id = $2
          )`,
-        [transaction.purchase_id]
+        [transaction.user_id, transaction.purchase_id]
       );
 
       // Update campaign statistics
@@ -737,9 +738,10 @@ export class PaymentService {
 
         // Release position back to available (only for full refund)
         // 目的: 全额退款时释放位置，部分退款保留位置
+        // 注意: sold_timestamp_consistency 約束により、status='available' の場合は sold_at を NULL にする必要がある
         await client.query(
           `UPDATE positions
-           SET status = 'available', updated_at = NOW()
+           SET status = 'available', user_id = NULL, sold_at = NULL, updated_at = NOW()
            WHERE position_id = (
              SELECT position_id FROM purchases WHERE purchase_id = $1
            ) AND status = 'sold'`,

@@ -43,4 +43,17 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
   Future<void> cancelPurchase(String purchaseId) async {
     return await remoteDataSource.cancelPurchase(purchaseId);
   }
+
+  @override
+  Future<PaymentIntentModel> createPaymentIntent({
+    required String purchaseId,
+    required String paymentMethod,
+    String? returnUrl,
+  }) async {
+    return await remoteDataSource.createPaymentIntent(
+      purchaseId: purchaseId,
+      paymentMethod: paymentMethod,
+      returnUrl: returnUrl,
+    );
+  }
 }
