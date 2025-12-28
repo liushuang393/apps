@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/constants/app_config.dart';
 import '../../../../core/constants/app_theme.dart';
+import '../../../../core/di/injection.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../campaign/data/models/campaign_model.dart';
 import '../../data/models/purchase_model.dart';
 import '../providers/purchase_provider.dart';
@@ -31,6 +35,7 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
   bool _isPurchaseCreated = false;
   PaymentIntentModel? _paymentIntent;
   String? _errorMessage;
+  bool _isMockConfirming = false;
 
   @override
   void initState() {
@@ -213,6 +218,7 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
         const SizedBox(height: 16),
         StripeCardPaymentWidget(
           clientSecret: _paymentIntent!.clientSecret,
+          paymentIntentId: _paymentIntent!.paymentIntentId,
           onPaymentSuccess: _handlePaymentSuccess,
           onPaymentError: _handlePaymentError,
         ),
@@ -347,6 +353,33 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
             ),
           ),
           const SizedBox(height: 24),
+          // Mock モードでは「支払い完了を確認」ボタンを表示
+          // 目的: 開発環境でコンビニ支払いをシミュレート
+          // 注意点: 本番環境では表示されない
+          if (AppConfig.useMockPayment) ...[
+            ElevatedButton(
+              onPressed: _isMockConfirming ? null : _handleMockKonbiniComplete,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+                minimumSize: const Size(double.infinity, 0),
+                backgroundColor: AppTheme.successColor,
+              ),
+              child: _isMockConfirming
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text(
+                      '【開発用】支払い完了を確認',
+                      style: TextStyle(color: Colors.white),
+                    ),
+            ),
+            const SizedBox(height: 12),
+          ],
           ElevatedButton(
             onPressed: _navigateToResult,
             style: ElevatedButton.styleFrom(
@@ -440,6 +473,64 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
     setState(() {
       _errorMessage = error;
     });
+  }
+
+  /// Mock用: コンビニ支払い完了をシミュレート
+  /// 目的: 開発環境でコンビニ支払い完了をテスト可能にする
+  /// 注意点: 本番環境では呼び出されない
+  Future<void> _handleMockKonbiniComplete() async {
+    if (_paymentIntent == null) return;
+
+    setState(() {
+      _isMockConfirming = true;
+    });
+
+    try {
+      AppLogger.info('Mock: Completing konbini payment');
+
+      final apiClient = getIt<ApiClient>();
+      final response = await apiClient.post(
+        '/api/payments/mock/complete-konbini',
+        data: {
+          'payment_intent_id': _paymentIntent!.paymentIntentId,
+        },
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final success = data['success'] == true;
+
+      if (success) {
+        AppLogger.info('Mock: Konbini payment completed successfully');
+
+        if (!mounted) return;
+
+        setState(() {
+          _isMockConfirming = false;
+        });
+
+        // SnackBar を表示して結果画面へ
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('【開発用】支払いが完了しました'),
+            backgroundColor: AppTheme.successColor,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        _navigateToResult();
+      } else {
+        throw Exception('Mock konbini payment failed');
+      }
+    } catch (e) {
+      AppLogger.error('Mock: Konbini payment completion failed', e);
+
+      if (!mounted) return;
+
+      setState(() {
+        _isMockConfirming = false;
+        _errorMessage = 'Mock支払い完了処理に失敗しました: $e';
+      });
+    }
   }
 
   void _navigateToResult() {

@@ -193,19 +193,9 @@ export class PaymentService {
 
         // Mock モードでは Webhook が来ないため、直接 DB を更新する
         // 注意点: 本番環境では Webhook 経由で更新されるため、この処理は不要
+        // 重要: 真实环境 Webhook 会更新 payment_transactions, purchases, positions, campaigns 四个表
         if (paymentIntent.status === 'succeeded') {
-          // Mock 用の charge_id を生成（refund テストで必要）
-          const mockChargeId = `ch_mock_${paymentIntentId.replace('pi_', '')}`;
-          await pool.query(
-            `UPDATE payment_transactions
-             SET payment_status = 'succeeded',
-                 stripe_charge_id = $1,
-                 paid_at = NOW(),
-                 updated_at = NOW()
-             WHERE stripe_payment_intent_id = $2`,
-            [mockChargeId, paymentIntentId]
-          );
-          logger.info('Mock: Updated transaction status to succeeded', { paymentIntentId, mockChargeId });
+          await this.handleMockPaymentSucceeded(paymentIntentId);
         }
       } else {
         if (!stripe) {
@@ -225,6 +215,103 @@ export class PaymentService {
         paymentIntentId,
       });
       throw error;
+    }
+  }
+
+  /**
+   * Handle mock payment succeeded
+   * 目的: Mock 模式下直接更新数据库（无 Webhook）
+   * I/O: paymentIntentId → 更新 payment_transactions, purchases, positions, campaigns
+   * 注意点: 这个逻辑必须与 handlePaymentSucceeded 保持一致
+   */
+  private async handleMockPaymentSucceeded(paymentIntentId: string): Promise<void> {
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Mock 用の charge_id を生成（refund テストで必要）
+      const mockChargeId = `ch_mock_${paymentIntentId.replace('pi_', '')}`;
+
+      // Get transaction
+      const { rows: transactionRows } = await client.query<PaymentTransaction>(
+        'SELECT * FROM payment_transactions WHERE stripe_payment_intent_id = $1',
+        [paymentIntentId]
+      );
+
+      if (transactionRows.length === 0) {
+        logger.warn('Mock: Payment transaction not found', { paymentIntentId });
+        await client.query('ROLLBACK');
+        return;
+      }
+
+      const transaction = mapRowToPaymentTransaction(transactionRows[0]);
+
+      // Skip if already processed (idempotency)
+      if (transaction.payment_status === PaymentStatus.SUCCEEDED) {
+        logger.info('Mock: Payment already processed, skipping', { paymentIntentId });
+        await client.query('ROLLBACK');
+        return;
+      }
+
+      // 1. Update payment_transactions
+      await client.query(
+        `UPDATE payment_transactions
+         SET payment_status = 'succeeded',
+             stripe_charge_id = $1,
+             paid_at = NOW(),
+             updated_at = NOW()
+         WHERE transaction_id = $2`,
+        [mockChargeId, transaction.transaction_id]
+      );
+
+      // 2. Update purchases status to COMPLETED
+      await purchaseService.updatePurchaseStatus(
+        transaction.purchase_id,
+        PurchaseStatus.COMPLETED
+      );
+
+      // 3. Update positions status to 'sold'
+      // 注意: sold_timestamp_consistency 約束により、status='sold' の場合は sold_at も設定する必要がある
+      await client.query(
+        `UPDATE positions
+         SET status = 'sold', user_id = $1, sold_at = NOW(), updated_at = NOW()
+         WHERE position_id = (
+           SELECT position_id FROM purchases WHERE purchase_id = $2
+         )`,
+        [transaction.user_id, transaction.purchase_id]
+      );
+
+      // 4. Update campaign statistics
+      await client.query(
+        `UPDATE campaigns
+         SET positions_sold = positions_sold + 1,
+             total_revenue = total_revenue + $1,
+             updated_at = NOW()
+         WHERE campaign_id = (
+           SELECT campaign_id FROM purchases WHERE purchase_id = $2
+         )`,
+        [transaction.amount, transaction.purchase_id]
+      );
+
+      await client.query('COMMIT');
+
+      logger.info('Mock: Payment succeeded and all tables updated', {
+        paymentIntentId,
+        transactionId: transaction.transaction_id,
+        purchaseId: transaction.purchase_id,
+        mockChargeId,
+      });
+    } catch (error: unknown) {
+      await client.query('ROLLBACK');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Mock: Failed to handle payment succeeded', {
+        error: errorMessage,
+        paymentIntentId,
+      });
+      throw error;
+    } finally {
+      client.release();
     }
   }
 
@@ -1192,6 +1279,53 @@ export class PaymentService {
         logger.error('Scheduled Konbini cleanup failed', { error: errorMsg });
       });
     }, CLEANUP_INTERVAL_MS);
+  }
+
+  /**
+   * Mock: Complete konbini payment (DEVELOPMENT ONLY)
+   * 目的: 开发环境下模拟便利店支付完成（无 Webhook）
+   * I/O: paymentIntentId, userId → 更新 DB
+   * 注意点: 仅在 Mock 模式下可用，生产环境禁止
+   */
+  async mockCompleteKonbiniPayment(paymentIntentId: string, userId: string): Promise<void> {
+    // 安全检查
+    if (!PAYMENT_CONFIG.useMockPayment) {
+      throw new Error('mockCompleteKonbiniPayment is only available in mock payment mode');
+    }
+
+    // 验证交易存在且属于该用户
+    const { rows } = await pool.query<PaymentTransaction>(
+      'SELECT * FROM payment_transactions WHERE stripe_payment_intent_id = $1',
+      [paymentIntentId]
+    );
+
+    if (rows.length === 0) {
+      throw errors.notFound('Payment transaction');
+    }
+
+    const transaction = mapRowToPaymentTransaction(rows[0]);
+
+    if (transaction.user_id !== userId) {
+      throw errors.forbidden('You do not own this payment');
+    }
+
+    if (transaction.payment_method !== PaymentMethod.KONBINI) {
+      throw errors.badRequest('This is not a konbini payment');
+    }
+
+    if (transaction.payment_status === PaymentStatus.SUCCEEDED) {
+      logger.info('Mock: Konbini payment already completed', { paymentIntentId });
+      return;
+    }
+
+    // 使用 handleMockPaymentSucceeded 更新所有表
+    await this.handleMockPaymentSucceeded(paymentIntentId);
+
+    logger.info('Mock: Konbini payment completed', {
+      paymentIntentId,
+      transactionId: transaction.transaction_id,
+      userId,
+    });
   }
 }
 

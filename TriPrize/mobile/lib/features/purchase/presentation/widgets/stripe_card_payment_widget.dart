@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import '../../../../core/constants/app_config.dart';
 import '../../../../core/constants/app_theme.dart';
+import '../../../../core/di/injection.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/logger.dart';
 
 /// Stripe card payment widget
 /// 目的: Stripeカード決済フォームを表示
 /// I/O: clientSecretを受け取り、カード情報を入力させて決済を実行
-/// 注意点: flutter_stripeを使用、エラーハンドリング必須
+/// 注意点:
+///   - flutter_stripeを使用（本番環境）
+///   - Mockモードでは後端APIを直接呼び出し（Stripe SDKは使用しない）
 class StripeCardPaymentWidget extends StatefulWidget {
   final String clientSecret;
+  final String paymentIntentId;
   final VoidCallback onPaymentSuccess;
   final void Function(String error) onPaymentError;
 
   const StripeCardPaymentWidget({
-    required this.clientSecret, required this.onPaymentSuccess, required this.onPaymentError, super.key,
+    required this.clientSecret,
+    required this.paymentIntentId,
+    required this.onPaymentSuccess,
+    required this.onPaymentError,
+    super.key,
   });
 
   @override
@@ -150,9 +160,33 @@ class _StripeCardPaymentWidgetState extends State<StripeCardPaymentWidget> {
     });
 
     try {
-      AppLogger.info('Starting Stripe payment confirmation');
+      // Mock モードでは後端 API を直接呼び出し（Stripe SDK は使用しない）
+      // 目的: Mock の clientSecret は Stripe SDK で認識されないため
+      // 注意点: 本番環境では必ず Stripe SDK を使用する
+      if (AppConfig.useMockPayment) {
+        await _handleMockPayment();
+      } else {
+        await _handleRealStripePayment();
+      }
+    } catch (e) {
+      AppLogger.error('Unexpected payment error', e);
 
-      // Confirm payment with Stripe
+      if (!mounted) return;
+
+      setState(() {
+        _isProcessing = false;
+      });
+
+      widget.onPaymentError('決済処理中にエラーが発生しました: $e');
+    }
+  }
+
+  /// 本番用: 真実の Stripe SDK を使用して支払いを確認
+  Future<void> _handleRealStripePayment() async {
+    try {
+      AppLogger.info('Starting Stripe payment confirmation (REAL MODE)');
+
+      // Confirm payment with Stripe SDK
       await Stripe.instance.confirmPayment(
         paymentIntentClientSecret: widget.clientSecret,
         data: const PaymentMethodParams.card(
@@ -195,8 +229,45 @@ class _StripeCardPaymentWidgetState extends State<StripeCardPaymentWidget> {
       }
 
       widget.onPaymentError(errorMessage);
+    }
+  }
+
+  /// Mock用: 後端 API を直接呼び出して支払いを確認
+  /// 目的: 開発環境でテスト可能にする（Stripe SDK は Mock clientSecret を認識しない）
+  /// 注意点: 本番環境では使用禁止
+  Future<void> _handleMockPayment() async {
+    try {
+      AppLogger.info('Starting mock payment confirmation');
+
+      // Mock モードでは後端 API を直接呼び出し
+      final apiClient = getIt<ApiClient>();
+      final response = await apiClient.post(
+        '/api/payments/confirm',
+        data: {
+          'payment_intent_id': widget.paymentIntentId,
+          'payment_method_id': 'pm_mock_card',
+        },
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final success = data['success'] == true;
+      final status = (data['data'] as Map<String, dynamic>?)?['status'];
+
+      if (success && status == 'succeeded') {
+        AppLogger.info('Mock payment confirmed successfully');
+
+        if (!mounted) return;
+
+        setState(() {
+          _isProcessing = false;
+        });
+
+        widget.onPaymentSuccess();
+      } else {
+        throw Exception('Mock payment failed: status=$status');
+      }
     } catch (e) {
-      AppLogger.error('Unexpected payment error', e);
+      AppLogger.error('Mock payment failed', e);
 
       if (!mounted) return;
 
@@ -204,7 +275,7 @@ class _StripeCardPaymentWidgetState extends State<StripeCardPaymentWidget> {
         _isProcessing = false;
       });
 
-      widget.onPaymentError('決済処理中にエラーが発生しました: $e');
+      widget.onPaymentError('決済に失敗しました: $e');
     }
   }
 }

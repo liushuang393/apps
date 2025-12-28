@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import { AuthorizedRequest } from '../middleware/role.middleware';
 import paymentService from '../services/payment.service';
 import { CreatePaymentIntentDto } from '../models/payment.entity';
-import { stripe, STRIPE_WEBHOOK_SECRET } from '../config/stripe.config';
+import { stripe, STRIPE_WEBHOOK_SECRET, PAYMENT_CONFIG } from '../config/stripe.config';
 import { errors, asyncHandler } from '../middleware/error.middleware';
 import { UserRole } from '../models/user.entity';
 import logger from '../utils/logger.util';
@@ -278,6 +278,44 @@ export class PaymentController {
         currency: refund.currency,
         status: refund.status,
         created: refund.created,
+      },
+    });
+  });
+
+  /**
+   * Mock: Complete konbini payment (DEVELOPMENT ONLY)
+   * POST /api/payments/mock/complete-konbini
+   * 目的: 开发环境下模拟便利店支付完成（无 Webhook）
+   * I/O: payment_intent_id → 更新数据库状态
+   * 注意点: 仅在 USE_MOCK_PAYMENT=true 时可用，生产环境禁止
+   */
+  mockCompleteKonbini = asyncHandler(async (req: AuthorizedRequest, res: Response): Promise<void> => {
+    // 安全检查: 仅在 Mock 模式下可用
+    if (!PAYMENT_CONFIG.useMockPayment) {
+      throw errors.forbidden('This endpoint is only available in mock payment mode (development only)');
+    }
+
+    if (!req.dbUser) {
+      throw errors.unauthorized();
+    }
+
+    const body = req.body as { payment_intent_id: string };
+    const paymentIntentId = String(body.payment_intent_id);
+
+    logger.info('Mock: Completing konbini payment', {
+      paymentIntentId,
+      userId: req.dbUser.user_id,
+    });
+
+    // 调用 mock 支付完成逻辑
+    await paymentService.mockCompleteKonbiniPayment(paymentIntentId, req.dbUser.user_id);
+
+    res.json({
+      success: true,
+      message: 'Mock konbini payment completed successfully',
+      data: {
+        payment_intent_id: paymentIntentId,
+        status: 'succeeded',
       },
     });
   });

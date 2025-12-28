@@ -62,13 +62,18 @@ export class MockPaymentService {
     const expiresAfterDays = konbiniOptions?.expires_after_days || 4;
     const expiresAt = Math.floor(Date.now() / 1000) + (expiresAfterDays * 24 * 60 * 60);
 
+    // コンビニ支払い番号を生成（Mock用）
+    // 目的: フロントエンドで支払い番号を表示するため
+    // 注意点: 本番環境では Stripe が stores 構造で返すため、同じ構造を模擬
+    const mockKonbiniPaymentCode = this.generateMockKonbiniNumber();
+
     const mockPaymentIntent: Stripe.PaymentIntent = {
       id: paymentIntentId,
       object: 'payment_intent',
       amount: params.amount,
       currency: params.currency || 'jpy',
-      status: params.payment_method_types?.includes('konbini') 
-        ? 'requires_payment_method' 
+      status: params.payment_method_types?.includes('konbini')
+        ? 'requires_action'
         : 'requires_payment_method',
       client_secret: clientSecret,
       payment_method: paymentMethodId,
@@ -81,6 +86,26 @@ export class MockPaymentService {
         konbini_display_details: {
           hosted_voucher_url: `https://pay.stripe.com/konbini/voucher/${paymentIntentId}`,
           expires_at: expiresAt,
+          // Mock用: stores構造を追加（本番Stripeと同じ形式）
+          // 注意点: payment_code は各コンビニ店舗に設定する必要がある
+          stores: {
+            familymart: {
+              payment_code: mockKonbiniPaymentCode,
+              confirmation_number: mockKonbiniPaymentCode,
+            },
+            lawson: {
+              payment_code: mockKonbiniPaymentCode,
+              confirmation_number: mockKonbiniPaymentCode,
+            },
+            ministop: {
+              payment_code: mockKonbiniPaymentCode,
+              confirmation_number: mockKonbiniPaymentCode,
+            },
+            seicomart: {
+              payment_code: mockKonbiniPaymentCode,
+              confirmation_number: mockKonbiniPaymentCode,
+            },
+          },
         },
       } : undefined,
     } as Stripe.PaymentIntent;

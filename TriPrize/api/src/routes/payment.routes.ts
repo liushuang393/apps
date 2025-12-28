@@ -115,4 +115,13 @@ router.post(
   paymentController.initiateRefund
 );
 
+// Mock: Simulate konbini payment completion (DEVELOPMENT ONLY)
+// 目的: 开发环境下模拟便利店支付完成（无 Webhook）
+// 注意点: 仅在 USE_MOCK_PAYMENT=true 时可用，生产环境禁止
+router.post(
+  '/mock/complete-konbini',
+  validateBody(z.object({ payment_intent_id: z.string().min(1) })),
+  paymentController.mockCompleteKonbini
+);
+
 export default router;
