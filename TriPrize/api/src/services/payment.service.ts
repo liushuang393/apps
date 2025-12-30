@@ -219,6 +219,74 @@ export class PaymentService {
   }
 
   /**
+   * Confirm a payment with card details (for Web platform)
+   * 目的: Web プラットフォーム用に直接カード情報を受け取って支払いを確認
+   * I/O: paymentIntentId + カード情報 → PaymentIntent
+   * 注意点:
+   *   - flutter_stripe は Web で動作しないため、後端で PaymentMethod を作成
+   *   - カード情報は Stripe API に直接送信される（PCI DSS 準拠）
+   *   - 本番環境では Stripe の Elements を使用することを推奨
+   */
+  async confirmPaymentWithCard(
+    paymentIntentId: string,
+    cardDetails: {
+      number: string;
+      exp_month: number;
+      exp_year: number;
+      cvc: string;
+    }
+  ): Promise<Stripe.PaymentIntent> {
+    try {
+      // Mock モードの場合は既存のロジックを使用
+      if (PAYMENT_CONFIG.useMockPayment) {
+        logger.info('Confirming payment with card (mock)', { paymentIntentId });
+        return this.confirmPayment(paymentIntentId, 'pm_mock_card');
+      }
+
+      if (!stripe) {
+        throw new Error('Stripe client is not initialized');
+      }
+
+      // Step 1: PaymentMethod を作成
+      // 注意: これはサーバーサイドで直接カード情報を扱う方法
+      // PCI DSS 準拠のため、本番では Stripe Elements を使用することを推奨
+      const paymentMethod = await stripe.paymentMethods.create({
+        type: 'card',
+        card: {
+          number: cardDetails.number,
+          exp_month: cardDetails.exp_month,
+          exp_year: cardDetails.exp_year,
+          cvc: cardDetails.cvc,
+        },
+      });
+
+      logger.info('Payment method created for web payment', {
+        paymentIntentId,
+        paymentMethodId: paymentMethod.id,
+      });
+
+      // Step 2: PaymentIntent を確認
+      const paymentIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
+        payment_method: paymentMethod.id,
+      });
+
+      logger.info('Payment confirmed with card (web)', {
+        paymentIntentId,
+        status: paymentIntent.status,
+      });
+
+      return paymentIntent;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to confirm payment with card', {
+        error: errorMessage,
+        paymentIntentId,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Handle mock payment succeeded
    * 目的: Mock 模式下直接更新数据库（无 Webhook）
    * I/O: paymentIntentId → 更新 payment_transactions, purchases, positions, campaigns

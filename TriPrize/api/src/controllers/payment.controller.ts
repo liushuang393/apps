@@ -96,6 +96,67 @@ export class PaymentController {
   });
 
   /**
+   * Confirm payment with card details (for Web platform)
+   * POST /api/payments/confirm-with-card
+   * 目的: Web プラットフォーム用に直接カード情報を受け取って支払いを確認
+   * I/O: payment_intent_id + card{number, exp_month, exp_year, cvc} → PaymentIntent
+   * 注意点:
+   *   - flutter_stripe は Web で動作しないため、このエンドポイントを使用
+   *   - カード情報は Stripe API に直接送信される
+   */
+  confirmPaymentWithCard = asyncHandler(async (req: AuthorizedRequest, res: Response): Promise<void> => {
+    if (!req.dbUser) {
+      throw errors.unauthorized();
+    }
+
+    const body = req.body as {
+      payment_intent_id: string;
+      card: {
+        number: string;
+        exp_month: number;
+        exp_year: number;
+        cvc: string;
+      };
+    };
+
+    // バリデーション
+    if (!body.payment_intent_id) {
+      throw errors.badRequest('payment_intent_id is required');
+    }
+
+    if (!body.card || !body.card.number || !body.card.exp_month || !body.card.exp_year || !body.card.cvc) {
+      throw errors.badRequest('Card details are required (number, exp_month, exp_year, cvc)');
+    }
+
+    const paymentIntentId = String(body.payment_intent_id);
+
+    logger.info('Confirming payment with card (Web)', {
+      paymentIntentId,
+      userId: req.dbUser.user_id,
+      cardLastFour: body.card.number.slice(-4),
+    });
+
+    const paymentIntent = await paymentService.confirmPaymentWithCard(
+      paymentIntentId,
+      {
+        number: body.card.number,
+        exp_month: body.card.exp_month,
+        exp_year: body.card.exp_year,
+        cvc: body.card.cvc,
+      }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        payment_intent_id: paymentIntent.id,
+        status: paymentIntent.status,
+        client_secret: paymentIntent.client_secret,
+      },
+    });
+  });
+
+  /**
    * Get konbini payment details
    * GET /api/payments/konbini/:paymentIntentId
    */

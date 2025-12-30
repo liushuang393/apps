@@ -27,6 +27,19 @@ const confirmPaymentSchema = z.object({
   payment_method_id: z.string().min(1),
 });
 
+// Confirm payment with card schema (for Web platform)
+// 目的: Web プラットフォーム用に直接カード情報を受け取る
+// 注意点: flutter_stripe は Web で動作しないため、このスキーマを使用
+const confirmPaymentWithCardSchema = z.object({
+  payment_intent_id: z.string().min(1),
+  card: z.object({
+    number: z.string().min(13).max(19).regex(/^\d+$/),
+    exp_month: z.number().int().min(1).max(12),
+    exp_year: z.number().int().min(2000).max(2100),
+    cvc: z.string().min(3).max(4).regex(/^\d+$/),
+  }),
+});
+
 // Transaction ID param schema
 const transactionIdSchema = z.object({
   transactionId: commonSchemas.uuid,
@@ -83,6 +96,16 @@ router.post(
   '/confirm',
   validateBody(confirmPaymentSchema),
   paymentController.confirmPayment
+);
+
+// Confirm payment with card (Web platform)
+// 目的: flutter_stripe が Web で動作しないため、直接カード情報を受け取って支払いを確認
+// I/O: payment_intent_id + card{number, exp_month, exp_year, cvc} → PaymentIntent
+// 注意点: カード情報は Stripe API に直接送信される
+router.post(
+  '/confirm-with-card',
+  validateBody(confirmPaymentWithCardSchema),
+  paymentController.confirmPaymentWithCard
 );
 
 // Get konbini payment details
