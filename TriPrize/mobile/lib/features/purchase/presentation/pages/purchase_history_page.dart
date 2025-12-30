@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/constants/app_theme.dart';
+import '../../../../core/navigation/navigation_service.dart';
 import '../providers/purchase_provider.dart';
 import '../../data/models/purchase_model.dart';
 
@@ -30,6 +31,17 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            // スタックに戻れる画面がある場合はpop、なければホーム画面へ
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              NavigationService.navigateToHome(context);
+            }
+          },
+        ),
         title: const Text('購入履歴'),
         actions: [
           IconButton(

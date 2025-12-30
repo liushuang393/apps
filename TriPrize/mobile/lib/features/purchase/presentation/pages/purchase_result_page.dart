@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_theme.dart';
+import '../../../../core/navigation/navigation_service.dart';
 import '../../../campaign/data/models/campaign_model.dart';
-import '../../../campaign/presentation/pages/campaign_list_page.dart';
 import '../../data/models/purchase_model.dart';
 import 'purchase_history_page.dart';
 
@@ -28,12 +28,8 @@ class PurchaseResultPage extends StatelessWidget {
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(
-                builder: (context) => const CampaignListPage(),
-              ),
-              (route) => false,
-            );
+            // ユーザーロールに応じたホーム画面に遷移
+            NavigationService.navigateToHome(context);
           },
         ),
       ),
@@ -346,35 +342,33 @@ class PurchaseResultPage extends StatelessWidget {
   }
 
   Widget _buildActionButtons(BuildContext context) {
+    // ボタンのラベルはユーザーロールに応じて変更
+    final homeLabel = NavigationService.isAdmin ? 'ダッシュボードに戻る' : 'キャンペーン一覧に戻る';
+
     return Container(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           ElevatedButton(
             onPressed: () {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(
-                  builder: (context) => const CampaignListPage(),
-                ),
-                (route) => false,
-              );
+              // ユーザーロールに応じたホーム画面に遷移
+              NavigationService.navigateToHome(context);
             },
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.all(16),
             ),
-            child: const Text(
-              'キャンペーン一覧に戻る',
-              style: TextStyle(fontSize: 16),
+            child: Text(
+              homeLabel,
+              style: const TextStyle(fontSize: 16),
             ),
           ),
           const SizedBox(height: 12),
           OutlinedButton(
             onPressed: () {
-              Navigator.of(context).pushAndRemoveUntil(
+              Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (context) => const PurchaseHistoryPage(),
                 ),
-                (route) => false,
               );
             },
             style: OutlinedButton.styleFrom(

@@ -34,17 +34,42 @@ export class PaymentController {
     let konbiniExpiresAt: string | null = null;
 
     if (dto.payment_method === 'konbini' && paymentIntent.next_action) {
+      logger.debug('Konbini next_action found', {
+        nextActionType: paymentIntent.next_action.type,
+        nextAction: JSON.stringify(paymentIntent.next_action),
+      });
+
       const konbiniDetails = paymentIntent.next_action.konbini_display_details;
       if (konbiniDetails) {
         // Stripe の konbini_display_details.stores から支払い番号を取得
         // 注意点: 各コンビニ店舗 (familymart, lawson, ministop, seicomart) から取得
-        const stores = konbiniDetails.stores;
-        const paymentCode = stores.familymart?.payment_code
-          || stores.lawson?.payment_code
-          || stores.ministop?.payment_code
-          || stores.seicomart?.payment_code
-          || null;
-        konbiniReference = paymentCode;
+        // 型アサーション: Mock と本番 Stripe の両方の構造に対応
+        const stores = konbiniDetails.stores as {
+          familymart?: { payment_code?: string };
+          lawson?: { payment_code?: string };
+          ministop?: { payment_code?: string };
+          seicomart?: { payment_code?: string };
+        } | undefined;
+
+        logger.debug('Konbini stores data', {
+          stores: JSON.stringify(stores),
+          hasStores: !!stores,
+        });
+
+        if (stores) {
+          const paymentCode = stores.familymart?.payment_code
+            || stores.lawson?.payment_code
+            || stores.ministop?.payment_code
+            || stores.seicomart?.payment_code
+            || null;
+          konbiniReference = paymentCode;
+
+          logger.info('Konbini payment code extracted', {
+            paymentCode,
+            paymentIntentId: paymentIntent.id,
+          });
+        }
+
         // 期限は konbiniDetails.expires_at から取得
         if (konbiniDetails.expires_at) {
           konbiniExpiresAt = new Date(konbiniDetails.expires_at * 1000).toISOString();

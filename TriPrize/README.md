@@ -825,6 +825,143 @@ docker-compose down                   # コンテナ停止・削除
 │                           TriPrize 支付系统流程                                   │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
+## 支付模式控制
+
+### 环境变量配置
+
+**前端 (mobile/.env):**
+```env
+USE_MOCK_PAYMENT=false    # false = 本番（真实 Stripe）, true = Mock（测试用）
+STRIPE_PUBLISHABLE_KEY=pk_test_xxx  # 本番: pk_live_xxx
+```
+
+**后端 (api/.env):**
+```env
+USE_MOCK_PAYMENT=false    # false = 本番（真实 Stripe API）, true = Mock
+STRIPE_SECRET_KEY=sk_test_xxx       # 本番: sk_live_xxx
+```
+
+⚠️ **重要：前后端 USE_MOCK_PAYMENT 必须保持一致！**
+
+### 平台分支逻辑
+
+| 平台 | UI 组件 | 支付确认方式 | 说明 |
+|------|---------|-------------|------|
+| **Android/iOS（本番）** | `CardField` (flutter_stripe) | `Stripe.instance.confirmPayment()` | 原生 SDK |
+| **Android/iOS（Mock）** | `CardField` (flutter_stripe) | `POST /api/payments/confirm` | 后端 API |
+| **Web（本番）** | 自定义表单 | `POST /api/payments/confirm-with-card` | flutter_stripe 不支持 Web |
+| **Web（Mock）** | 自定义表单 | `POST /api/payments/confirm` | 后端 API |
+
+### 代码分支位置
+
+**前端 (stripe_card_payment_widget.dart):**
+```dart
+// UI 分支
+if (kIsWeb) _buildWebCardForm() else _buildMobileCardField()
+
+// 支付逻辑分支
+if (AppConfig.useMockPayment) {
+  await _handleMockPayment();          // Mock: 所有平台
+} else if (kIsWeb) {
+  await _handleWebPayment();           // Web 本番: 后端 API
+} else {
+  await _handleRealStripePayment();    // 移动本番: Stripe SDK
+}
+```
+
+**后端安全保护 (stripe.config.ts):**
+- 生产環境 (`NODE_ENV=production`) 強制禁止 Mock モード
+- 生産環境強制要求 `sk_live_` 開頭の密鍵
+
+---
+
+## 🧪 Stripe テストカード一覧
+
+テスト環境でカード決済をテストする際に使用できるテストカード番号です。
+
+### ✅ 決済成功テスト用カード
+
+| カード番号 | ブランド | 用途説明 |
+|-----------|---------|----------|
+| `4242 4242 4242 4242` | Visa | **標準テストカード** - 決済が即座に成功します。最も一般的なテスト用カードです。 |
+| `5555 5555 5555 4444` | Mastercard | **Mastercard テスト** - Mastercardブランドでの決済成功テスト用です。 |
+| `3782 822463 10005` | American Express | **Amex テスト** - American Expressカードでの決済テスト用です（CVCは4桁）。 |
+| `3566 0020 2036 0505` | JCB | **JCB テスト** - 日本で人気のJCBカードでの決済テスト用です。 |
+| `6011 1111 1111 1117` | Discover | **Discover テスト** - Discoverカードでの決済テスト用です。 |
+
+### ❌ 決済失敗テスト用カード
+
+| カード番号 | エラー種類 | 用途説明 |
+|-----------|-----------|----------|
+| `4000 0000 0000 0002` | カード拒否 | **一般的な拒否** - カードが拒否される場合のエラーハンドリングテスト用です。ユーザーに「カードが拒否されました」というメッセージを表示すべきケース。 |
+| `4000 0000 0000 9995` | 残高不足 | **残高不足エラー** - カードの利用限度額超過や残高不足の場合のテスト用です。ユーザーに「残高が不足しています」というメッセージを表示すべきケース。 |
+| `4000 0000 0000 0069` | カード期限切れ | **期限切れエラー** - カードの有効期限が切れている場合のテスト用です。 |
+| `4000 0000 0000 0127` | CVC不正 | **CVC検証失敗** - CVCコードが間違っている場合のテスト用です。 |
+
+### 🔐 3Dセキュア認証テスト用カード
+
+| カード番号 | 認証結果 | 用途説明 |
+|-----------|---------|----------|
+| `4000 0000 0000 3220` | 認証成功 | **3DS2 認証必須** - 3Dセキュア認証画面が表示され、認証後に決済成功します。認証フローのテスト用です。 |
+| `4000 0000 0000 3063` | 認証成功 | **3DS2 認証必須（別パターン）** - 別の3Dセキュアフローをテストする場合に使用します。 |
+| `4000 0082 6000 3178` | 認証失敗 | **3DS2 認証失敗** - 3Dセキュア認証に失敗する場合のテスト用です。 |
+
+### 📝 テストカード使用時の注意事項
+
+- **有効期限**: 未来の任意の日付（例: `12/25`, `01/30`）を入力
+- **CVC**: 任意の3桁の数字（例: `123`）、Amexのみ4桁
+- **郵便番号**: 任意の7桁の数字（例: `1234567`）
+- **テスト環境のみ**: これらのカード番号は本番環境では使用できません
+
+### 🏪 コンビニ決済テスト
+
+コンビニ決済を選択すると、支払い番号（payment_code）と確認番号（confirmation_number）が発行されます。
+
+#### Stripe テスト環境（sk_test_ キー使用時）
+
+**⚠️ 重要：Stripe テスト環境では実際の支払い番号が発行されます！**
+
+Stripe は特殊な確認番号（電話番号欄に入力）でテストシナリオを制御できます：
+
+| 確認番号（電話番号） | シミュレーション結果 | 用途 |
+|-------------------|-------------------|------|
+| `11111111110` | **3分後に支払い成功** | 通常の支払いフローテスト |
+| `22222222220` | **即座に支払い成功** | 即座に結果を確認したい場合 |
+| `33333333330` | **即座に期限切れ** | 期限切れエラーハンドリングテスト |
+| `44444444440` | **3分後に期限切れ** | 遅延期限切れのテスト |
+| `55555555550` | **設定期限で期限切れ** | `expires_after_days` 設定通りに期限切れ |
+
+**または、メールアドレスパターンでも制御可能：**
+- `succeed_immediately@test.com` → 即座に支払い成功
+- `expire_immediately@test.com` → 即座に期限切れ
+- `fill_never@test.com` → 支払いなしで期限まで待機
+
+**テスト手順：**
+1. コンビニ決済を選択
+2. 支払い番号と確認番号が表示される
+3. Stripe ダッシュボードで Webhook イベントを確認
+4. `payment_intent.succeeded` イベントが届いたら決済完了
+
+**参考リンク:** [Stripe Konbini テストドキュメント](https://stripe.com/docs/payments/konbini/accept-a-payment#test-integration)
+
+#### Mock モード（USE_MOCK_PAYMENT=true）
+
+- 支払い番号: `MOCK-XXXX-XXXX-XXXX` 形式で自動生成
+- 支払い期限: 4日後まで
+- テスト完了: `POST /api/payments/mock/complete-konbini` を呼び出すと支払い完了をシミュレート
+
+```bash
+# Mock 便利店支払いを完了させる
+curl -X POST http://localhost:3000/api/payments/mock/complete-konbini \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_token>" \
+  -d '{"payment_intent_id": "pi_mock_xxx"}'
+```
+
+---
+
+## 支付流程図
+
 ┌──────────────┐     1. 创建支付意图      ┌─────────────┐     2. Stripe API      ┌─────────────┐
 │    移动端     │ ───────────────────────▶│   API 服务   │ ──────────────────────▶│   Stripe    │
 │ (Flutter)    │   POST /payment/        │ (Express)   │   PaymentIntent       │   服务器     │
@@ -841,11 +978,18 @@ docker-compose down                   # コンテナ停止・削除
        │◀───────── 4. 返回 client_secret ──────────────────────────────────────────────┘
        │
        ▼
-┌──────────────┐     5. 用户输入卡号     ┌─────────────┐
-│  Stripe SDK  │ ───────────────────────▶│   Stripe    │
-│ (flutter_stripe)                       │   服务器     │
-│              │     confirmPayment()    │             │
-└──────────────┘                         └─────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              5. 支付确认（平台分支）                                   │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│  Android/iOS 本番:                                                                   │
+│    CardField → Stripe.instance.confirmPayment() → Stripe 服务器                      │
+│                                                                                     │
+│  Web 本番:                                                                           │
+│    自定义表单 → POST /api/payments/confirm-with-card → API 创建 PaymentMethod → Stripe │
+│                                                                                     │
+│  Mock 模式 (所有平台):                                                                │
+│    任意表单 → POST /api/payments/confirm → 模拟支付成功                               │
+└─────────────────────────────────────────────────────────────────────────────────────┘
                                                 │
                                                 │ 6. 支付结果
                                                 ▼

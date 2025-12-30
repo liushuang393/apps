@@ -223,9 +223,9 @@ export class PaymentService {
    * 目的: Web プラットフォーム用に直接カード情報を受け取って支払いを確認
    * I/O: paymentIntentId + カード情報 → PaymentIntent
    * 注意点:
-   *   - flutter_stripe は Web で動作しないため、後端で PaymentMethod を作成
-   *   - カード情報は Stripe API に直接送信される（PCI DSS 準拠）
-   *   - 本番環境では Stripe の Elements を使用することを推奨
+   *   - flutter_stripe は Web で動作しないため、後端で処理
+   *   - テスト環境: Stripe テストトークン（tok_visa 等）を使用
+   *   - 本番環境: 直接カード処理は PCI DSS 制限あり、Stripe Elements 推奨
    */
   async confirmPaymentWithCard(
     paymentIntentId: string,
@@ -247,27 +247,45 @@ export class PaymentService {
         throw new Error('Stripe client is not initialized');
       }
 
-      // Step 1: PaymentMethod を作成
-      // 注意: これはサーバーサイドで直接カード情報を扱う方法
-      // PCI DSS 準拠のため、本番では Stripe Elements を使用することを推奨
-      const paymentMethod = await stripe.paymentMethods.create({
-        type: 'card',
-        card: {
-          number: cardDetails.number,
-          exp_month: cardDetails.exp_month,
-          exp_year: cardDetails.exp_year,
-          cvc: cardDetails.cvc,
-        },
-      });
+      // テスト環境かどうかを判定（sk_test_ キーを使用しているか）
+      const isTestMode = process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_');
 
-      logger.info('Payment method created for web payment', {
-        paymentIntentId,
-        paymentMethodId: paymentMethod.id,
-      });
+      let paymentMethodId: string;
 
-      // Step 2: PaymentIntent を確認
+      if (isTestMode) {
+        // テスト環境: Stripe のテストトークンを使用
+        // 注意: Stripe は PCI DSS 準拠のため、直接カード番号を API に送信することを禁止
+        // テスト環境ではテストトークンを使用して回避
+        // https://stripe.com/docs/testing#cards
+        const testToken = this.getTestTokenFromCardNumber(cardDetails.number);
+        
+        logger.info('Using test token for web payment', {
+          paymentIntentId,
+          testToken,
+          cardLastFour: cardDetails.number.slice(-4),
+        });
+
+        // テストトークンから PaymentMethod を作成
+        const paymentMethod = await stripe.paymentMethods.create({
+          type: 'card',
+          card: {
+            token: testToken,
+          },
+        });
+        paymentMethodId = paymentMethod.id;
+      } else {
+        // 本番環境: 直接カード処理は PCI DSS 制限があるため、エラーを返す
+        // 本番では Stripe.js を使用してクライアント側で PaymentMethod を作成すべき
+        logger.error('Direct card processing is not allowed in production mode');
+        throw new Error(
+          'Direct card processing is not available in production. ' +
+          'Please use Stripe.js on the client side to create a PaymentMethod.'
+        );
+      }
+
+      // PaymentIntent を確認
       const paymentIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
-        payment_method: paymentMethod.id,
+        payment_method: paymentMethodId,
       });
 
       logger.info('Payment confirmed with card (web)', {
@@ -284,6 +302,39 @@ export class PaymentService {
       });
       throw error;
     }
+  }
+
+  /**
+   * カード番号からテストトークンを取得
+   * 目的: Stripe テスト環境用のトークンマッピング
+   * 注意点: テスト環境でのみ使用、本番では使用不可
+   * https://stripe.com/docs/testing#cards
+   */
+  private getTestTokenFromCardNumber(cardNumber: string): string {
+    // カード番号の空白を除去
+    const cleanNumber = cardNumber.replace(/\s/g, '');
+
+    // Stripe テストカード番号 → テストトークン マッピング
+    const testCardTokens: Record<string, string> = {
+      '4242424242424242': 'tok_visa',                    // Visa
+      '4000056655665556': 'tok_visa_debit',              // Visa (debit)
+      '5555555555554444': 'tok_mastercard',              // Mastercard
+      '5200828282828210': 'tok_mastercard_debit',        // Mastercard (debit)
+      '378282246310005': 'tok_amex',                     // American Express
+      '6011111111111117': 'tok_discover',                // Discover
+      '3056930009020004': 'tok_diners',                  // Diners Club
+      '3566002020360505': 'tok_jcb',                     // JCB
+      '6200000000000005': 'tok_unionpay',                // UnionPay
+      // 3D Secure テストカード
+      '4000000000003220': 'tok_visa',                    // 3DS2 認証必須
+      '4000000000003063': 'tok_visa',                    // 3DS2 認証必須
+      // 失敗テストカード
+      '4000000000000002': 'tok_chargeDeclined',          // 拒否
+      '4000000000009995': 'tok_chargeDeclinedInsufficientFunds', // 残高不足
+    };
+
+    // マッチするトークンを返す、なければデフォルトで tok_visa
+    return testCardTokens[cleanNumber] || 'tok_visa';
   }
 
   /**

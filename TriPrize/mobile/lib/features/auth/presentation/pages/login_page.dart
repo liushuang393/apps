@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/constants/app_theme.dart';
+import '../../../../core/navigation/navigation_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../providers/auth_provider.dart';
 import 'register_page.dart';
 import 'forgot_password_page.dart';
-import '../../../campaign/presentation/pages/campaign_list_page.dart';
-import '../../../admin/presentation/pages/admin_dashboard_page.dart';
 import 'dart:async' show unawaited;
 
 /// Login page
@@ -301,19 +300,19 @@ class _LoginPageState extends State<LoginPage> {
       } catch (e, stackTrace) {
         AppLogger.error('ユーザープロフィール取得エラー', e, stackTrace);
       }
-      
+
       // データベースの役割に応じて画面遷移
       final userRole = authProvider.userRole ?? 'customer';
       AppLogger.info('ユーザーロール: $userRole');
-      final targetPage = userRole == 'admin'
-          ? const AdminDashboardPage()
-          : const CampaignListPage();
-      
+
+      // NavigationServiceにユーザーロールを設定
+      NavigationService.setUserRole(userRole);
+
       // ignore: use_build_context_synchronously, unawaited_futures
       unawaited(
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
-            builder: (context) => targetPage,
+            builder: (context) => NavigationService.getHomePageForRole(userRole),
           ),
           (route) => false,
         ),

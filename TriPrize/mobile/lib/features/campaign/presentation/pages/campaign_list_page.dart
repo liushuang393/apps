@@ -5,6 +5,7 @@ import '../../../../core/constants/app_theme.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../admin/presentation/pages/settings_page.dart';
+import '../../../purchase/presentation/pages/purchase_history_page.dart';
 import '../../../purchase/presentation/providers/purchase_provider.dart';
 import '../../data/models/campaign_model.dart';
 import '../providers/campaign_provider.dart';
@@ -312,6 +313,13 @@ class _CampaignListPageState extends State<CampaignListPage> {
       ),
       onSelected: (value) {
         switch (value) {
+          case 'history':
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => const PurchaseHistoryPage(),
+              ),
+            );
+            break;
           case 'settings':
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -326,6 +334,16 @@ class _CampaignListPageState extends State<CampaignListPage> {
       },
       itemBuilder: (context) {
         final items = <PopupMenuEntry<String>>[
+          // 購入履歴メニュー項目
+          const PopupMenuItem<String>(
+            value: 'history',
+            child: ListTile(
+              leading: Icon(Icons.history),
+              title: Text('購入履歴'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+          ),
           // 設定メニュー項目
           const PopupMenuItem<String>(
             value: 'settings',
