@@ -10,7 +10,7 @@ const router = Router();
  * 目的: 确保这些端点只在开发/测试环境可用
  * 注意点: 生产环境请求会直接返回 403 Forbidden
  */
-const ensureTestEnvironment = (req: Request, res: Response, next: NextFunction): void => {
+const ensureTestEnvironment = (req: Request, _res: Response, next: NextFunction): void => {
   const isProduction = process.env.NODE_ENV === 'production';
 
   if (isProduction) {

@@ -436,9 +436,9 @@ export class PaymentTestSimulatorService {
       previousStatus,
     });
 
-    const mockPaymentIntent = this.createMockPaymentIntent(transaction, 'canceled', {
-      cancellation_reason: 'expired',
-    } as Partial<Stripe.PaymentIntent>);
+    // 注意点: Stripe の PaymentIntent.CancellationReason は特定の値のみ許可
+    // 'expired' は konbini_voucher_expired に対応（Stripe 側では別の方法で通知）
+    const mockPaymentIntent = this.createMockPaymentIntent(transaction, 'canceled');
     const mockEvent = this.createMockEvent('payment_intent.canceled', mockPaymentIntent);
     await paymentService.handleWebhook(mockEvent);
 

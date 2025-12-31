@@ -160,10 +160,26 @@ export class LotteryService {
         );
 
         // Update user prizes_won count
-        await client.query(
+        // 目的: 当選者のprizes_wonカウントを増加
+        // 注意点: positions.user_id と users.user_id の型一致が必要（両方UUID）
+        const updateResult = await client.query(
           'UPDATE users SET prizes_won = prizes_won + 1, updated_at = NOW() WHERE user_id = $1',
           [winningPosition.user_id]
         );
+
+        // 更新行数をログ出力（デバッグ用）
+        if (updateResult.rowCount === 0) {
+          logger.warn('Failed to update prizes_won - user not found', {
+            positionUserId: winningPosition.user_id,
+            campaignId,
+            layerNumber,
+          });
+        } else {
+          logger.info('Updated prizes_won for winner', {
+            userId: winningPosition.user_id,
+            rowsUpdated: updateResult.rowCount,
+          });
+        }
 
         // Get user info for winner list
         interface UserInfo {

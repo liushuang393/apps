@@ -50,6 +50,24 @@ class AppConfig {
   /// 決済モック使用フラグ
   static bool get useMockPayment => dotenv.env['USE_MOCK_PAYMENT'] == 'true';
 
+  /// 開発モードかどうか（テスト環境を含む）
+  /// 目的: Mock モードでなくても Stripe Test Mode での開発を可能にする
+  /// 注意点: Stripe Test Key (pk_test_) を使用している場合も開発モードと判定
+  static bool get isDevelopmentMode {
+    // Mock モードの場合は開発モード
+    if (useMockPayment) return true;
+
+    // Stripe Test Key を使用している場合は開発モード
+    final stripeKey = stripePublishableKey;
+    if (stripeKey.startsWith('pk_test_')) return true;
+
+    // 環境変数で明示的に開発モードが指定されている場合
+    final nodeEnv = dotenv.env['NODE_ENV'];
+    if (nodeEnv == 'development' || nodeEnv == 'test') return true;
+
+    return false;
+  }
+
   // ===========================
   // 認証設定
   // ===========================

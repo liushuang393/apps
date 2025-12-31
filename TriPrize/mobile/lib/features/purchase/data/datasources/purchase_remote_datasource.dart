@@ -165,12 +165,27 @@ class PurchaseRemoteDataSourceImpl implements PurchaseRemoteDataSource {
       final data = response.data as Map<String, dynamic>;
       final intentData = data['data'] as Map<String, dynamic>;
 
+      // コンビニ決済の場合、支払い番号と期限を取得
+      // 目的: バックエンドから返された konbini_reference と konbini_expires_at を読み取る
+      // 注意点: これらのフィールドがないと「取得中...」と表示され続ける
+      final konbiniReference = intentData['konbini_reference'] as String?;
+      final konbiniExpiresAt = intentData['konbini_expires_at'] as String?;
+
+      AppLogger.debug('Payment intent response', {
+        'payment_intent_id': intentData['payment_intent_id'],
+        'status': intentData['status'],
+        'konbini_reference': konbiniReference,
+        'konbini_expires_at': konbiniExpiresAt,
+      });
+
       final paymentIntent = PaymentIntentModel(
         paymentIntentId: intentData['payment_intent_id'] as String,
         clientSecret: intentData['client_secret'] as String,
         amount: intentData['amount'] as int,
         currency: intentData['currency'] as String? ?? 'jpy',
         status: intentData['status'] as String,
+        konbiniReference: konbiniReference,
+        konbiniExpiresAt: konbiniExpiresAt,
       );
 
       AppLogger.info('Payment intent created: ${paymentIntent.paymentIntentId}');

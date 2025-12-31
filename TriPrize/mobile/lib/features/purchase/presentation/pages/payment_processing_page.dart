@@ -353,12 +353,12 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
             ),
           ),
           const SizedBox(height: 24),
-          // Mock モードでは「支払い完了を確認」ボタンを表示
-          // 目的: 開発環境でコンビニ支払いをシミュレート
+          // 開発環境（Mock モードまたは Stripe Test Mode）では「支払い完了を確認」ボタンを表示
+          // 目的: 開発環境でコンビニ支払いをシミュレート（Webhook なしでテスト可能）
           // 注意点: 本番環境では表示されない
-          if (AppConfig.useMockPayment) ...[
+          if (AppConfig.isDevelopmentMode) ...[
             ElevatedButton(
-              onPressed: _isMockConfirming ? null : _handleMockKonbiniComplete,
+              onPressed: _isMockConfirming ? null : _handleTestKonbiniComplete,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.all(16),
                 minimumSize: const Size(double.infinity, 0),
@@ -475,10 +475,12 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
     });
   }
 
-  /// Mock用: コンビニ支払い完了をシミュレート
-  /// 目的: 開発環境でコンビニ支払い完了をテスト可能にする
-  /// 注意点: 本番環境では呼び出されない
-  Future<void> _handleMockKonbiniComplete() async {
+  /// 開発用: コンビニ支払い完了をシミュレート
+  /// 目的: 開発環境でコンビニ支払いをテスト可能にする（Webhook なしで完了処理）
+  /// 注意点:
+  ///   - Mock モード: /api/payments/mock/complete-konbini を使用
+  ///   - Stripe Test Mode: /api/test/payments/:id/simulate/konbini-complete を使用
+  Future<void> _handleTestKonbiniComplete() async {
     if (_paymentIntent == null) return;
 
     setState(() {
@@ -486,21 +488,33 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
     });
 
     try {
-      AppLogger.info('Mock: Completing konbini payment');
+      AppLogger.info('Test: Completing konbini payment');
 
       final apiClient = getIt<ApiClient>();
-      final response = await apiClient.post(
-        '/api/payments/mock/complete-konbini',
-        data: {
-          'payment_intent_id': _paymentIntent!.paymentIntentId,
-        },
-      );
+      final paymentIntentId = _paymentIntent!.paymentIntentId;
+
+      // Mock モードか Stripe Test Mode かで API を切り替え
+      // 目的: 両方のテスト環境で動作するように
+      final String endpoint;
+      final Map<String, dynamic>? requestData;
+
+      if (AppConfig.useMockPayment) {
+        // Mock モード: 既存の mock API を使用
+        endpoint = '/api/payments/mock/complete-konbini';
+        requestData = {'payment_intent_id': paymentIntentId};
+      } else {
+        // Stripe Test Mode: 新しいテストシミュレーター API を使用
+        endpoint = '/api/test/payments/$paymentIntentId/simulate/konbini-complete';
+        requestData = null;
+      }
+
+      final response = await apiClient.post(endpoint, data: requestData);
 
       final data = response.data as Map<String, dynamic>;
       final success = data['success'] == true;
 
       if (success) {
-        AppLogger.info('Mock: Konbini payment completed successfully');
+        AppLogger.info('Test: Konbini payment completed successfully');
 
         if (!mounted) return;
 
@@ -519,16 +533,16 @@ class _PaymentProcessingPageState extends State<PaymentProcessingPage> {
 
         _navigateToResult();
       } else {
-        throw Exception('Mock konbini payment failed');
+        throw Exception('Test konbini payment failed');
       }
     } catch (e) {
-      AppLogger.error('Mock: Konbini payment completion failed', e);
+      AppLogger.error('Test: Konbini payment completion failed', e);
 
       if (!mounted) return;
 
       setState(() {
         _isMockConfirming = false;
-        _errorMessage = 'Mock支払い完了処理に失敗しました: $e';
+        _errorMessage = '支払い完了処理に失敗しました: $e';
       });
     }
   }

@@ -234,7 +234,14 @@ flutter test
 # カバレッジ付き
 flutter test --coverage
 ```
+🔧 长期解决方案：配置 Stripe CLI
+为了避免以后再出现这个问题，你需要使用 Stripe CLI 来接收 Webhook：
+# 1. 安装 Stripe CLI# 下载: https://stripe.com/docs/stripe-cli#install# 2. 登录stripe login# 3. 转发 Webhook 到本地（每次开发时运行）stripe listen --forward-to localhost:3000/api/payments/webhook
+Stripe CLI 会输出一个 whsec_xxx 密钥，更新到 api/.env：
+STRIPE_WEBHOOK_SECRET=whsec_xxxxx
+这样以后所有支付都会自动完成，不会再卡住！
 
+http://localhost:3000/api/payments/dev/force-complete?campaign_name=2025aa&password=admin4321
 ---
 
 ## 📱 本番アプリのビルドと公開手順

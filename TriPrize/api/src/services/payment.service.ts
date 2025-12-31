@@ -1446,6 +1446,204 @@ export class PaymentService {
       userId,
     });
   }
+
+  /**
+   * Dev: Force complete all pending/processing payments for a campaign
+   * 目的: 開発環境で Webhook なしに支払いを強制完了させる
+   * I/O: campaignName → { paymentsCompleted, lotteryTriggered, winners }
+   * 注意点:
+   *   - USE_MOCK_PAYMENT=true の場合のみ使用可能
+   *   - 全ての processing 支払いを succeeded に更新
+   *   - 購入を completed に、ポジションを sold に更新
+   *   - 全て売り切れたら抽選も実行
+   */
+  async devForceCompletePayments(campaignName: string): Promise<{
+    campaignId: string;
+    campaignName: string;
+    paymentsCompleted: number;
+    purchasesCompleted: number;
+    positionsUpdated: number;
+    lotteryTriggered: boolean;
+    winners: Array<{ rank: number; prizeId: string; userId: string; positionId: string }>;
+  }> {
+    // セキュリティチェック: Mock モードでのみ使用可能
+    // エラーメッセージは意図的に曖昧にする（セキュリティ対策）
+    if (!PAYMENT_CONFIG.useMockPayment) {
+      throw errors.notFound('Resource');
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // 1. キャンペーンを名前で検索
+      const campaignQuery = await client.query<{ campaign_id: string; name: string; positions_total: number }>(
+        `SELECT campaign_id, name, positions_total FROM campaigns WHERE name ILIKE $1`,
+        [`%${campaignName}%`]
+      );
+
+      if (campaignQuery.rows.length === 0) {
+        throw errors.notFound(`Campaign with name containing "${campaignName}"`);
+      }
+
+      const campaign = campaignQuery.rows[0];
+      logger.info('DEV: Found campaign', { campaignId: campaign.campaign_id, name: campaign.name });
+
+      // 2. 該当キャンペーンの processing 支払いを全て取得
+      const transactionsQuery = await client.query<{
+        transaction_id: string;
+        purchase_id: string;
+        stripe_payment_intent_id: string;
+      }>(
+        `SELECT pt.transaction_id, pt.purchase_id, pt.stripe_payment_intent_id
+         FROM payment_transactions pt
+         JOIN purchases pur ON pt.purchase_id = pur.purchase_id
+         JOIN positions pos ON pur.position_id = pos.position_id
+         WHERE pos.campaign_id = $1
+         AND pt.payment_status IN ('pending', 'processing')`,
+        [campaign.campaign_id]
+      );
+
+      logger.info('DEV: Found pending transactions', { count: transactionsQuery.rows.length });
+
+      // 3. 全ての支払いを succeeded に更新
+      let paymentsCompleted = 0;
+      for (const tx of transactionsQuery.rows) {
+        await client.query(
+          `UPDATE payment_transactions
+           SET payment_status = 'succeeded',
+               paid_at = NOW(),
+               updated_at = NOW()
+           WHERE transaction_id = $1`,
+          [tx.transaction_id]
+        );
+        paymentsCompleted++;
+      }
+
+      // 4. 関連する purchases を completed に更新
+      const purchasesResult = await client.query(
+        `UPDATE purchases
+         SET status = 'completed', completed_at = NOW(), updated_at = NOW()
+         WHERE purchase_id IN (
+           SELECT purchase_id FROM payment_transactions pt
+           JOIN purchases pur ON pt.purchase_id = pur.purchase_id
+           JOIN positions pos ON pur.position_id = pos.position_id
+           WHERE pos.campaign_id = $1
+         ) AND status IN ('pending', 'pending_payment')
+         RETURNING purchase_id`,
+        [campaign.campaign_id]
+      );
+      const purchasesCompleted = purchasesResult.rowCount || 0;
+
+      // 5. 関連する positions を sold に更新
+      const positionsResult = await client.query(
+        `UPDATE positions
+         SET status = 'sold', updated_at = NOW()
+         WHERE campaign_id = $1 AND status = 'reserved'
+         RETURNING position_id`,
+        [campaign.campaign_id]
+      );
+      const positionsUpdated = positionsResult.rowCount || 0;
+
+      // 6. 全て売り切れたか確認し、抽選を実行
+      const availableQuery = await client.query<{ count: string }>(
+        `SELECT COUNT(*) as count FROM positions WHERE campaign_id = $1 AND status = 'available'`,
+        [campaign.campaign_id]
+      );
+      const availableCount = parseInt(availableQuery.rows[0].count, 10);
+
+      let lotteryTriggered = false;
+      const winners: Array<{ rank: number; prizeId: string; userId: string; positionId: string }> = [];
+
+      if (availableCount === 0) {
+        // 全て売り切れ → sold_out_at を更新
+        await client.query(
+          `UPDATE campaigns SET sold_out_at = NOW(), updated_at = NOW() WHERE campaign_id = $1 AND sold_out_at IS NULL`,
+          [campaign.campaign_id]
+        );
+
+        // 抽選が未実行なら実行
+        const prizesQuery = await client.query<{ prize_id: string; rank: number; winning_position_id: string | null }>(
+          `SELECT prize_id, rank, winning_position_id FROM prizes WHERE campaign_id = $1 ORDER BY rank`,
+          [campaign.campaign_id]
+        );
+
+        const undrawnPrizes = prizesQuery.rows.filter(p => p.winning_position_id === null);
+
+        if (undrawnPrizes.length > 0) {
+          lotteryTriggered = true;
+
+          // ランダムに当選者を選択
+          const soldPositionsQuery = await client.query<{ position_id: string; user_id: string }>(
+            `SELECT position_id, user_id FROM positions
+             WHERE campaign_id = $1 AND status = 'sold'
+             ORDER BY RANDOM()`,
+            [campaign.campaign_id]
+          );
+
+          const soldPositions = soldPositionsQuery.rows;
+
+          for (let i = 0; i < undrawnPrizes.length && i < soldPositions.length; i++) {
+            const prize = undrawnPrizes[i];
+            const winningPosition = soldPositions[i];
+
+            await client.query(
+              `UPDATE prizes
+               SET winning_position_id = $1,
+                   winner_user_id = $2,
+                   awarded_at = NOW(),
+                   awarded = true,
+                   updated_at = NOW()
+               WHERE prize_id = $3`,
+              [winningPosition.position_id, winningPosition.user_id, prize.prize_id]
+            );
+
+            winners.push({
+              rank: prize.rank,
+              prizeId: prize.prize_id,
+              userId: winningPosition.user_id,
+              positionId: winningPosition.position_id,
+            });
+
+            logger.info('DEV: Assigned prize', {
+              rank: prize.rank,
+              prizeId: prize.prize_id,
+              userId: winningPosition.user_id,
+            });
+          }
+        }
+      }
+
+      await client.query('COMMIT');
+
+      logger.info('DEV: Force complete payments finished', {
+        campaignId: campaign.campaign_id,
+        paymentsCompleted,
+        purchasesCompleted,
+        positionsUpdated,
+        lotteryTriggered,
+        winnersCount: winners.length,
+      });
+
+      return {
+        campaignId: campaign.campaign_id,
+        campaignName: campaign.name,
+        paymentsCompleted,
+        purchasesCompleted,
+        positionsUpdated,
+        lotteryTriggered,
+        winners,
+      };
+    } catch (error: unknown) {
+      await client.query('ROLLBACK');
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('DEV: Failed to force complete payments', { error: errorMsg });
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 export default new PaymentService();

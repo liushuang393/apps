@@ -76,6 +76,18 @@ router.post(
   paymentController.handleWebhook
 );
 
+// Dev: Force complete all pending payments for a campaign (DEVELOPMENT ONLY)
+// 目的: 開発環境で Webhook なしに支払いを強制完了させる
+// 注意点:
+//   - 本番環境では無効（NODE_ENV=production で禁止）
+//   - パスワード認証（query parameter: password=admin4321）
+//   - キャンペーン名で検索（query parameter: campaign_name）
+// 使用例: GET /api/payments/dev/force-complete?campaign_name=テスト&password=admin4321
+router.get(
+  '/dev/force-complete',
+  paymentController.devForceCompletePayments
+);
+
 // All other routes require authentication
 router.use(authenticate);
 router.use(loadUser);

@@ -405,6 +405,49 @@ export class PaymentController {
       },
     });
   });
+
+  /**
+   * Dev: Force complete all pending payments for a campaign (DEVELOPMENT ONLY)
+   * GET /api/payments/dev/force-complete
+   * 目的: 開発環境で Webhook なしに支払いを強制完了させる
+   * I/O: campaign_name + password → 全ての pending/processing 支払いを完了
+   * 注意点:
+   *   - USE_MOCK_PAYMENT=true の場合のみ使用可能（設定ファイルで制御）
+   *   - パスワード認証で簡易的なセキュリティ
+   *   - 全ての購入を completed に、position を sold に更新
+   *   - キャンペーンが全て売り切れたら抽選も実行
+   */
+  devForceCompletePayments = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    // セキュリティチェック: Mock モードでのみ使用可能
+    // 注意: このチェックは PAYMENT_CONFIG から取得（URL パラメータではない）
+    // エラーメッセージは意図的に曖昧にする（セキュリティ対策）
+    if (!PAYMENT_CONFIG.useMockPayment) {
+      throw errors.notFound('Resource');
+    }
+
+    const { campaign_name, password } = req.query as { campaign_name?: string; password?: string };
+
+    // パスワード認証（エラーメッセージは曖昧に）
+    const DEV_PASSWORD = 'admin4321';
+    if (password !== DEV_PASSWORD) {
+      throw errors.notFound('Resource');
+    }
+
+    if (!campaign_name) {
+      throw errors.badRequest('campaign_name is required');
+    }
+
+    logger.warn('DEV: Force completing payments for campaign', { campaign_name });
+
+    // 強制完了ロジックを実行
+    const result = await paymentService.devForceCompletePayments(campaign_name);
+
+    res.json({
+      success: true,
+      message: `Payments force completed for campaign: ${campaign_name}`,
+      data: result,
+    });
+  });
 }
 
 export default new PaymentController();
