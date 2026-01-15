@@ -5,6 +5,7 @@ LAMS データベースモデル
 
 import uuid
 from datetime import datetime, timezone
+from enum import Enum
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -26,6 +27,17 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class UserRole(str, Enum):
+    """
+    ユーザーロール定義
+    RBAC（Role-Based Access Control）用
+    """
+
+    ADMIN = "admin"  # 管理者：全権限
+    MODERATOR = "moderator"  # モデレーター：会議室管理
+    USER = "user"  # 一般ユーザー：基本機能のみ
+
+
 class User(Base):
     """
     ユーザーモデル
@@ -42,10 +54,49 @@ class User(Base):
     # 母語設定（翻訳先のデフォルト言語）
     native_language: Mapped[str] = mapped_column(String(10), default="ja")
 
+    # ロール（RBAC）
+    role: Mapped[str] = mapped_column(String(20), default=UserRole.USER.value)
+
+    # アカウント状態
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     # リレーション
     created_rooms: Mapped[list["Room"]] = relationship(back_populates="creator")
+
+    def has_role(self, *roles: UserRole) -> bool:
+        """指定されたロールのいずれかを持っているかチェック"""
+        return self.role in [r.value for r in roles]
+
+    @property
+    def is_admin(self) -> bool:
+        """管理者かどうか"""
+        return self.role == UserRole.ADMIN.value
+
+    @property
+    def is_moderator(self) -> bool:
+        """モデレーター以上かどうか"""
+        return self.role in [UserRole.ADMIN.value, UserRole.MODERATOR.value]
+
+
+class PasswordResetToken(Base):
+    """
+    パスワードリセットトークンモデル
+    パスワード忘れ時のリセット用トークンを管理
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    # リレーション
+    user: Mapped["User"] = relationship()
 
 
 class Room(Base):
@@ -70,6 +121,9 @@ class Room(Base):
         default="original",  # original または translated
     )
     allow_mode_switch: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # 私有/公開設定（私有会議は作成者以外一覧に表示されない）
+    is_private: Mapped[bool] = mapped_column(Boolean, default=False)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

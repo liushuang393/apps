@@ -119,8 +119,10 @@ async def websocket_room(
             await ws.close(code=4001, reason="ユーザーが見つかりません")
             return
 
-    # 接続確立
+    # 接続確立（conn_mgr.connect内でws.accept()を呼び出す）
+    logger.info(f"[WS DEBUG] Connecting user {user_id} to room {room_id}")
     await conn_mgr.connect(room_id, user_id, ws)
+    logger.info(f"[WS DEBUG] Connected, adding participant...")
 
     # 参加者として追加（デフォルト: 原声モード）
     participant = await room_manager.add_participant(
@@ -131,6 +133,8 @@ async def websocket_room(
         audio_mode=room.default_audio_mode,  # 会議室のデフォルト
         subtitle_enabled=True,
     )
+
+    logger.info(f"[WS DEBUG] Participant added: {participant}")
 
     # 入室を他の参加者に通知
     await conn_mgr.broadcast_json(
@@ -143,9 +147,11 @@ async def websocket_room(
         },
         exclude_user=user_id,
     )
+    logger.info(f"[WS DEBUG] Broadcasted user_joined")
 
     # 現在の部屋状態を送信
     participants = await room_manager.get_participants(room_id)
+    logger.info(f"[WS DEBUG] Got participants: {len(participants)}")
     await ws.send_json(
         {
             "type": "room_state",
@@ -168,6 +174,7 @@ async def websocket_room(
             "your_preference": asdict(participant),
         }
     )
+    logger.info(f"[WS DEBUG] Sent room_state, entering message loop...")
 
     try:
         while True:
@@ -253,6 +260,10 @@ async def websocket_room(
             elif "bytes" in data:
                 # 音声データ処理
                 audio_bytes = data["bytes"]
+                if not audio_bytes or len(audio_bytes) < 44:
+                    # 空または無効な音声データはスキップ
+                    continue
+
                 current_participant = await room_manager.get_participant(
                     room_id, user_id
                 )
@@ -261,6 +272,12 @@ async def websocket_room(
 
                 speaker_lang = current_participant.native_language
                 all_participants = await room_manager.get_participants(room_id)
+
+                # 翻訳結果キャッシュ（同じ言語ペアは1回だけ処理）
+                # key: target_lang, value: TranslationResult
+                translation_cache: dict = {}
+                # 原文ASR結果（1回だけ取得）
+                original_asr_result = None
 
                 # 各参加者の設定に基づいて配信
                 for p in all_participants.values():
@@ -275,17 +292,18 @@ async def websocket_room(
 
                         # 字幕が有効な場合は原文テキストを送信
                         if p.subtitle_enabled:
-                            # ASRで原文を取得（キャッシュ活用）
-                            result = await ai_pipeline.process_audio(
-                                audio_bytes, speaker_lang, speaker_lang, user_id
-                            )
+                            # ASRで原文を取得（1回だけ実行）
+                            if original_asr_result is None:
+                                original_asr_result = await ai_pipeline.process_audio(
+                                    audio_bytes, speaker_lang, speaker_lang, user_id
+                                )
                             await conn_mgr.send_to_user(
                                 room_id,
                                 p.user_id,
                                 {
                                     "type": "subtitle",
                                     "speaker_id": user_id,
-                                    "text": result.original_text,
+                                    "text": original_asr_result.original_text,
                                     "language": speaker_lang,
                                     "is_translated": False,
                                 },
@@ -301,25 +319,30 @@ async def websocket_room(
                                 room_id, p.user_id, audio_bytes
                             )
                             if p.subtitle_enabled:
-                                result = await ai_pipeline.process_audio(
-                                    audio_bytes, speaker_lang, speaker_lang, user_id
-                                )
+                                if original_asr_result is None:
+                                    original_asr_result = await ai_pipeline.process_audio(
+                                        audio_bytes, speaker_lang, speaker_lang, user_id
+                                    )
                                 await conn_mgr.send_to_user(
                                     room_id,
                                     p.user_id,
                                     {
                                         "type": "subtitle",
                                         "speaker_id": user_id,
-                                        "text": result.original_text,
+                                        "text": original_asr_result.original_text,
                                         "language": speaker_lang,
                                         "is_translated": False,
                                     },
                                 )
                         else:
-                            # 翻訳処理
-                            result = await ai_pipeline.process_audio(
-                                audio_bytes, speaker_lang, target_lang, user_id
-                            )
+                            # 翻訳処理（同じ言語ペアはキャッシュ再利用）
+                            if target_lang in translation_cache:
+                                result = translation_cache[target_lang]
+                            else:
+                                result = await ai_pipeline.process_audio(
+                                    audio_bytes, speaker_lang, target_lang, user_id
+                                )
+                                translation_cache[target_lang] = result
 
                             # QoS劣化時は字幕フォールバック
                             if result.metrics.should_fallback_to_subtitle:

@@ -16,11 +16,12 @@ dependencies = [
     # Database
     "sqlalchemy==2.0.36",
     "asyncpg==0.30.0",
+    "alembic==1.14.0",
     # Cache
     "redis==5.2.1",
     # Authentication
     "python-jose[cryptography]==3.3.0",
-    "passlib[bcrypt]==1.7.4",
+    "bcrypt>=4.0.0",
     # AI Providers
     "google-genai==1.0.0",
     "openai==2.12.0",

@@ -119,7 +119,10 @@ class Settings(BaseSettings):
     # Gemini API 設定（secrets.jsonからも取得可能）
     gemini_api_key: str | None = None
     gemini_base_url: str | None = None  # カスタムエンドポイント（オプション）
+    # Live API用モデル（WebSocketストリーミング）
     gemini_model: str = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+    # generateContent API用モデル（ASR/翻訳）
+    gemini_text_model: str = "models/gemini-2.5-flash"
 
     # OpenAI Realtime API 設定（secrets.jsonからも取得可能）
     openai_api_key: str | None = None
@@ -136,8 +139,24 @@ class Settings(BaseSettings):
 
     # ===========================================
     # CORS設定
+    # 環境変数 HOST_IP で自動設定、または CORS_ORIGINS で直接指定
     # ===========================================
+    host_ip: str = "localhost"
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    def get_cors_origins(self) -> list[str]:
+        """
+        CORS許可オリジンを取得
+        HOST_IP から自動生成、または cors_origins を使用
+        """
+        origins = set(self.cors_origins)
+        # HOST_IP が設定されていれば追加
+        if self.host_ip and self.host_ip != "localhost":
+            origins.add(f"http://{self.host_ip}:5173")
+        # localhost系は常に含める
+        origins.add("http://localhost:5173")
+        origins.add("http://127.0.0.1:5173")
+        return list(origins)
 
     # ===========================================
     # 環境設定

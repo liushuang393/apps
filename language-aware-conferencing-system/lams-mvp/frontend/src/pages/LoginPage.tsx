@@ -4,10 +4,13 @@
  */
 import { useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { authApi } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { LANGUAGE_DISPLAY_NAMES, SUPPORTED_LANGUAGES, type UILanguage } from '../i18n';
 
 export function LoginPage() {
+  const { t, i18n } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -24,9 +27,9 @@ export function LoginPage() {
     try {
       const res = await authApi.login(email, password);
       setAuth(res.access_token, res.user);
-      navigate('/rooms');
+      navigate('/menu');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'ログインに失敗しました');
+      setError(err instanceof Error ? err.message : t('auth.loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -34,15 +37,30 @@ export function LoginPage() {
 
   return (
     <div className="auth-page">
+      {/* 言語切替 */}
+      <div className="auth-language-selector">
+        <select
+          value={i18n.language}
+          onChange={(e) => i18n.changeLanguage(e.target.value as UILanguage)}
+        >
+          {SUPPORTED_LANGUAGES.map((lang) => (
+            <option key={lang} value={lang}>
+              {LANGUAGE_DISPLAY_NAMES[lang]}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <form onSubmit={handleSubmit}>
-        <h1>🌐 LAMS</h1>
-        <p className="subtitle">言語対応会議システム</p>
+        <h1>🌐 {t('app.title')}</h1>
+        <p className="subtitle">{t('app.subtitle')}</p>
 
         {error && <div className="error">{error}</div>}
 
         <div className="form-group">
-          <label>メールアドレス</label>
+          <label htmlFor="login-email">{t('auth.email')}</label>
           <input
+            id="login-email"
             type="email"
             placeholder="your@email.com"
             value={email}
@@ -52,8 +70,9 @@ export function LoginPage() {
         </div>
 
         <div className="form-group">
-          <label>パスワード</label>
+          <label htmlFor="login-password">{t('auth.password')}</label>
           <input
+            id="login-password"
             type="password"
             placeholder="••••••••"
             value={password}
@@ -63,12 +82,16 @@ export function LoginPage() {
         </div>
 
         <button type="submit" disabled={loading}>
-          {loading ? 'ログイン中...' : 'ログイン'}
+          {loading ? t('auth.loggingIn') : t('auth.loginButton')}
         </button>
+
+        <p className="forgot-password-link">
+          <Link to="/forgot-password">{t('auth.forgotPassword')}</Link>
+        </p>
       </form>
 
       <p>
-        アカウントがない場合は <Link to="/register">新規登録</Link>
+        {t('auth.noAccount')} <Link to="/register">{t('auth.register')}</Link>
       </p>
     </div>
   );

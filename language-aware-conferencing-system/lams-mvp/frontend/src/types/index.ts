@@ -8,12 +8,17 @@ export type SupportedLanguage = 'ja' | 'en' | 'zh' | 'vi';
 /** 音声モード: 原声 or 翻訳 */
 export type AudioMode = 'original' | 'translated';
 
+/** ユーザーロール */
+export type UserRole = 'admin' | 'moderator' | 'user';
+
 /** ユーザー情報 */
 export interface User {
   id: string;
   email: string;
   displayName: string;
   nativeLanguage: SupportedLanguage;
+  role: UserRole;
+  isActive: boolean;
 }
 
 /** 参加者設定 */
@@ -42,6 +47,7 @@ export interface Room {
   allowedLanguages: SupportedLanguage[];
   defaultAudioMode: AudioMode;
   allowModeSwitch: boolean;
+  isPrivate: boolean;  // 私有会議（作成者以外は一覧に非表示・入室不可）
   isActive: boolean;
   participantCount: number;
 }

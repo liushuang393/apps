@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <!-- 背景グラデーション -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#5046e5"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
+    </linearGradient>
+    <!-- 地球グラデーション -->
+    <linearGradient id="globeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- 背景円 -->
+  <circle cx="32" cy="32" r="30" fill="url(#bgGrad)"/>
+  
+  <!-- 地球アイコン -->
+  <circle cx="26" cy="28" r="14" fill="url(#globeGrad)" opacity="0.9"/>
+  
+  <!-- 地球の経線 -->
+  <ellipse cx="26" cy="28" rx="5" ry="14" fill="none" stroke="#fff" stroke-width="1.5" opacity="0.6"/>
+  <line x1="12" y1="28" x2="40" y2="28" stroke="#fff" stroke-width="1.5" opacity="0.6"/>
+  
+  <!-- 音声波（3本） -->
+  <path d="M42 22 Q46 28 42 34" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M47 18 Q53 28 47 38" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+  <path d="M52 14 Q60 28 52 42" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
+  
+  <!-- 吹き出しアクセント -->
+  <circle cx="44" cy="44" r="8" fill="#fff" opacity="0.15"/>
+</svg>
+

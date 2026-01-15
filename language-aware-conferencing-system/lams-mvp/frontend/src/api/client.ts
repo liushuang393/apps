@@ -4,7 +4,10 @@
 import { useAuthStore } from '../store/authStore';
 import type { Room, User, SupportedLanguage, AudioMode } from '../types';
 
-const API_BASE = '/api';
+// 環境変数からAPI URLを取得、未設定の場合は相対パス（proxy経由）
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api';
 
 /** バックエンドのRoom応答型（snake_case） */
 interface RoomApiResponse {
@@ -15,6 +18,7 @@ interface RoomApiResponse {
   allowed_languages: string[];
   default_audio_mode: string;
   allow_mode_switch: boolean;
+  is_private: boolean;
   is_active: boolean;
   participant_count: number;
 }
@@ -29,6 +33,7 @@ function convertRoom(r: RoomApiResponse): Room {
     allowedLanguages: r.allowed_languages as SupportedLanguage[],
     defaultAudioMode: r.default_audio_mode as AudioMode,
     allowModeSwitch: r.allow_mode_switch,
+    isPrivate: r.is_private,
     isActive: r.is_active,
     participantCount: r.participant_count,
   };
@@ -40,6 +45,8 @@ interface UserApiResponse {
   email: string;
   display_name: string;
   native_language: string;
+  role: string;
+  is_active: boolean;
 }
 
 /** User snake_case → camelCase 変換 */
@@ -49,6 +56,8 @@ function convertUser(u: UserApiResponse): User {
     email: u.email,
     displayName: u.display_name,
     nativeLanguage: u.native_language as SupportedLanguage,
+    role: (u.role || 'user') as User['role'],
+    isActive: u.is_active ?? true,
   };
 }
 
@@ -132,6 +141,22 @@ export const authApi = {
     const res = await apiFetch<UserApiResponse>('/auth/me');
     return convertUser(res);
   },
+
+  /** パスワードリセットリクエスト */
+  requestPasswordReset: async (email: string): Promise<{ message: string; reset_token?: string }> => {
+    return apiFetch('/auth/password-reset/request', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  /** パスワードリセット確認 */
+  confirmPasswordReset: async (token: string, newPassword: string): Promise<{ message: string }> => {
+    return apiFetch('/auth/password-reset/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+  },
 };
 
 /** 会議室API */
@@ -158,6 +183,7 @@ export const roomApi = {
     allowedLanguages?: string[];
     defaultAudioMode?: string;
     allowModeSwitch?: boolean;
+    isPrivate?: boolean;
   }): Promise<Room> => {
     const res = await apiFetch<RoomApiResponse>('/rooms', {
       method: 'POST',
@@ -167,6 +193,7 @@ export const roomApi = {
         allowed_languages: data.allowedLanguages,
         default_audio_mode: data.defaultAudioMode,
         allow_mode_switch: data.allowModeSwitch,
+        is_private: data.isPrivate,
       }),
     });
     return convertRoom(res);

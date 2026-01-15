@@ -1,3 +1,4 @@
+
 # LAMS - 言語感知型会議システム
 
 <p align="center">
@@ -213,11 +214,11 @@ LAMSは**翻訳ツールではありません**。社内の多言語会議にお
 ```bash
 # 必須
 - Docker & Docker Compose
-- Node.js 18+
+- Node.js 20+
 - Python 3.10+
 
 # オプション（ローカル開発用）
-- PostgreSQL 15+
+- PostgreSQL 16+
 - Redis 7+
 ```
 
@@ -245,55 +246,99 @@ GEMINI_API_KEY=your-gemini-api-key
 cd lams-mvp
 
 # コンテナをビルド・起動
-docker-compose up --build
+docker compose up --build
 
 
 # バックグラウンド実行
-docker-compose up -d --build
+docker compose up -d --build
+# 局域网访问
+HOST_IP=192.168.210.2 docker-compose up -d --build frontend backend
 
 # ログ確認
-docker-compose logs -f backend
+docker compose logs -f backend
 ```
 
 #### ローカル開発環境
 
 前提：Condaのインストールが必要です。
-conda create -n aienv python=3.10　#一回のみ
-# 1. PostgreSQL と Redis を起動
-cd lams-mvp
-docker-compose up postgres redis -d
 
-# 2. 起動確認
-docker-compose ps
+```bash
+# 1. Conda環境を作成（初回のみ）
+conda create -n aienv python=3.10 -y
+conda activate aienv
+
+# 2. PostgreSQL と Redis を起動
+cd lams-mvp
+docker compose up postgres redis -d
+docker compose ps  # 起動確認
 
 # 3. バックエンド起動
 cd backend
-uvicorn app.main:app --reload --port 8000
-```bash
-# 1. バックエンド
-cd backend
-conda activate aienv
-pip install -r requirements.txt
+pip install .  # Python依存ライブラリをインストール
 uvicorn app.main:app --reload --port 8000
 
-# 2. フロントエンド（別ターミナル）
-cd lams-mvp
-cd frontend
+# 4. フロントエンド（別ターミナル）
+cd lams-mvp/frontend
 npm install
 npm run dev
-
-# 3. データベース（Docker利用）
-docker-compose up postgres redis -d
+または
+npm run dev -- --host 0.0.0.0
 ```
 
 ### アクセスURL
 
 | サービス | URL | 説明 |
 |---------|-----|------|
-| フロントエンド | http://localhost:5173 | 開発サーバー |
+| フロントエンド | http://localhost:5173 開発サーバー |
 | バックエンドAPI | http://localhost:8000 | FastAPI |
 | API ドキュメント | http://localhost:8000/docs | Swagger UI |
 | 本番（Docker） | http://localhost | Nginx経由 |
+
+---
+
+### 📦 データベースマイグレーション
+
+本プロジェクトは **Alembic** を使用してDBスキーマを管理しています。
+
+#### マイグレーション適用
+
+```bash
+# 開発環境（Docker内で実行）
+docker compose exec backend alembic upgrade head
+
+# 本番環境（環境変数でDB接続先を指定）
+DATABASE_URL=postgresql://user:pass@host:5432/dbname alembic upgrade head
+```
+
+#### マイグレーション作成（モデル変更後）
+
+```bash
+# モデル（backend/app/db/models.py）を変更後
+docker compose exec backend alembic revision --autogenerate -m "変更内容の説明"
+
+# 生成されたファイルを確認・編集
+# backend/alembic/versions/xxxx_変更内容の説明.py
+```
+
+#### ロールバック
+
+```bash
+# 1つ前のバージョンに戻す
+docker compose exec backend alembic downgrade -1
+
+# 特定バージョンに戻す
+docker compose exec backend alembic downgrade <revision_id>
+```
+
+#### 状態確認
+
+```bash
+# 現在のバージョン確認
+docker compose exec backend alembic current
+
+# マイグレーション履歴
+docker compose exec backend alembic history
+```
 
 ---
 スクリプトを作成し、全ての静的解析エラーを修正しました。
@@ -370,7 +415,7 @@ lams-mvp/
 │   └── package.json
 ├── nginx/
 │   └── nginx.conf          # リバースプロキシ設定
-├── docker-compose.yml
+├── docker compose.yml
 └── README.md
 ```
 
@@ -413,7 +458,7 @@ lams-mvp/
 軽度劣化（1200ms < 遅延 < 1800ms）
 ┌─────────────────────┐
 │  翻訳音声 + 字幕     │
-│  ⚠️ 遅延警告表示     │
+│  ⚠️ 遅延警告表示    │
 └─────────────────────┘
 
 中度劣化（1800ms < 遅延 < 2400ms）
@@ -425,7 +470,7 @@ lams-mvp/
 重度劣化（遅延 > 2400ms）
 ┌─────────────────────┐
 │  原声 + 翻訳字幕     │
-│  🔴 品質低下警告     │
+│  🔴 品質低下警告    │
 └─────────────────────┘
 ```
 
@@ -469,6 +514,241 @@ lams-mvp/
 { type: "user_left", user_id: "..." }
 { type: "subtitle", text: "...", language: "ja", is_translated: false }
 { type: "qos_warning", level: "moderate", message: "..." }
+```
+
+---
+
+## 🌐 LAN内公開設定（Windows + WSL + Docker環境）
+
+WSL2 + Docker環境で開発サーバーを社内LANに公開する方法です。
+
+### ネットワーク構成図
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  社内LAN（例: 192.168.210.0/24）                                 │
+│                                                                   │
+│  ┌─────────────────┐      ┌─────────────────────────────────┐   │
+│  │ 他のPC          │      │ 開発PC（Windows）                │   │
+│  │ 192.168.210.x   │ ──── │ 192.168.210.2                    │   │
+│  │                 │      │   │                              │   │
+│  │ ブラウザで      │      │   │ ポート転送                   │   │
+│  │ アクセス        │      │   ▼                              │   │
+│  └─────────────────┘      │ ┌─────────────────────────────┐ │   │
+│                           │ │ WSL2（172.19.x.x）           │ │   │
+│                           │ │   │                          │ │   │
+│                           │ │   ▼                          │ │   │
+│                           │ │ ┌─────────────────────────┐ │ │   │
+│                           │ │ │ Docker Containers       │ │ │   │
+│                           │ │ │ ├─ frontend:5173        │ │ │   │
+│                           │ │ │ ├─ backend:8000         │ │ │   │
+│                           │ │ │ ├─ postgres:5432        │ │ │   │
+│                           │ │ │ └─ redis:6379           │ │ │   │
+│                           │ │ └─────────────────────────┘ │ │   │
+│                           │ └─────────────────────────────┘ │   │
+│                           └─────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### IPアドレスの種類
+
+| 種類 | 例 | 用途 |
+|------|-----|------|
+| **Windows LAN IP** | `192.168.210.2` | 社内の他PCからアクセスする際に使用 |
+| **WSL内部IP** | `172.19.197.130` | Windows↔WSL間の通信（外部からはアクセス不可） |
+| **Docker内部IP** | `172.19.0.x` | コンテナ間通信のみ |
+
+### セットアップ手順
+
+#### 1. WindowsのLAN IPアドレスを確認
+
+Windows PowerShellで実行：
+
+```powershell
+ipconfig
+```
+
+「イーサネット アダプター」または「Wi-Fi」の `IPv4 アドレス`（例：`192.168.210.2`）を確認します。
+
+#### 2. WSLのIPアドレスを確認
+
+Windows PowerShellまたはWSLで実行：
+
+```bash
+wsl hostname -I
+```
+
+WSLのIPアドレス（例：`172.19.197.130`）を確認します。
+
+#### 3. ポート転送の設定（初回のみ）
+
+**Windows PowerShell（管理者権限）** で実行：
+
+```powershell
+# WSLのIPを取得
+$wslIp = (wsl hostname -I).Trim().Split(' ')[0]
+Write-Host "WSL IP: $wslIp"
+
+# フロントエンド（5173）のポート転送
+netsh interface portproxy add v4tov4 listenport=5173 listenaddress=0.0.0.0 connectport=5173 connectaddress=$wslIp
+
+# バックエンド（8000）のポート転送
+netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=$wslIp
+
+# 設定確認
+netsh interface portproxy show all
+```
+
+#### 4. Windowsファイアウォールの設定（初回のみ）
+
+**Windows PowerShell（管理者権限）** で実行：
+
+```powershell
+New-NetFirewallRule -DisplayName "LAMS Frontend 5173" -Direction Inbound -LocalPort 5173 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "LAMS Backend 8000" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
+```
+
+#### 5. Docker Composeの起動
+
+**重要**: `HOST_IP` には **WindowsのLAN IP**（社内からアクセスするIP）を指定します。
+
+WSLで実行：
+
+```bash
+# WindowsのLAN IPを指定して起動
+HOST_IP=192.168.210.2 docker compose up -d --build frontend backend
+
+# または全サービス起動
+HOST_IP=192.168.210.2 docker compose up -d --build
+```
+
+### アクセス方法
+
+| アクセス元 | フロントエンド | バックエンドAPI |
+|-----------|---------------|----------------|
+| 開発PC（localhost） | http://localhost:5173 | http://localhost:8000 |
+| 社内の他PC | http://192.168.210.2:5173 | http://192.168.210.2:8000 |
+
+---
+
+### 🔧 トラブルシューティング
+
+#### 問題1: 社内の他PCからアクセスできない
+
+**確認手順:**
+
+```powershell
+# 1. ポート転送が設定されているか確認
+netsh interface portproxy show all
+
+# 2. WSLのIPが変わっていないか確認
+wsl hostname -I
+
+# 3. ファイアウォールルールが有効か確認
+Get-NetFirewallRule -DisplayName "LAMS*" | Select-Object DisplayName, Enabled
+```
+
+**解決方法:**
+
+```powershell
+# ポート転送をリセット
+netsh interface portproxy reset
+
+# 新しいWSL IPで再設定
+$wslIp = (wsl hostname -I).Trim().Split(' ')[0]
+netsh interface portproxy add v4tov4 listenport=5173 listenaddress=0.0.0.0 connectport=5173 connectaddress=$wslIp
+netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=$wslIp
+```
+
+#### 問題2: ログインはできるがWebSocket接続が切断される
+
+**原因**: フロントエンドの環境変数（`VITE_API_URL`, `VITE_WS_URL`）が正しく設定されていない
+
+**確認手順:**
+
+```bash
+# フロントエンドの環境変数を確認
+docker logs lams-mvp-frontend-1 2>&1 | grep "Vite Config"
+
+# 期待される出力:
+# [Vite Config] API URL: http://192.168.210.2:8000
+# [Vite Config] WS URL: ws://192.168.210.2:8000
+```
+
+**解決方法:**
+
+```bash
+# HOST_IPを指定してフロントエンドを再起動
+HOST_IP=192.168.210.2 docker compose up -d --build frontend
+```
+
+#### 問題3: APIリクエストが 5173 ポートに送られる
+
+**原因**: `VITE_API_URL` が設定されていないため、相対パス `/api` が使用されている
+
+**確認方法**: ブラウザの開発者ツール(F12) → Network → APIリクエストのURLを確認
+
+**解決方法**: 上記「問題2」と同じ
+
+#### 問題4: マイクが使用できない（音声デバイスエラー）
+
+**原因**: ブラウザのセキュリティ制限。`getUserMedia` APIはHTTPSまたはlocalhostでのみ動作します。
+
+**解決方法（Chrome）:**
+
+1. アドレスバーに入力:
+   ```
+   chrome://flags/#unsafely-treat-insecure-origin-as-secure
+   ```
+
+2. 「Insecure origins treated as secure」に以下を追加:
+   ```
+   http://192.168.210.2:5173
+   ```
+
+3. 右側のドロップダウンで「Enabled」を選択
+
+4. 画面下部の「Relaunch」をクリックしてChromeを再起動
+
+5. `http://192.168.210.2:5173` に再アクセス
+
+**注意**: 会議に参加する全員が自分のブラウザでこの設定を行う必要があります。
+
+**解決方法（Edge）:**
+
+1. アドレスバーに入力:
+   ```
+   edge://flags/#unsafely-treat-insecure-origin-as-secure
+   ```
+
+2. 以降はChromeと同じ手順
+
+#### 問題5: WSL再起動後にアクセスできなくなった
+
+**原因**: WSLのIPアドレスは再起動で変わることがあります
+
+**解決方法:**
+
+```powershell
+# Windows PowerShell（管理者権限）で実行
+
+# 1. 現在のWSL IPを確認
+$wslIp = (wsl hostname -I).Trim().Split(' ')[0]
+Write-Host "新しいWSL IP: $wslIp"
+
+# 2. ポート転送をリセットして再設定
+netsh interface portproxy reset
+netsh interface portproxy add v4tov4 listenport=5173 listenaddress=0.0.0.0 connectport=5173 connectaddress=$wslIp
+netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=$wslIp
+
+# 3. 設定確認
+netsh interface portproxy show all
+```
+
+その後、WSLでDockerを再起動:
+
+```bash
+HOST_IP=192.168.210.2 docker compose up -d --build frontend backend
 ```
 
 ---

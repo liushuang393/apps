@@ -1,0 +1,37 @@
+# LAMS データベースマイグレーション
+
+## 概要
+このディレクトリには Alembic を使用したデータベースマイグレーションファイルが格納されています。
+
+## 使用方法
+
+### マイグレーション適用
+```bash
+# 開発環境（Docker内）
+docker compose exec backend alembic upgrade head
+
+# 本番環境
+DATABASE_URL=postgresql://... alembic upgrade head
+```
+
+### マイグレーション作成
+```bash
+# モデル変更後に自動生成
+docker compose exec backend alembic revision --autogenerate -m "説明"
+```
+
+### ロールバック
+```bash
+# 1つ前に戻す
+docker compose exec backend alembic downgrade -1
+
+# 特定バージョンに戻す
+docker compose exec backend alembic downgrade <revision_id>
+```
+
+### 状態確認
+```bash
+docker compose exec backend alembic current
+docker compose exec backend alembic history
+```
+

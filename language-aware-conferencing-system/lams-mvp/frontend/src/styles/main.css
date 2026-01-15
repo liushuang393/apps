@@ -4,28 +4,33 @@
  */
 
 /* カスタムプロパティ（CSS変数） */
-/* 日本B2B製品向け：低飽和で落ち着いた紫色 */
+/* 日本B2B製品向け：低飽和で落ち着いた紫色・高コントラスト配色 */
 :root {
-  --primary-color: #6366a8;
-  --primary-hover: #5558a0;
-  --primary-light: #f0f1f8;
-  --secondary-color: #8b7eb8;
-  --success-color: #10b981;
-  --warning-color: #f59e0b;
-  --danger-color: #ef4444;
-  --gradient-primary: linear-gradient(135deg, #7c8cc5 0%, #9080b8 100%);
-  --gradient-dark: linear-gradient(135deg, #1e3a5f 0%, #2d1b4e 100%);
-  --bg-light: #f8fafc;
+  /* プライマリカラー：やや濃い青紫で視認性向上 */
+  --primary-color: #5046e5;
+  --primary-hover: #4338ca;
+  --primary-light: #e8e6fc;
+  --secondary-color: #7c3aed;
+  --success-color: #059669;
+  --warning-color: #d97706;
+  --danger-color: #dc2626;
+  /* ボタン用グラデーション：視認性向上のため濃い色に */
+  --gradient-primary: linear-gradient(135deg, #5046e5 0%, #7c3aed 100%);
+  /* 全画面統一背景：深い青紫グラデーション */
+  --gradient-dark: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+  /* ライト背景：淡い青紫系で統一感 */
+  --bg-light: #f5f3ff;
   --bg-white: #ffffff;
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --text-light: #94a3b8;
-  --border-color: #e2e8f0;
+  /* テキストカラー：コントラスト強化 */
+  --text-primary: #1e1b4b;
+  --text-secondary: #4c4f69;
+  --text-light: #6b7280;
+  --border-color: #d1d5db;
   --border-divider: #e5e7eb;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
@@ -215,12 +220,123 @@ button.btn-sm {
   text-decoration: underline;
 }
 
+/* 認証ページの言語切替 */
+.auth-language-selector {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 10;
+}
+
+.auth-language-selector select {
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-md);
+  color: #f8fafc;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.auth-language-selector select:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.auth-language-selector select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.auth-language-selector select option {
+  background: #1e1b4b;
+  color: #f8fafc;
+}
+
+/* パスワードリセット関連スタイル */
+.forgot-password-link {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  text-align: right;
+}
+
+.forgot-password-link a {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.forgot-password-link a:hover {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+
+.success-message {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.success-message p {
+  color: #22c55e;
+  margin: 0.5rem 0;
+}
+
+.token-display {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.token-display p {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+}
+
+.reset-token {
+  display: block;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  font-family: monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+  color: #60a5fa;
+  margin: 0.5rem 0;
+}
+
+.token-hint {
+  color: rgba(255, 255, 255, 0.5) !important;
+  font-size: 0.8rem !important;
+  font-style: italic;
+}
+
+.btn-link {
+  display: inline-block;
+  background: var(--primary-color);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  margin-top: 1rem;
+  transition: background 0.2s ease;
+}
+
+.btn-link:hover {
+  background: #2563eb;
+}
+
 /* 会議室一覧 */
 .room-list-page {
   max-width: 1400px;
   margin: 0 auto;
   padding: 2rem;
   min-height: 100vh;
+  background: var(--gradient-dark);
 }
 
 .room-list-page header {
@@ -229,18 +345,17 @@ button.btn-sm {
   align-items: center;
   margin-bottom: 2.5rem;
   padding: 1.5rem 2rem;
-  background: var(--bg-white);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .room-list-page header h1 {
   font-size: 1.75rem;
   font-weight: 700;
-  background: var(--gradient-primary);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: white;
 }
 
 .user-info {
@@ -265,7 +380,7 @@ button.btn-sm {
 
 .user-info .user-name {
   padding: 0.4rem 0.8rem;
-  background: var(--primary-light);
+  background: rgba(255, 255, 255, 0.9);
   border-radius: var(--radius-md);
   font-weight: 500;
   font-size: 0.9rem;
@@ -275,9 +390,9 @@ button.btn-sm {
 .user-info button {
   width: auto;
   padding: 0.5rem 1.25rem;
-  background: transparent;
-  color: var(--text-secondary);
-  border: 2px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.3);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.35);
   box-shadow: none;
 }
 
@@ -327,16 +442,26 @@ button.btn-sm {
 }
 
 .create-form input,
-.create-form select {
+.create-form select,
+.create-form textarea {
+  width: 100%;
   padding: 0.875rem 1rem;
   border: 2px solid var(--border-color);
   border-radius: var(--radius-md);
   font-size: 1rem;
   transition: all 0.2s ease;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.create-form textarea {
+  resize: vertical;
+  min-height: 60px;
 }
 
 .create-form input:focus,
-.create-form select:focus {
+.create-form select:focus,
+.create-form textarea:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
@@ -483,23 +608,104 @@ button.btn-sm {
 
 .room-card .language-tag {
   padding: 0.25rem 0.5rem;
-  background: var(--bg-light);
+  background: #e0e7ff;
   border-radius: var(--radius-sm);
   font-size: 0.75rem;
-  color: var(--text-secondary);
-  font-weight: 500;
+  color: #3730a3;
+  font-weight: 600;
+}
+
+/* 私有会議カードスタイル */
+.room-card--private {
+  border-left: 4px solid #9ca3af;
+}
+
+.room-card--private::before {
+  background: linear-gradient(135deg, #6b7280 0%, #9ca3af 100%);
+}
+
+/* 会議カードバッジ */
+.room-card-badge {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+/* 公開会議バッジ（企業向けブルー） */
+.badge--public {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+/* 私有会議バッジ（控えめなグレー） */
+.badge--private {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+}
+
+/* 参加者数のアイコン重複除去（JSで👥を追加したため） */
+.room-card .participant-count::before {
+  content: none;
+}
+
+/* 私有会議説明 */
+.private-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-radius: var(--radius-md);
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+  color: #4b5563;
+  border-left: 3px solid #9ca3af;
+}
+
+/* 私有設定トグルグループ - 双方向切替式 */
+.private-toggle {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-color);
+  justify-content: center;
+}
+
+/* トグル左右のラベル */
+.toggle-label {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  transition: color 0.2s ease, font-weight 0.2s ease;
+  min-width: 4rem;
+}
+
+.toggle-label--active {
+  color: var(--primary-color);
+  font-weight: 600;
 }
 
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
-  background: var(--bg-white);
+  background: rgba(255, 255, 255, 0.95);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
 }
 
 .empty-state p {
-  color: var(--text-secondary);
+  color: #374151;
   font-size: 1.1rem;
   margin-bottom: 1.5rem;
 }
@@ -516,7 +722,7 @@ button.btn-sm {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 2rem;
+  padding: 0.75rem 1.5rem;
   background: var(--gradient-dark);
   color: white;
   box-shadow: var(--shadow-lg);
@@ -525,17 +731,73 @@ button.btn-sm {
 .room-page header h1 {
   font-size: 1.25rem;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
-.room-page header button {
+/* ヘッダー右側エリア */
+.room-page header .header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* ヘッダーデバイス選択コンテナ */
+.header-devices {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 個別デバイス選択 */
+.device-select {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.device-select .device-icon {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.device-select select {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  min-width: 140px;
+  max-width: 200px;
+  outline: none;
+}
+
+.device-select select:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+.device-select select option {
+  background: #1e293b;
+  color: white;
+  padding: 0.5rem;
+}
+
+/* 退室ボタン */
+.room-page header .leave-btn {
   width: auto;
-  padding: 0.5rem 1.25rem;
-  background: rgba(255, 255, 255, 0.15);
+  padding: 0.4rem 1rem;
+  background: rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.85rem;
 }
 
-.room-page header button:hover {
+.room-page header .leave-btn:hover {
   background: var(--danger-color);
   border-color: var(--danger-color);
 }
@@ -543,7 +805,73 @@ button.btn-sm {
 .connection-status {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+.connection-status .connected,
+.connection-status .connecting,
+.connection-status .reconnecting,
+.connection-status .disconnected {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.connection-status .connected::before,
+.connection-status .connecting::before,
+.connection-status .reconnecting::before,
+.connection-status .disconnected::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-status .connected {
+  color: #00ff88;
+}
+
+.connection-status .connected::before {
+  background: #00ff88;
+  animation: pulse 2s infinite;
+}
+
+.connection-status .connecting {
+  color: #87ceeb;
+}
+
+.connection-status .connecting::before {
+  background: #87ceeb;
+  animation: pulse 1.5s infinite;
+}
+
+.connection-status .reconnecting {
+  color: #ffa500;
+}
+
+.connection-status .reconnecting::before {
+  background: #ffa500;
+  animation: blink 1s infinite;
+}
+
+.connection-status .disconnected {
+  color: #ff6b6b;
+}
+
+.connection-status .disconnected::before {
+  background: #ff6b6b;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .room-content {
@@ -568,6 +896,73 @@ button.btn-sm {
   background: var(--bg-light);
 }
 
+/* 音声状態バー（下部・コンパクト） */
+.audio-status-bar {
+  flex-shrink: 0;
+  padding: 0.75rem 1.25rem;
+  background: var(--gradient-dark);
+  border-radius: var(--radius-lg);
+  color: white;
+  font-size: 0.9rem;
+}
+
+.audio-active-compact {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.audio-inactive-compact {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.mic-status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mic-status.on {
+  color: #00ff88;
+}
+
+.mic-status.off {
+  color: #94a3b8;
+}
+
+.volume-bar-compact {
+  flex: 0 0 100px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.volume-bar-compact .volume-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00ff88, #34d399);
+  border-radius: 3px;
+  transition: width 0.1s ease;
+}
+
+.volume-text {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 36px;
+}
+
+.waveform-compact {
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.hint-compact {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* 旧audio-area（互換性のため残す） */
 .audio-area {
   flex: 1;
   display: flex;
@@ -873,17 +1268,18 @@ button.btn-sm {
   margin-bottom: 0;
 }
 
-/* 字幕表示 */
+/* 字幕表示（上部・大きく） */
 .subtitle-display {
-  margin-top: auto;
+  flex: 1;
   padding: 1.25rem;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
   color: white;
   border-radius: var(--radius-lg);
-  max-height: 220px;
   overflow-y: auto;
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 1rem;
+  min-height: 200px;
 }
 
 .subtitle-display h4 {
@@ -891,20 +1287,43 @@ button.btn-sm {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 0.75rem;
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 1) 0%, rgba(15, 23, 42, 0.9) 100%);
+  padding: 0.5rem 0;
+  margin: -0.5rem 0 0.75rem 0;
 }
 
 .subtitle-item {
   margin-bottom: 0.75rem;
-  padding: 0.625rem;
+  padding: 0.75rem 1rem;
   background: rgba(255, 255, 255, 0.05);
   border-radius: var(--radius-sm);
+  line-height: 1.6;
+}
+
+.subtitle-item:last-child {
+  margin-bottom: 0;
 }
 
 .speaker-name {
-  font-weight: 600;
-  margin-right: 0.5rem;
+  font-weight: 700;
+  margin-right: 0.75rem;
   color: #a5b4fc;
+}
+
+/* 自分の発言のスタイル */
+.subtitle-item.my-message {
+  background: rgba(80, 70, 229, 0.15);
+  border-left: 3px solid var(--primary-color);
+}
+
+.subtitle-item.my-message .speaker-name {
+  color: #c4b5fd;
+}
+
+.subtitle-text {
+  color: #f1f5f9;
 }
 
 .translated-badge {
@@ -973,50 +1392,7 @@ button.btn-sm {
   content: '🎤';
 }
 
-/* 接続状態 */
-.connected {
-  color: var(--success-color);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.connected::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  background: var(--success-color);
-  border-radius: 50%;
-  animation: pulse 2s infinite;
-}
-
-.disconnected {
-  color: var(--warning-color);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.disconnected::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  background: var(--warning-color);
-  border-radius: 50%;
-  animation: blink 1s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
+/* 注: 接続状態のスタイルは .connection-status 内に定義済み (599行付近) */
 
 /* トグルスイッチ */
 .toggle-switch {
@@ -1050,6 +1426,330 @@ button.btn-sm {
   left: 25px;
 }
 
+/* ====================================
+   音声コントロール（インライン版 - 設定パネル内）
+   ==================================== */
+.audio-control-inline {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-divider);
+}
+
+.audio-control-inline .error {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  font-size: 0.8rem;
+}
+
+/* マイク状態コントロール行 */
+.mic-control-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.mic-control-row .mic-button {
+  width: auto;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.mic-control-row .mic-button.on {
+  background: var(--success-color);
+}
+
+.mic-control-row .mic-button.off {
+  background: var(--text-secondary);
+}
+
+.mic-control-row .volume-indicator {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mic-control-row .volume-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--success-color), #34d399);
+  border-radius: 3px;
+  transition: width 0.1s ease;
+}
+
+.mic-control-row .speaking-badge {
+  padding: 0.2rem 0.4rem;
+  background: var(--success-color);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  animation: pulse 1s infinite;
+  flex-shrink: 0;
+}
+
+/* 波形表示 */
+.waveform-container {
+  margin-top: 0.5rem;
+}
+
+.waveform-container canvas {
+  width: 100%;
+  height: 36px;
+  border-radius: var(--radius-sm);
+}
+
+/* 音声エリアの表示 */
+.audio-area .audio-active,
+.audio-area .audio-inactive {
+  text-align: center;
+  padding: 2rem;
+}
+
+.audio-area .speaker-indicator {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.audio-area .volume-display {
+  font-size: 1rem;
+  opacity: 0.8;
+  margin-bottom: 1rem;
+}
+
+/* メインエリア波形表示 */
+.audio-area .main-waveform {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.audio-area .main-waveform canvas {
+  border-radius: var(--radius-md);
+  max-width: 100%;
+}
+
+.audio-area .audio-inactive .hint {
+  font-size: 0.9rem;
+  opacity: 0.6;
+  margin-top: 0.5rem;
+}
+
+/* ====================================
+   メニューページ
+   ==================================== */
+.menu-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--gradient-dark);
+}
+
+.menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background: rgba(30, 27, 75, 0.85);
+  backdrop-filter: blur(12px);
+  color: #f8fafc;
+  box-shadow: var(--shadow-lg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.menu-header .header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.menu-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.menu-header .header-subtitle {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.menu-header .header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* 言語切替セレクター */
+.language-selector {
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-md);
+  color: #f8fafc;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.language-selector:hover {
+  background: rgba(0, 0, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.language-selector:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.language-selector option {
+  background: #1e1b4b;
+  color: #f8fafc;
+}
+
+.menu-header .btn-logout {
+  width: auto;
+  padding: 0.5rem 1.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 0.85rem;
+  color: #f8fafc;
+}
+
+.menu-header .btn-logout:hover {
+  background: var(--danger-color);
+  border-color: var(--danger-color);
+}
+
+.menu-content {
+  flex: 1;
+  padding: 2.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2rem;
+}
+
+.menu-category {
+  background: var(--bg-white);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-md);
+}
+
+.category-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--primary-light);
+}
+
+.category-icon {
+  font-size: 1.5rem;
+}
+
+.menu-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: var(--bg-light);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.menu-item:hover:not(.disabled) {
+  background: var(--primary-light);
+  border-color: var(--primary-color);
+  transform: translateX(4px);
+}
+
+.menu-item.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.menu-item .item-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.menu-item .item-content {
+  flex: 1;
+}
+
+.menu-item .item-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.menu-item .item-badge {
+  padding: 0.2rem 0.5rem;
+  background: var(--gradient-primary);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.menu-item .item-badge.coming-soon {
+  background: var(--text-light);
+}
+
+.menu-item .item-description {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.menu-item .item-arrow {
+  font-size: 1.25rem;
+  color: var(--text-light);
+  transition: transform 0.2s ease;
+}
+
+.menu-item:hover:not(.disabled) .item-arrow {
+  transform: translateX(4px);
+  color: var(--primary-color);
+}
+
+.menu-footer {
+  text-align: center;
+  padding: 1.5rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+}
+
 /* レスポンシブ */
 @media (max-width: 768px) {
   .room-content {
@@ -1070,6 +1770,27 @@ button.btn-sm {
   }
 
   .room-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* メニューページレスポンシブ */
+  .menu-header {
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .menu-header .header-left {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .menu-content {
+    padding: 1.5rem;
+  }
+
+  .menu-grid {
     grid-template-columns: 1fr;
   }
 }

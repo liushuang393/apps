@@ -5,14 +5,11 @@ LAMS JWT認証ハンドラー
 
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from app.config import settings
-
-# パスワードハッシュ設定
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class TokenData(BaseModel):
@@ -21,6 +18,7 @@ class TokenData(BaseModel):
     user_id: str
     email: str
     native_language: str = "ja"
+    role: str = "user"
 
 
 class Token(BaseModel):
@@ -31,13 +29,27 @@ class Token(BaseModel):
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """パスワード検証"""
-    return pwd_context.verify(plain_password, hashed_password)
+    """
+    パスワード検証
+    bcrypt 4.x対応版
+    """
+    try:
+        password_bytes = plain_password.encode("utf-8")
+        hash_bytes = hashed_password.encode("utf-8")
+        return bcrypt.checkpw(password_bytes, hash_bytes)
+    except Exception:
+        return False
 
 
 def hash_password(password: str) -> str:
-    """パスワードハッシュ化"""
-    return pwd_context.hash(password)
+    """
+    パスワードハッシュ化
+    bcrypt 4.x対応版
+    """
+    password_bytes = password.encode("utf-8")
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode("utf-8")
 
 
 def create_access_token(data: dict[str, str]) -> str:
@@ -64,6 +76,7 @@ def decode_token(token: str) -> TokenData | None:
             user_id=payload.get("user_id", ""),
             email=payload.get("email", ""),
             native_language=payload.get("native_language", "ja"),
+            role=payload.get("role", "user"),
         )
     except JWTError:
         return None

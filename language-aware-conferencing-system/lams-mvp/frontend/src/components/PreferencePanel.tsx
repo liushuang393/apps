@@ -1,9 +1,11 @@
 /**
  * 設定パネルコンポーネント
- * ユーザーが音声モード・字幕・言語を選択（折りたたみ機能付き）
+ * 音声モード、字幕、言語を一括管理（統合版）
+ * デバイス選択はヘッダーへ移動済み
  */
 import { useCallback, useState } from 'react';
 import { useRoomStore } from '../store/roomStore';
+import { AudioControlPanel } from './AudioControlPanel';
 import type { AudioMode, SupportedLanguage, RoomPolicy } from '../types';
 
 /** 言語表示名（統一形式：言語名（コード）） */
@@ -21,9 +23,17 @@ interface Props {
     targetLanguage?: string;
   }) => void;
   policy?: RoomPolicy | null;
+  /** 音声コントロール関連props（シンプル版：デバイス選択はヘッダーへ移動済み） */
+  audioProps?: {
+    isMicOn: boolean;
+    onMicToggle: () => void;
+    volumeLevel: number;
+    isSpeaking: boolean;
+    error: string | null;
+  };
 }
 
-export function PreferencePanel({ onPreferenceChange, policy: propPolicy }: Props) {
+export function PreferencePanel({ onPreferenceChange, policy: propPolicy, audioProps }: Props) {
   const { policy: storePolicy, myPreference, updateMyPreference } = useRoomStore();
 
   // propsまたはstoreからpolicyを取得
@@ -107,6 +117,17 @@ export function PreferencePanel({ onPreferenceChange, policy: propPolicy }: Prop
         </span>
       </button>
       <div className="panel-content">
+        {/* 音声デバイス設定（audioPropsがあれば表示） */}
+        {audioProps && (
+          <AudioControlPanel
+            isMicOn={audioProps.isMicOn}
+            onMicToggle={audioProps.onMicToggle}
+            volumeLevel={audioProps.volumeLevel}
+            isSpeaking={audioProps.isSpeaking}
+            error={audioProps.error}
+          />
+        )}
+
         {/* 音声モード選択 */}
         <div className="setting-group">
           <label className="setting-label">音声モード</label>

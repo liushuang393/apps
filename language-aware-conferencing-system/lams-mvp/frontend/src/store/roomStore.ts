@@ -8,6 +8,9 @@ import type {
   SubtitleData,
 } from '../types';
 
+/** 接続状態タイプ */
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
 interface RoomState {
   roomId: string | null;
   roomName: string | null;
@@ -17,6 +20,8 @@ interface RoomState {
   activeSpeaker: string | null;
   subtitles: SubtitleData[];
   isConnected: boolean;
+  /** 詳細な接続状態 */
+  connectionStatus: ConnectionStatus;
 
   // アクション
   setRoomState: (
@@ -33,6 +38,7 @@ interface RoomState {
   addSubtitle: (subtitle: SubtitleData) => void;
   clearSubtitles: () => void;
   setConnected: (connected: boolean) => void;
+  setConnectionStatus: (status: ConnectionStatus) => void;
   reset: () => void;
 }
 
@@ -45,6 +51,7 @@ export const useRoomStore = create<RoomState>((set) => ({
   activeSpeaker: null,
   subtitles: [],
   isConnected: false,
+  connectionStatus: 'disconnected',
 
   setRoomState: (roomId, roomName, policy, participants, myPreference) =>
     set({
@@ -54,6 +61,7 @@ export const useRoomStore = create<RoomState>((set) => ({
       participants: new Map(participants.map((p) => [p.userId, p])),
       myPreference,
       isConnected: true,
+      connectionStatus: 'connected',
     }),
 
   addParticipant: (p) =>
@@ -81,12 +89,15 @@ export const useRoomStore = create<RoomState>((set) => ({
 
   addSubtitle: (subtitle) =>
     set((state) => ({
-      subtitles: [...state.subtitles.slice(-9), subtitle], // 最新10件
+      subtitles: [...state.subtitles.slice(-49), subtitle], // 最新50件（会議記録用に増加）
     })),
 
   clearSubtitles: () => set({ subtitles: [] }),
 
   setConnected: (connected) => set({ isConnected: connected }),
+
+  setConnectionStatus: (status) =>
+    set({ connectionStatus: status, isConnected: status === 'connected' }),
 
   reset: () =>
     set({
@@ -98,5 +109,6 @@ export const useRoomStore = create<RoomState>((set) => ({
       activeSpeaker: null,
       subtitles: [],
       isConnected: false,
+      connectionStatus: 'disconnected',
     }),
 }));

@@ -3,16 +3,14 @@ LAMS AIプロバイダー抽象化
 Gemini 2.5 Flash Native Audio / OpenAI GPT Realtime の切り替えに対応
 
 機能:
-- 音声→音声翻訳 (Speech-to-Speech Translation)
-- 音声→字幕翻訳 (Speech-to-Translated-Text)
-- 原声→字幕 (ASR/Transcription)
-- TTS (Text-to-Speech)
+- 音声→音声+字幕 翻訳 (Speech-to-Speech+Text Translation)
+- 音声→字幕 (ASR/Transcription) - 原声モード用
 
 設定ファイルで AI_PROVIDER を指定:
 - gemini: Gemini 2.5 Flash Native Audio（推奨・デフォルト）
-  モデル: models/gemini-2.5-flash-native-audio-preview-12-2025
+  モデル: models/gemini-2.5-flash-preview-native-audio-dialog
 - openai_realtime: OpenAI GPT Realtime API
-  モデル: gpt-realtime-2025-08-28 または gpt-realtime-mini-2025-10-06
+  モデル: gpt-4o-realtime-preview
 
 SDK バージョン:
 - google-genai >= 1.0.0 (新SDK、google-generativeaiは廃止)
@@ -130,6 +128,7 @@ class GeminiProvider(AIProvider):
                 from google.genai import types as genai_types
 
                 # base_url は http_options で設定（カスタムエンドポイント対応）
+                # 空文字列の場合はデフォルト（None）を使用
                 http_options = None
                 if settings.gemini_base_url:
                     http_options = genai_types.HttpOptions(
@@ -154,11 +153,11 @@ class GeminiProvider(AIProvider):
         target_language: str,
     ) -> TranslationResult:
         """
-        Gemini 2.5 Flashで音声翻訳
+        Gemini Native Audio Live API で音声→音声翻訳（底線）
 
         処理フロー:
-        1. ASRで音声をテキスト化
-        2. テキストを翻訳（同一言語の場合はスキップ）
+        1. Live API で音声→音声翻訳（必須）
+        2. 字幕が取得できない場合は非同期でテキスト翻訳
 
         Args:
             audio_data: WAV形式の音声データ
@@ -166,49 +165,97 @@ class GeminiProvider(AIProvider):
             target_language: 翻訳先言語コード
 
         Returns:
-            翻訳結果
+            翻訳結果（音声データ + テキスト）
         """
-        # ASRでテキスト化
-        original_text = await self.transcribe_audio(audio_data, source_language)
-
-        # 同一言語の場合は翻訳不要
+        # 同一言語の場合はASRのみ
         if source_language == target_language:
+            original_text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
                 original_text=original_text,
                 translated_text=original_text,
+                audio_data=audio_data,
             )
 
-        # テキスト翻訳
-        client = await self._get_client()
-        src_name = LANGUAGE_NAMES.get(source_language, source_language)
-        tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
-
-        prompt = (
-            f"以下の{src_name}のテキストを{tgt_name}に翻訳してください。\n"
-            "翻訳結果のみを返してください。説明は不要です。\n\n"
-            f"テキスト: {original_text}"
-        )
+        if not settings.gemini_api_key:
+            return TranslationResult(
+                source_language=source_language,
+                target_language=target_language,
+                original_text="[Gemini APIキーが設定されていません]",
+                translated_text="[Gemini APIキーが設定されていません]",
+            )
 
         try:
-            # google-genai SDK v1.0+ の正しい使用方法
-            response = await asyncio.to_thread(
-                client.models.generate_content,
-                model=settings.gemini_model,  # 設定から取得
-                contents=prompt,
-            )
-            translated_text = response.text.strip() if response.text else original_text
-        except Exception as e:
-            logger.error("Gemini翻訳エラー: %s", e)
-            translated_text = original_text
+            from google.genai import types
 
-        return TranslationResult(
-            source_language=source_language,
-            target_language=target_language,
-            original_text=original_text,
-            translated_text=translated_text,
-        )
+            client = await self._get_client()
+            src_name = LANGUAGE_NAMES.get(source_language, source_language)
+            tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
+
+            # Live API で音声+テキスト同時翻訳（音声と字幕の言語一致を保証）
+            model = settings.gemini_model
+            config = types.LiveConnectConfig(
+                responseModalities=["AUDIO", "TEXT"],
+                speechConfig=types.SpeechConfig(
+                    voiceConfig=types.VoiceConfig(
+                        prebuiltVoiceConfig=types.PrebuiltVoiceConfig(
+                            voiceName="Aoede"
+                        )
+                    )
+                ),
+                systemInstruction=types.Content(
+                    parts=[types.Part(text=(
+                        f"You are a translator. Translate {src_name} audio to {tgt_name}. "
+                        f"Speak the translation naturally and also provide the text."
+                    ))]
+                ),
+            )
+
+            translated_audio = b""
+            translated_text = ""
+            async with client.aio.live.connect(model=model, config=config) as session:
+                # 音声データを送信
+                await session.send(input=audio_data, mime_type="audio/wav")
+                await session.send(end_of_turn=True)
+
+                # 翻訳音声+テキストを受信
+                async for response in session.receive():
+                    if response.server_content:
+                        sc = response.server_content
+                        if sc.model_turn:
+                            for part in sc.model_turn.parts:
+                                if part.inline_data:
+                                    translated_audio += part.inline_data.data
+                                if part.text:
+                                    translated_text += part.text
+                        if sc.turn_complete:
+                            break
+
+            # 音声翻訳成功チェック（底線）
+            if not translated_audio:
+                raise RuntimeError("Live APIから音声が返されませんでした")
+
+            # 原文は非同期で取得（翻訳済み音声+字幕は既に一致）
+            original_text = await self.transcribe_audio(audio_data, source_language)
+
+            return TranslationResult(
+                source_language=source_language,
+                target_language=target_language,
+                original_text=original_text,
+                translated_text=translated_text or "[翻訳テキスト取得失敗]",
+                audio_data=translated_audio,
+            )
+
+        except Exception as e:
+            logger.error("Gemini Live API音声翻訳エラー: %s", e)
+            return TranslationResult(
+                source_language=source_language,
+                target_language=target_language,
+                original_text="[音声翻訳エラー]",
+                translated_text="[音声翻訳エラー]",
+                audio_data=audio_data,
+            )
 
     async def transcribe_audio(self, audio_data: bytes, language: str) -> str:
         """
@@ -239,10 +286,11 @@ class GeminiProvider(AIProvider):
                 mime_type="audio/wav",
             )
 
-            # Gemini で音声認識（モデル名は設定から取得）
+            # Gemini で音声認識（generateContent API用モデルを使用）
+            # NOTE: Native Audioモデルは Live API専用のため、ASRにはテキストモデルを使用
             response = await asyncio.to_thread(
                 client.models.generate_content,
-                model=settings.gemini_model,
+                model=settings.gemini_text_model,
                 contents=[
                     audio_part,
                     f"この音声を{lang_name}でテキストに変換してください。"
@@ -291,9 +339,10 @@ class OpenAIRealtimeProvider(AIProvider):
                 from openai import AsyncOpenAI
 
                 # base_url は設定から取得（カスタムエンドポイント対応）
+                # 空文字列の場合は None を渡してデフォルトURLを使用
                 self._client = AsyncOpenAI(
                     api_key=settings.openai_api_key,
-                    base_url=settings.openai_base_url,  # None の場合はデフォルト
+                    base_url=settings.openai_base_url or None,
                 )
             except ImportError as err:
                 logger.error("openai パッケージがインストールされていません")
@@ -309,10 +358,11 @@ class OpenAIRealtimeProvider(AIProvider):
         target_language: str,
     ) -> TranslationResult:
         """
-        OpenAI GPT Realtime で音声翻訳
+        OpenAI GPT Realtime で音声→音声+字幕翻訳
 
         処理フロー:
-        1. Realtime API で音声認識・翻訳を一括処理
+        1. Realtime API に音声を送信
+        2. 翻訳済み音声+テキストを取得
 
         Args:
             audio_data: WAV形式の音声データ
@@ -320,65 +370,97 @@ class OpenAIRealtimeProvider(AIProvider):
             target_language: 翻訳先言語コード
 
         Returns:
-            翻訳結果
+            翻訳結果（音声データ + テキスト）
         """
-        # ASRでテキスト化
-        original_text = await self.transcribe_audio(audio_data, source_language)
-
-        # 同一言語の場合は翻訳不要
+        # 同一言語の場合はASRのみ
         if source_language == target_language:
+            original_text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
                 original_text=original_text,
                 translated_text=original_text,
+                audio_data=audio_data,  # 原音をそのまま返す
             )
 
-        client = await self._get_client()
-        src_name = LANGUAGE_NAMES.get(source_language, source_language)
-        tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
+        if not settings.openai_api_key:
+            return TranslationResult(
+                source_language=source_language,
+                target_language=target_language,
+                original_text="[OpenAI APIキーが設定されていません]",
+                translated_text="[OpenAI APIキーが設定されていません]",
+            )
 
         try:
-            # GPT Realtime モデルでテキスト翻訳
-            # (Realtime APIのテキストモードを使用)
+            import base64
+
+            client = await self._get_client()
+            src_name = LANGUAGE_NAMES.get(source_language, source_language)
+            tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
+
+            # Realtime API で音声翻訳（音声+テキスト出力）
             async with client.realtime.connect(
                 model=settings.openai_realtime_model
             ) as connection:
-                await connection.session.update(session={"output_modalities": ["text"]})
-                await connection.conversation.item.create(
-                    item={
-                        "type": "message",
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": (
-                                    f"{src_name}を{tgt_name}に翻訳してください。"
-                                    f"翻訳結果のみ返してください:\n{original_text}"
-                                ),
-                            }
-                        ],
+                # 音声+テキスト出力を設定
+                await connection.session.update(
+                    session={
+                        "modalities": ["text", "audio"],
+                        "instructions": (
+                            f"You are a real-time translator. "
+                            f"Translate the {src_name} audio to {tgt_name}. "
+                            f"Respond with the translation in {tgt_name} speech and text."
+                        ),
+                        "voice": "alloy",
+                        "input_audio_format": "pcm16",
+                        "output_audio_format": "pcm16",
                     }
                 )
+
+                # 音声データを送信（Base64エンコード）
+                audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+                await connection.input_audio_buffer.append(audio=audio_b64)
+                await connection.input_audio_buffer.commit()
                 await connection.response.create()
 
                 translated_text = ""
+                audio_chunks: list[bytes] = []
+
                 async for event in connection:
-                    if event.type == "response.output_text.delta":
+                    if event.type == "response.audio_transcript.delta":
                         translated_text += event.delta
+                    elif event.type == "response.audio.delta":
+                        audio_chunks.append(base64.b64decode(event.delta))
                     elif event.type == "response.done":
                         break
-                translated_text = translated_text.strip() or original_text
-        except Exception as e:
-            logger.error("OpenAI Realtime翻訳エラー: %s", e)
-            translated_text = original_text
 
-        return TranslationResult(
-            source_language=source_language,
-            target_language=target_language,
-            original_text=original_text,
-            translated_text=translated_text,
-        )
+                translated_text = translated_text.strip()
+
+                # 音声データを結合
+                translated_audio = b"".join(audio_chunks) if audio_chunks else None
+
+            # 原文も取得（字幕表示用）
+            original_text = await self.transcribe_audio(audio_data, source_language)
+
+            return TranslationResult(
+                source_language=source_language,
+                target_language=target_language,
+                original_text=original_text,
+                translated_text=translated_text or f"[翻訳エラー] {original_text}",
+                audio_data=translated_audio,
+            )
+
+        except Exception as e:
+            logger.error("OpenAI Realtime音声翻訳エラー: %s", e)
+            # エラー時はASRでフォールバック
+            original_text = await self.transcribe_audio(audio_data, source_language)
+            return TranslationResult(
+                source_language=source_language,
+                target_language=target_language,
+                original_text=original_text,
+                translated_text=f"[翻訳エラー] {original_text}",
+                audio_data=audio_data,  # 原音をフォールバック
+            )
 
     async def transcribe_audio(self, audio_data: bytes, language: str) -> str:
         """
