@@ -4,10 +4,18 @@
 import { useAuthStore } from '../store/authStore';
 import type { Room, User, SupportedLanguage, AudioMode } from '../types';
 
-// 環境変数からAPI URLを取得、未設定の場合は相対パス（proxy経由）
-const API_BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : '/api';
+// APIベースURLを動的に決定
+// - localhost アクセス時: proxy経由（/api）
+// - LAN IP アクセス時: 同じホストの8000番ポート
+const API_BASE = (() => {
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') {
+    // localhost経由: Vite proxy使用
+    return '/api';
+  }
+  // LAN IP経由: 同じホストの8000番ポートを使用
+  return `http://${host}:8000/api`;
+})();
 
 /** バックエンドのRoom応答型（snake_case） */
 interface RoomApiResponse {

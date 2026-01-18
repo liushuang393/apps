@@ -8,40 +8,53 @@ import react from '@vitejs/plugin-react';
  * Docker環境変数（process.env）と.envファイル両方をサポート。
  *
  * 環境変数:
- * - VITE_API_URL: バックエンドAPIのURL（デフォルト: http://localhost:8000）
- * - VITE_WS_URL: WebSocketのURL（デフォルト: ws://localhost:8000）
+ * - VITE_API_URL: クライアント側APIのURL（デフォルト: 空 = 相対パス使用）
+ * - VITE_WS_URL: クライアント側WebSocketのURL（デフォルト: 空 = 自動検出）
  * - VITE_PORT: 開発サーバーのポート（デフォルト: 5173）
+ *
+ * プロキシ設定:
+ * - Docker環境ではbackendサービス名を使用
+ * - ローカル環境ではlocalhost:8000を使用
  */
 export default defineConfig(({ mode }) => {
   // .envファイルから環境変数を読み込み
   const fileEnv = loadEnv(mode, process.cwd(), '');
 
-  // Docker環境変数（process.env）を優先、なければ.envファイル、最後にデフォルト
-  const apiUrl = process.env.VITE_API_URL || fileEnv.VITE_API_URL || 'http://localhost:8000';
-  const wsUrl = process.env.VITE_WS_URL || fileEnv.VITE_WS_URL || 'ws://localhost:8000';
-  const port = parseInt(process.env.VITE_PORT || fileEnv.VITE_PORT || '5173', 10);
+  // クライアント側のAPI URL（ブラウザからのアクセス用）
+  // 空の場合は相対パス/apiを使用し、Vite proxyで転送
+  const clientApiUrl = process.env['VITE_API_URL'] || fileEnv.VITE_API_URL || '';
+  const clientWsUrl = process.env['VITE_WS_URL'] || fileEnv.VITE_WS_URL || '';
 
-  console.log('[Vite Config] API URL:', apiUrl);
-  console.log('[Vite Config] WS URL:', wsUrl);
+  // Viteサーバー側のプロキシターゲット（コンテナ間通信用）
+  // Docker環境ではbackendサービス名、ローカルではlocalhost
+  const isDocker = clientApiUrl.includes('://');
+  const proxyTarget = isDocker ? 'http://backend:8000' : 'http://localhost:8000';
+  const wsProxyTarget = isDocker ? 'ws://backend:8000' : 'ws://localhost:8000';
+
+  console.log('[Vite Config] Client API URL:', clientApiUrl || '(relative path /api)');
+  console.log('[Vite Config] Client WS URL:', clientWsUrl || '(auto-detect)');
+  console.log('[Vite Config] Proxy Target:', proxyTarget);
 
   return {
     plugins: [react()],
-    // クライアントコードに環境変数を注入
+    // クライアントコードに環境変数を注入（空の場合は相対パス使用）
     define: {
-      'import.meta.env.VITE_API_URL': JSON.stringify(apiUrl),
-      'import.meta.env.VITE_WS_URL': JSON.stringify(wsUrl),
+      'import.meta.env.VITE_API_URL': JSON.stringify(clientApiUrl),
+      'import.meta.env.VITE_WS_URL': JSON.stringify(clientWsUrl),
     },
     server: {
-      port,
+      port: 5173,
       host: '0.0.0.0',
+      strictPort: true,
       proxy: {
         '/api': {
-          target: apiUrl,
+          target: proxyTarget,
           changeOrigin: true,
         },
         '/ws': {
-          target: wsUrl,
+          target: wsProxyTarget,
           ws: true,
+          changeOrigin: true,
         },
       },
     },

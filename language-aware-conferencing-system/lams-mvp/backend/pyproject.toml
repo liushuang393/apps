@@ -2,6 +2,11 @@
 # LAMS Backend - Python プロジェクト設定
 # ===========================================
 
+[build-system]
+# ビルドシステムの設定（setuptools を使用）
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "lams-backend"
 version = "1.0.0"
@@ -40,6 +45,13 @@ dev = [
 # ===========================================
 # Ruff - Python Linter & Formatter
 # ===========================================
+# ===========================================
+# Setuptools - パッケージ設定
+# ===========================================
+[tool.setuptools.packages.find]
+# app パッケージのみを含める（alembic は除外）
+include = ["app", "app.*"]
+
 [tool.ruff]
 # Python バージョン（3.10互換）
 target-version = "py310"

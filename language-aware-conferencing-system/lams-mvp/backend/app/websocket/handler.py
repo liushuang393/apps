@@ -260,8 +260,14 @@ async def websocket_room(
             elif "bytes" in data:
                 # 音声データ処理
                 audio_bytes = data["bytes"]
-                if not audio_bytes or len(audio_bytes) < 44:
-                    # 空または無効な音声データはスキップ
+                # WAVヘッダー(44バイト) + 最小PCMデータ(約0.25秒=8000バイト)
+                # 16kHz, 16bit, mono: 0.25秒 = 16000 * 0.25 * 2 = 8000バイト
+                min_audio_size = 44 + 8000
+                if not audio_bytes or len(audio_bytes) < min_audio_size:
+                    # 音声データが短すぎる場合はスキップ（ASR認識不可）
+                    logger.debug(
+                        f"[WS DEBUG] 音声データが短すぎます: {len(audio_bytes) if audio_bytes else 0} bytes"
+                    )
                     continue
 
                 current_participant = await room_manager.get_participant(
@@ -297,17 +303,19 @@ async def websocket_room(
                                 original_asr_result = await ai_pipeline.process_audio(
                                     audio_bytes, speaker_lang, speaker_lang, user_id
                                 )
-                            await conn_mgr.send_to_user(
-                                room_id,
-                                p.user_id,
-                                {
-                                    "type": "subtitle",
-                                    "speaker_id": user_id,
-                                    "text": original_asr_result.original_text,
-                                    "language": speaker_lang,
-                                    "is_translated": False,
-                                },
-                            )
+                            # 空でないテキストのみ送信
+                            if original_asr_result.original_text:
+                                await conn_mgr.send_to_user(
+                                    room_id,
+                                    p.user_id,
+                                    {
+                                        "type": "subtitle",
+                                        "speaker_id": user_id,
+                                        "text": original_asr_result.original_text,
+                                        "language": speaker_lang,
+                                        "is_translated": False,
+                                    },
+                                )
 
                     else:
                         # 翻訳モード: 翻訳済み音声・字幕を送信
@@ -323,17 +331,19 @@ async def websocket_room(
                                     original_asr_result = await ai_pipeline.process_audio(
                                         audio_bytes, speaker_lang, speaker_lang, user_id
                                     )
-                                await conn_mgr.send_to_user(
-                                    room_id,
-                                    p.user_id,
-                                    {
-                                        "type": "subtitle",
-                                        "speaker_id": user_id,
-                                        "text": original_asr_result.original_text,
-                                        "language": speaker_lang,
-                                        "is_translated": False,
-                                    },
-                                )
+                                # 空でないテキストのみ送信
+                                if original_asr_result.original_text:
+                                    await conn_mgr.send_to_user(
+                                        room_id,
+                                        p.user_id,
+                                        {
+                                            "type": "subtitle",
+                                            "speaker_id": user_id,
+                                            "text": original_asr_result.original_text,
+                                            "language": speaker_lang,
+                                            "is_translated": False,
+                                        },
+                                    )
                         else:
                             # 翻訳処理（同じ言語ペアはキャッシュ再利用）
                             if target_lang in translation_cache:
@@ -366,8 +376,8 @@ async def websocket_room(
                                     room_id, p.user_id, audio_bytes
                                 )
 
-                            # 翻訳字幕を送信
-                            if p.subtitle_enabled:
+                            # 翻訳字幕を送信（空でないテキストのみ）
+                            if p.subtitle_enabled and result.translated_text:
                                 await conn_mgr.send_to_user(
                                     room_id,
                                     p.user_id,
@@ -385,9 +395,14 @@ async def websocket_room(
         pass
     finally:
         # クリーンアップ
-        await conn_mgr.disconnect(room_id, user_id)
-        await room_manager.remove_participant(room_id, user_id)
+        # 注意: 先に退室通知を送信してから接続を切断する
+        # （切断後だとroomが削除されている可能性があるため）
         await conn_mgr.broadcast_json(
             room_id,
             {"type": "user_left", "user_id": user_id},
+            exclude_user=user_id,  # 自分自身には送信しない
         )
+        await conn_mgr.disconnect(room_id, user_id)
+        await room_manager.remove_participant(room_id, user_id)
+        logger.info(f"[WS] User {user_id} left room {room_id}")
+BJP hubs Rajnath Singh to. USC to go. Show me. I. 

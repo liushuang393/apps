@@ -34,10 +34,16 @@ interface UseAudioCaptureReturn {
 const SPEAKING_THRESHOLD = 15;
 /** 発話終了の遅延（ms） */
 const SPEAKING_END_DELAY = 500;
-/** 音声送信間隔（ms）- 100ms = 10fps */
-const AUDIO_SEND_INTERVAL_MS = 100;
+/**
+ * 音声送信間隔（ms）
+ * 500ms = 16kHzで8000サンプル = 約16KB
+ * ASRで認識可能な最小音声長を確保
+ */
+const AUDIO_SEND_INTERVAL_MS = 500;
 /** サンプルレート */
 const SAMPLE_RATE = 16000;
+/** 最小送信サンプル数（認識精度のため） */
+const MIN_SAMPLES_TO_SEND = 4000;
 
 /**
  * 音声キャプチャフック
@@ -109,8 +115,9 @@ export function useAudioCapture({
 
   /**
    * 音声バッファを送信
+   * 最小サンプル数を満たさない場合は送信しない（ASR認識精度のため）
    */
-  const sendAudioBuffer = useCallback(() => {
+  const sendAudioBuffer = useCallback((forceFlush = false) => {
     if (!wsRef?.current || wsRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -120,6 +127,12 @@ export function useAudioCapture({
 
     // バッファを結合
     const totalLength = audioBufferRef.current.reduce((acc, arr) => acc + arr.length, 0);
+
+    // 最小サンプル数チェック（強制フラッシュ時は無視）
+    if (!forceFlush && totalLength < MIN_SAMPLES_TO_SEND) {
+      return;
+    }
+
     const combined = new Float32Array(totalLength);
     let offset = 0;
     for (const chunk of audioBufferRef.current) {
@@ -254,8 +267,8 @@ export function useAudioCapture({
 
   /** マイクストリーム停止 */
   const stopCapture = useCallback(() => {
-    // 残りのバッファを送信
-    sendAudioBuffer();
+    // 残りのバッファを強制送信（最小サンプル数チェックをスキップ）
+    sendAudioBuffer(true);
 
     // 発話終了通知を送信
     if (wsRef?.current?.readyState === WebSocket.OPEN) {

@@ -252,8 +252,8 @@ docker compose up --build
 # バックグラウンド実行
 docker compose up -d --build
 # 局域网访问
-HOST_IP=192.168.210.2 docker-compose up -d --build frontend backend
-
+HOST_IP=192.168.210.26 docker compose up -d --build frontend backend
+HOST_IP=192.168.210.7 docker compose up -d --build --force-recreate
 # ログ確認
 docker compose logs -f backend
 ```
@@ -616,7 +616,7 @@ WSLで実行：
 
 ```bash
 # WindowsのLAN IPを指定して起動
-HOST_IP=192.168.210.2 docker compose up -d --build frontend backend
+HOST_IP=192.168.210.26 docker compose up -d --build frontend backend
 
 # または全サービス起動
 HOST_IP=192.168.210.2 docker compose up -d --build
@@ -679,7 +679,7 @@ docker logs lams-mvp-frontend-1 2>&1 | grep "Vite Config"
 
 ```bash
 # HOST_IPを指定してフロントエンドを再起動
-HOST_IP=192.168.210.2 docker compose up -d --build frontend
+HOST_IP=192.168.210.26 docker compose up -d --build frontend
 ```
 
 #### 問題3: APIリクエストが 5173 ポートに送られる
@@ -730,6 +730,9 @@ HOST_IP=192.168.210.2 docker compose up -d --build frontend
 **解決方法:**
 
 ```powershell
+# 添加 WSL 防火墙规则
+New-NetFirewallRule -DisplayName "WSL Vite 5173" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5173
+
 # Windows PowerShell（管理者権限）で実行
 
 # 1. 現在のWSL IPを確認
@@ -748,9 +751,26 @@ netsh interface portproxy show all
 その後、WSLでDockerを再起動:
 
 ```bash
-HOST_IP=192.168.210.2 docker compose up -d --build frontend backend
+HOST_IP=192.168.210.26 docker compose up -d --build frontend backend
 ```
+删除规则
+--------------
+# 删除刚才的规则
+netsh interface portproxy delete v4tov4 listenport=5173 listenaddress=192.168.210.26
+netsh interface portproxy delete v4tov4 listenport=8000 listenaddress=192.168.210.26
 
+# 用 2.0.0.1 重新添加
+netsh interface portproxy add v4tov4 listenport=5173 listenaddress=192.168.210.26 connectport=5173 connectaddress=2.0.0.1
+netsh interface portproxy add v4tov4 listenport=8000 listenaddress=192.168.210.26 connectport=8000 connectaddress=2.0.0.1
+
+# 确认
+netsh interface portproxy show all
+
+# 重启服务
+Restart-Service iphlpsvc
+
+# 测试
+curl http://192.168.210.26:5173 -UseBasicParsing
 ---
 
 ## 🙏 謝辞

@@ -131,9 +131,14 @@ export function useWebSocket(roomId: string | null) {
    * WAV形式のバイナリをデコードして再生
    */
   const playAudio = useCallback(async (audioData: ArrayBuffer) => {
+    // 最小データサイズチェック（WAVヘッダー44バイト + 少なくともサンプルデータ）
+    if (audioData.byteLength < 100) {
+      return;
+    }
+
     try {
       const audioCtx = getPlaybackAudioContext();
-      // WAVデータをデコード
+      // WAVデータをデコード（slice(0)でコピーを作成）
       const audioBuffer = await audioCtx.decodeAudioData(audioData.slice(0));
       // BufferSourceを作成して再生
       const source = audioCtx.createBufferSource();
@@ -141,7 +146,8 @@ export function useWebSocket(roomId: string | null) {
       source.connect(audioCtx.destination);
       source.start(0);
     } catch (err) {
-      // デコード失敗は無視（不完全なデータの可能性）
+      // デコード失敗をログ出力（デバッグ用）
+      console.warn('[Audio] 音声デコード失敗:', err, 'データサイズ:', audioData.byteLength);
     }
   }, []);
 
@@ -198,13 +204,18 @@ export function useWebSocket(roomId: string | null) {
     const isReconnect = reconnectAttemptRef.current > 0;
     updateStatus(isReconnect ? 'reconnecting' : 'connecting');
 
-    const wsBaseUrl = import.meta.env.VITE_WS_URL;
+    // WebSocket URLを動的に決定
+    // - localhost アクセス時: 同じホスト経由（proxy）
+    // - LAN IP アクセス時: 同じホストの8000番ポート
+    const host = globalThis.location.hostname;
+    const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
     let wsUrl: string;
-    if (wsBaseUrl) {
-      wsUrl = `${wsBaseUrl}/ws/room/${roomId}?token=${token}`;
-    } else {
-      const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (host === 'localhost' || host === '127.0.0.1') {
+      // localhost経由: Vite proxy使用
       wsUrl = `${protocol}//${globalThis.location.host}/ws/room/${roomId}?token=${token}`;
+    } else {
+      // LAN IP経由: 同じホストの8000番ポートを使用
+      wsUrl = `${protocol}//${host}:8000/ws/room/${roomId}?token=${token}`;
     }
 
     const ws = new WebSocket(wsUrl);

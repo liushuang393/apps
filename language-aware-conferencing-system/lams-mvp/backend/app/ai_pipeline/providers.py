@@ -271,7 +271,14 @@ class GeminiProvider(AIProvider):
             認識されたテキスト
         """
         if not settings.gemini_api_key:
-            return "[Gemini APIキーが設定されていません]"
+            logger.warning("Gemini APIキーが設定されていません")
+            return "[APIキー未設定]"
+
+        # 最小音声データサイズチェック（WAVヘッダー44 + 0.25秒分のPCMデータ）
+        min_size = 44 + 8000  # 16kHz, 16bit, mono: 0.25秒
+        if len(audio_data) < min_size:
+            logger.debug("音声データが短すぎます: %d bytes", len(audio_data))
+            return ""  # 空文字を返す（短すぎるデータは無視）
 
         try:
             # google-genai SDK v1.0+ の正しいインポート
@@ -297,10 +304,13 @@ class GeminiProvider(AIProvider):
                     "テキストのみを返してください。",
                 ],
             )
-            return response.text.strip() if response.text else "[認識結果なし]"
+            result = response.text.strip() if response.text else ""
+            if not result:
+                logger.debug("ASR結果が空です（無音または認識不可）")
+            return result
         except Exception as e:
             logger.error("Gemini ASRエラー: %s", e)
-            return "[音声認識エラー]"
+            return f"[ASRエラー: {type(e).__name__}]"
 
 
 class OpenAIRealtimeProvider(AIProvider):
@@ -476,7 +486,14 @@ class OpenAIRealtimeProvider(AIProvider):
             認識されたテキスト
         """
         if not settings.openai_api_key:
-            return "[OpenAI APIキーが設定されていません]"
+            logger.warning("OpenAI APIキーが設定されていません")
+            return "[APIキー未設定]"
+
+        # 最小音声データサイズチェック
+        min_size = 44 + 8000  # WAVヘッダー + 0.25秒分
+        if len(audio_data) < min_size:
+            logger.debug("音声データが短すぎます: %d bytes", len(audio_data))
+            return ""  # 空文字を返す（短すぎるデータは無視）
 
         try:
             import base64
@@ -513,10 +530,13 @@ class OpenAIRealtimeProvider(AIProvider):
                     elif event.type == "response.done":
                         break
 
-            return result_text.strip() if result_text else "[認識結果なし]"
+            result = result_text.strip() if result_text else ""
+            if not result:
+                logger.debug("ASR結果が空です（無音または認識不可）")
+            return result
         except Exception as e:
             logger.error("OpenAI Realtime ASRエラー: %s", e)
-            return "[音声認識エラー]"
+            return f"[ASRエラー: {type(e).__name__}]"
 
 
 def get_ai_provider() -> AIProvider:

@@ -14,8 +14,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    networks:
-      - lams-network
 
   redis:
     image: redis:7-alpine
@@ -29,8 +27,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    networks:
-      - lams-network
 
   backend:
     build:
@@ -64,9 +60,7 @@ services:
     volumes:
       - ./backend/app:/app/app:ro
       - ./secrets.json:/app/secrets.json:ro
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    networks:
-      - lams-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   frontend:
     build:
@@ -86,13 +80,7 @@ services:
       - ./frontend/index.html:/app/index.html:ro
     depends_on:
       - backend
-    networks:
-      - lams-network
 
 volumes:
   postgres_data:
   redis_data:
-
-networks:
-  lams-network:
-    driver: bridge

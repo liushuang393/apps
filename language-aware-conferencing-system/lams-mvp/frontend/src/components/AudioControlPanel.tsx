@@ -3,17 +3,50 @@
  * マイクON/OFF制御のみ。デバイス選択はヘッダーに移動済み
  */
 
+/** セキュアコンテキストエラーかどうか判定 */
+const isSecureContextError = (err: string | null): boolean =>
+  !!err && (err.includes('HTTPS') || err.includes('localhost') || err.includes('IP'));
+
+/** 現在のホストURLを取得 */
+const getCurrentOrigin = (): string => globalThis.location.origin;
+
 interface AudioControlPanelProps {
   /** マイクON状態 */
-  isMicOn: boolean;
+  readonly isMicOn: boolean;
   /** マイクトグルハンドラ */
-  onMicToggle: () => void;
+  readonly onMicToggle: () => void;
   /** 音量レベル (0-100) */
-  volumeLevel: number;
+  readonly volumeLevel: number;
   /** 発話中フラグ */
-  isSpeaking: boolean;
+  readonly isSpeaking: boolean;
   /** エラーメッセージ */
-  error: string | null;
+  readonly error: string | null;
+}
+
+/**
+ * HTTPS/localhostエラー時の簡潔な設定案内
+ */
+function SecureContextErrorHint() {
+  const origin = getCurrentOrigin();
+  const isEdge = navigator.userAgent.includes('Edg');
+
+  return (
+    <div className="secure-context-error">
+      <p className="error-title">⚠️ マイク使用にはブラウザ設定が必要です</p>
+      <div className="error-steps">
+        <p>
+          <strong>1.</strong> アドレスバーに入力:{' '}
+          <code>{isEdge ? 'edge' : 'chrome'}://flags/#unsafely-treat-insecure-origin-as-secure</code>
+        </p>
+        <p>
+          <strong>2.</strong> 入力欄に追加: <code>{origin}</code>
+        </p>
+        <p>
+          <strong>3.</strong> 「Enabled」を選択 → 「Relaunch」で再起動
+        </p>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -26,18 +59,19 @@ export function AudioControlPanel({
   isSpeaking,
   error,
 }: AudioControlPanelProps) {
+  const showSecureHint = isSecureContextError(error);
+
   return (
     <div className="audio-control-inline">
-      {error && <div className="error">{error}</div>}
-
       {/* マイクボタン + 音量インジケーター */}
       <div className="setting-group">
-        <label className="setting-label">マイク状態</label>
+        <span className="setting-label">マイク状態</span>
         <div className="mic-control-row">
           <button
             className={`mic-button ${isMicOn ? 'on' : 'off'}`}
             onClick={onMicToggle}
             title={isMicOn ? 'マイクをOFFにする' : 'マイクをONにする'}
+            disabled={showSecureHint}
           >
             {isMicOn ? '🎤 ON' : '🔇 OFF'}
           </button>
@@ -47,6 +81,13 @@ export function AudioControlPanel({
           {isSpeaking && <span className="speaking-badge">発話中</span>}
         </div>
       </div>
+
+      {/* エラー表示（マイクボタンの下に配置） */}
+      {showSecureHint ? (
+        <SecureContextErrorHint />
+      ) : (
+        error && <div className="error-simple">{error}</div>
+      )}
     </div>
   );
 }
