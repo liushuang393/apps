@@ -30,20 +30,20 @@ interface UseAudioCaptureReturn {
   error: string | null;
 }
 
-/** 発話検出の閾値 */
-const SPEAKING_THRESHOLD = 15;
-/** 発話終了の遅延（ms） */
-const SPEAKING_END_DELAY = 500;
+/** 発話検出の閾値（音量レベル）- 高めに設定してノイズを除去 */
+const SPEAKING_THRESHOLD = 25;
+/** 発話終了の遅延（ms）- 少し長めにして途切れを防止 */
+const SPEAKING_END_DELAY = 1000;
 /**
  * 音声送信間隔（ms）
- * 500ms = 16kHzで8000サンプル = 約16KB
- * ASRで認識可能な最小音声長を確保
+ * 200ms = 16kHzで3200サンプル = 約6.4KB
+ * 低遅延を優先しつつASR認識精度を確保
  */
-const AUDIO_SEND_INTERVAL_MS = 500;
+const AUDIO_SEND_INTERVAL_MS = 200;
 /** サンプルレート */
 const SAMPLE_RATE = 16000;
-/** 最小送信サンプル数（認識精度のため） */
-const MIN_SAMPLES_TO_SEND = 4000;
+/** 最小送信サンプル数（認識精度のため 200ms分） */
+const MIN_SAMPLES_TO_SEND = 3200;
 
 /**
  * 音声キャプチャフック
@@ -68,6 +68,8 @@ export function useAudioCapture({
   const audioSendIntervalRef = useRef<number | null>(null);
   const audioBufferRef = useRef<Float32Array[]>([]);
   const wasSpeakingRef = useRef(false);
+  /** 現在の音量レベルを保持（送信判定用） */
+  const currentVolumeLevelRef = useRef(0);
 
   /**
    * Float32Array を 16bit PCM に変換
@@ -116,12 +118,25 @@ export function useAudioCapture({
   /**
    * 音声バッファを送信
    * 最小サンプル数を満たさない場合は送信しない（ASR認識精度のため）
+   * ノイズフィルタリング: 音量が閾値以下の場合はバッファをクリアして送信しない
    */
   const sendAudioBuffer = useCallback((forceFlush = false) => {
-    if (!wsRef?.current || wsRef.current.readyState !== WebSocket.OPEN) {
+    if (!wsRef?.current) {
+      return;
+    }
+    if (wsRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
     if (audioBufferRef.current.length === 0) {
+      return;
+    }
+
+    // ノイズフィルタリング: 発話中でない場合はバッファをクリアして送信しない
+    // 発話検出（wasSpeakingRef）に基づいて判定
+    // 強制フラッシュ以外の場合、発話中でなければ送信しない
+    if (!forceFlush && !wasSpeakingRef.current) {
+      // 発話していない場合、バッファをクリアして送信しない（ノイズ除去）
+      audioBufferRef.current = [];
       return;
     }
 
@@ -148,6 +163,7 @@ export function useAudioCapture({
 
   /** マイクストリーム開始 */
   const startCapture = useCallback(async () => {
+    console.log('[Audio Debug] startCapture called, deviceId:', deviceId);
     if (!deviceId) {
       setError('マイクが選択されていません');
       return;
@@ -155,6 +171,7 @@ export function useAudioCapture({
 
     try {
       setError(null);
+      console.log('[Audio Debug] Starting mic capture...');
 
       // 既存のストリームを停止
       if (streamRef.current) {
@@ -197,6 +214,10 @@ export function useAudioCapture({
         const inputData = e.inputBuffer.getChannelData(0);
         // バッファにコピーを追加
         audioBufferRef.current.push(new Float32Array(inputData));
+        // デバッグ: 時々ログ出力
+        if (audioBufferRef.current.length % 50 === 0) {
+          console.log('[Audio Debug] Buffer chunks:', audioBufferRef.current.length);
+        }
       };
 
       source.connect(processor);
@@ -208,16 +229,21 @@ export function useAudioCapture({
       silentGain.connect(audioContext.destination);
 
       setIsMicOn(true);
+      console.log('[Audio Debug] Mic started successfully');
 
       // 発話開始通知を送信
       if (wsRef?.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'speaking_start' }));
+        console.log('[Audio Debug] Sent speaking_start');
+      } else {
+        console.log('[Audio Debug] WebSocket not ready, cannot send speaking_start');
       }
 
       // 定期的に音声データを送信
       audioSendIntervalRef.current = window.setInterval(() => {
         sendAudioBuffer();
       }, AUDIO_SEND_INTERVAL_MS);
+      console.log('[Audio Debug] Audio send interval started');
 
       // 音量・波形データの継続更新
       const updateAudioData = () => {
@@ -233,6 +259,8 @@ export function useAudioCapture({
         const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
         const normalizedVolume = Math.min(100, Math.round((average / 255) * 100 * 2));
         setVolumeLevel(normalizedVolume);
+        // ノイズフィルタリング用に現在の音量を保持
+        currentVolumeLevelRef.current = normalizedVolume;
 
         // 発話検出
         const nowSpeaking = normalizedVolume > SPEAKING_THRESHOLD;

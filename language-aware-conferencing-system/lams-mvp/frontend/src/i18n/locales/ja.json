@@ -62,6 +62,8 @@
     "profileDesc": "表示名・言語設定の変更",
     "history": "利用履歴",
     "historyDesc": "会議参加履歴の確認",
+    "admin": "管理者パネル",
+    "adminDesc": "ユーザー管理・システム設定",
     "comingSoon": "準備中"
   },
   "room": {

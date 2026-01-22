@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.admin.routes import router as admin_router
 from app.auth.routes import router as auth_router
 from app.config import settings
 from app.db.database import init_db
@@ -46,6 +47,7 @@ app.add_middleware(
 # ルーター登録
 app.include_router(auth_router, prefix="/api/auth", tags=["認証"])
 app.include_router(rooms_router, prefix="/api/rooms", tags=["会議室"])
+app.include_router(admin_router, prefix="/api/admin", tags=["管理者"])
 app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
 
 

@@ -20,7 +20,7 @@ from sqlalchemy import select
 from app.ai_pipeline.pipeline import ai_pipeline
 from app.auth.jwt_handler import decode_token
 from app.db.database import async_session
-from app.db.models import Room, User
+from app.db.models import Room, Subtitle, User
 from app.rooms.manager import room_manager
 
 logger = logging.getLogger(__name__)
@@ -67,9 +67,15 @@ class ConnectionManager:
 
     async def send_to_user(self, room_id: str, user_id: str, message: dict) -> None:
         """特定ユーザーにJSONを送信"""
+        print(f"[WS SEND] send_to_user: room={room_id}, user={user_id}, type={message.get('type')}", flush=True)
         if room_id in self.rooms and user_id in self.rooms[room_id]:
-            with contextlib.suppress(Exception):
+            try:
                 await self.rooms[room_id][user_id].send_json(message)
+                print(f"[WS SEND] 送信成功: {message.get('type')}", flush=True)
+            except Exception as e:
+                print(f"[WS SEND] 送信失敗: {e}", flush=True)
+        else:
+            print(f"[WS SEND] ユーザーが見つかりません: room_exists={room_id in self.rooms}", flush=True)
 
     async def send_bytes_to_user(self, room_id: str, user_id: str, data: bytes) -> None:
         """特定ユーザーにバイナリを送信"""
@@ -120,9 +126,9 @@ async def websocket_room(
             return
 
     # 接続確立（conn_mgr.connect内でws.accept()を呼び出す）
-    logger.info(f"[WS DEBUG] Connecting user {user_id} to room {room_id}")
+    print(f"[WS INIT] Connecting user {user_id} to room {room_id}", flush=True)
     await conn_mgr.connect(room_id, user_id, ws)
-    logger.info(f"[WS DEBUG] Connected, adding participant...")
+    print(f"[WS INIT] Connected, adding participant...", flush=True)
 
     # 参加者として追加（デフォルト: 原声モード）
     participant = await room_manager.add_participant(
@@ -134,7 +140,7 @@ async def websocket_room(
         subtitle_enabled=True,
     )
 
-    logger.info(f"[WS DEBUG] Participant added: {participant}")
+    print(f"[WS INIT] Participant added to Redis: user_id={user_id}", flush=True)
 
     # 入室を他の参加者に通知
     await conn_mgr.broadcast_json(
@@ -174,14 +180,19 @@ async def websocket_room(
             "your_preference": asdict(participant),
         }
     )
+    print(f"[WS DEBUG] Sent room_state, entering message loop...", flush=True)
     logger.info(f"[WS DEBUG] Sent room_state, entering message loop...")
 
     try:
         while True:
+            print(f"[WS DEBUG] Waiting for message from user {user_id}...", flush=True)
             data = await ws.receive()
+            print(f"[WS DEBUG] Received data type: {data.get('type')}, keys: {list(data.keys())}", flush=True)
+            logger.info(f"[WS DEBUG] Received data type: {data.get('type')}, keys: {list(data.keys())}")
 
             # 接続切断チェック
             if data.get("type") == "websocket.disconnect":
+                logger.info(f"[WS DEBUG] Client disconnected")
                 break
 
             if "text" in data:
@@ -260,13 +271,15 @@ async def websocket_room(
             elif "bytes" in data:
                 # 音声データ処理
                 audio_bytes = data["bytes"]
-                # WAVヘッダー(44バイト) + 最小PCMデータ(約0.25秒=8000バイト)
-                # 16kHz, 16bit, mono: 0.25秒 = 16000 * 0.25 * 2 = 8000バイト
-                min_audio_size = 44 + 8000
+                print(f"[WS AUDIO] 受信: {len(audio_bytes) if audio_bytes else 0} bytes from user {user_id}", flush=True)
+                logger.info(f"[WS AUDIO] 受信: {len(audio_bytes) if audio_bytes else 0} bytes from user {user_id}")
+                # WAVヘッダー(44バイト) + 最小PCMデータ(約0.2秒=6400バイト)
+                # 16kHz, 16bit, mono: 0.2秒 = 16000 * 0.2 * 2 = 6400バイト
+                min_audio_size = 44 + 6400
                 if not audio_bytes or len(audio_bytes) < min_audio_size:
                     # 音声データが短すぎる場合はスキップ（ASR認識不可）
-                    logger.debug(
-                        f"[WS DEBUG] 音声データが短すぎます: {len(audio_bytes) if audio_bytes else 0} bytes"
+                    logger.info(
+                        f"[WS AUDIO] 音声データが短すぎます: {len(audio_bytes) if audio_bytes else 0} bytes < {min_audio_size}"
                     )
                     continue
 
@@ -274,6 +287,7 @@ async def websocket_room(
                     room_id, user_id
                 )
                 if not current_participant:
+                    print(f"[WS AUDIO] 参加者が見つかりません: room_id={room_id}, user_id={user_id}", flush=True)
                     continue
 
                 speaker_lang = current_participant.native_language
@@ -285,10 +299,64 @@ async def websocket_room(
                 # 原文ASR結果（1回だけ取得）
                 original_asr_result = None
 
+                print(f"[WS AUDIO] 処理開始: speaker_lang={speaker_lang}, participants={len(all_participants)}", flush=True)
+
                 # 各参加者の設定に基づいて配信
                 for p in all_participants.values():
-                    if p.user_id == user_id:
-                        continue  # 自分自身にはスキップ
+                    is_self = p.user_id == user_id
+
+                    # 自分自身の場合: 音声は送信しない、字幕のみ送信
+                    if is_self:
+                        print(f"[WS AUDIO] 自分への字幕処理: subtitle_enabled={p.subtitle_enabled}", flush=True)
+                        if p.subtitle_enabled:
+                            # 自分の設定言語に基づいて字幕を生成
+                            target_lang = p.target_language or p.native_language
+                            print(f"[WS AUDIO] 自分の字幕: target_lang={target_lang}, speaker_lang={speaker_lang}", flush=True)
+                            if target_lang == speaker_lang:
+                                # 同じ言語：原文を表示
+                                if original_asr_result is None:
+                                    logger.info(f"[WS AUDIO] ASR開始...")
+                                    original_asr_result = await ai_pipeline.process_audio(
+                                        audio_bytes, speaker_lang, speaker_lang, user_id
+                                    )
+                                    logger.info(f"[WS AUDIO] ASR完了: '{original_asr_result.original_text}'")
+                                if original_asr_result.original_text:
+                                    logger.info(f"[WS AUDIO] 自分に字幕送信: '{original_asr_result.original_text}'")
+                                    await conn_mgr.send_to_user(
+                                        room_id,
+                                        p.user_id,
+                                        {
+                                            "type": "subtitle",
+                                            "speaker_id": user_id,
+                                            "text": original_asr_result.original_text,
+                                            "language": speaker_lang,
+                                            "is_translated": False,
+                                        },
+                                    )
+                                else:
+                                    logger.info(f"[WS AUDIO] ASR結果が空のため字幕送信なし")
+                            else:
+                                # 違う言語：翻訳字幕を表示
+                                if target_lang in translation_cache:
+                                    result = translation_cache[target_lang]
+                                else:
+                                    result = await ai_pipeline.process_audio(
+                                        audio_bytes, speaker_lang, target_lang, user_id
+                                    )
+                                    translation_cache[target_lang] = result
+                                if result.translated_text:
+                                    await conn_mgr.send_to_user(
+                                        room_id,
+                                        p.user_id,
+                                        {
+                                            "type": "subtitle",
+                                            "speaker_id": user_id,
+                                            "text": result.translated_text,
+                                            "language": target_lang,
+                                            "is_translated": True,
+                                        },
+                                    )
+                        continue  # 自分には音声を送信しない
 
                     if p.audio_mode == "original":
                         # 原声モード: 元の音声をそのまま送信
@@ -368,10 +436,12 @@ async def websocket_room(
 
                             # 翻訳音声があれば送信（なければ原声）
                             if result.audio_data:
+                                print(f"[WS TTS] 翻訳音声送信: {len(result.audio_data)} bytes to {p.user_id}", flush=True)
                                 await conn_mgr.send_bytes_to_user(
                                     room_id, p.user_id, result.audio_data
                                 )
                             else:
+                                print(f"[WS TTS] TTS音声なし、原声を送信: {len(audio_bytes)} bytes to {p.user_id}", flush=True)
                                 await conn_mgr.send_bytes_to_user(
                                     room_id, p.user_id, audio_bytes
                                 )
@@ -391,6 +461,29 @@ async def websocket_room(
                                     },
                                 )
 
+                # 字幕をデータベースに保存（原文がある場合のみ）
+                if original_asr_result and original_asr_result.original_text:
+                    # 翻訳結果を収集
+                    translations_dict = {}
+                    for lang, result in translation_cache.items():
+                        if result.translated_text:
+                            translations_dict[lang] = result.translated_text
+
+                    # 非同期でデータベースに保存
+                    try:
+                        async with async_session() as db:
+                            subtitle = Subtitle(
+                                room_id=room_id,
+                                speaker_id=user_id,
+                                original_text=original_asr_result.original_text,
+                                original_language=speaker_lang,
+                                translations=translations_dict,
+                            )
+                            db.add(subtitle)
+                            await db.commit()
+                    except Exception as e:
+                        logger.warning(f"字幕保存エラー: {e}")
+
     except WebSocketDisconnect:
         pass
     finally:
@@ -405,4 +498,3 @@ async def websocket_room(
         await conn_mgr.disconnect(room_id, user_id)
         await room_manager.remove_participant(room_id, user_id)
         logger.info(f"[WS] User {user_id} left room {room_id}")
-BJP hubs Rajnath Singh to. USC to go. Show me. I. 

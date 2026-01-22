@@ -29,9 +29,13 @@ def get_url() -> str:
     """
     データベースURLを取得
     環境変数 DATABASE_URL があれば優先、なければalembic.iniの設定を使用
+    非同期ドライバ(asyncpg)用にURLを変換
     """
     url = os.environ.get("DATABASE_URL")
     if url:
+        # postgresql:// → postgresql+asyncpg:// に変換
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return url
     return config.get_main_option("sqlalchemy.url", "")
 

@@ -167,6 +167,57 @@ export const authApi = {
   },
 };
 
+/** 字幕（会議記録用） */
+export interface SubtitleRecord {
+  id: string;
+  speakerId: string;
+  speakerName: string;
+  originalText: string;
+  originalLanguage: string;
+  translations: Record<string, string>;
+  timestamp: string;
+}
+
+/** 会議記録レスポンス */
+export interface TranscriptData {
+  roomId: string;
+  roomName: string;
+  subtitles: SubtitleRecord[];
+  total: number;
+}
+
+/** バックエンドの字幕レスポンス（snake_case） */
+interface SubtitleApiResponse {
+  id: string;
+  speaker_id: string;
+  speaker_name: string;
+  original_text: string;
+  original_language: string;
+  translations: Record<string, string>;
+  timestamp: string;
+}
+
+/** バックエンドの会議記録レスポンス（snake_case） */
+interface TranscriptApiResponse {
+  room_id: string;
+  room_name: string;
+  subtitles: SubtitleApiResponse[];
+  total: number;
+}
+
+/** 字幕 snake_case → camelCase 変換 */
+function convertSubtitle(s: SubtitleApiResponse): SubtitleRecord {
+  return {
+    id: s.id,
+    speakerId: s.speaker_id,
+    speakerName: s.speaker_name,
+    originalText: s.original_text,
+    originalLanguage: s.original_language,
+    translations: s.translations,
+    timestamp: s.timestamp,
+  };
+}
+
 /** 会議室API */
 export const roomApi = {
   /** 一覧取得 */
@@ -205,5 +256,116 @@ export const roomApi = {
       }),
     });
     return convertRoom(res);
+  },
+
+  /** 会議記録取得 */
+  getTranscript: async (roomId: string, lang?: string): Promise<TranscriptData> => {
+    const queryParams = lang ? `?lang=${encodeURIComponent(lang)}` : '';
+    const res = await apiFetch<TranscriptApiResponse>(`/rooms/${roomId}/transcript${queryParams}`);
+    return {
+      roomId: res.room_id,
+      roomName: res.room_name,
+      subtitles: res.subtitles.map(convertSubtitle),
+      total: res.total,
+    };
+  },
+};
+
+/** 管理者用ユーザー情報 */
+export interface AdminUser {
+  id: string;
+  email: string;
+  displayName: string;
+  nativeLanguage: string;
+  role: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+/** システム統計 */
+export interface SystemStats {
+  totalUsers: number;
+  activeUsers: number;
+  totalRooms: number;
+  activeRooms: number;
+  totalSubtitles: number;
+}
+
+/** バックエンドのAdminUser応答型（snake_case） */
+interface AdminUserApiResponse {
+  id: string;
+  email: string;
+  display_name: string;
+  native_language: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+/** バックエンドのシステム統計応答型（snake_case） */
+interface SystemStatsApiResponse {
+  total_users: number;
+  active_users: number;
+  total_rooms: number;
+  active_rooms: number;
+  total_subtitles: number;
+}
+
+/** AdminUser snake_case → camelCase 変換 */
+function convertAdminUser(u: AdminUserApiResponse): AdminUser {
+  return {
+    id: u.id,
+    email: u.email,
+    displayName: u.display_name,
+    nativeLanguage: u.native_language,
+    role: u.role,
+    isActive: u.is_active,
+    createdAt: u.created_at,
+  };
+}
+
+/** 管理者API */
+export const adminApi = {
+  /** ユーザー一覧取得 */
+  listUsers: async (): Promise<AdminUser[]> => {
+    const res = await apiFetch<AdminUserApiResponse[]>('/admin/users');
+    return res.map(convertAdminUser);
+  },
+
+  /** ユーザー詳細取得 */
+  getUser: async (userId: string): Promise<AdminUser> => {
+    const res = await apiFetch<AdminUserApiResponse>(`/admin/users/${userId}`);
+    return convertAdminUser(res);
+  },
+
+  /** ユーザー更新 */
+  updateUser: async (userId: string, data: {
+    displayName?: string;
+    nativeLanguage?: string;
+    role?: string;
+    isActive?: boolean;
+  }): Promise<AdminUser> => {
+    const res = await apiFetch<AdminUserApiResponse>(`/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        display_name: data.displayName,
+        native_language: data.nativeLanguage,
+        role: data.role,
+        is_active: data.isActive,
+      }),
+    });
+    return convertAdminUser(res);
+  },
+
+  /** システム統計取得 */
+  getStats: async (): Promise<SystemStats> => {
+    const res = await apiFetch<SystemStatsApiResponse>('/admin/stats');
+    return {
+      totalUsers: res.total_users,
+      activeUsers: res.active_users,
+      totalRooms: res.total_rooms,
+      activeRooms: res.active_rooms,
+      totalSubtitles: res.total_subtitles,
+    };
   },
 };

@@ -17,15 +17,20 @@ interface MenuItem {
   badgeKey?: string;
 }
 
-/** メニューカテゴリの型定義 */
-interface MenuCategory {
+/** メニュー項目の型定義（拡張） */
+interface MenuItemExtended extends MenuItem {
+  requireAdmin?: boolean;
+}
+
+/** メニューカテゴリの型定義（拡張） */
+interface MenuCategoryExtended {
   titleKey: string;
   icon: string;
-  items: MenuItem[];
+  items: MenuItemExtended[];
 }
 
 /** メニューカテゴリ定義（i18nキーを使用） */
-const menuCategories: MenuCategory[] = [
+const menuCategories: MenuCategoryExtended[] = [
   {
     titleKey: 'menu.communication',
     icon: '💬',
@@ -57,6 +62,13 @@ const menuCategories: MenuCategory[] = [
         path: '/history',
         badgeKey: 'menu.comingSoon',
       },
+      {
+        icon: '🔧',
+        titleKey: 'menu.admin',
+        descKey: 'menu.adminDesc',
+        path: '/admin',
+        requireAdmin: true,
+      },
     ],
   },
 ];
@@ -79,6 +91,15 @@ export function MenuPage() {
 
   /** 準備中かどうか判定 */
   const isComingSoon = (item: MenuItem) => !!item.badgeKey;
+
+  /** 管理者権限チェック */
+  const isAdmin = user?.role === 'admin';
+
+  /** フィルタされたメニューカテゴリ（管理者専用項目を除外） */
+  const filteredCategories = menuCategories.map((category) => ({
+    ...category,
+    items: category.items.filter((item) => !item.requireAdmin || isAdmin),
+  })).filter((category) => category.items.length > 0);
 
   return (
     <div className="menu-page">
@@ -113,7 +134,7 @@ export function MenuPage() {
       {/* メインコンテンツ */}
       <main className="menu-content">
         <div className="menu-grid">
-          {menuCategories.map((category) => (
+          {filteredCategories.map((category) => (
             <section key={category.titleKey} className="menu-category">
               <h2 className="category-title">
                 <span className="category-icon">{category.icon}</span>

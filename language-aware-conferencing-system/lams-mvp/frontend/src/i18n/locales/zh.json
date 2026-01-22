@@ -62,6 +62,8 @@
     "profileDesc": "修改显示名称和语言设置",
     "history": "使用记录",
     "historyDesc": "查看会议参与记录",
+    "admin": "管理员面板",
+    "adminDesc": "用户管理和系统设置",
     "comingSoon": "即将推出"
   },
   "room": {

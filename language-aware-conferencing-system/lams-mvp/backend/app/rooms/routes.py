@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.db.database import get_db
-from app.db.models import Room, User
+from app.db.models import Room, Subtitle, User
 from app.rooms.manager import room_manager
 
 router = APIRouter()
@@ -158,4 +158,97 @@ async def get_room(
         is_private=room.is_private,
         is_active=room.is_active,
         participant_count=len(participants),
+    )
+
+
+class SubtitleResponse(BaseModel):
+    """字幕レスポンス"""
+
+    id: str
+    speaker_id: str
+    speaker_name: str
+    original_text: str
+    original_language: str
+    translations: dict
+    timestamp: str  # ISO format
+
+    class Config:
+        from_attributes = True
+
+
+class TranscriptResponse(BaseModel):
+    """会議記録レスポンス"""
+
+    room_id: str
+    room_name: str
+    subtitles: list[SubtitleResponse]
+    total: int
+
+
+@router.get("/{room_id}/transcript", response_model=TranscriptResponse)
+async def get_room_transcript(
+    room_id: str,
+    lang: str | None = None,  # 出力言語（指定しない場合は全言語）
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TranscriptResponse:
+    """
+    会議記録（字幕履歴）を取得
+    - lang パラメータで出力言語を指定可能
+    - 全ユーザーが同じ内容を取得（言語のみ異なる可能性）
+    """
+    # 会議室の存在確認
+    result = await db.execute(select(Room).where(Room.id == room_id))
+    room = result.scalar_one_or_none()
+
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="会議室が見つかりません"
+        )
+
+    # 字幕を取得（時系列順）
+    result = await db.execute(
+        select(Subtitle)
+        .where(Subtitle.room_id == room_id)
+        .order_by(Subtitle.timestamp.asc())
+    )
+    subtitles = result.scalars().all()
+
+    # ユーザー情報を取得してマッピング
+    user_ids = list(set(s.speaker_id for s in subtitles))
+    if user_ids:
+        result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users_list = result.scalars().all()
+        users_map = {u.id: u.display_name for u in users_list}
+    else:
+        users_map = {}
+
+    # レスポンス構築
+    subtitle_responses = []
+    for s in subtitles:
+        # 指定言語がある場合は翻訳テキストを使用
+        if lang and lang in s.translations:
+            text = s.translations[lang]
+        elif lang and lang == s.original_language:
+            text = s.original_text
+        else:
+            text = s.original_text
+
+        subtitle_responses.append(
+            SubtitleResponse(
+                id=s.id,
+                speaker_id=s.speaker_id,
+                speaker_name=users_map.get(s.speaker_id, "不明"),
+                original_text=s.original_text if not lang else text,
+                original_language=s.original_language,
+                translations=s.translations,
+                timestamp=s.timestamp.isoformat(),
+            )
+        )
+
+    return TranscriptResponse(
+        room_id=room.id,
+        room_name=room.name,
+        subtitles=subtitle_responses,
+        total=len(subtitle_responses),
     )

@@ -62,6 +62,8 @@
     "profileDesc": "Change display name and language settings",
     "history": "Usage History",
     "historyDesc": "View meeting participation history",
+    "admin": "Admin Panel",
+    "adminDesc": "User management and system settings",
     "comingSoon": "Coming Soon"
   },
   "room": {

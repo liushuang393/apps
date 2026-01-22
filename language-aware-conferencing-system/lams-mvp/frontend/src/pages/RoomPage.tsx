@@ -149,6 +149,13 @@ export function RoomPage() {
               </select>
             </div>
           </div>
+          <button
+            className="transcript-btn"
+            onClick={() => navigate(`/room/${roomId}/transcript`)}
+            title="会議記録を表示"
+          >
+            📝 記録
+          </button>
           <button className="leave-btn" onClick={handleLeave}>退室</button>
         </div>
       </header>

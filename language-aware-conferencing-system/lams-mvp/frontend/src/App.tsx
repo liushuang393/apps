@@ -10,6 +10,8 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { MenuPage } from './pages/MenuPage';
 import { RoomListPage } from './pages/RoomListPage';
 import { RoomPage } from './pages/RoomPage';
+import { TranscriptPage } from './pages/TranscriptPage';
+import { AdminPage } from './pages/AdminPage';
 import './styles/main.css';
 
 /** 認証必須ルート */
@@ -51,6 +53,22 @@ export function App() {
           element={
             <PrivateRoute>
               <RoomPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/room/:roomId/transcript"
+          element={
+            <PrivateRoute>
+              <TranscriptPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <PrivateRoute>
+              <AdminPage />
             </PrivateRoute>
           }
         />

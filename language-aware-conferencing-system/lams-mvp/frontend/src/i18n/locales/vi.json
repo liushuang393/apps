@@ -62,6 +62,8 @@
     "profileDesc": "Thay đổi tên hiển thị và cài đặt ngôn ngữ",
     "history": "Lịch sử sử dụng",
     "historyDesc": "Xem lịch sử tham gia cuộc họp",
+    "admin": "Bảng quản trị",
+    "adminDesc": "Quản lý người dùng và cài đặt hệ thống",
     "comingSoon": "Sắp ra mắt"
   },
   "room": {

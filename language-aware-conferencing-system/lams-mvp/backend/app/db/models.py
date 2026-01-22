@@ -99,6 +99,35 @@ class PasswordResetToken(Base):
     user: Mapped["User"] = relationship()
 
 
+class Subtitle(Base):
+    """
+    字幕モデル
+    会議の発言記録を保存（多言語翻訳含む）
+    """
+
+    __tablename__ = "subtitles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), index=True)
+    speaker_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+
+    # 原文
+    original_text: Mapped[str] = mapped_column(Text)
+    original_language: Mapped[str] = mapped_column(String(10))
+
+    # 翻訳結果（JSON: {"en": "Hello", "zh": "你好", ...}）
+    translations: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    # タイムスタンプ
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+
+    # リレーション
+    room: Mapped["Room"] = relationship()
+    speaker: Mapped["User"] = relationship()
+
+
 class Room(Base):
     """
     会議室モデル

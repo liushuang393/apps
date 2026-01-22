@@ -59,6 +59,11 @@ export function SubtitleDisplay() {
               {sub.isTranslated && (
                 <span className="translated-badge">翻訳</span>
               )}
+              {sub.latencyMs && sub.latencyMs > 0 && (
+                <span className="latency-badge" title="翻訳遅延">
+                  {sub.latencyMs}ms
+                </span>
+              )}
             </div>
           );
         })

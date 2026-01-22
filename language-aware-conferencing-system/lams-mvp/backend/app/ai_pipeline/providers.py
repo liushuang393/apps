@@ -96,20 +96,43 @@ class GeminiProvider(AIProvider):
     Gemini 2.5 Flash Native Audio プロバイダー
 
     google-genai SDK v1.0+ を使用。
-    公式ドキュメント: https://ai.google.dev/gemini-api/docs
-
-    対応モデル:
-    - models/gemini-2.5-flash-native-audio-preview-12-2025
-
-    機能:
-    - 音声認識（ASR）: Native Audio のマルチモーダル機能
-    - テキスト翻訳: Gemini 2.5 Flash
-    - リアルタイム音声処理: Live API
+    ASRはOpenAI Whisperを使用（Gemini ASRが不安定なため）。
+    翻訳とTTSはGemini Live APIを使用。
     """
+
+    # ノイズとして認識されやすいパターン（Whisperの誤認識）
+    NOISE_PATTERNS = [
+        "by h", "by h.", "bye", "by.", "h.", "h", "the", "a", "i", "you",
+        "uh", "um", "ah", "oh", "hmm", "hm", "mm", "mhm",
+        "thank you", "thanks", "okay", "ok", "yes", "no", "yeah", "yep",
+        "ming pao", "ming pao canada", "ming pao toronto",
+        "...", "。。。", "・・・", "…", "、", "。", ".", ",", "-", "—",
+        "ご視聴ありがとうございました", "チャンネル登録", "高評価",
+        "見てくれてありがとう", "ありがとうございました",
+        "谢谢", "再见", "好的", "是的", "感谢观看", "订阅", "点赞",
+    ]
 
     def __init__(self) -> None:
         """プロバイダー初期化（クライアントは遅延初期化）"""
         self._client = None
+
+    def _is_noise_transcription(self, text: str) -> bool:
+        """ノイズ認識結果かどうかを判定"""
+        if not text or len(text) <= 3:
+            return True
+        import re
+        text_clean = re.sub(r'^[\s\.\,\!\?\-\—]+|[\s\.\,\!\?\-\—]+$', '', text.lower())
+        for pattern in self.NOISE_PATTERNS:
+            if pattern.lower() in text_clean:
+                return True
+        if len(set(text.replace(" ", ""))) <= 2:
+            return True
+        # メディア系ノイズキーワード
+        media_keywords = ["amara.org", "社群提供", "字幕", "チャンネル登録", "ご視聴", "感謝收看"]
+        for kw in media_keywords:
+            if kw.lower() in text_clean:
+                return True
+        return False
 
     async def _get_client(self):
         """
@@ -153,11 +176,14 @@ class GeminiProvider(AIProvider):
         target_language: str,
     ) -> TranslationResult:
         """
-        Gemini Native Audio Live API で音声→音声翻訳（底線）
+        OpenAI Whisper + GPT-4o-mini + TTS で音声翻訳
+
+        Gemini Live APIは不安定なため、OpenAI APIを使用。
 
         処理フロー:
-        1. Live API で音声→音声翻訳（必須）
-        2. 字幕が取得できない場合は非同期でテキスト翻訳
+        1. Whisper で音声認識
+        2. GPT-4o-mini でテキスト翻訳
+        3. TTS で翻訳音声生成
 
         Args:
             audio_data: WAV形式の音声データ
@@ -178,90 +204,92 @@ class GeminiProvider(AIProvider):
                 audio_data=audio_data,
             )
 
-        if not settings.gemini_api_key:
+        # OpenAI APIキーチェック
+        if not settings.openai_api_key:
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text="[Gemini APIキーが設定されていません]",
-                translated_text="[Gemini APIキーが設定されていません]",
+                original_text="[OpenAI APIキーが設定されていません]",
+                translated_text="[OpenAI APIキーが設定されていません]",
             )
 
         try:
-            from google.genai import types
+            from openai import AsyncOpenAI
 
-            client = await self._get_client()
-            src_name = LANGUAGE_NAMES.get(source_language, source_language)
+            # 1. Whisper で音声認識
+            original_text = await self.transcribe_audio(audio_data, source_language)
+            if not original_text or original_text.startswith("["):
+                return TranslationResult(
+                    source_language=source_language,
+                    target_language=target_language,
+                    original_text=original_text or "",
+                    translated_text="",
+                    audio_data=None,
+                )
+
+            # OpenAIクライアント作成
+            base_url = settings.openai_base_url if settings.openai_base_url else "https://api.openai.com/v1"
+            client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=base_url)
             tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
 
-            # Live API で音声+テキスト同時翻訳（音声と字幕の言語一致を保証）
-            model = settings.gemini_model
-            config = types.LiveConnectConfig(
-                responseModalities=["AUDIO", "TEXT"],
-                speechConfig=types.SpeechConfig(
-                    voiceConfig=types.VoiceConfig(
-                        prebuiltVoiceConfig=types.PrebuiltVoiceConfig(
-                            voiceName="Aoede"
-                        )
-                    )
-                ),
-                systemInstruction=types.Content(
-                    parts=[types.Part(text=(
-                        f"You are a translator. Translate {src_name} audio to {tgt_name}. "
-                        f"Speak the translation naturally and also provide the text."
-                    ))]
-                ),
+            # 2. GPT-4o-mini でテキスト翻訳
+            logger.info(f"[翻訳] GPT-4o-mini翻訳開始: '{original_text}' -> {tgt_name}")
+            chat_response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"You are a translator. Translate the text to {tgt_name}. Output only the translated text.",
+                    },
+                    {"role": "user", "content": original_text},
+                ],
+                max_tokens=500,
+                temperature=0.3,
             )
+            translated_text = chat_response.choices[0].message.content
+            if translated_text:
+                translated_text = translated_text.strip()
+            else:
+                translated_text = "[翻訳失敗]"
+            logger.info(f"[翻訳] GPT-4o-mini完了: '{original_text}' -> '{translated_text}'")
 
-            translated_audio = b""
-            translated_text = ""
-            async with client.aio.live.connect(model=model, config=config) as session:
-                # 音声データを送信
-                await session.send(input=audio_data, mime_type="audio/wav")
-                await session.send(end_of_turn=True)
-
-                # 翻訳音声+テキストを受信
-                async for response in session.receive():
-                    if response.server_content:
-                        sc = response.server_content
-                        if sc.model_turn:
-                            for part in sc.model_turn.parts:
-                                if part.inline_data:
-                                    translated_audio += part.inline_data.data
-                                if part.text:
-                                    translated_text += part.text
-                        if sc.turn_complete:
-                            break
-
-            # 音声翻訳成功チェック（底線）
-            if not translated_audio:
-                raise RuntimeError("Live APIから音声が返されませんでした")
-
-            # 原文は非同期で取得（翻訳済み音声+字幕は既に一致）
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            # 3. TTS で翻訳音声を生成
+            translated_audio = None
+            try:
+                tts_response = await client.audio.speech.create(
+                    model="tts-1",
+                    voice="alloy",
+                    input=translated_text,
+                    response_format="wav",
+                )
+                translated_audio = tts_response.content
+                logger.info(f"[翻訳] TTS完了: {len(translated_audio)} bytes")
+            except Exception as tts_err:
+                logger.warning(f"[翻訳] TTS失敗（字幕のみ）: {tts_err}")
 
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
                 original_text=original_text,
-                translated_text=translated_text or "[翻訳テキスト取得失敗]",
+                translated_text=translated_text,
                 audio_data=translated_audio,
             )
 
         except Exception as e:
-            logger.error("Gemini Live API音声翻訳エラー: %s", e)
+            logger.error("音声翻訳エラー: %s", e, exc_info=True)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text="[音声翻訳エラー]",
-                translated_text="[音声翻訳エラー]",
-                audio_data=audio_data,
+                original_text=f"[エラー: {type(e).__name__}]",
+                translated_text=f"[エラー: {type(e).__name__}]",
+                audio_data=None,
             )
 
     async def transcribe_audio(self, audio_data: bytes, language: str) -> str:
         """
-        Gemini 2.5 FlashでASR（音声認識）
+        OpenAI Whisper APIでASR（音声認識）
 
-        google-genai SDK v1.0+ の types.Part.from_bytes() を使用。
+        GeminiのASRは不安定なため、OpenAI Whisperを使用。
 
         Args:
             audio_data: WAV形式の音声データ
@@ -270,68 +298,142 @@ class GeminiProvider(AIProvider):
         Returns:
             認識されたテキスト
         """
-        if not settings.gemini_api_key:
-            logger.warning("Gemini APIキーが設定されていません")
+        logger.info(f"[ASR] transcribe_audio開始: language={language}, data_size={len(audio_data)}")
+
+        # OpenAI APIキーチェック
+        if not settings.openai_api_key:
+            logger.warning("[ASR] OpenAI APIキーが設定されていません")
             return "[APIキー未設定]"
 
-        # 最小音声データサイズチェック（WAVヘッダー44 + 0.25秒分のPCMデータ）
-        min_size = 44 + 8000  # 16kHz, 16bit, mono: 0.25秒
+        # 最小音声データサイズチェック（WAVヘッダー44 + 0.5秒分のPCMデータ）
+        min_size = 44 + 16000  # 16kHz, 16bit, mono: 0.5秒
         if len(audio_data) < min_size:
-            logger.debug("音声データが短すぎます: %d bytes", len(audio_data))
-            return ""  # 空文字を返す（短すぎるデータは無視）
+            logger.info("[ASR] 音声データが短すぎます: %d bytes", len(audio_data))
+            return ""
 
         try:
-            # google-genai SDK v1.0+ の正しいインポート
-            from google.genai import types
+            from openai import AsyncOpenAI
+            import io
 
-            client = await self._get_client()
-            lang_name = LANGUAGE_NAMES.get(language, language)
+            # base_urlが空文字列の場合はOpenAI公式URLを使用
+            base_url = settings.openai_base_url if settings.openai_base_url else "https://api.openai.com/v1"
+            client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=base_url)
+            logger.info(f"[ASR] OpenAI client created with base_url: {base_url}")
 
-            # types.Part.from_bytes() を使用（推奨方法）
-            audio_part = types.Part.from_bytes(
-                data=audio_data,
-                mime_type="audio/wav",
+            # BytesIOでファイルオブジェクトを作成
+            audio_file = io.BytesIO(audio_data)
+            audio_file.name = "audio.wav"
+
+            logger.info(f"[ASR] Whisper API呼び出し: language={language}")
+            response = await client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language=language if language != "zh" else "zh",
             )
 
-            # Gemini で音声認識（generateContent API用モデルを使用）
-            # NOTE: Native Audioモデルは Live API専用のため、ASRにはテキストモデルを使用
-            response = await asyncio.to_thread(
-                client.models.generate_content,
-                model=settings.gemini_text_model,
-                contents=[
-                    audio_part,
-                    f"この音声を{lang_name}でテキストに変換してください。"
-                    "テキストのみを返してください。",
-                ],
-            )
             result = response.text.strip() if response.text else ""
+
+            # ノイズフィルタリング
+            if result and self._is_noise_transcription(result):
+                logger.info(f"[ASR] ノイズとして除外: '{result}'")
+                return ""
+
             if not result:
-                logger.debug("ASR結果が空です（無音または認識不可）")
+                logger.info("[ASR] ASR結果が空です")
+            else:
+                logger.info(f"[ASR] ASR成功: '{result}'")
             return result
         except Exception as e:
-            logger.error("Gemini ASRエラー: %s", e)
+            logger.error("[ASR] Whisper ASRエラー: %s", e, exc_info=True)
             return f"[ASRエラー: {type(e).__name__}]"
 
 
 class OpenAIRealtimeProvider(AIProvider):
     """
-    OpenAI GPT Realtime プロバイダー
+    OpenAI プロバイダー（Whisper + GPT-4 + TTS）
 
     openai SDK v2.x を使用。
-    公式ドキュメント: https://platform.openai.com/docs/guides/realtime
+    処理フロー:
+    1. Whisper API で音声認識（ASR）
+    2. GPT-4o-mini でテキスト翻訳
+    3. TTS API で音声合成（オプション）
 
-    対応モデル:
-    - gpt-realtime-2025-08-28
-    - gpt-realtime-mini-2025-10-06
-
-    機能:
-    - Realtime API による音声認識・翻訳
-    - WebSocket ベースのリアルタイム通信
+    これにより安定したリアルタイム翻訳を実現。
     """
+
+    # ノイズとして認識されやすいパターン（Whisperの誤認識）
+    NOISE_PATTERNS = [
+        # 英語ノイズ
+        "by h", "by h.", "bye", "by.", "h.", "h", "the", "a", "i", "you",
+        "uh", "um", "ah", "oh", "hmm", "hm", "mm", "mhm",
+        "thank you", "thanks", "okay", "ok", "yes", "no", "yeah", "yep",
+        "so", "and", "but", "or", "it", "is", "was", "be", "to", "of",
+        "ming pao", "ming pao canada", "ming pao toronto",  # 広告系
+        # 記号・無意味
+        "...", "。。。", "・・・", "…", "、", "。", ".", ",", "-", "—",
+        "//", "/", "\\", "|",
+        # 日本語ノイズ（YouTube字幕自動生成系）
+        "ご視聴ありがとうございました", "チャンネル登録", "高評価",
+        "お疲れ様", "お願いします", "はい", "うん", "ええ", "あー", "えー",
+        "んー", "ん", "あ", "え", "お",
+        "見てくれてありがとう", "ありがとうございました", "ありがとう",
+        "ばいばい", "さようなら", "ダウンロード", "少々お待ちください",
+        "最後まで視聴", "本日はご視聴",
+        # 中国語ノイズ
+        "谢谢", "再见", "好的", "是的", "嗯", "哦", "啊",
+        "感谢观看", "订阅", "点赞",
+    ]
 
     def __init__(self) -> None:
         """プロバイダー初期化（クライアントは遅延初期化）"""
         self._client = None
+
+    def _is_noise_transcription(self, text: str) -> bool:
+        """
+        ノイズ認識結果かどうかを判定
+
+        Args:
+            text: ASR結果テキスト
+
+        Returns:
+            ノイズと判定された場合True
+        """
+        if not text:
+            return True
+
+        # 短すぎるテキストはノイズ（3文字以下）
+        if len(text) <= 3:
+            return True
+
+        # 既知のノイズパターンと一致（前後の記号を除去して比較）
+        import re
+        # 前後の記号・空白を除去
+        text_clean = re.sub(r'^[\s\.\,\!\?\-\—]+|[\s\.\,\!\?\-\—]+$', '', text.lower())
+
+        # 完全一致チェック
+        for pattern in self.NOISE_PATTERNS:
+            pattern_clean = pattern.lower().strip()
+            if text_clean == pattern_clean:
+                return True
+            # 部分一致チェック（ノイズパターンを含む場合）
+            if pattern_clean in text_clean:
+                return True
+
+        # 同じ文字の繰り返し（例：「あああ」）
+        if len(set(text.replace(" ", ""))) <= 2:
+            return True
+
+        # YouTube/メディア系ノイズ（部分一致で検出）
+        media_noise_keywords = [
+            "amara.org", "社群提供", "字幕", "订阅", "点赞", "关注",
+            "チャンネル登録", "高評価", "コメント", "再會", "再见",
+            "ご視聴", "視聴", "ありがとう", "感谢观看", "感謝收看",
+        ]
+        for keyword in media_noise_keywords:
+            if keyword.lower() in text_clean:
+                return True
+
+        return False
 
     async def _get_client(self):
         """
@@ -345,15 +447,16 @@ class OpenAIRealtimeProvider(AIProvider):
         """
         if self._client is None:
             try:
-                # openai SDK v2.x の正しいインポート方法
                 from openai import AsyncOpenAI
 
-                # base_url は設定から取得（カスタムエンドポイント対応）
-                # 空文字列の場合は None を渡してデフォルトURLを使用
+                # base_urlは明示的にOpenAI APIエンドポイントを設定
+                # 空文字列やNoneの場合はデフォルトURLを使用
+                base_url = settings.openai_base_url or "https://api.openai.com/v1"
                 self._client = AsyncOpenAI(
                     api_key=settings.openai_api_key,
-                    base_url=settings.openai_base_url or None,
+                    base_url=base_url,
                 )
+                logger.info(f"OpenAI client initialized with base_url: {base_url}")
             except ImportError as err:
                 logger.error("openai パッケージがインストールされていません")
                 raise ImportError(
@@ -368,11 +471,12 @@ class OpenAIRealtimeProvider(AIProvider):
         target_language: str,
     ) -> TranslationResult:
         """
-        OpenAI GPT Realtime で音声→音声+字幕翻訳
+        OpenAI Whisper + GPT-4o-mini + TTS で音声翻訳
 
         処理フロー:
-        1. Realtime API に音声を送信
-        2. 翻訳済み音声+テキストを取得
+        1. Whisper API で音声認識（ASR）
+        2. GPT-4o-mini でテキスト翻訳
+        3. TTS API で翻訳音声を生成
 
         Args:
             audio_data: WAV形式の音声データ
@@ -382,7 +486,7 @@ class OpenAIRealtimeProvider(AIProvider):
         Returns:
             翻訳結果（音声データ + テキスト）
         """
-        # 同一言語の場合はASRのみ
+        # 同一言語の場合はASRのみ（翻訳不要）
         if source_language == target_language:
             original_text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(
@@ -390,93 +494,83 @@ class OpenAIRealtimeProvider(AIProvider):
                 target_language=target_language,
                 original_text=original_text,
                 translated_text=original_text,
-                audio_data=audio_data,  # 原音をそのまま返す
+                audio_data=None,  # 原音を使うのでNone
             )
 
         if not settings.openai_api_key:
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text="[OpenAI APIキーが設定されていません]",
-                translated_text="[OpenAI APIキーが設定されていません]",
+                original_text="[APIキー未設定]",
+                translated_text="[APIキー未設定]",
             )
 
         try:
-            import base64
-
-            client = await self._get_client()
-            src_name = LANGUAGE_NAMES.get(source_language, source_language)
-            tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
-
-            # Realtime API で音声翻訳（音声+テキスト出力）
-            async with client.realtime.connect(
-                model=settings.openai_realtime_model
-            ) as connection:
-                # 音声+テキスト出力を設定
-                await connection.session.update(
-                    session={
-                        "modalities": ["text", "audio"],
-                        "instructions": (
-                            f"You are a real-time translator. "
-                            f"Translate the {src_name} audio to {tgt_name}. "
-                            f"Respond with the translation in {tgt_name} speech and text."
-                        ),
-                        "voice": "alloy",
-                        "input_audio_format": "pcm16",
-                        "output_audio_format": "pcm16",
-                    }
+            # 1. Whisper で音声認識
+            original_text = await self.transcribe_audio(audio_data, source_language)
+            if not original_text or original_text.startswith("["):
+                return TranslationResult(
+                    source_language=source_language,
+                    target_language=target_language,
+                    original_text=original_text or "",
+                    translated_text="",
+                    audio_data=None,
                 )
 
-                # 音声データを送信（Base64エンコード）
-                audio_b64 = base64.b64encode(audio_data).decode("utf-8")
-                await connection.input_audio_buffer.append(audio=audio_b64)
-                await connection.input_audio_buffer.commit()
-                await connection.response.create()
+            client = await self._get_client()
+            tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
 
-                translated_text = ""
-                audio_chunks: list[bytes] = []
+            # 2. GPT-4o-mini でテキスト翻訳
+            chat_response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"You are a translator. Translate the text to {tgt_name}. Output only the translated text.",
+                    },
+                    {"role": "user", "content": original_text},
+                ],
+                max_tokens=500,
+                temperature=0.3,
+            )
+            translated_text = chat_response.choices[0].message.content.strip()
+            logger.info(f"[OpenAI] 翻訳完了: '{original_text}' -> '{translated_text}'")
 
-                async for event in connection:
-                    if event.type == "response.audio_transcript.delta":
-                        translated_text += event.delta
-                    elif event.type == "response.audio.delta":
-                        audio_chunks.append(base64.b64decode(event.delta))
-                    elif event.type == "response.done":
-                        break
-
-                translated_text = translated_text.strip()
-
-                # 音声データを結合
-                translated_audio = b"".join(audio_chunks) if audio_chunks else None
-
-            # 原文も取得（字幕表示用）
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            # 3. TTS で翻訳音声を生成（オプション）
+            translated_audio = None
+            try:
+                tts_response = await client.audio.speech.create(
+                    model="tts-1",
+                    voice="alloy",
+                    input=translated_text,
+                    response_format="wav",
+                )
+                translated_audio = tts_response.content
+                logger.info(f"[OpenAI] TTS完了: {len(translated_audio)} bytes")
+            except Exception as tts_err:
+                logger.warning(f"[OpenAI] TTS失敗（字幕のみ）: {tts_err}")
 
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
                 original_text=original_text,
-                translated_text=translated_text or f"[翻訳エラー] {original_text}",
+                translated_text=translated_text,
                 audio_data=translated_audio,
             )
 
         except Exception as e:
-            logger.error("OpenAI Realtime音声翻訳エラー: %s", e)
-            # エラー時はASRでフォールバック
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            logger.error("OpenAI翻訳エラー: %s", e, exc_info=True)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text=original_text,
-                translated_text=f"[翻訳エラー] {original_text}",
-                audio_data=audio_data,  # 原音をフォールバック
+                original_text=f"[エラー: {type(e).__name__}]",
+                translated_text=f"[エラー: {type(e).__name__}]",
+                audio_data=None,
             )
 
     async def transcribe_audio(self, audio_data: bytes, language: str) -> str:
         """
-        OpenAI GPT Realtime でASR（音声認識）
-
-        openai SDK v2.x の Realtime API を使用。
+        OpenAI Whisper API で音声認識（ASR）
 
         Args:
             audio_data: WAV形式の音声データ
@@ -493,49 +587,37 @@ class OpenAIRealtimeProvider(AIProvider):
         min_size = 44 + 8000  # WAVヘッダー + 0.25秒分
         if len(audio_data) < min_size:
             logger.debug("音声データが短すぎます: %d bytes", len(audio_data))
-            return ""  # 空文字を返す（短すぎるデータは無視）
+            return ""
 
         try:
-            import base64
-
+            import io
             client = await self._get_client()
-            lang_name = LANGUAGE_NAMES.get(language, language)
 
-            # Realtime API でリアルタイム音声認識
-            async with client.realtime.connect(
-                model=settings.openai_realtime_model
-            ) as connection:
-                await connection.session.update(session={"output_modalities": ["text"]})
-                # 音声データをBase64エンコードして送信
-                audio_b64 = base64.b64encode(audio_data).decode("utf-8")
-                await connection.conversation.item.create(
-                    item={
-                        "type": "message",
-                        "role": "user",
-                        "content": [
-                            {"type": "input_audio", "audio": audio_b64},
-                            {
-                                "type": "input_text",
-                                "text": f"この音声を{lang_name}でテキストに変換してください。",
-                            },
-                        ],
-                    }
-                )
-                await connection.response.create()
+            # Whisper API で音声認識
+            # BytesIOをファイルライクオブジェクトとして渡す
+            audio_file = io.BytesIO(audio_data)
+            audio_file.name = "audio.wav"
 
-                result_text = ""
-                async for event in connection:
-                    if event.type == "response.output_text.delta":
-                        result_text += event.delta
-                    elif event.type == "response.done":
-                        break
+            response = await client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language=language if language != "zh" else "zh",  # 中国語
+                response_format="text",
+            )
 
-            result = result_text.strip() if result_text else ""
-            if not result:
-                logger.debug("ASR結果が空です（無音または認識不可）")
+            result = response.strip() if response else ""
+
+            # ノイズフィルタリング: 短すぎる結果や無意味なテキストを除外
+            if result and self._is_noise_transcription(result):
+                logger.debug(f"[OpenAI Whisper] ノイズ除外: '{result}'")
+                return ""
+
+            if result:
+                logger.info(f"[OpenAI Whisper] ASR成功: '{result}'")
             return result
+
         except Exception as e:
-            logger.error("OpenAI Realtime ASRエラー: %s", e)
+            logger.error("OpenAI Whisper ASRエラー: %s", e, exc_info=True)
             return f"[ASRエラー: {type(e).__name__}]"
 
 
