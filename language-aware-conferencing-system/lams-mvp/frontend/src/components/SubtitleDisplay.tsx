@@ -43,8 +43,8 @@ export function SubtitleDisplay() {
           const speaker = participants.get(sub.speakerId);
           const isMyMessage = sub.speakerId === currentUserId;
           const displayName = speaker?.displayName || '不明';
-          // 字幕のユニークキー（speakerId + index + text hash）
-          const subtitleKey = `${sub.speakerId}-${idx}-${sub.text.slice(0, 10)}`;
+          // 字幕のユニークキー（IDがあればID、なければフォールバック）
+          const subtitleKey = sub.id ?? `${sub.speakerId}-${idx}-${sub.text.slice(0, 10)}`;
 
           return (
             <div

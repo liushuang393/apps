@@ -95,7 +95,9 @@ class Settings(BaseSettings):
     # データベース設定
     # ローカル開発時はDocker DB（host.docker.internal:5433）を使用
     # ===========================================
-    database_url: str = "postgresql://lams:lams_secret_2024@host.docker.internal:5433/lams"
+    database_url: str = (
+        "postgresql://lams:lams_secret_2024@host.docker.internal:5433/lams"
+    )
 
     # ===========================================
     # Redis設定
@@ -113,23 +115,49 @@ class Settings(BaseSettings):
     # ===========================================
     # AIプロバイダー設定
     # ===========================================
-    # プロバイダー選択（gemini または openai_realtime）
-    ai_provider: Literal["gemini", "openai_realtime"] = "gemini"
+    # プロバイダー選択: gpt4o_transcribe, gpt_realtime, deepgram
+    ai_provider: Literal["gpt4o_transcribe", "gpt_realtime", "deepgram"] = (
+        "gpt4o_transcribe"
+    )
 
-    # Gemini API 設定（secrets.jsonからも取得可能）
-    gemini_api_key: str | None = None
-    gemini_base_url: str | None = None  # カスタムエンドポイント（オプション）
-    # Live API用モデル（WebSocketストリーミング）
-    gemini_model: str = "models/gemini-2.5-flash-native-audio-preview-12-2025"
-    # generateContent API用モデル（ASR/翻訳）
-    gemini_text_model: str = "models/gemini-2.5-flash"
-
-    # OpenAI Realtime API 設定（secrets.jsonからも取得可能）
+    # -------------------------------------------
+    # OpenAI API 設定（gpt4o_transcribe, gpt_realtime共通）
+    # -------------------------------------------
     openai_api_key: str | None = None
     openai_base_url: str | None = None  # カスタムエンドポイント（オプション）
-    openai_realtime_model: str = (
-        "gpt-realtime-2025-08-28"  # または gpt-realtime-mini-2025-10-06
-    )
+
+    # GPT-4o-transcribe 設定（ASR用、300-500ms）
+    # 最新モデル: gpt-4o-transcribe, gpt-4o-mini-transcribe
+    openai_transcribe_model: str = "gpt-4o-transcribe"
+
+    # GPT-Realtime S2S 設定（音声直接翻訳、WebSocket API）
+    # 最新モデル: gpt-realtime, gpt-realtime-mini, gpt-4o-realtime-preview-2025-06-03
+    openai_realtime_model: str = "gpt-realtime"
+
+    # テキスト翻訳用モデル
+    openai_translate_model: str = "gpt-4o-mini"
+
+    # TTS用モデルと音声
+    openai_tts_model: str = "tts-1"
+    openai_tts_voice: str = "alloy"
+
+    # -------------------------------------------
+    # Deepgram API 設定（ASR用、200-400ms）
+    # -------------------------------------------
+    deepgram_api_key: str | None = None
+    deepgram_base_url: str | None = None  # カスタムエンドポイント（オプション）
+    # Nova-3は最新の高精度・低遅延モデル
+    deepgram_model: str = "nova-3"
+    # ストリーミングASR用設定
+    deepgram_language: str = "multi"  # multi = 多言語自動検出
+
+    # -------------------------------------------
+    # Gemini API 設定（将来の拡張用、現在未使用）
+    # -------------------------------------------
+    gemini_api_key: str | None = None
+    gemini_base_url: str | None = None
+    gemini_model: str = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+    gemini_text_model: str = "models/gemini-2.5-flash"
 
     # ===========================================
     # QoS設定（認知負荷軽減のため）
@@ -182,10 +210,12 @@ class Settings(BaseSettings):
         """
         super().__init__(**kwargs)
         # secrets.json からAPIキーを補完（環境変数/.envより低優先度）
-        if not self.gemini_api_key:
-            self.gemini_api_key = _get_secret("GEMINI_API_KEY")
         if not self.openai_api_key:
             self.openai_api_key = _get_secret("OPENAI_API_KEY")
+        if not self.deepgram_api_key:
+            self.deepgram_api_key = _get_secret("DEEPGRAM_API_KEY")
+        if not self.gemini_api_key:
+            self.gemini_api_key = _get_secret("GEMINI_API_KEY")
 
 
 @lru_cache

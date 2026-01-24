@@ -4,18 +4,11 @@
 import { useAuthStore } from '../store/authStore';
 import type { Room, User, SupportedLanguage, AudioMode } from '../types';
 
-// APIベースURLを動的に決定
-// - localhost アクセス時: proxy経由（/api）
-// - LAN IP アクセス時: 同じホストの8000番ポート
-const API_BASE = (() => {
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1') {
-    // localhost経由: Vite proxy使用
-    return '/api';
-  }
-  // LAN IP経由: 同じホストの8000番ポートを使用
-  return `http://${host}:8000/api`;
-})();
+// APIベースURL
+// 常に相対パス /api を使用し、Vite proxy経由でバックエンドにアクセス
+// これにより、localhost/LAN IP どちらからアクセスしても同一originとなり、
+// localStorageの認証トークンが共有される（業界ベストプラクティス）
+const API_BASE = '/api';
 
 /** バックエンドのRoom応答型（snake_case） */
 interface RoomApiResponse {

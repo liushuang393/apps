@@ -87,7 +87,7 @@ export function RoomListPage() {
     try {
       setError(null);
       const res = await roomApi.list();
-      setRooms(res.rooms);
+      setRooms(res.rooms || []); // 空配列の場合も正常に処理
     } catch (err) {
       // 認証エラーの場合はログインページへ
       if (err instanceof Error && err.message.includes('401')) {
@@ -95,7 +95,14 @@ export function RoomListPage() {
         navigate('/login');
         return;
       }
+      // 404エラー(会議室が存在しない)の場合は空配列を設定してエラー表示しない
+      if (err instanceof Error && err.message.includes('404')) {
+        setRooms([]);
+        return;
+      }
+      // その他のエラーの場合のみエラーメッセージを表示
       setError('会議室一覧の取得に失敗しました');
+      console.error('会議室一覧取得エラー:', err);
     } finally {
       setLoading(false);
     }
@@ -320,8 +327,10 @@ export function RoomListPage() {
       <div className="room-grid">
         {rooms.length === 0 ? (
           <div className="empty-state">
-            <p>🏢 会議室がありません</p>
-            <p>「新規会議室作成」ボタンから作成してください</p>
+            <div className="empty-icon">🏢</div>
+            <h2>会議室がありません</h2>
+            <p>まだ会議室が作成されていません</p>
+            <p className="empty-hint">上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう</p>
           </div>
         ) : (
           rooms.map((room) => (

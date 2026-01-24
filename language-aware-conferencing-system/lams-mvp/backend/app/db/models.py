@@ -60,7 +60,9 @@ class User(Base):
     # アカウント状態
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
 
     # リレーション
     created_rooms: Mapped[list["Room"]] = relationship(back_populates="creator")
@@ -93,7 +95,9 @@ class PasswordResetToken(Base):
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
 
     # リレーション
     user: Mapped["User"] = relationship()
@@ -155,7 +159,9 @@ class Room(Base):
     is_private: Mapped[bool] = mapped_column(Boolean, default=False)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
 
     # リレーション
     creator: Mapped["User"] = relationship(back_populates="created_rooms")

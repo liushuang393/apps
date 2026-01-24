@@ -42,6 +42,7 @@ export function useWebSocket(roomId: string | null) {
     addParticipant,
     removeParticipant,
     setActiveSpeaker,
+    updateParticipantMicStatus,
     addSubtitle,
     setConnected,
     setConnectionStatus,
@@ -106,8 +107,14 @@ export function useWebSocket(roomId: string | null) {
         case 'speaking_end':
           setActiveSpeaker(null);
           break;
+        case 'mic_status_changed':
+          // マイク状態変更を参加者リストに反映
+          updateParticipantMicStatus(msg.user_id as string, msg.is_mic_on as boolean);
+          break;
         case 'subtitle':
           addSubtitle({
+            id: msg.id as string | undefined,
+            seq: msg.seq as number | undefined,
             speakerId: msg.speaker_id as string,
             text: msg.text as string,
             language: msg.language,
@@ -123,14 +130,18 @@ export function useWebSocket(roomId: string | null) {
           break;
       }
     },
-    [setRoomState, addParticipant, removeParticipant, setActiveSpeaker, addSubtitle]
+    [setRoomState, addParticipant, removeParticipant, setActiveSpeaker, updateParticipantMicStatus, addSubtitle]
   );
 
   /**
    * 受信した音声データを再生
    * WAV形式のバイナリをデコードして再生
+   *
+   * 原声会議機能: 音声は即座に配信されるため、デコード・再生のみ
    */
   const playAudio = useCallback(async (audioData: ArrayBuffer) => {
+    const receiveTime = performance.now();
+
     // 最小データサイズチェック（WAVヘッダー44バイト + 少なくともサンプルデータ）
     if (audioData.byteLength < 100) {
       return;
@@ -145,6 +156,15 @@ export function useWebSocket(roomId: string | null) {
       source.buffer = audioBuffer;
       source.connect(audioCtx.destination);
       source.start(0);
+
+      // デバッグ: 音声処理遅延をログ出力（開発環境のみ）
+      if (import.meta.env.DEV) {
+        const playbackDelay = performance.now() - receiveTime;
+        // 遅延が50ms以上の場合のみ警告
+        if (playbackDelay > 50) {
+          console.debug(`[Audio] 再生遅延: ${playbackDelay.toFixed(1)}ms`);
+        }
+      }
     } catch (err) {
       // デコード失敗をログ出力（デバッグ用）
       console.warn('[Audio] 音声デコード失敗:', err, 'データサイズ:', audioData.byteLength);
@@ -204,19 +224,12 @@ export function useWebSocket(roomId: string | null) {
     const isReconnect = reconnectAttemptRef.current > 0;
     updateStatus(isReconnect ? 'reconnecting' : 'connecting');
 
-    // WebSocket URLを動的に決定
-    // - localhost アクセス時: 同じホスト経由（proxy）
-    // - LAN IP アクセス時: 同じホストの8000番ポート
-    const host = globalThis.location.hostname;
+    // WebSocket URL
+    // 常に相対パス /ws を使用し、Vite proxy経由でバックエンドにアクセス
+    // これにより、localhost/LAN IP どちらからアクセスしても同一originとなり、
+    // localStorageの認証トークンが共有される（業界ベストプラクティス）
     const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let wsUrl: string;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      // localhost経由: Vite proxy使用
-      wsUrl = `${protocol}//${globalThis.location.host}/ws/room/${roomId}?token=${token}`;
-    } else {
-      // LAN IP経由: 同じホストの8000番ポートを使用
-      wsUrl = `${protocol}//${host}:8000/ws/room/${roomId}?token=${token}`;
-    }
+    const wsUrl = `${protocol}//${globalThis.location.host}/ws/room/${roomId}?token=${token}`;
 
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
@@ -225,7 +238,14 @@ export function useWebSocket(roomId: string | null) {
     ws.onopen = () => {
       reconnectAttemptRef.current = 0;
       updateStatus('connected');
-      getPlaybackAudioContext();
+      // AudioContextを事前に初期化（自動再生ポリシー対策）
+      // 接続成功時に即座に初期化することで、音声再生の遅延を最小化
+      const ctx = getPlaybackAudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {
+          // ユーザー操作が必要な場合は後で再試行
+        });
+      }
     };
 
     ws.onmessage = (event) => {

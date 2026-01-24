@@ -20,6 +20,7 @@ class ParticipantPreference:
     - audio_mode: 原声(original) または 翻訳(translated)
     - subtitle_enabled: 字幕表示の有無
     - target_language: 翻訳先言語（audio_mode=translatedの場合に使用）
+    - is_mic_on: マイクがONかどうか
     ※ デフォルトは原声モード（翻訳なし）
     """
 
@@ -29,6 +30,7 @@ class ParticipantPreference:
     audio_mode: Literal["original", "translated"] = "original"
     subtitle_enabled: bool = True
     target_language: str = ""  # 空の場合はnative_languageを使用
+    is_mic_on: bool = False  # マイク状態
     joined_at: str = ""
 
     def __post_init__(self) -> None:
@@ -144,6 +146,34 @@ class RoomManager:
         """アクティブスピーカーを設定"""
         r = await self.get_redis()
         await r.hset(f"room:{room_id}", "active_speaker", user_id or "")
+
+    async def set_mic_status(
+        self, room_id: str, user_id: str, is_mic_on: bool
+    ) -> ParticipantPreference | None:
+        """
+        参加者のマイク状態を更新
+
+        Args:
+            room_id: 会議室ID
+            user_id: ユーザーID
+            is_mic_on: マイクがONかどうか
+
+        Returns:
+            更新後の参加者設定、または参加者が見つからない場合はNone
+        """
+        participant = await self.get_participant(room_id, user_id)
+        if not participant:
+            return None
+
+        # マイク状態を更新
+        participant.is_mic_on = is_mic_on
+
+        # Redisに保存
+        r = await self.get_redis()
+        await r.hset(
+            f"room:{room_id}:participants", user_id, json.dumps(asdict(participant))
+        )
+        return participant
 
 
 # シングルトンインスタンス

@@ -3,20 +3,21 @@ LAMS 管理者API
 ユーザー管理、システム設定
 """
 
-from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func
+from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_admin, get_current_user
+from app.auth.dependencies import require_admin
 from app.db.database import get_db
-from app.db.models import User, UserRole, Room, Subtitle
+from app.db.models import Room, Subtitle, User, UserRole
 
 router = APIRouter()
 
 
 class UserResponse(BaseModel):
     """ユーザーレスポンス"""
+
     id: str
     email: str
     display_name: str
@@ -31,6 +32,7 @@ class UserResponse(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     """ユーザー更新リクエスト"""
+
     display_name: str | None = None
     native_language: str | None = None
     role: str | None = None
@@ -39,6 +41,7 @@ class UserUpdateRequest(BaseModel):
 
 class SystemStatsResponse(BaseModel):
     """システム統計レスポンス"""
+
     total_users: int
     active_users: int
     total_rooms: int
@@ -54,9 +57,7 @@ async def list_users(
     """
     全ユーザー一覧取得（管理者のみ）
     """
-    result = await db.execute(
-        select(User).order_by(User.created_at.desc())
-    )
+    result = await db.execute(select(User).order_by(User.created_at.desc()))
     users = result.scalars().all()
 
     return [
@@ -87,8 +88,7 @@ async def get_user(
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="ユーザーが見つかりません"
+            status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません"
         )
 
     return UserResponse(
@@ -120,22 +120,20 @@ async def update_user(
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="ユーザーが見つかりません"
+            status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません"
         )
 
     # 自分自身のロール変更を防止
     if user_id == admin.id and data.role and data.role != admin.role:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="自分自身のロールは変更できません"
+            detail="自分自身のロールは変更できません",
         )
 
     # 自分自身の無効化を防止
     if user_id == admin.id and data.is_active is False:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="自分自身を無効化できません"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="自分自身を無効化できません"
         )
 
     # ロール検証
@@ -144,7 +142,7 @@ async def update_user(
         if data.role not in valid_roles:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"無効なロール: {data.role}。有効なロール: {valid_roles}"
+                detail=f"無効なロール: {data.role}。有効なロール: {valid_roles}",
             )
 
     # 更新

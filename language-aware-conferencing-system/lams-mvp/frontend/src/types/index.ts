@@ -29,6 +29,8 @@ export interface ParticipantPreference {
   audioMode: AudioMode;
   subtitleEnabled: boolean;
   targetLanguage: SupportedLanguage;
+  /** マイクがONかどうか */
+  isMicOn?: boolean;
 }
 
 /** 会議室ポリシー */
@@ -54,6 +56,10 @@ export interface Room {
 
 /** 字幕データ */
 export interface SubtitleData {
+  /** 字幕の一意識別子（重複排除用） */
+  id?: string;
+  /** シーケンス番号（順序保証用） */
+  seq?: number;
   speakerId: string;
   text: string;
   language: SupportedLanguage;
@@ -70,6 +76,7 @@ export type WSMessageType =
   | 'user_preference_changed'
   | 'speaking_start'
   | 'speaking_end'
+  | 'mic_status_changed'
   | 'subtitle'
   | 'qos_warning'
   | 'error';

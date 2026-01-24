@@ -6,22 +6,40 @@ LAMS WebSocketハンドラー
 - ユーザーが audio_mode を選択（original/translated）
 - 字幕は audio_mode に一致する内容のみ表示
 - デフォルトは原声モード（翻訳なし）
+
+改善（原声会議機能）:
+- 音声は即座に全参加者に配信（ASRを待たない）
+- 字幕処理は非同期タスクとして実行（音声配信をブロックしない）
 """
 
 import asyncio
 import contextlib
 import json
 import logging
+import uuid
 from dataclasses import asdict
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.ai_pipeline.pipeline import ai_pipeline
+from app.audio.vad import has_speech
 from app.auth.jwt_handler import decode_token
 from app.db.database import async_session
 from app.db.models import Room, Subtitle, User
 from app.rooms.manager import room_manager
+
+if TYPE_CHECKING:
+    from app.rooms.schemas import Participant
+
+# 字幕シーケンス番号管理（room_id -> seq）
+# 各会議室ごとに単調増加するシーケンス番号を管理
+_subtitle_seq: dict[str, int] = {}
+
+# 重複字幕防止用キャッシュ（room_id -> speaker_id -> last_text）
+# 同じ話者の連続した同一テキストを除外
+_last_subtitle_cache: dict[str, dict[str, str]] = {}
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,7 +85,10 @@ class ConnectionManager:
 
     async def send_to_user(self, room_id: str, user_id: str, message: dict) -> None:
         """特定ユーザーにJSONを送信"""
-        print(f"[WS SEND] send_to_user: room={room_id}, user={user_id}, type={message.get('type')}", flush=True)
+        print(
+            f"[WS SEND] send_to_user: room={room_id}, user={user_id}, type={message.get('type')}",
+            flush=True,
+        )
         if room_id in self.rooms and user_id in self.rooms[room_id]:
             try:
                 await self.rooms[room_id][user_id].send_json(message)
@@ -75,7 +96,10 @@ class ConnectionManager:
             except Exception as e:
                 print(f"[WS SEND] 送信失敗: {e}", flush=True)
         else:
-            print(f"[WS SEND] ユーザーが見つかりません: room_exists={room_id in self.rooms}", flush=True)
+            print(
+                f"[WS SEND] ユーザーが見つかりません: room_exists={room_id in self.rooms}",
+                flush=True,
+            )
 
     async def send_bytes_to_user(self, room_id: str, user_id: str, data: bytes) -> None:
         """特定ユーザーにバイナリを送信"""
@@ -86,6 +110,240 @@ class ConnectionManager:
 
 # 接続マネージャーインスタンス
 conn_mgr = ConnectionManager()
+
+
+async def _process_s2s_translation(
+    room_id: str,
+    speaker_id: str,
+    audio_bytes: bytes,
+    source_lang: str,
+    target_lang: str,
+    user_ids: list[str],
+) -> dict:
+    """
+    S2S Realtime APIで翻訳音声と翻訳字幕を取得・配信
+
+    翻訳音声モードの参加者向け処理:
+    1. Realtime APIで音声→翻訳音声+翻訳字幕を取得
+    2. 翻訳音声を対象参加者に配信
+    3. 翻訳字幕を返却（呼び出し元で配信）
+
+    Args:
+        room_id: 会議室ID
+        speaker_id: 話者ID
+        audio_bytes: 入力音声
+        source_lang: 話者の言語
+        target_lang: 翻訳先言語
+        user_ids: 翻訳音声を受信する参加者IDリスト
+
+    Returns:
+        {"target_lang": target_lang, "translated_text": 翻訳字幕}
+    """
+    try:
+        # S2S翻訳実行
+        result = await ai_pipeline.process_audio(
+            audio_bytes, source_lang, target_lang, speaker_id
+        )
+
+        # 翻訳音声がある場合、対象参加者に配信
+        if result.audio_data:
+            for user_id in user_ids:
+                await conn_mgr.send_bytes_to_user(room_id, user_id, result.audio_data)
+            logger.info(f"[S2S] 翻訳音声配信: {target_lang} -> {len(user_ids)}人")
+
+        return {
+            "target_lang": target_lang,
+            "translated_text": result.translated_text,
+        }
+
+    except Exception as e:
+        logger.warning(f"[S2S] 翻訳エラー ({target_lang}): {e}")
+        return {"target_lang": target_lang, "translated_text": ""}
+
+
+async def process_audio_dual_path(
+    room_id: str,
+    speaker_id: str,
+    audio_bytes: bytes,
+    speaker_lang: str,
+    participants: dict[str, "Participant"],
+) -> None:
+    """
+    音声処理の双路設計（原声モード / 翻訳音声モード）
+
+    設計思想:
+    - フロントエンドからVAD検出済みの完全な発話セグメントが送信される
+    - 後端は音声処理をせず、そのままAI APIに渡す
+    - 責任境界を明確に分離
+
+    処理フロー:
+    1. 原声モードの参加者: 原声 + 翻訳字幕
+       - ASR: 音声→原文テキスト
+       - テキスト翻訳: 原文→各言語の翻訳テキスト
+       - 原声は即座に配信、字幕は非同期で配信
+
+    2. 翻訳音声モードの参加者: 翻訳音声 + 翻訳字幕
+       - S2S Realtime API: 音声→翻訳音声+翻訳字幕
+       - 翻訳音声と字幕を同時に配信
+    """
+    try:
+        # 最小音声サイズチェック（44バイトWAVヘッダー + 最低8000サンプル = 500ms）
+        min_size = 44 + 16000  # 500ms at 16kHz, 16bit
+        if len(audio_bytes) < min_size:
+            logger.debug(f"[Audio] 音声が短すぎる: {len(audio_bytes)} bytes")
+            return
+
+        # VAD検出（フロントエンドで既に検出済みだが念のため）
+        if not has_speech(audio_bytes, min_energy=300.0):
+            logger.info("[VAD] 音声なし、処理スキップ")
+            return
+
+        # 参加者を原声モードと翻訳モードに分類
+        original_mode_users: list[str] = []
+        translated_mode_targets: dict[str, list[str]] = {}  # target_lang -> [user_ids]
+
+        for p in participants.values():
+            if p.user_id == speaker_id:
+                continue
+            if p.audio_mode == "original":
+                original_mode_users.append(p.user_id)
+            else:  # translated
+                target_lang = p.target_language or p.native_language
+                if target_lang != speaker_lang:
+                    if target_lang not in translated_mode_targets:
+                        translated_mode_targets[target_lang] = []
+                    translated_mode_targets[target_lang].append(p.user_id)
+                else:
+                    # 話者と同じ言語の場合は原声を送信
+                    original_mode_users.append(p.user_id)
+
+        # ★ パス1: 原声モード処理（ASR + テキスト翻訳）
+        # 原声は即座に配信
+        if original_mode_users:
+            for user_id in original_mode_users:
+                await conn_mgr.send_bytes_to_user(room_id, user_id, audio_bytes)
+
+        # ASR実行（原文テキスト取得、字幕用）
+        asr_result = await ai_pipeline.process_audio(
+            audio_bytes, speaker_lang, speaker_lang, speaker_id
+        )
+
+        if not asr_result.original_text:
+            logger.debug("[ASR] 認識結果なし")
+            return
+
+        original_text = asr_result.original_text
+        logger.info(f"[ASR] 認識完了: '{original_text}' (lang={speaker_lang})")
+
+        # 重複字幕チェック（同じ話者の連続した同一テキストを除外）
+        global _last_subtitle_cache
+        if room_id not in _last_subtitle_cache:
+            _last_subtitle_cache[room_id] = {}
+
+        last_text = _last_subtitle_cache[room_id].get(speaker_id, "")
+        if original_text == last_text:
+            logger.debug(f"[ASR] 重複字幕をスキップ: '{original_text}'")
+            return
+
+        # キャッシュを更新
+        _last_subtitle_cache[room_id][speaker_id] = original_text
+
+        # シーケンス番号を取得・インクリメント
+        global _subtitle_seq
+        if room_id not in _subtitle_seq:
+            _subtitle_seq[room_id] = 0
+        _subtitle_seq[room_id] += 1
+        seq = _subtitle_seq[room_id]
+
+        # 字幕IDを生成（順序保証のため）
+        subtitle_id = str(uuid.uuid4())
+
+        # ★ パス2: 翻訳音声モード処理（S2S Realtime API）
+        # 翻訳音声と翻訳字幕を同時取得
+        translations: dict[str, str] = {}
+        s2s_tasks = []
+        for target_lang, user_ids in translated_mode_targets.items():
+            s2s_tasks.append(
+                _process_s2s_translation(
+                    room_id, speaker_id, audio_bytes, speaker_lang, target_lang, user_ids
+                )
+            )
+
+        # S2S翻訳を並列実行
+        if s2s_tasks:
+            s2s_results = await asyncio.gather(*s2s_tasks, return_exceptions=True)
+            for result in s2s_results:
+                if isinstance(result, dict) and result.get("translated_text"):
+                    translations[result["target_lang"]] = result["translated_text"]
+
+        # 字幕配信（原声モードと翻訳モードの参加者両方に）
+        subtitle_tasks = []
+        for p in participants.values():
+            if p.user_id == speaker_id:
+                continue
+            if not p.subtitle_enabled:
+                continue
+
+            # 送信するテキストと言語を決定
+            if p.audio_mode == "translated":
+                target_lang = p.target_language or p.native_language
+                if target_lang == speaker_lang:
+                    # 同じ言語なら原文
+                    text_to_send = original_text
+                    lang_to_send = speaker_lang
+                    is_translated = False
+                elif target_lang in translations:
+                    # 翻訳がある場合
+                    text_to_send = translations[target_lang]
+                    lang_to_send = target_lang
+                    is_translated = True
+                else:
+                    # 翻訳失敗の場合は原文をフォールバック
+                    text_to_send = original_text
+                    lang_to_send = speaker_lang
+                    is_translated = False
+            else:
+                # 原声モードは常に原文
+                text_to_send = original_text
+                lang_to_send = speaker_lang
+                is_translated = False
+
+            subtitle_tasks.append(
+                conn_mgr.send_to_user(
+                    room_id,
+                    p.user_id,
+                    {
+                        "type": "subtitle",
+                        "id": subtitle_id,
+                        "seq": seq,
+                        "speaker_id": speaker_id,
+                        "text": text_to_send,
+                        "language": lang_to_send,
+                        "is_translated": is_translated,
+                    },
+                )
+            )
+
+        if subtitle_tasks:
+            await asyncio.gather(*subtitle_tasks, return_exceptions=True)
+
+        # DB保存（翻訳結果も含む）
+        try:
+            async with async_session() as db:
+                subtitle = Subtitle(
+                    room_id=room_id,
+                    speaker_id=speaker_id,
+                    original_text=original_text,
+                    original_language=speaker_lang,
+                    translations=translations,
+                )
+                db.add(subtitle)
+                await db.commit()
+        except Exception as e:
+            logger.warning(f"字幕DB保存エラー: {e}")
+
+    except Exception as e:
+        logger.warning(f"字幕処理エラー: {e}")
 
 
 @router.websocket("/room/{room_id}")
@@ -128,7 +386,7 @@ async def websocket_room(
     # 接続確立（conn_mgr.connect内でws.accept()を呼び出す）
     print(f"[WS INIT] Connecting user {user_id} to room {room_id}", flush=True)
     await conn_mgr.connect(room_id, user_id, ws)
-    print(f"[WS INIT] Connected, adding participant...", flush=True)
+    print("[WS INIT] Connected, adding participant...", flush=True)
 
     # 参加者として追加（デフォルト: 原声モード）
     participant = await room_manager.add_participant(
@@ -153,7 +411,7 @@ async def websocket_room(
         },
         exclude_user=user_id,
     )
-    logger.info(f"[WS DEBUG] Broadcasted user_joined")
+    logger.info("[WS DEBUG] Broadcasted user_joined")
 
     # 現在の部屋状態を送信
     participants = await room_manager.get_participants(room_id)
@@ -180,19 +438,24 @@ async def websocket_room(
             "your_preference": asdict(participant),
         }
     )
-    print(f"[WS DEBUG] Sent room_state, entering message loop...", flush=True)
-    logger.info(f"[WS DEBUG] Sent room_state, entering message loop...")
+    print("[WS DEBUG] Sent room_state, entering message loop...", flush=True)
+    logger.info("[WS DEBUG] Sent room_state, entering message loop...")
 
     try:
         while True:
             print(f"[WS DEBUG] Waiting for message from user {user_id}...", flush=True)
             data = await ws.receive()
-            print(f"[WS DEBUG] Received data type: {data.get('type')}, keys: {list(data.keys())}", flush=True)
-            logger.info(f"[WS DEBUG] Received data type: {data.get('type')}, keys: {list(data.keys())}")
+            print(
+                f"[WS DEBUG] Received data type: {data.get('type')}, keys: {list(data.keys())}",
+                flush=True,
+            )
+            logger.info(
+                f"[WS DEBUG] Received data type: {data.get('type')}, keys: {list(data.keys())}"
+            )
 
             # 接続切断チェック
             if data.get("type") == "websocket.disconnect":
-                logger.info(f"[WS DEBUG] Client disconnected")
+                logger.info("[WS DEBUG] Client disconnected")
                 break
 
             if "text" in data:
@@ -268,221 +531,71 @@ async def websocket_room(
                         {"type": "speaking_end", "user_id": user_id},
                     )
 
+                elif msg_type == "mic_on":
+                    # マイクON状態を更新・通知
+                    updated = await room_manager.set_mic_status(room_id, user_id, True)
+                    if updated:
+                        await conn_mgr.broadcast_json(
+                            room_id,
+                            {"type": "mic_status_changed", "user_id": user_id, "is_mic_on": True},
+                        )
+
+                elif msg_type == "mic_off":
+                    # マイクOFF状態を更新・通知
+                    updated = await room_manager.set_mic_status(room_id, user_id, False)
+                    if updated:
+                        await conn_mgr.broadcast_json(
+                            room_id,
+                            {"type": "mic_status_changed", "user_id": user_id, "is_mic_on": False},
+                        )
+
             elif "bytes" in data:
-                # 音声データ処理
+                # ========================================
+                # 音声データ処理（原声会議機能 - 改善版）
+                # ========================================
+                # 設計: 音声即時配信 + 字幕非同期処理
+                # 目標遅延: 15-70ms（ASRを待たない）
+                # ========================================
                 audio_bytes = data["bytes"]
-                print(f"[WS AUDIO] 受信: {len(audio_bytes) if audio_bytes else 0} bytes from user {user_id}", flush=True)
-                logger.info(f"[WS AUDIO] 受信: {len(audio_bytes) if audio_bytes else 0} bytes from user {user_id}")
+
                 # WAVヘッダー(44バイト) + 最小PCMデータ(約0.2秒=6400バイト)
-                # 16kHz, 16bit, mono: 0.2秒 = 16000 * 0.2 * 2 = 6400バイト
                 min_audio_size = 44 + 6400
                 if not audio_bytes or len(audio_bytes) < min_audio_size:
-                    # 音声データが短すぎる場合はスキップ（ASR認識不可）
-                    logger.info(
-                        f"[WS AUDIO] 音声データが短すぎます: {len(audio_bytes) if audio_bytes else 0} bytes < {min_audio_size}"
-                    )
                     continue
 
                 current_participant = await room_manager.get_participant(
                     room_id, user_id
                 )
                 if not current_participant:
-                    print(f"[WS AUDIO] 参加者が見つかりません: room_id={room_id}, user_id={user_id}", flush=True)
                     continue
 
                 speaker_lang = current_participant.native_language
                 all_participants = await room_manager.get_participants(room_id)
 
-                # 翻訳結果キャッシュ（同じ言語ペアは1回だけ処理）
-                # key: target_lang, value: TranslationResult
-                translation_cache: dict = {}
-                # 原文ASR結果（1回だけ取得）
-                original_asr_result = None
+                logger.info(
+                    f"[AUDIO] 完全な発話セグメント受信: {len(audio_bytes)} bytes, "
+                    f"duration={len(audio_bytes) // 32}ms, "
+                    f"speaker={user_id}, lang={speaker_lang}"
+                )
 
-                print(f"[WS AUDIO] 処理開始: speaker_lang={speaker_lang}, participants={len(all_participants)}", flush=True)
-
-                # 各参加者の設定に基づいて配信
-                for p in all_participants.values():
-                    is_self = p.user_id == user_id
-
-                    # 自分自身の場合: 音声は送信しない、字幕のみ送信
-                    if is_self:
-                        print(f"[WS AUDIO] 自分への字幕処理: subtitle_enabled={p.subtitle_enabled}", flush=True)
-                        if p.subtitle_enabled:
-                            # 自分の設定言語に基づいて字幕を生成
-                            target_lang = p.target_language or p.native_language
-                            print(f"[WS AUDIO] 自分の字幕: target_lang={target_lang}, speaker_lang={speaker_lang}", flush=True)
-                            if target_lang == speaker_lang:
-                                # 同じ言語：原文を表示
-                                if original_asr_result is None:
-                                    logger.info(f"[WS AUDIO] ASR開始...")
-                                    original_asr_result = await ai_pipeline.process_audio(
-                                        audio_bytes, speaker_lang, speaker_lang, user_id
-                                    )
-                                    logger.info(f"[WS AUDIO] ASR完了: '{original_asr_result.original_text}'")
-                                if original_asr_result.original_text:
-                                    logger.info(f"[WS AUDIO] 自分に字幕送信: '{original_asr_result.original_text}'")
-                                    await conn_mgr.send_to_user(
-                                        room_id,
-                                        p.user_id,
-                                        {
-                                            "type": "subtitle",
-                                            "speaker_id": user_id,
-                                            "text": original_asr_result.original_text,
-                                            "language": speaker_lang,
-                                            "is_translated": False,
-                                        },
-                                    )
-                                else:
-                                    logger.info(f"[WS AUDIO] ASR結果が空のため字幕送信なし")
-                            else:
-                                # 違う言語：翻訳字幕を表示
-                                if target_lang in translation_cache:
-                                    result = translation_cache[target_lang]
-                                else:
-                                    result = await ai_pipeline.process_audio(
-                                        audio_bytes, speaker_lang, target_lang, user_id
-                                    )
-                                    translation_cache[target_lang] = result
-                                if result.translated_text:
-                                    await conn_mgr.send_to_user(
-                                        room_id,
-                                        p.user_id,
-                                        {
-                                            "type": "subtitle",
-                                            "speaker_id": user_id,
-                                            "text": result.translated_text,
-                                            "language": target_lang,
-                                            "is_translated": True,
-                                        },
-                                    )
-                        continue  # 自分には音声を送信しない
-
-                    if p.audio_mode == "original":
-                        # 原声モード: 元の音声をそのまま送信
-                        await conn_mgr.send_bytes_to_user(
-                            room_id, p.user_id, audio_bytes
-                        )
-
-                        # 字幕が有効な場合は原文テキストを送信
-                        if p.subtitle_enabled:
-                            # ASRで原文を取得（1回だけ実行）
-                            if original_asr_result is None:
-                                original_asr_result = await ai_pipeline.process_audio(
-                                    audio_bytes, speaker_lang, speaker_lang, user_id
-                                )
-                            # 空でないテキストのみ送信
-                            if original_asr_result.original_text:
-                                await conn_mgr.send_to_user(
-                                    room_id,
-                                    p.user_id,
-                                    {
-                                        "type": "subtitle",
-                                        "speaker_id": user_id,
-                                        "text": original_asr_result.original_text,
-                                        "language": speaker_lang,
-                                        "is_translated": False,
-                                    },
-                                )
-
-                    else:
-                        # 翻訳モード: 翻訳済み音声・字幕を送信
-                        target_lang = p.target_language or p.native_language
-
-                        if target_lang == speaker_lang:
-                            # 同じ言語の場合は原声
-                            await conn_mgr.send_bytes_to_user(
-                                room_id, p.user_id, audio_bytes
-                            )
-                            if p.subtitle_enabled:
-                                if original_asr_result is None:
-                                    original_asr_result = await ai_pipeline.process_audio(
-                                        audio_bytes, speaker_lang, speaker_lang, user_id
-                                    )
-                                # 空でないテキストのみ送信
-                                if original_asr_result.original_text:
-                                    await conn_mgr.send_to_user(
-                                        room_id,
-                                        p.user_id,
-                                        {
-                                            "type": "subtitle",
-                                            "speaker_id": user_id,
-                                            "text": original_asr_result.original_text,
-                                            "language": speaker_lang,
-                                            "is_translated": False,
-                                        },
-                                    )
-                        else:
-                            # 翻訳処理（同じ言語ペアはキャッシュ再利用）
-                            if target_lang in translation_cache:
-                                result = translation_cache[target_lang]
-                            else:
-                                result = await ai_pipeline.process_audio(
-                                    audio_bytes, speaker_lang, target_lang, user_id
-                                )
-                                translation_cache[target_lang] = result
-
-                            # QoS劣化時は字幕フォールバック
-                            if result.metrics.should_fallback_to_subtitle:
-                                await conn_mgr.send_to_user(
-                                    room_id,
-                                    p.user_id,
-                                    {
-                                        "type": "qos_warning",
-                                        "level": result.metrics.degradation_level.value,
-                                        "message": "遅延が発生しています。字幕モードに切り替えました。",
-                                    },
-                                )
-
-                            # 翻訳音声があれば送信（なければ原声）
-                            if result.audio_data:
-                                print(f"[WS TTS] 翻訳音声送信: {len(result.audio_data)} bytes to {p.user_id}", flush=True)
-                                await conn_mgr.send_bytes_to_user(
-                                    room_id, p.user_id, result.audio_data
-                                )
-                            else:
-                                print(f"[WS TTS] TTS音声なし、原声を送信: {len(audio_bytes)} bytes to {p.user_id}", flush=True)
-                                await conn_mgr.send_bytes_to_user(
-                                    room_id, p.user_id, audio_bytes
-                                )
-
-                            # 翻訳字幕を送信（空でないテキストのみ）
-                            if p.subtitle_enabled and result.translated_text:
-                                await conn_mgr.send_to_user(
-                                    room_id,
-                                    p.user_id,
-                                    {
-                                        "type": "subtitle",
-                                        "speaker_id": user_id,
-                                        "text": result.translated_text,
-                                        "language": target_lang,
-                                        "is_translated": True,
-                                        "latency_ms": result.metrics.total_latency_ms,
-                                    },
-                                )
-
-                # 字幕をデータベースに保存（原文がある場合のみ）
-                if original_asr_result and original_asr_result.original_text:
-                    # 翻訳結果を収集
-                    translations_dict = {}
-                    for lang, result in translation_cache.items():
-                        if result.translated_text:
-                            translations_dict[lang] = result.translated_text
-
-                    # 非同期でデータベースに保存
-                    try:
-                        async with async_session() as db:
-                            subtitle = Subtitle(
-                                room_id=room_id,
-                                speaker_id=user_id,
-                                original_text=original_asr_result.original_text,
-                                original_language=speaker_lang,
-                                translations=translations_dict,
-                            )
-                            db.add(subtitle)
-                            await db.commit()
-                    except Exception as e:
-                        logger.warning(f"字幕保存エラー: {e}")
+                # ★ 双路処理: 原声モード / 翻訳音声モード
+                # VAD検出済みの完全な発話セグメントを処理
+                # 処理をブロックしないよう非同期タスクとして実行
+                audio_task = asyncio.create_task(
+                    process_audio_dual_path(
+                        room_id,
+                        user_id,
+                        audio_bytes,
+                        speaker_lang,
+                        all_participants,
+                    )
+                )
+                # 例外ログ出力
+                audio_task.add_done_callback(
+                    lambda t: logger.error(f"[AUDIO] タスクエラー: {t.exception()}")
+                    if t.done() and not t.cancelled() and t.exception()
+                    else None
+                )
 
     except WebSocketDisconnect:
         pass
@@ -497,4 +610,15 @@ async def websocket_room(
         )
         await conn_mgr.disconnect(room_id, user_id)
         await room_manager.remove_participant(room_id, user_id)
+
+        # 字幕キャッシュのクリーンアップ（このユーザーの分）
+        if room_id in _last_subtitle_cache and user_id in _last_subtitle_cache[room_id]:
+            del _last_subtitle_cache[room_id][user_id]
+
+        # 会議室に誰もいなくなったらシーケンス番号とキャッシュをリセット
+        remaining = await room_manager.get_participants(room_id)
+        if not remaining:
+            _subtitle_seq.pop(room_id, None)
+            _last_subtitle_cache.pop(room_id, None)
+
         logger.info(f"[WS] User {user_id} left room {room_id}")

@@ -30,11 +30,14 @@ dependencies = [
     # AI Providers
     "google-genai==1.0.0",
     "openai==2.12.0",
+    "httpx==0.27.2",  # Deepgram API用
     # Validation
     "pydantic[email]==2.10.3",
     "pydantic-settings==2.7.0",
     # WebSocket
     "websockets==14.1",
+    # Audio Processing
+    "webrtcvad==2.0.10",
 ]
 
 [project.optional-dependencies]

@@ -32,18 +32,21 @@ interface UseAudioCaptureReturn {
 
 /** 発話検出の閾値（音量レベル）- 高めに設定してノイズを除去 */
 const SPEAKING_THRESHOLD = 25;
-/** 発話終了の遅延（ms）- 少し長めにして途切れを防止 */
-const SPEAKING_END_DELAY = 1000;
 /**
- * 音声送信間隔（ms）
- * 200ms = 16kHzで3200サンプル = 約6.4KB
- * 低遅延を優先しつつASR認識精度を確保
+ * 発話終了の遅延（ms）
+ * 発話終了検出後、この時間待ってから完全な音声セグメントを送信
+ * 短い間の途切れで分割されないように
  */
-const AUDIO_SEND_INTERVAL_MS = 200;
+const SPEAKING_END_DELAY = 800;
 /** サンプルレート */
 const SAMPLE_RATE = 16000;
-/** 最小送信サンプル数（認識精度のため 200ms分） */
-const MIN_SAMPLES_TO_SEND = 3200;
+/**
+ * 最小送信サンプル数（認識精度のため 500ms分）
+ * 短すぎる音声は送信しない
+ */
+const MIN_SAMPLES_TO_SEND = 8000;
+/** 最大バッファサンプル数（30秒 × 16kHz = 480000サンプル）- メモリ保護用 */
+const MAX_BUFFER_SAMPLES = 480000;
 
 /**
  * 音声キャプチャフック
@@ -65,11 +68,14 @@ export function useAudioCapture({
   const animationFrameRef = useRef<number | null>(null);
   const speakingTimeoutRef = useRef<number | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  /** 定期送信用インターバル（不要になったが互換性のため残す） */
   const audioSendIntervalRef = useRef<number | null>(null);
   const audioBufferRef = useRef<Float32Array[]>([]);
   const wasSpeakingRef = useRef(false);
   /** 現在の音量レベルを保持（送信判定用） */
   const currentVolumeLevelRef = useRef(0);
+  /** 発話開始フラグ（発話中のバッファリング開始を検知） */
+  const speechStartedRef = useRef(false);
 
   /**
    * Float32Array を 16bit PCM に変換
@@ -116,11 +122,15 @@ export function useAudioCapture({
   }, []);
 
   /**
-   * 音声バッファを送信
-   * 最小サンプル数を満たさない場合は送信しない（ASR認識精度のため）
-   * ノイズフィルタリング: 音量が閾値以下の場合はバッファをクリアして送信しない
+   * 完全な発話セグメントを送信
+   * VADによる発話終了検出後、バッファリングされた音声全体を一括送信
+   *
+   * 設計思想:
+   * - 200ms間隔の定期送信を廃止し、発話セグメント単位で送信
+   * - 一文（発話開始→発話終了）を一つの音声として送信
+   * - 後端は音声処理をせず、そのままAI APIに渡す
    */
-  const sendAudioBuffer = useCallback((forceFlush = false) => {
+  const sendCompleteSpeechSegment = useCallback(() => {
     if (!wsRef?.current) {
       return;
     }
@@ -131,20 +141,14 @@ export function useAudioCapture({
       return;
     }
 
-    // ノイズフィルタリング: 発話中でない場合はバッファをクリアして送信しない
-    // 発話検出（wasSpeakingRef）に基づいて判定
-    // 強制フラッシュ以外の場合、発話中でなければ送信しない
-    if (!forceFlush && !wasSpeakingRef.current) {
-      // 発話していない場合、バッファをクリアして送信しない（ノイズ除去）
-      audioBufferRef.current = [];
-      return;
-    }
-
     // バッファを結合
     const totalLength = audioBufferRef.current.reduce((acc, arr) => acc + arr.length, 0);
 
-    // 最小サンプル数チェック（強制フラッシュ時は無視）
-    if (!forceFlush && totalLength < MIN_SAMPLES_TO_SEND) {
+    // 最小サンプル数チェック（短すぎる音声は送信しない）
+    if (totalLength < MIN_SAMPLES_TO_SEND) {
+      console.log('[Audio] 発話が短すぎるためスキップ:', totalLength, 'samples');
+      audioBufferRef.current = [];
+      speechStartedRef.current = false;
       return;
     }
 
@@ -155,11 +159,25 @@ export function useAudioCapture({
       offset += chunk.length;
     }
     audioBufferRef.current = [];
+    speechStartedRef.current = false;
 
     // WAV形式にエンコードして送信
     const wavBuffer = encodeWavPcm(combined);
     wsRef.current.send(wavBuffer);
+    console.log('[Audio] 完全な発話セグメント送信:', totalLength, 'samples, ', Math.round(totalLength / SAMPLE_RATE * 1000), 'ms');
   }, [wsRef, encodeWavPcm]);
+
+  /**
+   * バッファが最大サイズを超えた場合の強制送信
+   * メモリ保護のため、長すぎる発話は分割送信
+   */
+  const checkAndSendIfBufferFull = useCallback(() => {
+    const totalLength = audioBufferRef.current.reduce((acc, arr) => acc + arr.length, 0);
+    if (totalLength >= MAX_BUFFER_SAMPLES) {
+      console.log('[Audio] バッファ最大サイズに達したため送信');
+      sendCompleteSpeechSegment();
+    }
+  }, [sendCompleteSpeechSegment]);
 
   /** マイクストリーム開始 */
   const startCapture = useCallback(async () => {
@@ -212,11 +230,11 @@ export function useAudioCapture({
 
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
-        // バッファにコピーを追加
-        audioBufferRef.current.push(new Float32Array(inputData));
-        // デバッグ: 時々ログ出力
-        if (audioBufferRef.current.length % 50 === 0) {
-          console.log('[Audio Debug] Buffer chunks:', audioBufferRef.current.length);
+        // 発話中のみバッファに追加（ノイズを除外）
+        if (speechStartedRef.current) {
+          audioBufferRef.current.push(new Float32Array(inputData));
+          // バッファ最大サイズチェック
+          checkAndSendIfBufferFull();
         }
       };
 
@@ -229,23 +247,14 @@ export function useAudioCapture({
       silentGain.connect(audioContext.destination);
 
       setIsMicOn(true);
-      console.log('[Audio Debug] Mic started successfully');
+      console.log('[Audio] Mic started successfully');
 
-      // 発話開始通知を送信
+      // マイクON通知を送信
       if (wsRef?.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'speaking_start' }));
-        console.log('[Audio Debug] Sent speaking_start');
-      } else {
-        console.log('[Audio Debug] WebSocket not ready, cannot send speaking_start');
+        wsRef.current.send(JSON.stringify({ type: 'mic_on' }));
       }
 
-      // 定期的に音声データを送信
-      audioSendIntervalRef.current = window.setInterval(() => {
-        sendAudioBuffer();
-      }, AUDIO_SEND_INTERVAL_MS);
-      console.log('[Audio Debug] Audio send interval started');
-
-      // 音量・波形データの継続更新
+      // 音量・波形データの継続更新 + VAD発話検出
       const updateAudioData = () => {
         if (!analyserRef.current) return;
 
@@ -259,23 +268,39 @@ export function useAudioCapture({
         const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
         const normalizedVolume = Math.min(100, Math.round((average / 255) * 100 * 2));
         setVolumeLevel(normalizedVolume);
-        // ノイズフィルタリング用に現在の音量を保持
         currentVolumeLevelRef.current = normalizedVolume;
 
-        // 発話検出
+        /**
+         * VAD（発話検出）ロジック
+         *
+         * 発話開始: 音量が閾値を超えた瞬間 → バッファリング開始
+         * 発話中: 音量が閾値以上 → バッファに追加し続ける
+         * 発話終了: 音量が閾値以下になり、遅延時間経過 → 完全な発話セグメントを送信
+         */
         const nowSpeaking = normalizedVolume > SPEAKING_THRESHOLD;
+
         if (nowSpeaking) {
+          // 発話開始検出
+          if (!speechStartedRef.current) {
+            speechStartedRef.current = true;
+            console.log('[VAD] 発話開始検出');
+          }
           setIsSpeaking(true);
           wasSpeakingRef.current = true;
+          // タイムアウトをクリア（発話が続いている）
           if (speakingTimeoutRef.current) {
             clearTimeout(speakingTimeoutRef.current);
             speakingTimeoutRef.current = null;
           }
         } else if (wasSpeakingRef.current && !speakingTimeoutRef.current) {
-          speakingTimeoutRef.current = window.setTimeout(() => {
+          // 発話終了検出（遅延付き）
+          speakingTimeoutRef.current = globalThis.setTimeout(() => {
+            console.log('[VAD] 発話終了検出、完全な音声セグメントを送信');
             setIsSpeaking(false);
             wasSpeakingRef.current = false;
             speakingTimeoutRef.current = null;
+            // ★ 発話終了時に完全な音声セグメントを送信
+            sendCompleteSpeechSegment();
           }, SPEAKING_END_DELAY);
         }
 
@@ -291,24 +316,25 @@ export function useAudioCapture({
       }
       setIsMicOn(false);
     }
-  }, [deviceId, wsRef, sendAudioBuffer]);
+  }, [deviceId, wsRef, sendCompleteSpeechSegment, checkAndSendIfBufferFull]);
 
   /** マイクストリーム停止 */
   const stopCapture = useCallback(() => {
-    // 残りのバッファを強制送信（最小サンプル数チェックをスキップ）
-    sendAudioBuffer(true);
-
-    // 発話終了通知を送信
-    if (wsRef?.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'speaking_end' }));
+    // 残りのバッファがあれば送信（発話中にマイクOFFされた場合）
+    if (speechStartedRef.current && audioBufferRef.current.length > 0) {
+      sendCompleteSpeechSegment();
     }
 
-    // 定期送信を停止
+    // マイクOFF通知を送信
+    if (wsRef?.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'mic_off' }));
+    }
+
+    // タイマーをクリア
     if (audioSendIntervalRef.current) {
       clearInterval(audioSendIntervalRef.current);
       audioSendIntervalRef.current = null;
     }
-
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -332,12 +358,13 @@ export function useAudioCapture({
     analyserRef.current = null;
     audioBufferRef.current = [];
     wasSpeakingRef.current = false;
+    speechStartedRef.current = false;
 
     setIsMicOn(false);
     setVolumeLevel(0);
     setWaveformData(new Uint8Array(64));
     setIsSpeaking(false);
-  }, [wsRef, sendAudioBuffer]);
+  }, [wsRef, sendCompleteSpeechSegment]);
 
   /** マイクON/OFF切り替え */
   const toggleMic = useCallback(() => {

@@ -142,7 +142,8 @@ async def get_room(
     # 私有会議は作成者以外アクセス不可
     if room.is_private and room.creator_id != user.id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="この会議室にはアクセスできません"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この会議室にはアクセスできません",
         )
 
     participants = await room_manager.get_participants(room.id)

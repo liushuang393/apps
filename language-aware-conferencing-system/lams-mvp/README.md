@@ -140,6 +140,16 @@ LAMSは**翻訳ツールではありません**。社内の多言語会議にお
 
 ## 🔧 開発者向けドキュメント
 
+### 📖 開発規則
+
+**重要**: コードを書く前に必ず [DEVELOPMENT_RULES.md](./DEVELOPMENT_RULES.md) を確認してください。
+
+- コーディング規約
+- 静的解析・品質管理
+- Git運用規則
+- セキュリティ規則
+- テスト規則
+
 ### システムアーキテクチャ
 
 ```
@@ -253,8 +263,8 @@ DATABASE_URL=postgresql://lams:lams_secret_2024@localhost:5432/lams
 REDIS_URL=redis://localhost:6379/0
 JWT_SECRET=your-secret-key-change-in-production
 
-# AIプロバイダー設定（いずれか一方）
-AI_PROVIDER=gemini                    # または openai_realtime
+# AIプロバイダー設定（いずれか一方openai_realtime, gemini）
+AI_PROVIDER=gemini
 GEMINI_API_KEY=your-gemini-api-key
 # OPENAI_API_KEY=your-openai-api-key
 ```
@@ -280,7 +290,7 @@ docker compose up -d --build
 ./start-with-keys.sh docker
 
 # Docker再ビルド起動
-HOST_IP=192.168.210.6 ./start-with-keys.sh "docker build"
+HOST_IP=192.168.210.26 ./start-with-keys.sh "docker build"
 # プロバイダー選択: gemini または openai_realtime
 AI_PROVIDER=gemini HOST_IP=192.168.210.6 ./start-with-keys.sh "docker"
 # HOST_IP=192.168.210.6 docker compose up -d --build frontend backend
@@ -870,6 +880,27 @@ MIT License
 ## 📞 サポート
 
 問題やご質問がございましたら、Issue を作成してください。
+
+---
+
+## 🤝 貢献
+
+プロジェクトへの貢献を歓迎します!
+
+- [貢献ガイドライン](./CONTRIBUTING.md)
+- [開発規則](./DEVELOPMENT_RULES.md)
+- [変更履歴](./CHANGELOG.md)
+
+---
+
+## 📚 関連ドキュメント
+
+| ドキュメント | 説明 |
+|------------|------|
+| [README.md](./README.md) | プロジェクト概要・セットアップ手順 |
+| [DEVELOPMENT_RULES.md](./DEVELOPMENT_RULES.md) | コーディング規約・品質管理 |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | 貢献ガイドライン |
+| [CHANGELOG.md](./CHANGELOG.md) | 変更履歴 |
 
 ---
 

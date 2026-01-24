@@ -35,6 +35,8 @@ interface RoomState {
   removeParticipant: (userId: string) => void;
   updateMyPreference: (pref: Partial<ParticipantPreference>) => void;
   setActiveSpeaker: (userId: string | null) => void;
+  /** 参加者のマイク状態を更新 */
+  updateParticipantMicStatus: (userId: string, isMicOn: boolean) => void;
   addSubtitle: (subtitle: SubtitleData) => void;
   clearSubtitles: () => void;
   setConnected: (connected: boolean) => void;
@@ -87,10 +89,48 @@ export const useRoomStore = create<RoomState>((set) => ({
 
   setActiveSpeaker: (userId) => set({ activeSpeaker: userId }),
 
+  updateParticipantMicStatus: (userId, isMicOn) =>
+    set((state) => {
+      const participant = state.participants.get(userId);
+      if (!participant) return state;
+
+      const newMap = new Map(state.participants);
+      newMap.set(userId, { ...participant, isMicOn });
+      return { participants: newMap };
+    }),
+
   addSubtitle: (subtitle) =>
-    set((state) => ({
-      subtitles: [...state.subtitles.slice(-49), subtitle], // 最新50件（会議記録用に増加）
-    })),
+    set((state) => {
+      // IDがある場合は重複チェック
+      if (subtitle.id) {
+        const isDuplicate = state.subtitles.some((s) => s.id === subtitle.id);
+        if (isDuplicate) {
+          // 重複字幕は無視
+          return state;
+        }
+      }
+
+      // 同じ話者の連続した同一テキストを除外（バックエンドの重複チェックの補完）
+      const lastSubtitle = state.subtitles[state.subtitles.length - 1];
+      if (
+        lastSubtitle &&
+        lastSubtitle.speakerId === subtitle.speakerId &&
+        lastSubtitle.text === subtitle.text
+      ) {
+        // 同じ話者の同じテキストは無視
+        return state;
+      }
+
+      // 新しい字幕を追加（最新50件を保持）
+      const newSubtitles = [...state.subtitles, subtitle].slice(-50);
+
+      // シーケンス番号がある場合はソート（順序保証）
+      if (subtitle.seq !== undefined) {
+        newSubtitles.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+      }
+
+      return { subtitles: newSubtitles };
+    }),
 
   clearSubtitles: () => set({ subtitles: [] }),
 

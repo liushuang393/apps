@@ -1,6 +1,10 @@
 /**
  * 参加者一覧コンポーネント
- * 現在の参加者と発言状態を表示（折りたたみ機能付き）
+ * 現在の参加者とマイク状態を表示（折りたたみ機能付き）
+ *
+ * 表示ルール:
+ * - マイクON: 🎤 アイコンを表示（ユーザーがマイクをONにしている）
+ * - 発話中: speaking クラスでハイライト（activeSpeaker と一致）
  */
 import { useState } from 'react';
 import { useRoomStore } from '../store/roomStore';
@@ -53,8 +57,9 @@ export function ParticipantList() {
                 <span className="name">
                   {p.displayName}（{LANGUAGE_CODES[p.nativeLanguage] ?? 'XX'}）
                 </span>
-                {activeSpeaker === p.userId && (
-                  <span className="speaking-indicator">🎤</span>
+                {/* マイクON状態を表示（ユーザーがマイクをONにしている場合） */}
+                {p.isMicOn && (
+                  <span className="mic-indicator" title="マイクON">🎤</span>
                 )}
               </li>
             ))}

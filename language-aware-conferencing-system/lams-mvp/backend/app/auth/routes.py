@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.auth.jwt_handler import (
-    Token,
     create_access_token,
     hash_password,
     verify_password,
@@ -63,7 +62,9 @@ class AuthResponse(BaseModel):
 
 
 @router.post("/register", response_model=AuthResponse)
-async def register(data: UserCreate, db: AsyncSession = Depends(get_db)) -> AuthResponse:
+async def register(
+    data: UserCreate, db: AsyncSession = Depends(get_db)
+) -> AuthResponse:
     """新規ユーザー登録"""
     # メールアドレス重複チェック
     result = await db.execute(select(User).where(User.email == data.email))
@@ -256,9 +257,7 @@ async def confirm_password_reset(
         )
 
     # パスワード更新
-    user_result = await db.execute(
-        select(User).where(User.id == reset_token.user_id)
-    )
+    user_result = await db.execute(select(User).where(User.id == reset_token.user_id))
     user = user_result.scalar_one_or_none()
 
     if not user:
