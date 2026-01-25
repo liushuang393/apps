@@ -1,0 +1,27 @@
+frontend/src/components/SubtitleDisplay.tsx:101:        console.log('[SubtitleDisplay] 翻訳取得開始:', {
+frontend/src/components/SubtitleDisplay.tsx:115:            console.log('[SubtitleDisplay] IDベース取得失敗、テキストベースで翻訳');
+frontend/src/components/SubtitleDisplay.tsx:124:          console.log('[SubtitleDisplay] 翻訳結果:', {
+frontend/src/components/SubtitleDisplay.tsx:138:          console.error('[SubtitleDisplay] 翻訳エラー:', err);
+frontend/src/components/SubtitleDisplay.tsx:190:              console.warn('[SubtitleDisplay] 話者が見つかりません:', {
+frontend/src/hooks/useWebSocket.ts:40:    console.log('[Audio] AudioContext初期化完了:', ctx.state);
+frontend/src/hooks/useWebSocket.ts:43:    console.warn('[Audio] AudioContext初期化失敗:', err);
+frontend/src/hooks/useWebSocket.ts:140:          console.log('[SUBTITLE] 受信:', {
+frontend/src/hooks/useWebSocket.ts:162:          console.log('[SUBTITLE_INTERIM] 受信:', {
+frontend/src/hooks/useWebSocket.ts:175:          console.warn('[QoS]', msg.message);
+frontend/src/hooks/useWebSocket.ts:178:          console.error('[WS Error]', msg.message);
+frontend/src/hooks/useWebSocket.ts:214:          console.debug(`[Audio] 再生遅延: ${playbackDelay.toFixed(1)}ms`);
+frontend/src/hooks/useWebSocket.ts:219:      console.warn('[Audio] 音声デコード失敗:', err, 'データサイズ:', audioData.byteLength);
+frontend/src/hooks/useTranslation.ts:100:          console.error('[Translation] APIエラー:', response.status);
+frontend/src/hooks/useTranslation.ts:111:        console.error('[Translation] 翻訳エラー:', error);
+frontend/src/hooks/useTranslation.ts:155:          console.error('[Translation] 字幕翻訳取得エラー:', response.status);
+frontend/src/hooks/useTranslation.ts:170:        console.error('[Translation] 字幕翻訳取得エラー:', error);
+frontend/src/hooks/useAudioCapture.ts:125:      console.log(`[VAD] 音量急降下検出: ${dropRate.toFixed(1)}, 早期終了 ${SPEAKING_END_DELAY_MIN}ms`);
+frontend/src/hooks/useAudioCapture.ts:200:      console.log('[Audio] 発話が短すぎるためスキップ:', totalLength, 'samples');
+frontend/src/hooks/useAudioCapture.ts:218:    console.log('[Audio] 完全な発話セグメント送信:', totalLength, 'samples, ', Math.round(totalLength / SAMPLE_RATE * 1000), 'ms');
+frontend/src/hooks/useAudioCapture.ts:228:      console.log('[Audio] バッファ最大サイズに達したため送信');
+frontend/src/hooks/useAudioCapture.ts:235:    console.log('[Audio Debug] startCapture called, deviceId:', deviceId);
+frontend/src/hooks/useAudioCapture.ts:243:      console.log('[Audio Debug] Starting mic capture...');
+frontend/src/hooks/useAudioCapture.ts:301:      console.log('[Audio] Mic started successfully');
+frontend/src/hooks/useAudioCapture.ts:351:            console.log('[VAD] 発話開始検出');
+frontend/src/hooks/useAudioCapture.ts:368:            console.log(`[VAD] 発話終了検出 (delay=${adaptiveDelay}ms)、完全な音声セグメントを送信`);
+frontend/src/pages/RoomListPage.tsx:99:      console.error('会議室一覧取得エラー:', err);

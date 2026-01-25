@@ -9,6 +9,7 @@
     "loading": "加载中...",
     "error": "发生错误",
     "save": "保存",
+    "saving": "保存中...",
     "cancel": "取消",
     "delete": "删除",
     "edit": "编辑",
@@ -64,6 +65,8 @@
     "historyDesc": "查看会议参与记录",
     "admin": "管理员面板",
     "adminDesc": "用户管理和系统设置",
+    "languageSettings": "语言设置",
+    "languageSettingsDesc": "自定义系统支持的语言",
     "comingSoon": "即将推出"
   },
   "room": {
@@ -117,10 +120,23 @@
     "en": "英语",
     "zh": "中文",
     "vi": "越南语",
+    "ko": "韩语",
+    "fr": "法语",
+    "de": "德语",
+    "ru": "俄语",
+    "es": "西班牙语",
+    "pt": "葡萄牙语",
     "jaShort": "JP",
     "enShort": "EN",
     "zhShort": "CN",
     "viShort": "VN"
+  },
+  "languageSettings": {
+    "title": "语言设置",
+    "description": "选择系统使用的语言。所选语言将在新创建的会议室中可用。",
+    "selectionCount": "已选择: {{current}} / {{max}} 种语言",
+    "saveSuccess": "语言设置已保存",
+    "tierLabel": "翻译准确度"
   }
 }
 

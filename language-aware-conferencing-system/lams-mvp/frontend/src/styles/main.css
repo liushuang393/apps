@@ -2452,3 +2452,188 @@ button.btn-sm {
     flex-wrap: wrap;
   }
 }
+
+/* =====================================================
+   言語設定ページ
+   ===================================================== */
+
+.language-settings-page {
+  min-height: 100vh;
+  background: var(--gradient-dark);
+  color: white;
+}
+
+.language-settings-page .page-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 2rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.language-settings-page .page-header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.language-settings-page .btn-back {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+.language-settings-page .btn-back:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.language-settings-page .settings-content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.language-settings-page .settings-info {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.language-settings-page .settings-info p {
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+}
+
+.language-settings-page .selection-count {
+  margin-top: 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--primary-light);
+}
+
+.language-settings-page .error-message {
+  background: rgba(220, 38, 38, 0.2);
+  border: 1px solid rgba(220, 38, 38, 0.4);
+  color: #fca5a5;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+}
+
+.language-settings-page .success-message {
+  background: rgba(5, 150, 105, 0.2);
+  border: 1px solid rgba(5, 150, 105, 0.4);
+  color: #6ee7b7;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+}
+
+.language-settings-page .language-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.language-settings-page .language-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid transparent;
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.language-settings-page .language-card:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
+}
+
+.language-settings-page .language-card.selected {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: var(--primary-color);
+}
+
+.language-settings-page .language-card.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.language-settings-page .language-card .lang-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 0.25rem;
+}
+
+.language-settings-page .language-card .lang-code {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 0.5rem;
+}
+
+.language-settings-page .language-card .lang-tier {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.language-settings-page .language-card .check-mark {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: var(--primary-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: bold;
+}
+
+.language-settings-page .actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.language-settings-page .btn-primary {
+  background: var(--gradient-primary);
+  border: none;
+  color: white;
+  padding: 0.75rem 2rem;
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.language-settings-page .btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.language-settings-page .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.language-settings-page .loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  font-size: 1.25rem;
+  color: rgba(255, 255, 255, 0.7);
+}

@@ -1,0 +1,6 @@
+README.md:22:| **低遅延保証** | 1200ms以下の遅延目標、超過時は自動で字幕フォールバック |
+README.md:541:通常時（遅延 < 1200ms）
+README.md:546:軽度劣化（1200ms < 遅延 < 1800ms）
+backend/app/config.py:165:    max_latency_ms: int = 1200  # 最大許容遅延
+frontend/src/styles/main.css:1778:  max-width: 1200px;
+backend/app/ai_pipeline/qos.py:6:- 遅延上限: 1200ms（認知負荷軽減）

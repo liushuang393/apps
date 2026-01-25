@@ -1,0 +1,2 @@
+== Encoding check (strict UTF-8 decode) ==
+- frontend/src/pages/RoomListPage.tsx: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=12978

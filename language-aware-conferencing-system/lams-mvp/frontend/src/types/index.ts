@@ -2,8 +2,24 @@
  * LAMS フロントエンド型定義
  */
 
-/** 対応言語 */
-export type SupportedLanguage = 'ja' | 'en' | 'zh' | 'vi';
+/**
+ * システムで利用可能な全言語コード
+ * OpenAI Whisper/GPT-4oで高精度な10言語
+ */
+export type AllLanguageCode =
+  | 'en'
+  | 'ja'
+  | 'zh'
+  | 'ko'
+  | 'vi'
+  | 'fr'
+  | 'de'
+  | 'ru'
+  | 'es'
+  | 'pt';
+
+/** 対応言語（後方互換性のため維持、動的に有効化された言語） */
+export type SupportedLanguage = AllLanguageCode;
 
 /** 音声モード: 原声 or 翻訳 */
 export type AudioMode = 'original' | 'translated';

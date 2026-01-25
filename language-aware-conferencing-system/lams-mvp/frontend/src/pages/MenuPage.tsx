@@ -69,6 +69,13 @@ const menuCategories: MenuCategoryExtended[] = [
         path: '/admin',
         requireAdmin: true,
       },
+      {
+        icon: '🌍',
+        titleKey: 'menu.languageSettings',
+        descKey: 'menu.languageSettingsDesc',
+        path: '/admin/languages',
+        requireAdmin: true,
+      },
     ],
   },
 ];

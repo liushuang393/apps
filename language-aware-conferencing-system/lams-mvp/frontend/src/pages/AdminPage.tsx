@@ -8,13 +8,7 @@ import { adminApi, type AdminUser, type SystemStats } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
-/** 言語表示名マッピング */
-const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
-  ja: '日本語',
-  en: '英語',
-  zh: '中国語',
-  vi: 'ベトナム語',
-};
+import { LANGUAGE_NAMES } from '../constants/languages';
 
 /** ロール表示名マッピング */
 const ROLE_NAMES: Record<string, string> = {

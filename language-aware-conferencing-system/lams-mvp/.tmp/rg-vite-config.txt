@@ -1,0 +1,3 @@
+frontend/vite.config.ts:34:  console.log('[Vite Config] Client API URL:', clientApiUrl || '(relative path /api)');
+frontend/vite.config.ts:35:  console.log('[Vite Config] Client WS URL:', clientWsUrl || '(auto-detect)');
+frontend/vite.config.ts:36:  console.log('[Vite Config] Proxy Target:', proxyTarget);

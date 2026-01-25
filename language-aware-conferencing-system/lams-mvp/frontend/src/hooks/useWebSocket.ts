@@ -37,10 +37,8 @@ export async function initializeAudioContext(): Promise<boolean> {
     if (ctx.state === 'suspended') {
       await ctx.resume();
     }
-    console.log('[Audio] AudioContext初期化完了:', ctx.state);
     return ctx.state === 'running';
-  } catch (err) {
-    console.warn('[Audio] AudioContext初期化失敗:', err);
+  } catch {
     return false;
   }
 }
@@ -137,12 +135,6 @@ export function useWebSocket(roomId: string | null) {
         case 'subtitle':
           // ★クライアント側翻訳アーキテクチャ + サーバープリ翻訳対応★
           // サーバーから原文 + プリ翻訳を受信、追加翻訳が必要ならクライアント側で実行
-          console.log('[SUBTITLE] 受信:', {
-            speakerId: msg.speaker_id,
-            originalText: (msg.original_text as string)?.slice(0, 30),
-            sourceLanguage: msg.source_language,
-            hasTranslations: !!msg.translations,
-          });
           addSubtitle({
             id: msg.id as string | undefined,
             seq: msg.seq as number | undefined,
@@ -159,11 +151,6 @@ export function useWebSocket(roomId: string | null) {
           break;
         case 'subtitle_interim':
           // ★ストリーミング字幕（認識中）
-          console.log('[SUBTITLE_INTERIM] 受信:', {
-            id: msg.id,
-            text: (msg.text as string)?.slice(0, 30),
-            isFinal: msg.is_final,
-          });
           addInterimSubtitle({
             id: msg.id as string,
             speakerId: msg.speaker_id as string,
@@ -172,10 +159,10 @@ export function useWebSocket(roomId: string | null) {
           });
           break;
         case 'qos_warning':
-          console.warn('[QoS]', msg.message);
+          // QoS警告: msg.message（デバッグログ削除済み）
           break;
         case 'error':
-          console.error('[WS Error]', msg.message);
+          // WSエラー: msg.message（デバッグログ削除済み）
           break;
       }
     },
@@ -189,8 +176,6 @@ export function useWebSocket(roomId: string | null) {
    * 原声会議機能: 音声は即座に配信されるため、デコード・再生のみ
    */
   const playAudio = useCallback(async (audioData: ArrayBuffer) => {
-    const receiveTime = performance.now();
-
     // 最小データサイズチェック（WAVヘッダー44バイト + 少なくともサンプルデータ）
     if (audioData.byteLength < 100) {
       return;
@@ -205,18 +190,8 @@ export function useWebSocket(roomId: string | null) {
       source.buffer = audioBuffer;
       source.connect(audioCtx.destination);
       source.start(0);
-
-      // デバッグ: 音声処理遅延をログ出力（開発環境のみ）
-      if (import.meta.env.DEV) {
-        const playbackDelay = performance.now() - receiveTime;
-        // 遅延が50ms以上の場合のみ警告
-        if (playbackDelay > 50) {
-          console.debug(`[Audio] 再生遅延: ${playbackDelay.toFixed(1)}ms`);
-        }
-      }
-    } catch (err) {
-      // デコード失敗をログ出力（デバッグ用）
-      console.warn('[Audio] 音声デコード失敗:', err, 'データサイズ:', audioData.byteLength);
+    } catch {
+      // デコード失敗時は無視（再生スキップ）
     }
   }, []);
 

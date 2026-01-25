@@ -12,6 +12,7 @@ import { RoomListPage } from './pages/RoomListPage';
 import { RoomPage } from './pages/RoomPage';
 import { TranscriptPage } from './pages/TranscriptPage';
 import { AdminPage } from './pages/AdminPage';
+import { LanguageSettingsPage } from './pages/LanguageSettingsPage';
 import './styles/main.css';
 
 /** 認証必須ルート */
@@ -69,6 +70,14 @@ export function App() {
           element={
             <PrivateRoute>
               <AdminPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin/languages"
+          element={
+            <PrivateRoute>
+              <LanguageSettingsPage />
             </PrivateRoute>
           }
         />

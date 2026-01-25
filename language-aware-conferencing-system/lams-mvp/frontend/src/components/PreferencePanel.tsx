@@ -13,13 +13,10 @@ import { useRoomStore } from '../store/roomStore';
 import { AudioControlPanel } from './AudioControlPanel';
 import type { AudioMode, SupportedLanguage, RoomPolicy } from '../types';
 
+import { LANGUAGE_NAMES_WITH_CODE } from '../constants/languages';
+
 /** 言語表示名（統一形式：言語名（コード）） */
-const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
-  ja: '日本語（JP）',
-  en: '英語（EN）',
-  zh: '中国語（CN）',
-  vi: 'ベトナム語（VN）',
-};
+const LANGUAGE_NAMES = LANGUAGE_NAMES_WITH_CODE;
 
 interface Props {
   onPreferenceChange: (pref: {

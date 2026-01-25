@@ -8,16 +8,10 @@ import { roomApi } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { Room, SupportedLanguage, AudioMode } from '../types';
 
-/** 言語表示名マッピング */
-const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
-  ja: '日本語',
-  en: '英語',
-  zh: '中国語',
-  vi: 'ベトナム語',
-};
+import { LANGUAGE_NAMES, DEFAULT_ENABLED_LANGUAGES } from '../constants/languages';
 
-/** 全対応言語リスト */
-const ALL_LANGUAGES: SupportedLanguage[] = ['ja', 'en', 'zh', 'vi'];
+/** 全対応言語リスト（デフォルト言語を使用） */
+const ALL_LANGUAGES = DEFAULT_ENABLED_LANGUAGES;
 
 /** 会議作成フォームの初期状態 */
 interface CreateFormState {
@@ -102,7 +96,6 @@ export function RoomListPage() {
       }
       // その他のエラーの場合のみエラーメッセージを表示
       setError('会議室一覧の取得に失敗しました');
-      console.error('会議室一覧取得エラー:', err);
     } finally {
       setLoading(false);
     }

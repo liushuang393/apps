@@ -9,6 +9,7 @@
     "loading": "Loading...",
     "error": "An error occurred",
     "save": "Save",
+    "saving": "Saving...",
     "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",
@@ -64,6 +65,8 @@
     "historyDesc": "View meeting participation history",
     "admin": "Admin Panel",
     "adminDesc": "User management and system settings",
+    "languageSettings": "Language Settings",
+    "languageSettingsDesc": "Customize system supported languages",
     "comingSoon": "Coming Soon"
   },
   "room": {
@@ -117,10 +120,23 @@
     "en": "English",
     "zh": "Chinese",
     "vi": "Vietnamese",
+    "ko": "Korean",
+    "fr": "French",
+    "de": "German",
+    "ru": "Russian",
+    "es": "Spanish",
+    "pt": "Portuguese",
     "jaShort": "JP",
     "enShort": "EN",
     "zhShort": "CN",
     "viShort": "VN"
+  },
+  "languageSettings": {
+    "title": "Language Settings",
+    "description": "Select languages to use in the system. Selected languages will be available in newly created meeting rooms.",
+    "selectionCount": "Selected: {{current}} / {{max}} languages",
+    "saveSuccess": "Language settings saved",
+    "tierLabel": "Translation Accuracy"
   }
 }
 

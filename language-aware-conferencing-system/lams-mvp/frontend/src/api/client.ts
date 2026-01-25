@@ -361,4 +361,44 @@ export const adminApi = {
       totalSubtitles: res.total_subtitles,
     };
   },
+
+  /** 言語設定取得 */
+  getLanguageSettings: async (): Promise<LanguageSettings> => {
+    const res = await apiFetch<LanguageSettingsApiResponse>('/admin/settings/languages');
+    return {
+      enabledLanguages: res.enabled_languages,
+      allAvailableLanguages: res.all_available_languages,
+    };
+  },
+
+  /** 言語設定更新 */
+  updateLanguageSettings: async (enabledLanguages: string[]): Promise<LanguageSettings> => {
+    const res = await apiFetch<LanguageSettingsApiResponse>('/admin/settings/languages', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled_languages: enabledLanguages }),
+    });
+    return {
+      enabledLanguages: res.enabled_languages,
+      allAvailableLanguages: res.all_available_languages,
+    };
+  },
 };
+
+/** 言語オプション */
+export interface LanguageOption {
+  code: string;
+  name: string;
+  tier: number;
+}
+
+/** 言語設定 */
+export interface LanguageSettings {
+  enabledLanguages: string[];
+  allAvailableLanguages: LanguageOption[];
+}
+
+/** バックエンドの言語設定応答型（snake_case） */
+interface LanguageSettingsApiResponse {
+  enabled_languages: string[];
+  all_available_languages: LanguageOption[];
+}

@@ -98,10 +98,6 @@ function SubtitleDisplayInner() {
 
         // ★翻訳モード: 異なる言語の場合★
         // ★最小遅延設計: 字幕IDでサーバーキャッシュから取得
-        console.log('[SubtitleDisplay] 翻訳取得開始:', {
-          subtitleId: sub.id,
-          targetLanguage,
-        });
 
         try {
           // 字幕IDがあれば、IDベースで翻訳取得（最小遅延）
@@ -112,7 +108,6 @@ function SubtitleDisplayInner() {
 
           // IDベースで取得できなければ、テキストベースで翻訳
           if (!translated) {
-            console.log('[SubtitleDisplay] IDベース取得失敗、テキストベースで翻訳');
             translated = await translateText(
               sub.originalText,
               sub.sourceLanguage,
@@ -121,11 +116,6 @@ function SubtitleDisplayInner() {
           }
 
           const isActuallyTranslated = translated !== sub.originalText;
-          console.log('[SubtitleDisplay] 翻訳結果:', {
-            original: sub.originalText.slice(0, 20),
-            translated: translated.slice(0, 20),
-            isActuallyTranslated,
-          });
           processed.push({
             ...sub,
             displayText: translated,
@@ -133,9 +123,8 @@ function SubtitleDisplayInner() {
             isTranslating: false,
             isTranslated: isActuallyTranslated,
           });
-        } catch (err) {
+        } catch {
           // 翻訳失敗時は原文を表示
-          console.error('[SubtitleDisplay] 翻訳エラー:', err);
           processed.push({
             ...sub,
             displayText: sub.originalText,
@@ -186,12 +175,7 @@ function SubtitleDisplayInner() {
           {displaySubtitles.map((sub, idx) => {
             const speaker = participants.get(sub.speakerId);
             const isMyMessage = sub.speakerId === currentUserId;
-            if (!speaker) {
-              console.warn('[SubtitleDisplay] 話者が見つかりません:', {
-                speakerId: sub.speakerId,
-                participantIds: Array.from(participants.keys()),
-              });
-            }
+            // 話者が見つからない場合は「不明」と表示
             const displayName = speaker?.displayName || '不明';
             const subtitleKey = sub.id ?? `${sub.speakerId}-${idx}-${sub.originalText.slice(0, 10)}`;
 

@@ -3,14 +3,31 @@ LAMS 管理者API
 ユーザー管理、システム設定
 """
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_admin
+from app.auth.dependencies import get_current_user, require_admin
 from app.db.database import get_db
-from app.db.models import Room, Subtitle, User, UserRole
+from app.db.models import Room, Subtitle, SystemConfig, User, UserRole, utc_now
+
+# 対応可能な全言語リスト（OpenAI高精度言語）
+ALL_SUPPORTED_LANGUAGES = [
+    "en",
+    "ja",
+    "zh",
+    "ko",
+    "vi",
+    "fr",
+    "de",
+    "ru",
+    "es",
+    "pt",
+]
+MAX_ENABLED_LANGUAGES = 4
 
 router = APIRouter()
 
@@ -198,4 +215,115 @@ async def get_system_stats(
         total_rooms=total_rooms or 0,
         active_rooms=active_rooms or 0,
         total_subtitles=total_subtitles or 0,
+    )
+
+
+# -----------------------------------------------------------------------------
+# 言語設定API
+# -----------------------------------------------------------------------------
+
+
+class LanguageOption(BaseModel):
+    """言語オプション"""
+
+    code: str
+    name: str
+    tier: int  # 精度ティア（1=最高, 3=低）
+
+
+class LanguageSettingsRequest(BaseModel):
+    """言語設定リクエスト"""
+
+    enabled_languages: list[str]
+
+    @field_validator("enabled_languages")
+    @classmethod
+    def validate_languages(cls, v: list[str]) -> list[str]:
+        if len(v) < 1:
+            raise ValueError("少なくとも1つの言語が必要です")
+        if len(v) > MAX_ENABLED_LANGUAGES:
+            raise ValueError(f"最大{MAX_ENABLED_LANGUAGES}言語まで選択可能です")
+        for lang in v:
+            if lang not in ALL_SUPPORTED_LANGUAGES:
+                raise ValueError(f"非対応の言語: {lang}")
+        return v
+
+
+class LanguageSettingsResponse(BaseModel):
+    """言語設定レスポンス"""
+
+    enabled_languages: list[str]
+    all_available_languages: list[LanguageOption]
+
+
+# 全言語オプション定義
+ALL_LANGUAGE_OPTIONS: list[LanguageOption] = [
+    LanguageOption(code="en", name="English", tier=1),
+    LanguageOption(code="ja", name="日本語", tier=2),
+    LanguageOption(code="zh", name="中文", tier=2),
+    LanguageOption(code="ko", name="한국어", tier=2),
+    LanguageOption(code="vi", name="Tiếng Việt", tier=3),
+    LanguageOption(code="fr", name="Français", tier=1),
+    LanguageOption(code="de", name="Deutsch", tier=1),
+    LanguageOption(code="ru", name="Русский", tier=2),
+    LanguageOption(code="es", name="Español", tier=1),
+    LanguageOption(code="pt", name="Português", tier=1),
+]
+
+
+@router.get("/settings/languages", response_model=LanguageSettingsResponse)
+async def get_language_settings(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> LanguageSettingsResponse:
+    """
+    現在の言語設定を取得
+    全ユーザーがアクセス可能
+    """
+    result = await db.execute(
+        select(SystemConfig).where(SystemConfig.key == "enabled_languages")
+    )
+    row = result.scalar_one_or_none()
+    enabled = json.loads(row.value) if row else ["ja", "en", "zh", "vi"]
+
+    return LanguageSettingsResponse(
+        enabled_languages=enabled,
+        all_available_languages=ALL_LANGUAGE_OPTIONS,
+    )
+
+
+@router.put("/settings/languages", response_model=LanguageSettingsResponse)
+async def update_language_settings(
+    data: LanguageSettingsRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> LanguageSettingsResponse:
+    """
+    言語設定を更新（管理者のみ）
+    - 最大4言語まで選択可能
+    - 設定後に作成される会議室に適用
+    """
+    result = await db.execute(
+        select(SystemConfig).where(SystemConfig.key == "enabled_languages")
+    )
+    row = result.scalar_one_or_none()
+
+    if row:
+        row.value = json.dumps(data.enabled_languages)
+        row.updated_at = utc_now()
+        row.updated_by = admin.id
+    else:
+        db.add(
+            SystemConfig(
+                key="enabled_languages",
+                value=json.dumps(data.enabled_languages),
+                updated_by=admin.id,
+            )
+        )
+
+    await db.commit()
+
+    return LanguageSettingsResponse(
+        enabled_languages=data.enabled_languages,
+        all_available_languages=ALL_LANGUAGE_OPTIONS,
     )

@@ -9,6 +9,7 @@
     "loading": "読み込み中...",
     "error": "エラーが発生しました",
     "save": "保存",
+    "saving": "保存中...",
     "cancel": "キャンセル",
     "delete": "削除",
     "edit": "編集",
@@ -64,6 +65,8 @@
     "historyDesc": "会議参加履歴の確認",
     "admin": "管理者パネル",
     "adminDesc": "ユーザー管理・システム設定",
+    "languageSettings": "対応言語設定",
+    "languageSettingsDesc": "システム対応言語のカスタマイズ",
     "comingSoon": "準備中"
   },
   "room": {
@@ -117,10 +120,23 @@
     "en": "英語",
     "zh": "中国語",
     "vi": "ベトナム語",
+    "ko": "韓国語",
+    "fr": "フランス語",
+    "de": "ドイツ語",
+    "ru": "ロシア語",
+    "es": "スペイン語",
+    "pt": "ポルトガル語",
     "jaShort": "JP",
     "enShort": "EN",
     "zhShort": "CN",
     "viShort": "VN"
+  },
+  "languageSettings": {
+    "title": "対応言語設定",
+    "description": "システムで使用する言語を選択してください。選択した言語は新規作成される会議室で利用可能になります。",
+    "selectionCount": "選択中: {{current}} / {{max}}言語",
+    "saveSuccess": "言語設定を保存しました",
+    "tierLabel": "翻訳精度"
   }
 }
 

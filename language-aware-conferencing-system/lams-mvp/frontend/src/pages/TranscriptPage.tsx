@@ -8,16 +8,10 @@ import { roomApi, type SubtitleRecord, type TranscriptData } from '../api/client
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
-/** 言語表示名マッピング */
-const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
-  ja: '日本語',
-  en: '英語',
-  zh: '中国語',
-  vi: 'ベトナム語',
-};
+import { LANGUAGE_NAMES, DEFAULT_ENABLED_LANGUAGES } from '../constants/languages';
 
 /** 全対応言語リスト */
-const ALL_LANGUAGES: SupportedLanguage[] = ['ja', 'en', 'zh', 'vi'];
+const ALL_LANGUAGES = DEFAULT_ENABLED_LANGUAGES;
 
 export function TranscriptPage() {
   const { roomId } = useParams<{ roomId: string }>();

@@ -1,0 +1,9 @@
+== Encoding check (strict UTF-8 decode) ==
+- frontend/vite.config.ts: utf8_decode_ok=True, first3bytes=69 6d 70, size=2378
+- frontend/src/pages/RoomListPage.tsx: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=12978
+- frontend/src/hooks/useWebSocket.ts: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=12974
+- frontend/src/hooks/useAudioCapture.ts: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=18698
+- frontend/src/components/SubtitleDisplay.tsx: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=9289
+- frontend/src/hooks/useTranslation.ts: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=5627
+- backend/app/websocket/handler.py: utf8_decode_ok=True, first3bytes=22 22 22, size=30336
+- backend/tests/test_ai_providers.py: utf8_decode_ok=True, first3bytes=22 22 22, size=4481

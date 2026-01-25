@@ -1,0 +1,7 @@
+== Encoding check (strict UTF-8 decode) ==
+- README.md: utf8_decode_ok=True, first3bytes=0a 23 20, size=41523
+- backend/app/websocket/handler.py: utf8_decode_ok=True, first3bytes=22 22 22, size=30336
+- frontend/src/hooks/useWebSocket.ts: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=12974
+- frontend/src/hooks/useAudioCapture.ts: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=18698
+- frontend/src/components/SubtitleDisplay.tsx: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=9289
+- frontend/src/hooks/useTranslation.ts: utf8_decode_ok=True, first3bytes=2f 2a 2a, size=5627

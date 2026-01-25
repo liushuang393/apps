@@ -1,0 +1,41 @@
+backend/tests/test_ai_providers.py:26:    print(f"{status} {name}")
+backend/tests/test_ai_providers.py:28:        print(f"       {message}")
+backend/tests/test_ai_providers.py:117:    print(f"\n{YELLOW}=== AI プロバイダー接続テスト ==={RESET}\n")
+backend/tests/test_ai_providers.py:120:    print(f"AI_PROVIDER: {os.getenv('AI_PROVIDER', '未設定')}")
+backend/tests/test_ai_providers.py:121:    print(f"GEMINI_MODEL: {os.getenv('GEMINI_MODEL', '未設定')}")
+backend/tests/test_ai_providers.py:122:    print(f"OPENAI_REALTIME_MODEL: {os.getenv('OPENAI_REALTIME_MODEL', '未設定')}")
+backend/tests/test_ai_providers.py:123:    print()
+backend/tests/test_ai_providers.py:134:    print(f"\n{YELLOW}=== 結果サマリー ==={RESET}")
+backend/tests/test_ai_providers.py:137:    print(f"合格: {passed}/{total}")
+./DEVELOPMENT_RULES.md:161:- ❌ `print()` の使用禁止（ロギングを使用）
+./DEVELOPMENT_RULES.md:179:    print(f"Getting user {id}")
+backend/app/websocket/handler.py:94:        print(
+backend/app/websocket/handler.py:101:                print(f"[WS SEND] 送信成功: {message.get('type')}", flush=True)
+backend/app/websocket/handler.py:103:                print(f"[WS SEND] 送信失敗: {e}", flush=True)
+backend/app/websocket/handler.py:105:            print(
+backend/app/websocket/handler.py:526:    print(f"[WS INIT] Connecting user {user_id} to room {room_id}", flush=True)
+backend/app/websocket/handler.py:528:    print("[WS INIT] Connected, adding participant...", flush=True)
+backend/app/websocket/handler.py:540:    print(f"[WS INIT] Participant added to Redis: user_id={user_id}", flush=True)
+backend/app/websocket/handler.py:580:    print("[WS DEBUG] Sent room_state, entering message loop...", flush=True)
+backend/app/websocket/handler.py:585:            print(f"[WS DEBUG] Waiting for message from user {user_id}...", flush=True)
+backend/app/websocket/handler.py:587:            print(
+./CONTRIBUTING.md:155:- ❌ `print()` の使用禁止（ロギングを使用）
+./backend/tests/test_ai_providers.py:26:    print(f"{status} {name}")
+./backend/tests/test_ai_providers.py:28:        print(f"       {message}")
+./backend/tests/test_ai_providers.py:117:    print(f"\n{YELLOW}=== AI プロバイダー接続テスト ==={RESET}\n")
+./backend/tests/test_ai_providers.py:120:    print(f"AI_PROVIDER: {os.getenv('AI_PROVIDER', '未設定')}")
+./backend/tests/test_ai_providers.py:121:    print(f"GEMINI_MODEL: {os.getenv('GEMINI_MODEL', '未設定')}")
+./backend/tests/test_ai_providers.py:122:    print(f"OPENAI_REALTIME_MODEL: {os.getenv('OPENAI_REALTIME_MODEL', '未設定')}")
+./backend/tests/test_ai_providers.py:123:    print()
+./backend/tests/test_ai_providers.py:134:    print(f"\n{YELLOW}=== 結果サマリー ==={RESET}")
+./backend/tests/test_ai_providers.py:137:    print(f"合格: {passed}/{total}")
+./backend/app/websocket/handler.py:94:        print(
+./backend/app/websocket/handler.py:101:                print(f"[WS SEND] 送信成功: {message.get('type')}", flush=True)
+./backend/app/websocket/handler.py:103:                print(f"[WS SEND] 送信失敗: {e}", flush=True)
+./backend/app/websocket/handler.py:105:            print(
+./backend/app/websocket/handler.py:526:    print(f"[WS INIT] Connecting user {user_id} to room {room_id}", flush=True)
+./backend/app/websocket/handler.py:528:    print("[WS INIT] Connected, adding participant...", flush=True)
+./backend/app/websocket/handler.py:540:    print(f"[WS INIT] Participant added to Redis: user_id={user_id}", flush=True)
+./backend/app/websocket/handler.py:580:    print("[WS DEBUG] Sent room_state, entering message loop...", flush=True)
+./backend/app/websocket/handler.py:585:            print(f"[WS DEBUG] Waiting for message from user {user_id}...", flush=True)
+./backend/app/websocket/handler.py:587:            print(

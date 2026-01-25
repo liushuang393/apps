@@ -31,10 +31,6 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = isDocker ? 'http://backend:8000' : 'http://localhost:8000';
   const wsProxyTarget = isDocker ? 'ws://backend:8000' : 'ws://localhost:8000';
 
-  console.log('[Vite Config] Client API URL:', clientApiUrl || '(relative path /api)');
-  console.log('[Vite Config] Client WS URL:', clientWsUrl || '(auto-detect)');
-  console.log('[Vite Config] Proxy Target:', proxyTarget);
-
   return {
     plugins: [react()],
     // クライアントコードに環境変数を注入（空の場合は相対パス使用）

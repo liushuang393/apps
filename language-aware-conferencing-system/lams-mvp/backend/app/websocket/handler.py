@@ -91,21 +91,14 @@ class ConnectionManager:
 
     async def send_to_user(self, room_id: str, user_id: str, message: dict) -> None:
         """特定ユーザーにJSONを送信"""
-        print(
-            f"[WS SEND] send_to_user: room={room_id}, user={user_id}, type={message.get('type')}",
-            flush=True,
-        )
+        logger.debug("send_to_user: room=%s, user=%s, type=%s", room_id, user_id, message.get("type"))
         if room_id in self.rooms and user_id in self.rooms[room_id]:
             try:
                 await self.rooms[room_id][user_id].send_json(message)
-                print(f"[WS SEND] 送信成功: {message.get('type')}", flush=True)
             except Exception as e:
-                print(f"[WS SEND] 送信失敗: {e}", flush=True)
+                logger.warning("WS送信失敗: %s", e)
         else:
-            print(
-                f"[WS SEND] ユーザーが見つかりません: room_exists={room_id in self.rooms}",
-                flush=True,
-            )
+            logger.debug("ユーザーが見つかりません: room_exists=%s", room_id in self.rooms)
 
     async def send_bytes_to_user(self, room_id: str, user_id: str, data: bytes) -> None:
         """特定ユーザーにバイナリを送信"""
@@ -523,9 +516,8 @@ async def websocket_room(
             return
 
     # 接続確立（conn_mgr.connect内でws.accept()を呼び出す）
-    print(f"[WS INIT] Connecting user {user_id} to room {room_id}", flush=True)
+    logger.info("WS接続開始: user=%s, room=%s", user_id, room_id)
     await conn_mgr.connect(room_id, user_id, ws)
-    print("[WS INIT] Connected, adding participant...", flush=True)
 
     # 参加者として追加（デフォルト: 原声モード）
     participant = await room_manager.add_participant(
@@ -537,7 +529,7 @@ async def websocket_room(
         subtitle_enabled=True,
     )
 
-    print(f"[WS INIT] Participant added to Redis: user_id={user_id}", flush=True)
+    logger.info("参加者追加完了: user=%s", user_id)
 
     # 入室を他の参加者に通知
     await conn_mgr.broadcast_json(
@@ -577,20 +569,12 @@ async def websocket_room(
             "your_preference": asdict(participant),
         }
     )
-    print("[WS DEBUG] Sent room_state, entering message loop...", flush=True)
-    logger.info("[WS DEBUG] Sent room_state, entering message loop...")
+    logger.info("room_state送信完了、メッセージループ開始")
 
     try:
         while True:
-            print(f"[WS DEBUG] Waiting for message from user {user_id}...", flush=True)
             data = await ws.receive()
-            print(
-                f"[WS DEBUG] Received data type: {data.get('type')}, keys: {list(data.keys())}",
-                flush=True,
-            )
-            logger.info(
-                f"[WS DEBUG] Received data type: {data.get('type')}, keys: {list(data.keys())}"
-            )
+            logger.debug("受信: type=%s", data.get("type"))
 
             # 接続切断チェック
             if data.get("type") == "websocket.disconnect":

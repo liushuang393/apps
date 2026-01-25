@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -201,3 +201,20 @@ class Room(Base):
 
     # リレーション
     creator: Mapped["User"] = relationship(back_populates="created_rooms")
+
+
+class SystemConfig(Base):
+    """
+    システム全体設定モデル
+    言語設定など、システム全体で共有される設定を管理
+    """
+
+    __tablename__ = "system_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    value: Mapped[str] = mapped_column(Text)  # JSON文字列で保存
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)

@@ -40,7 +40,7 @@ function subtitleCacheKey(subtitleId: string, tgt: string): string {
 }
 
 /** APIベースURL（環境変数から取得、なければ相対パス） */
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 /**
  * 翻訳フック
@@ -97,7 +97,6 @@ export function useTranslation() {
         });
 
         if (!response.ok) {
-          console.error('[Translation] APIエラー:', response.status);
           return text; // フォールバック: 原文を返す
         }
 
@@ -107,8 +106,7 @@ export function useTranslation() {
         cacheRef.current.set(key, data.translated_text);
 
         return data.translated_text;
-      } catch (error) {
-        console.error('[Translation] 翻訳エラー:', error);
+      } catch {
         return text; // フォールバック: 原文を返す
       }
     },
@@ -152,7 +150,6 @@ export function useTranslation() {
         });
 
         if (!response.ok) {
-          console.error('[Translation] 字幕翻訳取得エラー:', response.status);
           return null;
         }
 
@@ -166,8 +163,7 @@ export function useTranslation() {
 
         // pending or not_found
         return null;
-      } catch (error) {
-        console.error('[Translation] 字幕翻訳取得エラー:', error);
+      } catch {
         return null;
       }
     },

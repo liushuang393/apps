@@ -9,6 +9,7 @@
     "loading": "Đang tải...",
     "error": "Đã xảy ra lỗi",
     "save": "Lưu",
+    "saving": "Đang lưu...",
     "cancel": "Hủy",
     "delete": "Xóa",
     "edit": "Chỉnh sửa",
@@ -64,6 +65,8 @@
     "historyDesc": "Xem lịch sử tham gia cuộc họp",
     "admin": "Bảng quản trị",
     "adminDesc": "Quản lý người dùng và cài đặt hệ thống",
+    "languageSettings": "Cài đặt ngôn ngữ",
+    "languageSettingsDesc": "Tùy chỉnh ngôn ngữ hỗ trợ hệ thống",
     "comingSoon": "Sắp ra mắt"
   },
   "room": {
@@ -117,10 +120,23 @@
     "en": "Tiếng Anh",
     "zh": "Tiếng Trung",
     "vi": "Tiếng Việt",
+    "ko": "Tiếng Hàn",
+    "fr": "Tiếng Pháp",
+    "de": "Tiếng Đức",
+    "ru": "Tiếng Nga",
+    "es": "Tiếng Tây Ban Nha",
+    "pt": "Tiếng Bồ Đào Nha",
     "jaShort": "JP",
     "enShort": "EN",
     "zhShort": "CN",
     "viShort": "VN"
+  },
+  "languageSettings": {
+    "title": "Cài đặt ngôn ngữ",
+    "description": "Chọn ngôn ngữ sử dụng trong hệ thống. Các ngôn ngữ đã chọn sẽ có sẵn trong các phòng họp mới được tạo.",
+    "selectionCount": "Đã chọn: {{current}} / {{max}} ngôn ngữ",
+    "saveSuccess": "Đã lưu cài đặt ngôn ngữ",
+    "tierLabel": "Độ chính xác dịch"
   }
 }
 

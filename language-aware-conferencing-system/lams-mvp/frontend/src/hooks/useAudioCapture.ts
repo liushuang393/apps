@@ -122,7 +122,6 @@ export function useAudioCapture({
 
     // 音量が急激に下降した場合は早期終了
     if (dropRate > VOLUME_DROP_THRESHOLD) {
-      console.log(`[VAD] 音量急降下検出: ${dropRate.toFixed(1)}, 早期終了 ${SPEAKING_END_DELAY_MIN}ms`);
       return SPEAKING_END_DELAY_MIN;
     }
     return SPEAKING_END_DELAY_DEFAULT;
@@ -197,7 +196,6 @@ export function useAudioCapture({
 
     // 最小サンプル数チェック（短すぎる音声は送信しない）
     if (totalLength < MIN_SAMPLES_TO_SEND) {
-      console.log('[Audio] 発話が短すぎるためスキップ:', totalLength, 'samples');
       audioBufferRef.current = [];
       speechStartedRef.current = false;
       return;
@@ -215,7 +213,7 @@ export function useAudioCapture({
     // WAV形式にエンコードして送信
     const wavBuffer = encodeWavPcm(combined);
     wsRef.current.send(wavBuffer);
-    console.log('[Audio] 完全な発話セグメント送信:', totalLength, 'samples, ', Math.round(totalLength / SAMPLE_RATE * 1000), 'ms');
+    // 完全な発話セグメント送信完了
   }, [wsRef, encodeWavPcm]);
 
   /**
@@ -225,14 +223,13 @@ export function useAudioCapture({
   const checkAndSendIfBufferFull = useCallback(() => {
     const totalLength = audioBufferRef.current.reduce((acc, arr) => acc + arr.length, 0);
     if (totalLength >= MAX_BUFFER_SAMPLES) {
-      console.log('[Audio] バッファ最大サイズに達したため送信');
+      // バッファ最大サイズに達したため送信
       sendCompleteSpeechSegment();
     }
   }, [sendCompleteSpeechSegment]);
 
   /** マイクストリーム開始 */
   const startCapture = useCallback(async () => {
-    console.log('[Audio Debug] startCapture called, deviceId:', deviceId);
     if (!deviceId) {
       setError('マイクが選択されていません');
       return;
@@ -240,7 +237,6 @@ export function useAudioCapture({
 
     try {
       setError(null);
-      console.log('[Audio Debug] Starting mic capture...');
 
       // 既存のストリームを停止
       if (streamRef.current) {
@@ -298,7 +294,6 @@ export function useAudioCapture({
       silentGain.connect(audioContext.destination);
 
       setIsMicOn(true);
-      console.log('[Audio] Mic started successfully');
 
       // マイクON通知を送信
       if (wsRef?.current?.readyState === WebSocket.OPEN) {
@@ -348,7 +343,6 @@ export function useAudioCapture({
           if (!speechStartedRef.current) {
             speechStartedRef.current = true;
             volumeHistoryRef.current = []; // 履歴リセット
-            console.log('[VAD] 発話開始検出');
           }
           // 発話状態の変化は即座に反映（重要なUI変更）
           if (!internalIsSpeakingRef.current) {
@@ -365,7 +359,7 @@ export function useAudioCapture({
           // 発話終了検出（★適応型遅延）
           const adaptiveDelay = calculateAdaptiveDelay();
           speakingTimeoutRef.current = globalThis.setTimeout(() => {
-            console.log(`[VAD] 発話終了検出 (delay=${adaptiveDelay}ms)、完全な音声セグメントを送信`);
+            // VAD: 発話終了検出、完全な音声セグメントを送信
             internalIsSpeakingRef.current = false;
             setIsSpeaking(false);
             wasSpeakingRef.current = false;

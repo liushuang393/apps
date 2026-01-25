@@ -1,0 +1,10 @@
+backend/app/websocket/handler.py:94:        print(
+backend/app/websocket/handler.py:101:                print(f"[WS SEND] 送信成功: {message.get('type')}", flush=True)
+backend/app/websocket/handler.py:103:                print(f"[WS SEND] 送信失敗: {e}", flush=True)
+backend/app/websocket/handler.py:105:            print(
+backend/app/websocket/handler.py:526:    print(f"[WS INIT] Connecting user {user_id} to room {room_id}", flush=True)
+backend/app/websocket/handler.py:528:    print("[WS INIT] Connected, adding participant...", flush=True)
+backend/app/websocket/handler.py:540:    print(f"[WS INIT] Participant added to Redis: user_id={user_id}", flush=True)
+backend/app/websocket/handler.py:580:    print("[WS DEBUG] Sent room_state, entering message loop...", flush=True)
+backend/app/websocket/handler.py:585:            print(f"[WS DEBUG] Waiting for message from user {user_id}...", flush=True)
+backend/app/websocket/handler.py:587:            print(
