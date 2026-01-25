@@ -1,6 +1,10 @@
 /**
  * 音声キャプチャフック
  * マイク入力の取得、音量検出、波形データ出力、WebSocket送信
+ *
+ * ★パフォーマンス最適化★
+ * - 状態更新を節流（throttle）して不要な再レンダリングを防止
+ * - useRefで内部状態を管理し、必要な時のみstateを更新
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 
@@ -49,6 +53,12 @@ const MIN_SAMPLES_TO_SEND = 8000;
 const MAX_BUFFER_SAMPLES = 480000;
 
 /**
+ * ★パフォーマンス最適化: 状態更新の節流間隔（ms）★
+ * 音量・波形データの更新頻度を制限して不要な再レンダリングを防止
+ */
+const STATE_UPDATE_THROTTLE_MS = 100;
+
+/**
  * 音声キャプチャフック
  */
 export function useAudioCapture({
@@ -76,6 +86,18 @@ export function useAudioCapture({
   const currentVolumeLevelRef = useRef(0);
   /** 発話開始フラグ（発話中のバッファリング開始を検知） */
   const speechStartedRef = useRef(false);
+
+  /**
+   * ★パフォーマンス最適化: 状態更新の節流用タイムスタンプ★
+   * 最後に状態を更新した時刻を記録し、一定間隔以上経過した場合のみ更新
+   */
+  const lastStateUpdateRef = useRef(0);
+  /** 内部音量レベル（state更新前の値を保持） */
+  const internalVolumeLevelRef = useRef(0);
+  /** 内部波形データ（state更新前の値を保持） */
+  const internalWaveformRef = useRef<Uint8Array>(new Uint8Array(64));
+  /** 内部発話状態（state更新前の値を保持） */
+  const internalIsSpeakingRef = useRef(false);
 
   /**
    * Float32Array を 16bit PCM に変換
@@ -254,28 +276,34 @@ export function useAudioCapture({
         wsRef.current.send(JSON.stringify({ type: 'mic_on' }));
       }
 
-      // 音量・波形データの継続更新 + VAD発話検出
+      /**
+       * ★パフォーマンス最適化: 音量・波形データの継続更新 + VAD発話検出★
+       *
+       * 問題: requestAnimationFrame は毎フレーム（約60fps）呼ばれる
+       * → 毎フレーム setState すると不要な再レンダリングが発生
+       *
+       * 解決策:
+       * 1. 内部状態（ref）は毎フレーム更新（VAD判定に必要）
+       * 2. React state は節流（100ms間隔）で更新（UI表示用）
+       * 3. 発話状態の変化は即座に反映（重要なUI変更）
+       */
       const updateAudioData = () => {
         if (!analyserRef.current) return;
 
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
 
-        // 波形データ更新
-        setWaveformData(new Uint8Array(dataArray));
-
-        // 音量計算（平均値）
+        // 音量計算（平均値）- 内部状態として保持
         const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
         const normalizedVolume = Math.min(100, Math.round((average / 255) * 100 * 2));
-        setVolumeLevel(normalizedVolume);
         currentVolumeLevelRef.current = normalizedVolume;
 
+        // 内部状態を更新（毎フレーム）
+        internalVolumeLevelRef.current = normalizedVolume;
+        internalWaveformRef.current = dataArray;
+
         /**
-         * VAD（発話検出）ロジック
-         *
-         * 発話開始: 音量が閾値を超えた瞬間 → バッファリング開始
-         * 発話中: 音量が閾値以上 → バッファに追加し続ける
-         * 発話終了: 音量が閾値以下になり、遅延時間経過 → 完全な発話セグメントを送信
+         * VAD（発話検出）ロジック - 内部状態で判定
          */
         const nowSpeaking = normalizedVolume > SPEAKING_THRESHOLD;
 
@@ -285,7 +313,11 @@ export function useAudioCapture({
             speechStartedRef.current = true;
             console.log('[VAD] 発話開始検出');
           }
-          setIsSpeaking(true);
+          // 発話状態の変化は即座に反映（重要なUI変更）
+          if (!internalIsSpeakingRef.current) {
+            internalIsSpeakingRef.current = true;
+            setIsSpeaking(true);
+          }
           wasSpeakingRef.current = true;
           // タイムアウトをクリア（発話が続いている）
           if (speakingTimeoutRef.current) {
@@ -296,12 +328,22 @@ export function useAudioCapture({
           // 発話終了検出（遅延付き）
           speakingTimeoutRef.current = globalThis.setTimeout(() => {
             console.log('[VAD] 発話終了検出、完全な音声セグメントを送信');
+            internalIsSpeakingRef.current = false;
             setIsSpeaking(false);
             wasSpeakingRef.current = false;
             speakingTimeoutRef.current = null;
             // ★ 発話終了時に完全な音声セグメントを送信
             sendCompleteSpeechSegment();
           }, SPEAKING_END_DELAY);
+        }
+
+        // ★パフォーマンス最適化: 節流された状態更新★
+        const now = performance.now();
+        if (now - lastStateUpdateRef.current >= STATE_UPDATE_THROTTLE_MS) {
+          lastStateUpdateRef.current = now;
+          // 音量と波形データを更新（UI表示用）
+          setVolumeLevel(internalVolumeLevelRef.current);
+          setWaveformData(new Uint8Array(internalWaveformRef.current));
         }
 
         animationFrameRef.current = requestAnimationFrame(updateAudioData);

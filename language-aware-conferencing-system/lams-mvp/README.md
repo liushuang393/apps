@@ -290,7 +290,11 @@ docker compose up -d --build
 ./start-with-keys.sh docker
 
 # Docker再ビルド起動
-HOST_IP=192.168.210.26 ./start-with-keys.sh "docker build"
+# DB更新の場合
+cd backend
+docker compose exec backend alembic upgrade head
+# 局域网访问
+HOST_IP=192.168.210.33 ./start-with-keys.sh "docker build"
 # プロバイダー選択: gemini または openai_realtime
 AI_PROVIDER=gemini HOST_IP=192.168.210.6 ./start-with-keys.sh "docker"
 # HOST_IP=192.168.210.6 docker compose up -d --build frontend backend
@@ -467,6 +471,45 @@ lams-mvp/
 
 ### 処理フロー詳細
 
+#### 翻訳アーキテクチャ（クライアント側翻訳）
+
+**★ 設計思想 ★**
+- 原声モード = 普通の会議と同じ（翻訳ゼロ、最小遅延）
+- 翻訳モード = 母語で聞き、母語の字幕を見る
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        サーバー側                            │
+│  ┌─────────┐    ┌─────────┐    ┌─────────────────────────┐ │
+│  │ 音声VAD │ -> │   ASR   │ -> │  原文＋言語をブロード   │ │
+│  │ 分割    │    │ 識別    │    │  キャスト（全員に1回）  │ │
+│  └─────────┘    └─────────┘    └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        ┌─────────┐     ┌─────────┐     ┌─────────┐
+        │クライアントA │     │クライアントB │     │クライアントC │
+        │原声モード    │     │翻訳→中国語  │     │翻訳→英語    │
+        │   ↓        │     │   ↓        │     │   ↓        │
+        │翻訳なし    │     │POST /api/  │     │POST /api/  │
+        │原文表示    │     │translate   │     │translate   │
+        └─────────┘     └─────────┘     └─────────┘
+```
+
+**★ 翻訳ロジック ★**
+
+| モード | 音声 | 字幕 | 説明 |
+|------|------|------|------|
+| **原声モード** | 原声 | 原文そのまま | 翻訳ゼロ、普通の会議と同じ |
+| **翻訳モード** | S2S翻訳 | 必要なら翻訳 | source_lang ≠ target_lang のみ翻訳 |
+
+**★ メリット ★**
+- サーバー翻訳負荷ゼロ（字幕はクライアント側で翻訳）
+- 言語数制限なし（100人100言語も対応可能）
+- 各クライアントが必要な分だけ翻訳
+- 翻訳キャッシュ（サーバー側Redis + クライアント側メモリ）
+
 #### 音声配信フロー
 
 ```
@@ -477,13 +520,14 @@ lams-mvp/
 │                    サーバー処理                              │
 │  1. 音声データ受信                                          │
 │  2. ASR: 音声 → テキスト（日本語）                          │
-│  3. 参加者ごとに設定を確認                                  │
+│  3. 字幕ブロードキャスト: { original_text, source_language } │
+│  4. 参加者ごとに音声を配信                                  │
 │     ┌──────────────────────────────────────────────────┐   │
-│     │ 参加者B: audio_mode=original, subtitle=on        │   │
-│     │ → 原声 + 日本語字幕を送信                        │   │
+│     │ 参加者B: audio_mode=original                      │   │
+│     │ → 原声を送信（字幕翻訳はクライアント側で判断）    │   │
 │     ├──────────────────────────────────────────────────┤   │
 │     │ 参加者C: audio_mode=translated, target=en        │   │
-│     │ → 翻訳音声 + 英語字幕を送信                      │   │
+│     │ → S2S翻訳音声を送信                              │   │
 │     ├──────────────────────────────────────────────────┤   │
 │     │ 参加者D: audio_mode=original, subtitle=off       │   │
 │     │ → 原声のみ送信                                   │   │
@@ -548,6 +592,32 @@ lams-mvp/
 | PATCH | `/api/admin/users/{id}` | ユーザー更新 |
 | GET | `/api/admin/stats` | システム統計 |
 
+#### 翻訳 API（クライアント側翻訳用）
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| POST | `/api/translate` | テキスト翻訳（キャッシュ付き） |
+
+**リクエスト/レスポンス例:**
+
+```json
+// リクエスト
+{
+  "text": "こんにちは",
+  "source_language": "ja",
+  "target_language": "zh"
+}
+
+// レスポンス
+{
+  "original_text": "こんにちは",
+  "translated_text": "你好",
+  "source_language": "ja",
+  "target_language": "zh",
+  "cached": false
+}
+```
+
 #### WebSocket
 
 | パス | 説明 |
@@ -566,7 +636,7 @@ lams-mvp/
 { type: "room_state", participants: [...], policy: {...} }
 { type: "user_joined", user_id: "...", display_name: "..." }
 { type: "user_left", user_id: "..." }
-{ type: "subtitle", text: "...", language: "ja", is_translated: false }
+{ type: "subtitle", speaker_id: "...", original_text: "...", source_language: "ja" }
 { type: "qos_warning", level: "moderate", message: "..." }
 ```
 

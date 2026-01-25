@@ -112,15 +112,21 @@ export function useWebSocket(roomId: string | null) {
           updateParticipantMicStatus(msg.user_id as string, msg.is_mic_on as boolean);
           break;
         case 'subtitle':
+          // ★クライアント側翻訳アーキテクチャ対応★
+          // サーバーから原文のみを受信し、翻訳はクライアント側で実行
+          console.log('[SUBTITLE] 受信:', {
+            speakerId: msg.speaker_id,
+            originalText: (msg.original_text as string)?.slice(0, 30),
+            sourceLanguage: msg.source_language,
+          });
           addSubtitle({
             id: msg.id as string | undefined,
             seq: msg.seq as number | undefined,
             speakerId: msg.speaker_id as string,
-            text: msg.text as string,
-            language: msg.language,
-            isTranslated: msg.is_translated as boolean,
-            latencyMs: msg.latency_ms as number | undefined,
-          } as SubtitleData);
+            originalText: msg.original_text as string,
+            sourceLanguage: msg.source_language as SubtitleData['sourceLanguage'],
+            isTranslated: false,
+          });
           break;
         case 'qos_warning':
           console.warn('[QoS]', msg.message);

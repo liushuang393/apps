@@ -1,7 +1,12 @@
 /**
  * 音声コントロールパネル（シンプル版）
  * マイクON/OFF制御のみ。デバイス選択はヘッダーに移動済み
+ *
+ * ★パフォーマンス最適化★
+ * - React.memo でコンポーネントをメモ化
+ * - props が変わらない限り再レンダリングしない
  */
+import { memo } from 'react';
 
 /** セキュアコンテキストエラーかどうか判定 */
 const isSecureContextError = (err: string | null): boolean =>
@@ -50,9 +55,9 @@ function SecureContextErrorHint() {
 }
 
 /**
- * 音声コントロールパネルコンポーネント（シンプル版）
+ * 音声コントロールパネルコンポーネント（シンプル版）内部実装
  */
-export function AudioControlPanel({
+function AudioControlPanelInner({
   isMicOn,
   onMicToggle,
   volumeLevel,
@@ -91,4 +96,10 @@ export function AudioControlPanel({
     </div>
   );
 }
+
+/**
+ * ★パフォーマンス最適化: React.memo でメモ化★
+ * props が変わらない限り再レンダリングしない
+ */
+export const AudioControlPanel = memo(AudioControlPanelInner);
 

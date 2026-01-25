@@ -27,7 +27,7 @@ from app.ai_pipeline.pipeline import ai_pipeline
 from app.audio.vad import has_speech
 from app.auth.jwt_handler import decode_token
 from app.db.database import async_session
-from app.db.models import Room, Subtitle, User
+from app.db.models import MeetingSession, Room, Subtitle, User
 from app.rooms.manager import room_manager
 
 if TYPE_CHECKING:
@@ -40,6 +40,10 @@ _subtitle_seq: dict[str, int] = {}
 # 重複字幕防止用キャッシュ（room_id -> speaker_id -> last_text）
 # 同じ話者の連続した同一テキストを除外
 _last_subtitle_cache: dict[str, dict[str, str]] = {}
+
+# 会議セッション管理（room_id -> session_id）
+# アクティブなセッションIDを保持
+_active_sessions: dict[str, str] = {}
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -110,6 +114,82 @@ class ConnectionManager:
 
 # 接続マネージャーインスタンス
 conn_mgr = ConnectionManager()
+
+
+async def get_or_create_session(room_id: str) -> str:
+    """
+    会議室のアクティブセッションを取得または作成
+
+    セッションライフサイクル:
+    - 最初の発言時にセッション開始
+    - 全員退室時にセッション終了
+
+    Args:
+        room_id: 会議室ID
+
+    Returns:
+        session_id: セッションID
+    """
+    global _active_sessions
+
+    # メモリ内にアクティブセッションがあれば返す
+    if room_id in _active_sessions:
+        return _active_sessions[room_id]
+
+    # DBでアクティブセッションを確認
+    async with async_session() as db:
+        result = await db.execute(
+            select(MeetingSession).where(
+                MeetingSession.room_id == room_id,
+                MeetingSession.is_active == True,  # noqa: E712
+            )
+        )
+        session = result.scalar_one_or_none()
+
+        if session:
+            _active_sessions[room_id] = session.id
+            return session.id
+
+        # 新規セッション作成
+        new_session = MeetingSession(room_id=room_id)
+        db.add(new_session)
+        await db.commit()
+        await db.refresh(new_session)
+
+        _active_sessions[room_id] = new_session.id
+        logger.info(
+            f"[SESSION] 新規セッション開始: room={room_id}, session={new_session.id}"
+        )
+        return new_session.id
+
+
+async def end_session(room_id: str) -> None:
+    """
+    会議セッションを終了（全員退室時に呼び出し）
+
+    Args:
+        room_id: 会議室ID
+    """
+    global _active_sessions
+
+    session_id = _active_sessions.pop(room_id, None)
+    if not session_id:
+        return
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(MeetingSession).where(MeetingSession.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+        if session:
+            from datetime import datetime, timezone
+
+            session.is_active = False
+            session.ended_at = datetime.now(timezone.utc)
+            await db.commit()
+            logger.info(
+                f"[SESSION] セッション終了: room={room_id}, session={session_id}"
+            )
 
 
 async def _process_s2s_translation(
@@ -199,10 +279,12 @@ async def process_audio_dual_path(
             return
 
         # 参加者を原声モードと翻訳モードに分類
+        # ★注意: 音声は自分自身に送らない（エコー防止）が、字幕は送る
         original_mode_users: list[str] = []
         translated_mode_targets: dict[str, list[str]] = {}  # target_lang -> [user_ids]
 
         for p in participants.values():
+            # ★自分自身には音声を送らない（エコー防止）
             if p.user_id == speaker_id:
                 continue
             if p.audio_mode == "original":
@@ -265,7 +347,12 @@ async def process_audio_dual_path(
         for target_lang, user_ids in translated_mode_targets.items():
             s2s_tasks.append(
                 _process_s2s_translation(
-                    room_id, speaker_id, audio_bytes, speaker_lang, target_lang, user_ids
+                    room_id,
+                    speaker_id,
+                    audio_bytes,
+                    speaker_lang,
+                    target_lang,
+                    user_ids,
                 )
             )
 
@@ -276,62 +363,51 @@ async def process_audio_dual_path(
                 if isinstance(result, dict) and result.get("translated_text"):
                     translations[result["target_lang"]] = result["translated_text"]
 
-        # 字幕配信（原声モードと翻訳モードの参加者両方に）
+        # ★クライアント側翻訳アーキテクチャ★
+        # 字幕は原文のみをブロードキャスト、翻訳はクライアント側で実行
+        # これにより:
+        # - サーバー負荷を大幅に削減（N言語への同時翻訳が不要）
+        # - 各クライアントが必要な言語のみを翻訳
+        # - 言語数の制限なし
+        subtitle_message = {
+            "type": "subtitle",
+            "id": subtitle_id,
+            "seq": seq,
+            "speaker_id": speaker_id,
+            "original_text": original_text,  # 原文
+            "source_language": speaker_lang,  # 原語
+        }
+
+        # ★字幕は全参加者（話者自身を含む）にブロードキャスト★
+        # 話者自身も会議記録として自分の発言を見る必要がある
         subtitle_tasks = []
+        logger.info(
+            f"[SUBTITLE] 配信準備: speaker={speaker_id}, "
+            f"participants={list(participants.keys())}, text='{original_text[:30]}...'"
+        )
         for p in participants.values():
-            if p.user_id == speaker_id:
-                continue
             if not p.subtitle_enabled:
+                logger.debug(f"[SUBTITLE] スキップ（字幕無効）: {p.user_id}")
                 continue
-
-            # 送信するテキストと言語を決定
-            if p.audio_mode == "translated":
-                target_lang = p.target_language or p.native_language
-                if target_lang == speaker_lang:
-                    # 同じ言語なら原文
-                    text_to_send = original_text
-                    lang_to_send = speaker_lang
-                    is_translated = False
-                elif target_lang in translations:
-                    # 翻訳がある場合
-                    text_to_send = translations[target_lang]
-                    lang_to_send = target_lang
-                    is_translated = True
-                else:
-                    # 翻訳失敗の場合は原文をフォールバック
-                    text_to_send = original_text
-                    lang_to_send = speaker_lang
-                    is_translated = False
-            else:
-                # 原声モードは常に原文
-                text_to_send = original_text
-                lang_to_send = speaker_lang
-                is_translated = False
-
+            logger.info(
+                f"[SUBTITLE] 送信: to={p.user_id}, speaker={speaker_id}, "
+                f"is_self={p.user_id == speaker_id}"
+            )
             subtitle_tasks.append(
-                conn_mgr.send_to_user(
-                    room_id,
-                    p.user_id,
-                    {
-                        "type": "subtitle",
-                        "id": subtitle_id,
-                        "seq": seq,
-                        "speaker_id": speaker_id,
-                        "text": text_to_send,
-                        "language": lang_to_send,
-                        "is_translated": is_translated,
-                    },
-                )
+                conn_mgr.send_to_user(room_id, p.user_id, subtitle_message)
             )
 
         if subtitle_tasks:
             await asyncio.gather(*subtitle_tasks, return_exceptions=True)
 
         # DB保存（翻訳結果も含む）
+        # ★会議セッションを取得または作成（最初の発言時にセッション開始）★
         try:
+            session_id = await get_or_create_session(room_id)
             async with async_session() as db:
                 subtitle = Subtitle(
                     room_id=room_id,
+                    session_id=session_id,
                     speaker_id=speaker_id,
                     original_text=original_text,
                     original_language=speaker_lang,
@@ -537,7 +613,11 @@ async def websocket_room(
                     if updated:
                         await conn_mgr.broadcast_json(
                             room_id,
-                            {"type": "mic_status_changed", "user_id": user_id, "is_mic_on": True},
+                            {
+                                "type": "mic_status_changed",
+                                "user_id": user_id,
+                                "is_mic_on": True,
+                            },
                         )
 
                 elif msg_type == "mic_off":
@@ -546,7 +626,11 @@ async def websocket_room(
                     if updated:
                         await conn_mgr.broadcast_json(
                             room_id,
-                            {"type": "mic_status_changed", "user_id": user_id, "is_mic_on": False},
+                            {
+                                "type": "mic_status_changed",
+                                "user_id": user_id,
+                                "is_mic_on": False,
+                            },
                         )
 
             elif "bytes" in data:
@@ -616,9 +700,11 @@ async def websocket_room(
             del _last_subtitle_cache[room_id][user_id]
 
         # 会議室に誰もいなくなったらシーケンス番号とキャッシュをリセット
+        # ★全員退室時に会議セッションを終了★
         remaining = await room_manager.get_participants(room_id)
         if not remaining:
             _subtitle_seq.pop(room_id, None)
             _last_subtitle_cache.pop(room_id, None)
+            await end_session(room_id)
 
         logger.info(f"[WS] User {user_id} left room {room_id}")

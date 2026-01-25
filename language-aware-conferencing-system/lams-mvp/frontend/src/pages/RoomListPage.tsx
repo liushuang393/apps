@@ -176,31 +176,17 @@ export function RoomListPage() {
     );
   }
 
-  /** 表示名から名前部分を取得（姓名分離：劉 双→双、斎藤 花子→花子） */
-  const getDisplayInitials = (name: string | undefined): string => {
-    // 名前がない場合は人型アイコンを表示
-    if (!name) return '👤';
-    // スペース（全角・半角）で分割して名前部分を取得
-    const parts = name.trim().split(/[\s\u3000]+/);
-    if (parts.length >= 2) {
-      // 姓名がある場合は名前部分（最後の部分）を返す
-      return parts[parts.length - 1];
-    }
-    // スペースがない場合は先頭の1〜2文字を返す
-    const cjkRegex = /[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]/;
-    if (cjkRegex.test(name)) {
-      return name.slice(0, 2);
-    }
-    // アルファベット等は頭文字を大文字で
-    return name.charAt(0).toUpperCase();
-  };
-
   return (
     <div className="room-list-page">
       <header>
-        <h1>🌐 LAMS 会議室</h1>
+        <div className="header-left">
+          <button className="back-btn" onClick={() => navigate('/menu')} title="メニューに戻る">
+            ← 戻る
+          </button>
+          <h1>🌐 LAMS 会議室</h1>
+        </div>
         <div className="user-info">
-          <span className="user-avatar">{getDisplayInitials(user?.displayName)}</span>
+          <span className="user-name" title={user?.displayName}>{user?.displayName || '?'}</span>
           <button onClick={handleLogout}>ログアウト</button>
         </div>
       </header>

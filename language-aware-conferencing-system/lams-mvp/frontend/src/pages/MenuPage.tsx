@@ -123,7 +123,7 @@ export function MenuPage() {
             ))}
           </select>
           <div className="user-info">
-            <span className="user-avatar">{user?.displayName?.charAt(0) || '?'}</span>
+            <span className="user-name" title={user?.displayName}>{user?.displayName || '?'}</span>
           </div>
           <button className="btn-logout" onClick={handleLogout}>
             {t('common.logout')}

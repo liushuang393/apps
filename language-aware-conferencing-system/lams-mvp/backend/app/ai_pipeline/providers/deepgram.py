@@ -220,25 +220,32 @@ class DeepgramProvider(AIProvider):
 
             # 2. GPT-4o-mini でテキスト翻訳
             openai_client = await self._get_openai_client()
+            src_name = LANGUAGE_NAMES.get(source_language, source_language)
             tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
             translate_model = settings.openai_translate_model
 
             logger.debug(f"[Deepgram] 翻訳開始: '{original_text}' -> {tgt_name}")
 
+            # 改善された翻訳プロンプト（会議シナリオに最適化）
+            system_prompt = (
+                f"You are a professional interpreter for multilingual meetings. "
+                f"Translate the following {src_name} text into natural {tgt_name}.\n\n"
+                "Guidelines:\n"
+                "- Preserve the speaker's intent and tone\n"
+                "- Use natural, conversational language\n"
+                "- Keep technical terms accurate\n"
+                "- Do NOT add explanations or notes\n"
+                "- Output ONLY the translated text"
+            )
+
             chat_response = await openai_client.chat.completions.create(
                 model=translate_model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            f"You are a translator. Translate to {tgt_name}. "
-                            "Output only the translated text."
-                        ),
-                    },
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": original_text},
                 ],
                 max_tokens=500,
-                temperature=0.3,
+                temperature=0.2,  # 翻訳の一貫性を高める
             )
             translated_text = chat_response.choices[0].message.content
             translated_text = translated_text.strip() if translated_text else ""

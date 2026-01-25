@@ -193,7 +193,10 @@ class GPTRealtimeProvider(AIProvider):
                         event = json.loads(msg)
                         event_type = event.get("type", "")
 
-                        if event_type == "conversation.item.input_audio_transcription.completed":
+                        if (
+                            event_type
+                            == "conversation.item.input_audio_transcription.completed"
+                        ):
                             transcript = event.get("transcript", "").strip()
                             logger.debug(f"[GPT-Realtime] ASR結果: '{transcript}'")
                             break

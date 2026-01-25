@@ -352,10 +352,35 @@ button.btn-sm {
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
+/* ヘッダー左側（戻るボタン + タイトル） */
+.room-list-page header .header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .room-list-page header h1 {
   font-size: 1.75rem;
   font-weight: 700;
   color: white;
+}
+
+/* 戻るボタン */
+.room-list-page .back-btn {
+  width: auto;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.room-list-page .back-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .user-info {
@@ -378,13 +403,26 @@ button.btn-sm {
   padding: 0;
 }
 
+/* ユーザー名表示（統一スタイル） */
 .user-info .user-name {
+  max-width: 150px;
   padding: 0.4rem 0.8rem;
   background: rgba(255, 255, 255, 0.9);
   border-radius: var(--radius-md);
   font-weight: 500;
   font-size: 0.9rem;
   color: var(--primary-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 長い名前の場合は縮小 */
+@media (max-width: 600px) {
+  .user-info .user-name {
+    max-width: 100px;
+    font-size: 0.8rem;
+  }
 }
 
 .user-info button {
@@ -1677,6 +1715,20 @@ button.btn-sm {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+/* メニューページのユーザー名表示 */
+.menu-header .user-info .user-name {
+  max-width: 150px;
+  padding: 0.4rem 0.8rem;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--primary-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 言語切替セレクター */

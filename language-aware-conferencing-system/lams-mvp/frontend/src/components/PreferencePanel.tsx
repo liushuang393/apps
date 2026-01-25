@@ -2,8 +2,13 @@
  * 設定パネルコンポーネント
  * 音声モード、字幕、言語を一括管理（統合版）
  * デバイス選択はヘッダーへ移動済み
+ *
+ * ★パフォーマンス最適化★
+ * - Zustand セレクターで必要な状態のみ購読
+ * - React.memo でコンポーネントをメモ化
+ * - useCallback で関数をメモ化
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useState, memo } from 'react';
 import { useRoomStore } from '../store/roomStore';
 import { AudioControlPanel } from './AudioControlPanel';
 import type { AudioMode, SupportedLanguage, RoomPolicy } from '../types';
@@ -33,8 +38,18 @@ interface Props {
   };
 }
 
-export function PreferencePanel({ onPreferenceChange, policy: propPolicy, audioProps }: Props) {
-  const { policy: storePolicy, myPreference, updateMyPreference } = useRoomStore();
+/**
+ * ★パフォーマンス最適化: Zustand セレクター★
+ */
+const selectPolicy = (s: ReturnType<typeof useRoomStore.getState>) => s.policy;
+const selectMyPreference = (s: ReturnType<typeof useRoomStore.getState>) => s.myPreference;
+const selectUpdateMyPreference = (s: ReturnType<typeof useRoomStore.getState>) => s.updateMyPreference;
+
+function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioProps }: Readonly<Props>) {
+  // ★パフォーマンス最適化: 個別セレクターで購読★
+  const storePolicy = useRoomStore(selectPolicy);
+  const myPreference = useRoomStore(selectMyPreference);
+  const updateMyPreference = useRoomStore(selectUpdateMyPreference);
 
   // propsまたはstoreからpolicyを取得
   const policy = propPolicy ?? storePolicy;
@@ -53,7 +68,7 @@ export function PreferencePanel({ onPreferenceChange, policy: propPolicy, audioP
     const newValue = !myPreference?.subtitleEnabled;
     updateMyPreference({ subtitleEnabled: newValue });
     onPreferenceChange({ subtitleEnabled: newValue });
-  }, [myPreference, updateMyPreference, onPreferenceChange]);
+  }, [myPreference?.subtitleEnabled, updateMyPreference, onPreferenceChange]);
 
   /** 翻訳先言語変更 */
   const handleLanguageChange = useCallback(
@@ -66,6 +81,9 @@ export function PreferencePanel({ onPreferenceChange, policy: propPolicy, audioP
 
   // 折りたたみ状態
   const [isExpanded, setIsExpanded] = useState(true);
+
+  // ★パフォーマンス最適化: トグル関数をメモ化★
+  const toggleExpanded = useCallback(() => setIsExpanded((prev) => !prev), []);
 
   // myPreferenceがない場合はローディング表示
   if (!myPreference) {
@@ -97,7 +115,7 @@ export function PreferencePanel({ onPreferenceChange, policy: propPolicy, audioP
     <div className={`preference-panel collapsible-panel ${isExpanded ? 'expanded' : 'collapsed'}`}>
       <button
         className="panel-header"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={toggleExpanded}
         aria-expanded={isExpanded}
       >
         <span className="panel-title">
@@ -210,3 +228,8 @@ export function PreferencePanel({ onPreferenceChange, policy: propPolicy, audioP
     </div>
   );
 }
+
+/**
+ * ★パフォーマンス最適化: React.memo でメモ化★
+ */
+export const PreferencePanel = memo(PreferencePanelInner);

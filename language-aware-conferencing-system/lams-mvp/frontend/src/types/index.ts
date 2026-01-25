@@ -54,16 +54,23 @@ export interface Room {
   participantCount: number;
 }
 
-/** 字幕データ */
+/** 字幕データ（クライアント側翻訳対応） */
 export interface SubtitleData {
   /** 字幕の一意識別子（重複排除用） */
   id?: string;
   /** シーケンス番号（順序保証用） */
   seq?: number;
+  /** 話者ID */
   speakerId: string;
-  text: string;
-  language: SupportedLanguage;
-  isTranslated: boolean;
+  /** 原文テキスト */
+  originalText: string;
+  /** 原文の言語 */
+  sourceLanguage: SupportedLanguage;
+  /** 翻訳後テキスト（クライアント側で翻訳した場合） */
+  translatedText?: string;
+  /** 翻訳済みフラグ */
+  isTranslated?: boolean;
+  /** 翻訳遅延（ms） */
   latencyMs?: number;
 }
 

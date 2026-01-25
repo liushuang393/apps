@@ -115,7 +115,7 @@ export const useRoomStore = create<RoomState>((set) => ({
       if (
         lastSubtitle &&
         lastSubtitle.speakerId === subtitle.speakerId &&
-        lastSubtitle.text === subtitle.text
+        lastSubtitle.originalText === subtitle.originalText
       ) {
         // 同じ話者の同じテキストは無視
         return state;

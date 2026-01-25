@@ -15,6 +15,7 @@ from app.auth.routes import router as auth_router
 from app.config import settings
 from app.db.database import init_db
 from app.rooms.routes import router as rooms_router
+from app.translate.routes import router as translate_router
 from app.websocket.handler import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/auth", tags=["認証"])
 app.include_router(rooms_router, prefix="/api/rooms", tags=["会議室"])
 app.include_router(admin_router, prefix="/api/admin", tags=["管理者"])
+app.include_router(translate_router, prefix="/api/translate", tags=["翻訳"])
 app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
 
 

@@ -103,6 +103,37 @@ class PasswordResetToken(Base):
     user: Mapped["User"] = relationship()
 
 
+class MeetingSession(Base):
+    """
+    会議セッションモデル
+    一つの会議室で複数回の会議を管理
+
+    セッションライフサイクル:
+    - 開始: 最初の参加者が発言した時点
+    - 終了: 全参加者が退室した時点
+    """
+
+    __tablename__ = "meeting_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), index=True)
+
+    # セッション開始・終了時刻
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # セッション状態
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # リレーション
+    room: Mapped["Room"] = relationship()
+    subtitles: Mapped[list["Subtitle"]] = relationship(back_populates="session")
+
+
 class Subtitle(Base):
     """
     字幕モデル
@@ -113,6 +144,10 @@ class Subtitle(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
     room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), index=True)
+    # セッションID（会議回ごとに字幕を分離）
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("meeting_sessions.id"), index=True, nullable=True
+    )
     speaker_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
 
     # 原文
@@ -129,6 +164,7 @@ class Subtitle(Base):
 
     # リレーション
     room: Mapped["Room"] = relationship()
+    session: Mapped["MeetingSession | None"] = relationship(back_populates="subtitles")
     speaker: Mapped["User"] = relationship()
 
 
