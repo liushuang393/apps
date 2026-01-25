@@ -220,6 +220,28 @@ class AIProvider(ABC):
             認識されたテキスト
         """
 
+    async def transcribe_with_detection(
+        self,
+        audio_data: bytes,
+        hint_language: str = "multi",
+    ) -> tuple[str, str]:
+        """
+        音声認識 + 言語検出
+
+        言語自動検出をサポートするプロバイダーはこのメソッドをオーバーライドする。
+        デフォルト実装はヒント言語をそのまま使用する。
+
+        Args:
+            audio_data: 入力音声データ（WAV形式）
+            hint_language: ヒント言語コード（検出のヒント、デフォルトは自動検出）
+
+        Returns:
+            (認識テキスト, 検出された言語コード)
+        """
+        # デフォルト実装: ヒント言語で認識し、同じ言語を返す
+        text = await self.transcribe_audio(audio_data, hint_language)
+        return text, hint_language
+
 
 class APIKeyError(Exception):
     """APIキー未設定エラー"""

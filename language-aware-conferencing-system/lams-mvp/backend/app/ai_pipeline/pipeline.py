@@ -79,6 +79,23 @@ class AIPipeline:
         except Exception as e:
             logger.warning(f"キャッシュ保存エラー: {e}")
 
+    async def detect_language(
+        self,
+        audio_data: bytes,
+        hint_language: str = "multi",
+    ) -> tuple[str, str]:
+        """
+        音声から言語を検出
+
+        Args:
+            audio_data: 入力音声データ
+            hint_language: ヒント言語（検出の補助、デフォルトは自動検出）
+
+        Returns:
+            (認識テキスト, 検出された言語コード)
+        """
+        return await self._provider.transcribe_with_detection(audio_data, hint_language)
+
     async def process_audio(
         self,
         audio_data: bytes,

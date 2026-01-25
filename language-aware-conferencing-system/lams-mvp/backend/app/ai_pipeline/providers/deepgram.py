@@ -136,47 +136,89 @@ class DeepgramProvider(AIProvider):
         Returns:
             認識されたテキスト
         """
+        text, _ = await self._transcribe_with_lang_detection(audio_data, language)
+        return text
+
+    async def transcribe_with_detection(
+        self,
+        audio_data: bytes,
+        hint_language: str = "multi",
+    ) -> tuple[str, str]:
+        """
+        音声認識 + 言語自動検出（Deepgram multi対応）
+
+        Args:
+            audio_data: WAV形式の音声データ
+            hint_language: ヒント言語コード（"multi"で自動検出）
+
+        Returns:
+            (認識テキスト, 検出された言語コード)
+        """
+        return await self._transcribe_with_lang_detection(audio_data, hint_language)
+
+    async def _transcribe_with_lang_detection(
+        self,
+        audio_data: bytes,
+        language: str,
+    ) -> tuple[str, str]:
+        """
+        内部実装: 音声認識 + 言語検出
+
+        Args:
+            audio_data: WAV形式の音声データ
+            language: 言語コード（"multi"で自動検出）
+
+        Returns:
+            (認識テキスト, 検出された言語コード)
+        """
         # 最小音声データサイズチェック
         min_size = 44 + 8000  # WAVヘッダー + 0.25秒分
         if len(audio_data) < min_size:
             logger.debug(f"[Deepgram] 音声が短すぎる: {len(audio_data)} bytes")
-            return ""
+            return "", language if language != "multi" else ""
 
         try:
             result = await self._call_deepgram_api(audio_data, language)
 
-            # レスポンスからテキストを抽出
+            # レスポンスからテキストと検出言語を抽出
             text = ""
+            detected_lang = language if language != "multi" else ""
+
             if "results" in result:
                 channels = result["results"].get("channels", [])
                 if channels:
                     alternatives = channels[0].get("alternatives", [])
                     if alternatives:
                         text = alternatives[0].get("transcript", "").strip()
+                        # 代替案からも言語を取得
+                        alt_lang = alternatives[0].get("detected_language")
+                        if alt_lang:
+                            detected_lang = alt_lang
 
-                # 検出された言語をログ
-                detected_lang = result["results"].get("detected_language")
-                if detected_lang:
-                    logger.debug(f"[Deepgram] 検出言語: {detected_lang}")
+                # 結果レベルの検出言語（優先）
+                result_lang = result["results"].get("detected_language")
+                if result_lang:
+                    detected_lang = result_lang
+                    logger.info(f"[Deepgram] 言語検出: {detected_lang}")
 
             # ノイズフィルタリング
             if text and self._is_noise_transcription(text):
                 logger.debug(f"[Deepgram] ノイズ除外: '{text}'")
-                return ""
+                return "", detected_lang
 
             if text:
-                logger.info(f"[Deepgram] ASR成功: '{text}'")
-            return text
+                logger.info(f"[Deepgram] ASR成功: '{text}' (lang={detected_lang})")
+            return text, detected_lang
 
         except httpx.HTTPStatusError as e:
             logger.error(
                 f"[Deepgram] API HTTPエラー: {e.response.status_code} - "
                 f"{e.response.text}"
             )
-            return f"[APIエラー: {e.response.status_code}]"
+            return f"[APIエラー: {e.response.status_code}]", language
         except Exception as e:
             logger.error(f"[Deepgram] ASRエラー: {e}", exc_info=True)
-            return f"[ASRエラー: {type(e).__name__}]"
+            return f"[ASRエラー: {type(e).__name__}]", language
 
     async def translate_audio(
         self,

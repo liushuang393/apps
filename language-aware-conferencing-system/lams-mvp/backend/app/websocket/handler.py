@@ -245,7 +245,7 @@ async def process_audio_dual_path(
     room_id: str,
     speaker_id: str,
     audio_bytes: bytes,
-    speaker_lang: str,
+    speaker_lang_hint: str,
     participants: dict[str, "Participant"],
 ) -> None:
     """
@@ -255,16 +255,14 @@ async def process_audio_dual_path(
     - フロントエンドからVAD検出済みの完全な発話セグメントが送信される
     - 後端は音声処理をせず、そのままAI APIに渡す
     - 責任境界を明確に分離
+    - ★重要：実際の発話言語を検出し、聴取者の目標言語と一致する場合は原声を配信
 
     処理フロー:
-    1. 原声モードの参加者: 原声 + 翻訳字幕
-       - ASR: 音声→原文テキスト
-       - テキスト翻訳: 原文→各言語の翻訳テキスト
-       - 原声は即座に配信、字幕は非同期で配信
-
-    2. 翻訳音声モードの参加者: 翻訳音声 + 翻訳字幕
-       - S2S Realtime API: 音声→翻訳音声+翻訳字幕
-       - 翻訳音声と字幕を同時に配信
+    1. 言語検出: ASRで実際の発話言語を検出
+    2. 原声モードの参加者: 原声 + 原文字幕
+    3. 翻訳モードの参加者:
+       - 目標言語 == 実際の発話言語 → 原声 + 原文字幕
+       - 目標言語 != 実際の発話言語 → 翻訳音声 + 翻訳字幕
     """
     try:
         # 最小音声サイズチェック（44バイトWAVヘッダー + 最低8000サンプル = 500ms）
@@ -277,6 +275,31 @@ async def process_audio_dual_path(
         if not has_speech(audio_bytes, min_energy=300.0):
             logger.info("[VAD] 音声なし、処理スキップ")
             return
+
+        # ★ 言語検出付きASR実行（実際の発話言語を検出）
+        # hint_language="multi" で自動検出、speaker_lang_hintをフォールバックとして使用
+        original_text, detected_lang = await ai_pipeline.detect_language(
+            audio_bytes, hint_language="multi"
+        )
+
+        # 検出失敗時はヒント言語を使用
+        if not detected_lang or detected_lang == "multi":
+            detected_lang = speaker_lang_hint
+            logger.debug(f"[Lang] 言語検出失敗、ヒント使用: {detected_lang}")
+        else:
+            logger.info(
+                f"[Lang] 実際の発話言語を検出: {detected_lang} "
+                f"(ヒント={speaker_lang_hint})"
+            )
+
+        # 実際の発話言語を使用
+        speaker_lang = detected_lang
+
+        if not original_text:
+            logger.debug("[ASR] 認識結果なし")
+            return
+
+        logger.info(f"[ASR] 認識完了: '{original_text}' (detected_lang={speaker_lang})")
 
         # 参加者を原声モードと翻訳モードに分類
         # ★注意: 音声は自分自身に送らない（エコー防止）が、字幕は送る
@@ -296,26 +319,18 @@ async def process_audio_dual_path(
                         translated_mode_targets[target_lang] = []
                     translated_mode_targets[target_lang].append(p.user_id)
                 else:
-                    # 話者と同じ言語の場合は原声を送信
+                    # ★ 目標言語と実際の発話言語が一致 → 原声を送信
+                    logger.info(
+                        f"[Lang] ユーザー {p.user_id} の目標言語({target_lang}) == "
+                        f"発話言語({speaker_lang})、原声モードに切替"
+                    )
                     original_mode_users.append(p.user_id)
 
-        # ★ パス1: 原声モード処理（ASR + テキスト翻訳）
-        # 原声は即座に配信
+        # ★ パス1: 原声モード処理（原声即座配信）
         if original_mode_users:
             for user_id in original_mode_users:
                 await conn_mgr.send_bytes_to_user(room_id, user_id, audio_bytes)
-
-        # ASR実行（原文テキスト取得、字幕用）
-        asr_result = await ai_pipeline.process_audio(
-            audio_bytes, speaker_lang, speaker_lang, speaker_id
-        )
-
-        if not asr_result.original_text:
-            logger.debug("[ASR] 認識結果なし")
-            return
-
-        original_text = asr_result.original_text
-        logger.info(f"[ASR] 認識完了: '{original_text}' (lang={speaker_lang})")
+            logger.info(f"[Audio] 原声配信: {len(original_mode_users)}人")
 
         # 重複字幕チェック（同じ話者の連続した同一テキストを除外）
         global _last_subtitle_cache
