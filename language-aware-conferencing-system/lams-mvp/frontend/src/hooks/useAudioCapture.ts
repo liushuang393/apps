@@ -37,18 +37,25 @@ interface UseAudioCaptureReturn {
 /** 発話検出の閾値（音量レベル）- 高めに設定してノイズを除去 */
 const SPEAKING_THRESHOLD = 25;
 /**
- * 発話終了の遅延（ms）
+ * 発話終了の遅延（ms）- 適応型VADのデフォルト値
  * 発話終了検出後、この時間待ってから完全な音声セグメントを送信
  * 短い間の途切れで分割されないように
+ * ★改善: 800ms → 400ms に短縮
  */
-const SPEAKING_END_DELAY = 800;
+const SPEAKING_END_DELAY_DEFAULT = 400;
+/** 最小遅延（ms）- 音量が急激に下降した場合 */
+const SPEAKING_END_DELAY_MIN = 200;
+/** 音量急降下の閾値（この値以上の下降で早期終了） */
+const VOLUME_DROP_THRESHOLD = 15;
+/** 音量履歴サイズ（適応型遅延計算用） */
+const VOLUME_HISTORY_SIZE = 5;
 /** サンプルレート */
 const SAMPLE_RATE = 16000;
 /**
- * 最小送信サンプル数（認識精度のため 500ms分）
- * 短すぎる音声は送信しない
+ * 最小送信サンプル数（認識精度のため 200ms分）
+ * ★改善: 500ms(8000) → 200ms(3200) に短縮、短い発話もサポート
  */
-const MIN_SAMPLES_TO_SEND = 8000;
+const MIN_SAMPLES_TO_SEND = 3200;
 /** 最大バッファサンプル数（30秒 × 16kHz = 480000サンプル）- メモリ保護用 */
 const MAX_BUFFER_SAMPLES = 480000;
 
@@ -86,6 +93,8 @@ export function useAudioCapture({
   const currentVolumeLevelRef = useRef(0);
   /** 発話開始フラグ（発話中のバッファリング開始を検知） */
   const speechStartedRef = useRef(false);
+  /** ★適応型VAD: 音量履歴追跡★ */
+  const volumeHistoryRef = useRef<number[]>([]);
 
   /**
    * ★パフォーマンス最適化: 状態更新の節流用タイムスタンプ★
@@ -98,6 +107,26 @@ export function useAudioCapture({
   const internalWaveformRef = useRef<Uint8Array>(new Uint8Array(64));
   /** 内部発話状態（state更新前の値を保持） */
   const internalIsSpeakingRef = useRef(false);
+
+  /**
+   * ★適応型VAD: 音量下降速度に基づく遅延計算★
+   * 音量が急激に下がった場合は早く終了判定を行う
+   */
+  const calculateAdaptiveDelay = useCallback((): number => {
+    const history = volumeHistoryRef.current;
+    if (history.length < 3) return SPEAKING_END_DELAY_DEFAULT;
+
+    // 直近3サンプルで音量下降速度を計算
+    const recent = history.slice(-3);
+    const dropRate = recent[0] - recent[recent.length - 1];
+
+    // 音量が急激に下降した場合は早期終了
+    if (dropRate > VOLUME_DROP_THRESHOLD) {
+      console.log(`[VAD] 音量急降下検出: ${dropRate.toFixed(1)}, 早期終了 ${SPEAKING_END_DELAY_MIN}ms`);
+      return SPEAKING_END_DELAY_MIN;
+    }
+    return SPEAKING_END_DELAY_DEFAULT;
+  }, []);
 
   /**
    * Float32Array を 16bit PCM に変換
@@ -302,8 +331,15 @@ export function useAudioCapture({
         internalVolumeLevelRef.current = normalizedVolume;
         internalWaveformRef.current = dataArray;
 
+        // ★適応型VAD: 音量履歴を更新（最新N件を保持）
+        volumeHistoryRef.current.push(normalizedVolume);
+        if (volumeHistoryRef.current.length > VOLUME_HISTORY_SIZE) {
+          volumeHistoryRef.current.shift();
+        }
+
         /**
          * VAD（発話検出）ロジック - 内部状態で判定
+         * ★改善: 適応型遅延で発話終了を検出
          */
         const nowSpeaking = normalizedVolume > SPEAKING_THRESHOLD;
 
@@ -311,6 +347,7 @@ export function useAudioCapture({
           // 発話開始検出
           if (!speechStartedRef.current) {
             speechStartedRef.current = true;
+            volumeHistoryRef.current = []; // 履歴リセット
             console.log('[VAD] 発話開始検出');
           }
           // 発話状態の変化は即座に反映（重要なUI変更）
@@ -325,16 +362,18 @@ export function useAudioCapture({
             speakingTimeoutRef.current = null;
           }
         } else if (wasSpeakingRef.current && !speakingTimeoutRef.current) {
-          // 発話終了検出（遅延付き）
+          // 発話終了検出（★適応型遅延）
+          const adaptiveDelay = calculateAdaptiveDelay();
           speakingTimeoutRef.current = globalThis.setTimeout(() => {
-            console.log('[VAD] 発話終了検出、完全な音声セグメントを送信');
+            console.log(`[VAD] 発話終了検出 (delay=${adaptiveDelay}ms)、完全な音声セグメントを送信`);
             internalIsSpeakingRef.current = false;
             setIsSpeaking(false);
             wasSpeakingRef.current = false;
             speakingTimeoutRef.current = null;
+            volumeHistoryRef.current = []; // 履歴リセット
             // ★ 発話終了時に完全な音声セグメントを送信
             sendCompleteSpeechSegment();
-          }, SPEAKING_END_DELAY);
+          }, adaptiveDelay);
         }
 
         // ★パフォーマンス最適化: 節流された状態更新★
@@ -358,7 +397,7 @@ export function useAudioCapture({
       }
       setIsMicOn(false);
     }
-  }, [deviceId, wsRef, sendCompleteSpeechSegment, checkAndSendIfBufferFull]);
+  }, [deviceId, wsRef, sendCompleteSpeechSegment, checkAndSendIfBufferFull, calculateAdaptiveDelay]);
 
   /** マイクストリーム停止 */
   const stopCapture = useCallback(() => {

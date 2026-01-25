@@ -3,6 +3,7 @@
  * クライアント側でテキスト翻訳を実行（サーバー経由でOpenAI APIを呼び出し）
  *
  * 特徴:
+ * - ★字幕IDベースの翻訳取得（最小遅延）
  * - ローカルキャッシュで重複翻訳を防止
  * - 同一言語の場合は翻訳スキップ
  * - 非同期で翻訳を実行し、結果をコールバックで返す
@@ -20,9 +21,22 @@ interface TranslateResponse {
   cached: boolean;
 }
 
+/** 字幕翻訳APIレスポンス */
+interface SubtitleTranslationResponse {
+  subtitle_id: string;
+  target_language: string;
+  translated_text: string | null;
+  status: 'ready' | 'pending' | 'not_found';
+}
+
 /** キャッシュキー生成 */
 function cacheKey(text: string, src: string, tgt: string): string {
   return `${src}:${tgt}:${text}`;
+}
+
+/** 字幕IDキャッシュキー生成 */
+function subtitleCacheKey(subtitleId: string, tgt: string): string {
+  return `subtitle:${subtitleId}:${tgt}`;
 }
 
 /** APIベースURL（環境変数から取得、なければ相対パス） */
@@ -102,12 +116,71 @@ export function useTranslation() {
   );
 
   /**
+   * ★字幕IDで翻訳を取得（最小遅延設計）
+   * サーバーにキャッシュされた翻訳をIDで取得
+   *
+   * @param subtitleId 字幕ID
+   * @param targetLanguage 翻訳先言語
+   * @param wait 翻訳中の場合に待機するか（デフォルト: true）
+   * @returns 翻訳されたテキスト（未完了/エラー時はnull）
+   */
+  const getTranslationById = useCallback(
+    async (
+      subtitleId: string,
+      targetLanguage: SupportedLanguage,
+      wait: boolean = true
+    ): Promise<string | null> => {
+      // ローカルキャッシュチェック
+      const key = subtitleCacheKey(subtitleId, targetLanguage);
+      const cached = cacheRef.current.get(key);
+      if (cached) {
+        return cached;
+      }
+
+      // API呼び出し
+      try {
+        // ★修正: API_BASE_URLが空の場合はwindow.location.originを使用
+        const baseUrl = API_BASE_URL || window.location.origin;
+        const url = new URL(`/api/translate/subtitle/${subtitleId}/${targetLanguage}`, baseUrl);
+        url.searchParams.set('wait', String(wait));
+
+        const response = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          console.error('[Translation] 字幕翻訳取得エラー:', response.status);
+          return null;
+        }
+
+        const data: SubtitleTranslationResponse = await response.json();
+
+        if (data.status === 'ready' && data.translated_text) {
+          // ローカルキャッシュに保存
+          cacheRef.current.set(key, data.translated_text);
+          return data.translated_text;
+        }
+
+        // pending or not_found
+        return null;
+      } catch (error) {
+        console.error('[Translation] 字幕翻訳取得エラー:', error);
+        return null;
+      }
+    },
+    [token]
+  );
+
+  /**
    * キャッシュをクリア
    */
   const clearCache = useCallback(() => {
     cacheRef.current.clear();
   }, []);
 
-  return { translateText, clearCache };
+  return { translateText, getTranslationById, clearCache };
 }
 

@@ -6,6 +6,7 @@ import type {
   ParticipantPreference,
   RoomPolicy,
   SubtitleData,
+  InterimSubtitleData,
 } from '../types';
 
 /** 接続状態タイプ */
@@ -19,6 +20,8 @@ interface RoomState {
   myPreference: ParticipantPreference | null;
   activeSpeaker: string | null;
   subtitles: SubtitleData[];
+  /** ★ストリーミング字幕（認識中） */
+  interimSubtitles: Map<string, InterimSubtitleData>;
   isConnected: boolean;
   /** 詳細な接続状態 */
   connectionStatus: ConnectionStatus;
@@ -38,6 +41,10 @@ interface RoomState {
   /** 参加者のマイク状態を更新 */
   updateParticipantMicStatus: (userId: string, isMicOn: boolean) => void;
   addSubtitle: (subtitle: SubtitleData) => void;
+  /** ★ストリーミング字幕を追加・更新 */
+  addInterimSubtitle: (subtitle: InterimSubtitleData) => void;
+  /** ★暫定字幕を削除（確定時） */
+  removeInterimSubtitle: (id: string) => void;
   clearSubtitles: () => void;
   setConnected: (connected: boolean) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
@@ -52,6 +59,7 @@ export const useRoomStore = create<RoomState>((set) => ({
   myPreference: null,
   activeSpeaker: null,
   subtitles: [],
+  interimSubtitles: new Map(),
   isConnected: false,
   connectionStatus: 'disconnected',
 
@@ -132,7 +140,28 @@ export const useRoomStore = create<RoomState>((set) => ({
       return { subtitles: newSubtitles };
     }),
 
-  clearSubtitles: () => set({ subtitles: [] }),
+  addInterimSubtitle: (subtitle) =>
+    set((state) => {
+      // ★ストリーミング字幕を追加・更新
+      // 同じIDの字幕があれば更新、なければ追加
+      const newMap = new Map(state.interimSubtitles);
+      if (subtitle.isFinal) {
+        // 確定時は削除（通常のsubtitleとして追加される）
+        newMap.delete(subtitle.id);
+      } else {
+        newMap.set(subtitle.id, subtitle);
+      }
+      return { interimSubtitles: newMap };
+    }),
+
+  removeInterimSubtitle: (id) =>
+    set((state) => {
+      const newMap = new Map(state.interimSubtitles);
+      newMap.delete(id);
+      return { interimSubtitles: newMap };
+    }),
+
+  clearSubtitles: () => set({ subtitles: [], interimSubtitles: new Map() }),
 
   setConnected: (connected) => set({ isConnected: connected }),
 
@@ -148,6 +177,7 @@ export const useRoomStore = create<RoomState>((set) => ({
       myPreference: null,
       activeSpeaker: null,
       subtitles: [],
+      interimSubtitles: new Map(),
       isConnected: false,
       connectionStatus: 'disconnected',
     }),

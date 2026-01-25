@@ -24,6 +24,27 @@ function getPlaybackAudioContext(): AudioContext {
   return playbackAudioContext;
 }
 
+/**
+ * ★改善: AudioContextを明示的に初期化（ユーザー操作時に呼び出し）
+ * ブラウザの自動再生ポリシー対策として、入室ボタンクリック時等に呼び出す
+ * これにより音声再生の遅延を最小化
+ *
+ * @returns 初期化成功したかどうか
+ */
+export async function initializeAudioContext(): Promise<boolean> {
+  try {
+    const ctx = getPlaybackAudioContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    console.log('[Audio] AudioContext初期化完了:', ctx.state);
+    return ctx.state === 'running';
+  } catch (err) {
+    console.warn('[Audio] AudioContext初期化失敗:', err);
+    return false;
+  }
+}
+
 /** 再接続設定 */
 const RECONNECT_INITIAL_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
@@ -44,6 +65,8 @@ export function useWebSocket(roomId: string | null) {
     setActiveSpeaker,
     updateParticipantMicStatus,
     addSubtitle,
+    addInterimSubtitle,
+    removeInterimSubtitle,
     setConnected,
     setConnectionStatus,
     reset,
@@ -112,12 +135,13 @@ export function useWebSocket(roomId: string | null) {
           updateParticipantMicStatus(msg.user_id as string, msg.is_mic_on as boolean);
           break;
         case 'subtitle':
-          // ★クライアント側翻訳アーキテクチャ対応★
-          // サーバーから原文のみを受信し、翻訳はクライアント側で実行
+          // ★クライアント側翻訳アーキテクチャ + サーバープリ翻訳対応★
+          // サーバーから原文 + プリ翻訳を受信、追加翻訳が必要ならクライアント側で実行
           console.log('[SUBTITLE] 受信:', {
             speakerId: msg.speaker_id,
             originalText: (msg.original_text as string)?.slice(0, 30),
             sourceLanguage: msg.source_language,
+            hasTranslations: !!msg.translations,
           });
           addSubtitle({
             id: msg.id as string | undefined,
@@ -125,7 +149,26 @@ export function useWebSocket(roomId: string | null) {
             speakerId: msg.speaker_id as string,
             originalText: msg.original_text as string,
             sourceLanguage: msg.source_language as SubtitleData['sourceLanguage'],
+            translations: msg.translations as Record<string, string> | undefined,
             isTranslated: false,
+          });
+          // 確定字幕が来たら暫定字幕を削除
+          if (msg.id) {
+            removeInterimSubtitle(msg.id as string);
+          }
+          break;
+        case 'subtitle_interim':
+          // ★ストリーミング字幕（認識中）
+          console.log('[SUBTITLE_INTERIM] 受信:', {
+            id: msg.id,
+            text: (msg.text as string)?.slice(0, 30),
+            isFinal: msg.is_final,
+          });
+          addInterimSubtitle({
+            id: msg.id as string,
+            speakerId: msg.speaker_id as string,
+            text: msg.text as string,
+            isFinal: msg.is_final as boolean,
           });
           break;
         case 'qos_warning':
@@ -136,7 +179,7 @@ export function useWebSocket(roomId: string | null) {
           break;
       }
     },
-    [setRoomState, addParticipant, removeParticipant, setActiveSpeaker, updateParticipantMicStatus, addSubtitle]
+    [setRoomState, addParticipant, removeParticipant, setActiveSpeaker, updateParticipantMicStatus, addSubtitle, addInterimSubtitle, removeInterimSubtitle]
   );
 
   /**

@@ -29,6 +29,8 @@ from app.auth.jwt_handler import decode_token
 from app.db.database import async_session
 from app.db.models import MeetingSession, Room, Subtitle, User
 from app.rooms.manager import room_manager
+from app.translate import subtitle_cache
+from app.translate.routes import translate_text_simple
 
 if TYPE_CHECKING:
     from app.rooms.schemas import Participant
@@ -378,19 +380,65 @@ async def process_audio_dual_path(
                 if isinstance(result, dict) and result.get("translated_text"):
                     translations[result["target_lang"]] = result["translated_text"]
 
-        # ★クライアント側翻訳アーキテクチャ★
-        # 字幕は原文のみをブロードキャスト、翻訳はクライアント側で実行
-        # これにより:
-        # - サーバー負荷を大幅に削減（N言語への同時翻訳が不要）
-        # - 各クライアントが必要な言語のみを翻訳
-        # - 言語数の制限なし
+        # ★改善: 字幕IDベースのオンデマンド翻訳★
+        # 1. 原文をRedisにキャッシュ（翻訳リクエスト時に使用）
+        # 2. 翻訳モード購読者の言語のみを非同期で翻訳
+        # 3. 字幕は即座に配信（翻訳を待たない）
+
+        # 原文をキャッシュ
+        await subtitle_cache.store_original(subtitle_id, original_text, speaker_lang)
+
+        # ★字幕翻訳が必要なユーザーの目標言語を収集
+        # 注意: 原声モードでも字幕翻訳は必要な場合がある
+        needed_langs: set[str] = set()
+        for p in participants.values():
+            if p.subtitle_enabled:  # 字幕が有効なら翻訳対象
+                target_lang = p.target_language or p.native_language
+                if target_lang != speaker_lang:
+                    needed_langs.add(target_lang)
+
+        # S2S翻訳結果をキャッシュに保存
+        for lang, trans_text in translations.items():
+            if trans_text:
+                await subtitle_cache.store_translation(subtitle_id, lang, trans_text)
+
+        # ★非同期で追加翻訳（字幕配信をブロックしない）
+        async def translate_and_cache(tgt_lang: str) -> None:
+            """バックグラウンド翻訳タスク"""
+            try:
+                if await subtitle_cache.mark_translation_pending(subtitle_id, tgt_lang):
+                    translated = await translate_text_simple(
+                        original_text, speaker_lang, tgt_lang
+                    )
+                    if translated:
+                        await subtitle_cache.store_translation(
+                            subtitle_id, tgt_lang, translated
+                        )
+                        logger.info(f"[AsyncTranslate] {speaker_lang}->{tgt_lang} 完了")
+                    else:
+                        logger.warning(
+                            f"[AsyncTranslate] 翻訳結果が空: {speaker_lang}->{tgt_lang}"
+                        )
+            except Exception as e:
+                logger.error(
+                    f"[AsyncTranslate] 翻訳エラー {speaker_lang}->{tgt_lang}: {e}"
+                )
+
+        # S2Sで翻訳されていない言語を非同期で翻訳開始
+        for lang in needed_langs:
+            if lang not in translations:
+                asyncio.create_task(translate_and_cache(lang))
+
+        # ★最小遅延設計: 字幕は原文のみ即時配信★
+        # クライアントは subtitle_id で翻訳を取得
         subtitle_message = {
             "type": "subtitle",
             "id": subtitle_id,
             "seq": seq,
             "speaker_id": speaker_id,
-            "original_text": original_text,  # 原文
-            "source_language": speaker_lang,  # 原語
+            "original_text": original_text,
+            "source_language": speaker_lang,
+            # translations は含めない（クライアントがIDで取得）
         }
 
         # ★字幕は全参加者（話者自身を含む）にブロードキャスト★

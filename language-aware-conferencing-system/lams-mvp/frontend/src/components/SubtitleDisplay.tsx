@@ -30,17 +30,19 @@ interface DisplaySubtitle extends SubtitleData {
  * 必要な状態のみを購読し、不要な再レンダリングを防止
  */
 const selectSubtitles = (s: ReturnType<typeof useRoomStore.getState>) => s.subtitles;
+const selectInterimSubtitles = (s: ReturnType<typeof useRoomStore.getState>) => s.interimSubtitles;
 const selectMyPreference = (s: ReturnType<typeof useRoomStore.getState>) => s.myPreference;
 const selectParticipants = (s: ReturnType<typeof useRoomStore.getState>) => s.participants;
 
 function SubtitleDisplayInner() {
   // ★パフォーマンス最適化: 個別セレクターで購読★
   const subtitles = useRoomStore(selectSubtitles);
+  const interimSubtitles = useRoomStore(selectInterimSubtitles);
   const myPreference = useRoomStore(selectMyPreference);
   const participants = useRoomStore(selectParticipants);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { translateText } = useTranslation();
+  const { translateText, getTranslationById } = useTranslation();
 
   // 翻訳済み字幕のローカルstate
   const [displaySubtitles, setDisplaySubtitles] = useState<DisplaySubtitle[]>([]);
@@ -94,19 +96,30 @@ function SubtitleDisplayInner() {
           continue;
         }
 
-        // ★翻訳モード: 異なる言語の場合は翻訳API呼び出し★
-        console.log('[SubtitleDisplay] 翻訳開始:', {
-          originalText: sub.originalText.slice(0, 30),
-          sourceLanguage: sub.sourceLanguage,
+        // ★翻訳モード: 異なる言語の場合★
+        // ★最小遅延設計: 字幕IDでサーバーキャッシュから取得
+        console.log('[SubtitleDisplay] 翻訳取得開始:', {
+          subtitleId: sub.id,
           targetLanguage,
         });
+
         try {
-          const translated = await translateText(
-            sub.originalText,
-            sub.sourceLanguage,
-            targetLanguage
-          );
-          // 翻訳結果が原文と同じ場合は翻訳失敗とみなす
+          // 字幕IDがあれば、IDベースで翻訳取得（最小遅延）
+          let translated: string | null = null;
+          if (sub.id) {
+            translated = await getTranslationById(sub.id, targetLanguage, true);
+          }
+
+          // IDベースで取得できなければ、テキストベースで翻訳
+          if (!translated) {
+            console.log('[SubtitleDisplay] IDベース取得失敗、テキストベースで翻訳');
+            translated = await translateText(
+              sub.originalText,
+              sub.sourceLanguage,
+              targetLanguage
+            );
+          }
+
           const isActuallyTranslated = translated !== sub.originalText;
           console.log('[SubtitleDisplay] 翻訳結果:', {
             original: sub.originalText.slice(0, 20),
@@ -140,7 +153,7 @@ function SubtitleDisplayInner() {
     };
 
     processSubtitles();
-  }, [subtitles, audioMode, targetLanguage, translateText]);
+  }, [subtitles, audioMode, targetLanguage, translateText, getTranslationById]);
 
   // 新しい字幕が追加されたら自動スクロール
   useEffect(() => {
@@ -164,41 +177,61 @@ function SubtitleDisplayInner() {
   return (
     <div className="subtitle-display" ref={scrollRef}>
       <h4>📝 字幕・会議記録</h4>
-      {displaySubtitles.length === 0 ? (
+      {displaySubtitles.length === 0 && interimSubtitles.size === 0 ? (
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
           発言を待っています...
         </p>
       ) : (
-        displaySubtitles.map((sub, idx) => {
-          const speaker = participants.get(sub.speakerId);
-          const isMyMessage = sub.speakerId === currentUserId;
-          if (!speaker) {
-            console.warn('[SubtitleDisplay] 話者が見つかりません:', {
-              speakerId: sub.speakerId,
-              participantIds: Array.from(participants.keys()),
-            });
-          }
-          const displayName = speaker?.displayName || '不明';
-          const subtitleKey = sub.id ?? `${sub.speakerId}-${idx}-${sub.originalText.slice(0, 10)}`;
+        <>
+          {displaySubtitles.map((sub, idx) => {
+            const speaker = participants.get(sub.speakerId);
+            const isMyMessage = sub.speakerId === currentUserId;
+            if (!speaker) {
+              console.warn('[SubtitleDisplay] 話者が見つかりません:', {
+                speakerId: sub.speakerId,
+                participantIds: Array.from(participants.keys()),
+              });
+            }
+            const displayName = speaker?.displayName || '不明';
+            const subtitleKey = sub.id ?? `${sub.speakerId}-${idx}-${sub.originalText.slice(0, 10)}`;
 
-          return (
-            <div
-              key={subtitleKey}
-              className={`subtitle-item ${isMyMessage ? 'my-message' : ''}`}
-            >
-              <span className="speaker-name">
-                {displayName}
-                {isMyMessage && ' (自分)'}：
-              </span>
-              <span className="subtitle-text">
-                {sub.isTranslating ? '翻訳中...' : sub.displayText}
-              </span>
-              {sub.isTranslated && (
-                <span className="translated-badge">翻訳</span>
-              )}
-            </div>
-          );
-        })
+            return (
+              <div
+                key={subtitleKey}
+                className={`subtitle-item ${isMyMessage ? 'my-message' : ''}`}
+              >
+                <span className="speaker-name">
+                  {displayName}
+                  {isMyMessage && ' (自分)'}：
+                </span>
+                <span className="subtitle-text">
+                  {sub.isTranslating ? '翻訳中...' : sub.displayText}
+                </span>
+                {sub.isTranslated && (
+                  <span className="translated-badge">翻訳</span>
+                )}
+              </div>
+            );
+          })}
+          {/* ★ストリーミング字幕（認識中） */}
+          {Array.from(interimSubtitles.values()).map((interim) => {
+            const speaker = participants.get(interim.speakerId);
+            const displayName = speaker?.displayName || '不明';
+            return (
+              <div
+                key={`interim-${interim.id}`}
+                className="subtitle-item interim"
+                style={{ opacity: 0.7, fontStyle: 'italic' }}
+              >
+                <span className="speaker-name">{displayName}：</span>
+                <span className="subtitle-text">{interim.text}</span>
+                <span className="interim-badge" style={{ marginLeft: '0.5rem', fontSize: '0.8em', color: '#888' }}>
+                  認識中...
+                </span>
+              </div>
+            );
+          })}
+        </>
       )}
     </div>
   );

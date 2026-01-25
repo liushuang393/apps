@@ -68,6 +68,8 @@ export interface SubtitleData {
   sourceLanguage: SupportedLanguage;
   /** 翻訳後テキスト（クライアント側で翻訳した場合） */
   translatedText?: string;
+  /** ★サーバー側プリ翻訳結果（言語コード → 翻訳テキスト） */
+  translations?: Record<string, string>;
   /** 翻訳済みフラグ */
   isTranslated?: boolean;
   /** 翻訳遅延（ms） */
@@ -85,5 +87,18 @@ export type WSMessageType =
   | 'speaking_end'
   | 'mic_status_changed'
   | 'subtitle'
+  | 'subtitle_interim'  // ★ストリーミング字幕（認識中）
   | 'qos_warning'
   | 'error';
+
+/** ★暫定字幕データ（ストリーミングASR用） */
+export interface InterimSubtitleData {
+  /** 字幕の一意識別子 */
+  id: string;
+  /** 話者ID */
+  speakerId: string;
+  /** 認識中テキスト */
+  text: string;
+  /** 最終確定かどうか */
+  isFinal: boolean;
+}

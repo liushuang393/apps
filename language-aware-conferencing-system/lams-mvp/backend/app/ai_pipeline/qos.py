@@ -126,3 +126,93 @@ class QoSController:
         return all(
             abs(lat - avg) < self.max_jitter_ms for lat in self._state.latency_history
         )
+
+
+class AdaptiveQoSController(QoSController):
+    """
+    ★改善: 適応型QoSコントローラー
+
+    履歴データに基づいて動的に閾値を調整:
+    - 安定時: 厳格な閾値で高品質を維持
+    - 不安定時: 閾値を緩和してフォールバック頻度を抑制
+
+    計算式: adaptive_threshold = avg + 2 * std
+    上限: 設定値の1.5倍
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._adaptive_threshold = settings.max_latency_ms
+
+    def _calculate_std(self) -> float:
+        """標準偏差を計算"""
+        if len(self._state.latency_history) < 2:
+            return 0.0
+        avg = self.get_average_latency()
+        variance = sum((x - avg) ** 2 for x in self._state.latency_history) / len(
+            self._state.latency_history
+        )
+        return variance**0.5
+
+    def _update_adaptive_threshold(self) -> None:
+        """適応型閾値を更新"""
+        # 十分なサンプルが必要
+        if len(self._state.latency_history) < 10:
+            return
+
+        avg = self.get_average_latency()
+        std = self._calculate_std()
+
+        # 適応型閾値 = 平均値 + 2倍標準偏差
+        # 設定値の1.5倍を上限とする
+        new_threshold = min(
+            avg + 2 * std,
+            settings.max_latency_ms * 1.5,
+        )
+        # 設定値を下回らないように
+        new_threshold = max(new_threshold, settings.max_latency_ms * 0.8)
+
+        self._adaptive_threshold = new_threshold
+
+    def end_measurement(self, metrics: QoSMetrics) -> QoSMetrics:
+        """
+        測定終了・結果計算（適応型閾値使用）
+        """
+        metrics.end_time_ms = time.time() * 1000
+        metrics.total_latency_ms = metrics.end_time_ms - metrics.start_time_ms
+
+        # ジッター計算（前回との差分）
+        if self._state.last_latency_ms > 0:
+            metrics.jitter_ms = abs(
+                metrics.total_latency_ms - self._state.last_latency_ms
+            )
+
+        # 履歴更新
+        self._state.latency_history.append(metrics.total_latency_ms)
+        self._state.last_latency_ms = metrics.total_latency_ms
+
+        # ★適応型閾値を更新
+        self._update_adaptive_threshold()
+        threshold = self._adaptive_threshold
+
+        # 品質劣化レベル判定（★適応型閾値を使用）
+        if metrics.total_latency_ms > threshold * 2:
+            metrics.degradation_level = DegradationLevel.SEVERE
+            metrics.should_fallback_to_subtitle = True
+        elif metrics.total_latency_ms > threshold * 1.5:
+            metrics.degradation_level = DegradationLevel.MODERATE
+            metrics.should_fallback_to_subtitle = True
+        elif metrics.total_latency_ms > threshold:
+            metrics.degradation_level = DegradationLevel.LIGHT
+        else:
+            metrics.degradation_level = DegradationLevel.NONE
+
+        # ジッター超過時もフォールバック
+        if metrics.jitter_ms > self.max_jitter_ms * 2:
+            metrics.should_fallback_to_subtitle = True
+
+        return metrics
+
+    def get_adaptive_threshold(self) -> float:
+        """現在の適応型閾値を取得"""
+        return self._adaptive_threshold

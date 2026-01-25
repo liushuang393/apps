@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWebSocket, initializeAudioContext } from '../hooks/useWebSocket';
 import { useAudioDevices } from '../hooks/useAudioDevices';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useRoomStore } from '../store/roomStore';
@@ -45,6 +45,11 @@ export function RoomPage() {
 
   // メインエリア波形Canvas
   const mainWaveformRef = useRef<HTMLCanvasElement>(null);
+
+  // ★改善: 入室時にAudioContextを初期化（音声再生遅延を最小化）
+  useEffect(() => {
+    initializeAudioContext();
+  }, []);
 
   // メインエリア波形描画
   useEffect(() => {
