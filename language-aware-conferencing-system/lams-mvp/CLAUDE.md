@@ -8,7 +8,7 @@ LAMS（Language-Aware Meeting System）は、多言語会議向けのリアル�
 
 - **対応言語**: 日本語 (ja), 英語 (en), 中国語 (zh), ベトナム語 (vi)
 - **遅延目標**: ≤1200ms（超過時は字幕のみにフォールバック）
-- **AIプロバイダー**: Gemini 2.5 Flash（推奨）, OpenAI Realtime
+- **AIプロバイダー**: gpt4o_transcribe（推奨）, gpt_realtime, deepgram
 
 ## 開発コマンド
 
@@ -59,16 +59,21 @@ docker compose exec backend alembic upgrade head       # コンテナ内でマ�
 frontend/           React 18 + TypeScript + Zustand + Vite
   src/
     components/     UI: AudioControlPanel, PreferencePanel, SubtitleDisplay
-    hooks/          useWebSocket, useAudioCapture, useAudioDevices
-    pages/          ページコンポーネント（9ファイル）
+    hooks/          useWebSocket, useAudioCapture, useAudioDevices, useTranslation
+    pages/          ページコンポーネント（10ファイル）
     store/          authStore, roomStore（Zustand）
+    constants/      言語設定等の定数
+    i18n/           多言語対応
 
 backend/            FastAPI + SQLAlchemy 2.0 + Redis
   app/
     auth/           JWT認証、RBAC（admin/moderator/user）
     rooms/          会議室CRUD、Redis状態管理
-    admin/          ユーザー管理、統計API
+    admin/          ユーザー管理、統計API、言語設定
     ai_pipeline/    AIプロバイダー抽象化、QoS監視
+      providers/    GPT-4o, GPT-Realtime, Deepgram実装
+    audio/          音声処理（VAD）
+    translate/      翻訳API、字幕キャッシュ
     websocket/      リアルタイム通信（handler.py）
     db/             SQLAlchemy モデル（User, Room, Subtitle）
   alembic/          DBマイグレーション
@@ -81,7 +86,9 @@ backend/            FastAPI + SQLAlchemy 2.0 + Redis
 | `POST /api/auth/register`, `/login` | 認証 |
 | `GET/POST /api/rooms` | 会議室一覧・作成 |
 | `GET /api/rooms/{id}/transcript` | 会議記録取得 |
+| `POST /api/translate` | テキスト翻訳（キャッシュ付き） |
 | `GET/PATCH /api/admin/users/{id}` | ユーザー管理（要admin） |
+| `GET/PUT /api/admin/settings/languages` | 言語設定（要admin） |
 | `WS /ws/room/{room_id}?token={jwt}` | リアルタイム接続 |
 
 ## コーディング規則
@@ -117,8 +124,9 @@ backend/            FastAPI + SQLAlchemy 2.0 + Redis
 DATABASE_URL=postgresql://lams:lams_secret_2024@localhost:5432/lams
 REDIS_URL=redis://localhost:6379/0
 JWT_SECRET=your-secret-key
-AI_PROVIDER=gemini                    # gemini または openai_realtime
-GEMINI_API_KEY=your-key
+AI_PROVIDER=gpt4o_transcribe          # gpt4o_transcribe, gpt_realtime, deepgram
+OPENAI_API_KEY=your-key
+# DEEPGRAM_API_KEY=your-key           # deepgram使用時
 HOST_IP=192.168.x.x                   # LAN公開時のみ
 ```
 

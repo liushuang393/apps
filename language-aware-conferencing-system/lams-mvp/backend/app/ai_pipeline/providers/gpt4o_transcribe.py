@@ -10,6 +10,7 @@ OpenAI GPT-4o-transcribe を使用した高速ASR（300-500ms）
 3. TTS-1 で音声合成（オプション）
 """
 
+import asyncio
 import io
 import logging
 
@@ -42,6 +43,7 @@ class GPT4oTranscribeProvider(AIProvider):
     async def _get_client(self):
         """OpenAIクライアント取得（遅延初期化）"""
         if self._client is None:
+            await asyncio.sleep(0)  # 非同期コンテキストを明示
             from openai import AsyncOpenAI
 
             base_url = settings.openai_base_url or "https://api.openai.com/v1"
@@ -110,6 +112,117 @@ class GPT4oTranscribeProvider(AIProvider):
             logger.error(f"[GPT4o-transcribe] ASRエラー: {e}", exc_info=True)
             return f"[ASRエラー: {type(e).__name__}]"
 
+    async def transcribe_with_detection(
+        self,
+        audio_data: bytes,
+        hint_language: str = "multi",
+    ) -> tuple[str, str]:
+        """
+        音声認識 + 言語自動検出（Whisper verbose_json形式）
+
+        Args:
+            audio_data: WAV形式の音声データ
+            hint_language: ヒント言語コード（"multi"で自動検出）
+
+        Returns:
+            (認識テキスト, 検出された言語コード)
+        """
+        min_size = 44 + 8000
+        if len(audio_data) < min_size:
+            logger.debug(f"[GPT4o-transcribe] 音声が短すぎる: {len(audio_data)} bytes")
+            return "", hint_language if hint_language != "multi" else ""
+
+        # 設定に基づいて言語検出モードを決定
+        detection_mode = settings.language_detection_mode
+
+        if detection_mode == "hint" and hint_language != "multi":
+            # hintモード: 言語検出せず、ヒント言語でASR実行
+            text = await self.transcribe_audio(audio_data, hint_language)
+            return text, hint_language
+
+        # autoモード: Whisper verbose_json で言語検出
+        try:
+            client = await self._get_client()
+            audio_file = io.BytesIO(audio_data)
+            audio_file.name = "audio.wav"
+
+            # ★厳格なASRプロンプト（幻覚防止）★
+            asr_prompt = (
+                "Transcribe only clear human speech. "
+                "Output ONLY the exact words spoken. "
+                "If silent or unclear, return empty. "
+                "Do NOT add comments or explanations."
+            )
+
+            # verbose_json形式で言語情報を取得
+            transcribe_params: dict = {
+                "model": settings.openai_transcribe_model,
+                "file": audio_file,
+                "response_format": "verbose_json",
+                "prompt": asr_prompt,
+            }
+
+            # ★★★ 重要修正: autoモードでは language を設定しない ★★★
+            # Whisperにlanguageを指定すると言語検出が行われないため、
+            # 自動検出モードでは意図的にlanguageパラメータを省略する。
+            logger.debug(
+                f"[GPT4o-transcribe] 言語自動検出モード: hint={hint_language}, "
+                "language param省略"
+            )
+
+            response = await client.audio.transcriptions.create(**transcribe_params)
+
+            # verbose_json形式のレスポンスから情報を抽出
+            text = ""
+            detected_lang = hint_language
+
+            if hasattr(response, "text"):
+                text = response.text.strip() if response.text else ""
+
+            if hasattr(response, "language"):
+                # Whisperが検出した言語コード
+                detected_lang = response.language or hint_language
+                detected_lang = self._normalize_language_code(detected_lang)
+
+            # ノイズフィルタリング
+            if text and self._is_noise_transcription(text):
+                logger.debug(f"[GPT4o-transcribe] ノイズ除外: '{text}'")
+                return "", detected_lang
+
+            if text:
+                logger.info(
+                    f"[GPT4o-transcribe] ASR+言語検出: '{text[:30]}...' "
+                    f"(detected={detected_lang})"
+                )
+
+            return text, detected_lang
+
+        except Exception as e:
+            logger.error(f"[GPT4o-transcribe] 言語検出ASRエラー: {e}", exc_info=True)
+            # フォールバック: 通常のASR
+            text = await self.transcribe_audio(audio_data, hint_language)
+            return text, hint_language if hint_language != "multi" else "ja"
+
+    def _normalize_language_code(self, lang: str) -> str:
+        """
+        言語コードを正規化（Whisperの出力形式 -> ISO 639-1）
+        """
+        lang_lower = lang.lower().strip()
+        lang_map = {
+            "japanese": "ja",
+            "english": "en",
+            "chinese": "zh",
+            "mandarin": "zh",
+            "vietnamese": "vi",
+            "korean": "ko",
+            "ja": "ja",
+            "en": "en",
+            "zh": "zh",
+            "vi": "vi",
+            "ko": "ko",
+        }
+        return lang_map.get(lang_lower, lang_lower)
+
     async def translate_audio(
         self,
         audio_data: bytes,
@@ -161,16 +274,19 @@ class GPT4oTranscribeProvider(AIProvider):
                 f"[GPT4o-transcribe] 翻訳開始: '{original_text}' -> {tgt_name}"
             )
 
-            # 改善された翻訳プロンプト（会議シナリオに最適化）
+            # ★★★ 強化された翻訳プロンプト（AI乱話防止）★★★
             system_prompt = (
-                f"You are a professional interpreter for multilingual meetings. "
-                f"Translate the following {src_name} text into natural {tgt_name}.\n\n"
-                "Guidelines:\n"
-                "- Preserve the speaker's intent and tone\n"
-                "- Use natural, conversational language\n"
-                "- Keep technical terms accurate\n"
-                "- Do NOT add explanations or notes\n"
-                "- Output ONLY the translated text"
+                f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
+                f"[CRITICAL] You are a TRANSLATION MACHINE for multilingual meetings.\n"
+                f"Translate the following {src_name} text into {tgt_name}.\n\n"
+                "ABSOLUTE RULES:\n"
+                "- Output ONLY the direct translation of the input text\n"
+                "- NEVER add comments, greetings, or acknowledgments\n"
+                "- NEVER say 'I understand', 'OK', 'Sure', or similar phrases\n"
+                "- NEVER engage in conversation or respond to the content\n"
+                "- Preserve the speaker's intent and tone accurately\n"
+                "- Keep technical terms and proper nouns intact\n\n"
+                "FORBIDDEN: Any output that is not a direct translation of the input."
             )
 
             chat_response = await client.chat.completions.create(

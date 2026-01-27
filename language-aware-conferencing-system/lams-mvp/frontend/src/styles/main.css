@@ -2586,19 +2586,8 @@ button.btn-sm {
   color: rgba(255, 255, 255, 0.7);
 }
 
-.language-settings-page .language-card .check-mark {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  width: 1.5rem;
-  height: 1.5rem;
-  background: var(--primary-color);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.875rem;
-  font-weight: bold;
+.language-settings-page .language-card .status-badge {
+  margin-top: 0.5rem;
 }
 
 .language-settings-page .actions {

@@ -258,26 +258,28 @@ async def _call_openai_translate(
         context_str += "\n"
 
     try:
+        # ★★★ 強化された翻訳プロンプト（AI乱話防止）★★★
         response = await client.chat.completions.create(
             model=settings.openai_translate_model,
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        f"You are a professional simultaneous interpreter specializing in "
-                        f"{src_name}-{tgt_name} translation for business meetings.\n\n"
-                        f"Translate the following {src_name} speech into natural, fluent {tgt_name}.\n\n"
-                        "Translation Guidelines:\n"
-                        "- Maintain the speaker's original meaning and intent precisely\n"
-                        "- Use natural, idiomatic expressions in the target language\n"
-                        "- Preserve technical terms, proper nouns, and numbers accurately\n"
-                        "- Keep the same level of formality as the source\n"
-                        "- Maintain consistency with previous translations in the conversation\n"
+                        f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
+                        f"[CRITICAL WARNING] You are a TRANSLATION MACHINE, not a conversational AI.\n\n"
+                        f"You are a professional interpreter for {src_name}-{tgt_name} translation.\n"
+                        f"Translate the following {src_name} text into natural {tgt_name}.\n\n"
+                        "ABSOLUTE RULES - VIOLATION IS FORBIDDEN:\n"
+                        "- Output ONLY the direct translation of the input\n"
+                        "- NEVER add comments, greetings, or acknowledgments\n"
+                        "- NEVER say 'I understand', 'OK', 'Sure', 'はい、承知しました', etc.\n"
+                        "- NEVER engage in conversation or respond to the content\n"
+                        "- Preserve the speaker's meaning, tone, and formality\n"
+                        "- Keep technical terms and proper nouns intact\n"
                         f"{lang_specific_hints}"
-                        "- Do NOT add explanations, notes, or extra context\n"
-                        "- Do NOT translate literally word-by-word\n"
-                        "- Output ONLY the translated text, nothing else"
-                        f"{context_str}"
+                        "- Maintain consistency with previous translations\n"
+                        f"{context_str}\n"
+                        "FORBIDDEN: Any response that is not a direct translation."
                     ),
                 },
                 {"role": "user", "content": text},

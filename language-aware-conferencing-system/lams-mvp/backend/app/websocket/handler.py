@@ -84,7 +84,9 @@ class ConnectionManager:
         """全員にJSONメッセージを送信"""
         if room_id not in self.rooms:
             return
-        for user_id, ws in list(self.rooms[room_id].items()):
+        # dict.items()のコピーを作成（反復中の変更に対応）
+        room_connections = dict(self.rooms[room_id])
+        for user_id, ws in room_connections.items():
             if user_id != exclude_user:
                 with contextlib.suppress(Exception):
                     await ws.send_json(message)
@@ -194,14 +196,17 @@ async def _process_s2s_translation(
     source_lang: str,
     target_lang: str,
     user_ids: list[str],
+    subtitle_id: str,
+    seq: int,
+    speaker_id_for_subtitle: str,
+    participants: dict[str, "Participant"],
 ) -> dict:
     """
-    S2S Realtime APIで翻訳音声と翻訳字幕を取得・配信
+    S2S Realtime APIで翻訳音声と翻訳字幕を取得・同時配信
 
     翻訳音声モードの参加者向け処理:
     1. Realtime APIで音声→翻訳音声+翻訳字幕を取得
-    2. 翻訳音声を対象参加者に配信
-    3. 翻訳字幕を返却（呼び出し元で配信）
+    2. ★翻訳音声と翻訳字幕を同時に配信（同期）★
 
     Args:
         room_id: 会議室ID
@@ -210,6 +215,10 @@ async def _process_s2s_translation(
         source_lang: 話者の言語
         target_lang: 翻訳先言語
         user_ids: 翻訳音声を受信する参加者IDリスト
+        subtitle_id: 字幕ID
+        seq: シーケンス番号
+        speaker_id_for_subtitle: 字幕用の話者ID
+        participants: 参加者情報（字幕配信用）
 
     Returns:
         {"target_lang": target_lang, "translated_text": 翻訳字幕}
@@ -220,15 +229,44 @@ async def _process_s2s_translation(
             audio_bytes, source_lang, target_lang, speaker_id
         )
 
-        # 翻訳音声がある場合、対象参加者に配信
-        if result.audio_data:
+        translated_text = result.translated_text or ""
+
+        # ★翻訳音声と翻訳字幕を同時配信★
+        if result.audio_data or translated_text:
+            # 翻訳字幕メッセージを作成
+            subtitle_message = {
+                "type": "subtitle",
+                "id": subtitle_id,
+                "seq": seq,
+                "speaker_id": speaker_id_for_subtitle,
+                "original_text": translated_text,  # 翻訳モードでは翻訳テキストを表示
+                "source_language": target_lang,  # 翻訳先言語
+                "is_translated": True,
+            }
+
+            # 翻訳モードユーザーに音声と字幕を同時配信
             for user_id in user_ids:
-                await conn_mgr.send_bytes_to_user(room_id, user_id, result.audio_data)
-            logger.info(f"[S2S] 翻訳音声配信: {target_lang} -> {len(user_ids)}人")
+                # 翻訳音声を配信（話者自身には送らない）
+                if result.audio_data and user_id != speaker_id:
+                    await conn_mgr.send_bytes_to_user(room_id, user_id, result.audio_data)
+
+                # 翻訳字幕を配信（字幕が有効なユーザーのみ）
+                p = participants.get(user_id)
+                if p and p.subtitle_enabled:
+                    await conn_mgr.send_to_user(room_id, user_id, subtitle_message)
+
+            logger.info(
+                f"[S2S] 翻訳同時配信: {target_lang} -> {len(user_ids)}人, "
+                f"text='{translated_text[:30]}...'"
+            )
+
+        # キャッシュに保存
+        if translated_text:
+            await subtitle_cache.store_translation(subtitle_id, target_lang, translated_text)
 
         return {
             "target_lang": target_lang,
-            "translated_text": result.translated_text,
+            "translated_text": translated_text,
         }
 
     except Exception as e:
@@ -250,14 +288,15 @@ async def process_audio_dual_path(
     - フロントエンドからVAD検出済みの完全な発話セグメントが送信される
     - 後端は音声処理をせず、そのままAI APIに渡す
     - 責任境界を明確に分離
-    - ★重要：実際の発話言語を検出し、聴取者の目標言語と一致する場合は原声を配信
+    - ★重要：原声モードは即座配信、翻訳は非同期で処理
 
-    処理フロー:
-    1. 言語検出: ASRで実際の発話言語を検出
-    2. 原声モードの参加者: 原声 + 原文字幕
+    処理フロー（最小遅延設計）:
+    1. 原声モードの参加者: 【即座】原声配信（言語検出を待たない）
+    2. 言語検出: ASRで実際の発話言語を検出（非同期）
     3. 翻訳モードの参加者:
-       - 目標言語 == 実際の発話言語 → 原声 + 原文字幕
-       - 目標言語 != 実際の発話言語 → 翻訳音声 + 翻訳字幕
+       - 目標言語 == 実際の発話言語 → 原声配信
+       - 目標言語 != 実際の発話言語 → 翻訳音声配信（順序保証）
+    4. 字幕: 非同期で配信（遅延許容）
     """
     try:
         # 最小音声サイズチェック（44バイトWAVヘッダー + 最低8000サンプル = 500ms）
@@ -271,10 +310,37 @@ async def process_audio_dual_path(
             logger.info("[VAD] 音声なし、処理スキップ")
             return
 
+        # ========================================
+        # ★★★ 原声モード即座配信（最優先）★★★
+        # 言語検出を待たずに原声を配信
+        # ========================================
+        pure_original_users: list[str] = []
+
+        for p in participants.values():
+            # 自分自身には音声を送らない（エコー防止）
+            if p.user_id == speaker_id:
+                continue
+            if p.audio_mode == "original":
+                pure_original_users.append(p.user_id)
+
+        # ★★★ 原声モード: 即座配信（言語検出を待たない）★★★
+        if pure_original_users:
+            for user_id in pure_original_users:
+                await conn_mgr.send_bytes_to_user(room_id, user_id, audio_bytes)
+            logger.info(
+                f"[Audio] 原声即座配信: {len(pure_original_users)}人 "
+                f"(言語検出前)"
+            )
+
+        # ========================================
+        # 以降は非同期処理（原声配信後に実行）
+        # ========================================
+
+        # 翻訳モードのユーザーがいない場合も字幕処理は必要
         # ★ 言語検出付きASR実行（実際の発話言語を検出）
-        # hint_language="multi" で自動検出、speaker_lang_hintをフォールバックとして使用
+        # hint_language に話者の native_language を渡すことで精度向上
         original_text, detected_lang = await ai_pipeline.detect_language(
-            audio_bytes, hint_language="multi"
+            audio_bytes, hint_language=speaker_lang_hint
         )
 
         # 検出失敗時はヒント言語を使用
@@ -296,20 +362,20 @@ async def process_audio_dual_path(
 
         logger.info(f"[ASR] 認識完了: '{original_text}' (detected_lang={speaker_lang})")
 
-        # 参加者を原声モードと翻訳モードに分類
-        # ★注意: 音声は自分自身に送らない（エコー防止）が、字幕は送る
-        original_mode_users: list[str] = []
+        # ========================================
+        # 翻訳モードユーザーの音声配信
+        # ========================================
+        original_mode_users: list[str] = []  # 翻訳不要で原声を送る人
         translated_mode_targets: dict[str, list[str]] = {}  # target_lang -> [user_ids]
 
         for p in participants.values():
-            # ★自分自身には音声を送らない（エコー防止）
             if p.user_id == speaker_id:
                 continue
-            if p.audio_mode == "original":
-                original_mode_users.append(p.user_id)
-            else:  # translated
+            # 翻訳モードのユーザーのみ判定（原声モードは既に配信済み）
+            if p.audio_mode == "translated":
                 target_lang = p.target_language or p.native_language
                 if target_lang != speaker_lang:
+                    # 翻訳が必要
                     if target_lang not in translated_mode_targets:
                         translated_mode_targets[target_lang] = []
                     translated_mode_targets[target_lang].append(p.user_id)
@@ -317,15 +383,15 @@ async def process_audio_dual_path(
                     # ★ 目標言語と実際の発話言語が一致 → 原声を送信
                     logger.info(
                         f"[Lang] ユーザー {p.user_id} の目標言語({target_lang}) == "
-                        f"発話言語({speaker_lang})、原声モードに切替"
+                        f"発話言語({speaker_lang})、原声配信"
                     )
                     original_mode_users.append(p.user_id)
 
-        # ★ パス1: 原声モード処理（原声即座配信）
+        # 翻訳モードで目標言語一致のユーザーに原声配信
         if original_mode_users:
             for user_id in original_mode_users:
                 await conn_mgr.send_bytes_to_user(room_id, user_id, audio_bytes)
-            logger.info(f"[Audio] 原声配信: {len(original_mode_users)}人")
+            logger.info(f"[Audio] 原声配信（言語一致）: {len(original_mode_users)}人")
 
         # 重複字幕チェック（同じ話者の連続した同一テキストを除外）
         global _last_subtitle_cache
@@ -350,9 +416,93 @@ async def process_audio_dual_path(
         # 字幕IDを生成（順序保証のため）
         subtitle_id = str(uuid.uuid4())
 
-        # ★ パス2: 翻訳音声モード処理（S2S Realtime API）
-        # 翻訳音声と翻訳字幕を同時取得
+        # 原文をキャッシュ（翻訳リクエスト時に使用）
+        await subtitle_cache.store_original(subtitle_id, original_text, speaker_lang)
+
+        # ========================================
+        # ★★★ 原声モード用字幕即時配信 ★★★
+        # 原声モードユーザーには原文字幕を即座に配信
+        # 翻訳モードユーザーには翻訳完了後に翻訳字幕を配信
+        # ========================================
+        original_subtitle_message = {
+            "type": "subtitle",
+            "id": subtitle_id,
+            "seq": seq,
+            "speaker_id": speaker_id,
+            "original_text": original_text,
+            "source_language": speaker_lang,
+        }
+
+        # ========================================
+        # ★★★ 字幕配信ロジック ★★★
+        # - 原声モードユーザー: 原文字幕を即時配信
+        # - 翻訳モードユーザー: 翻訳字幕を翻訳音声と同時配信
+        # - 話者自身: audio_modeに関係なく原文字幕（自分の発言確認用）
+        # ========================================
+
+        # 原声モードユーザーに原文字幕を即時配信
+        original_subtitle_tasks = []
+        for p in participants.values():
+            if not p.subtitle_enabled:
+                continue
+            # 原声モードユーザーのみ（話者自身は後で別処理）
+            if p.audio_mode == "original" and p.user_id != speaker_id:
+                original_subtitle_tasks.append(
+                    conn_mgr.send_to_user(room_id, p.user_id, original_subtitle_message)
+                )
+
+        if original_subtitle_tasks:
+            await asyncio.gather(*original_subtitle_tasks, return_exceptions=True)
+            logger.info(
+                f"[SUBTITLE] 原文字幕即時配信: {len(original_subtitle_tasks)}人, "
+                f"text='{original_text[:30]}...'"
+            )
+
+        # ========================================
+        # ★★★ 翻訳モード処理（音声+字幕同期配信）★★★
+        # S2S翻訳で音声と字幕を同時に取得・配信
+        # 話者自身が翻訳モードの場合も含む（字幕のみ配信）
+        # ========================================
         translations: dict[str, str] = {}
+
+        # 話者自身の設定を取得
+        speaker_participant = participants.get(speaker_id)
+        speaker_is_translated_mode = (
+            speaker_participant
+            and speaker_participant.audio_mode == "translated"
+        )
+
+        # 話者自身が翻訳モードの場合、翻訳字幕の対象に追加
+        if speaker_is_translated_mode and speaker_participant:
+            target_lang = (
+                speaker_participant.target_language
+                or speaker_participant.native_language
+            )
+            if target_lang and target_lang != speaker_lang:
+                if target_lang not in translated_mode_targets:
+                    translated_mode_targets[target_lang] = []
+                # 話者自身を翻訳字幕対象に追加（音声は送らない）
+                if speaker_id not in translated_mode_targets[target_lang]:
+                    translated_mode_targets[target_lang].append(speaker_id)
+                    logger.info(
+                        f"[SUBTITLE] 話者自身を翻訳字幕対象に追加: "
+                        f"{speaker_id} -> {target_lang}"
+                    )
+            else:
+                # 話者が原声モード、または目標言語が同じ場合は原文字幕
+                if speaker_participant.subtitle_enabled:
+                    await conn_mgr.send_to_user(
+                        room_id, speaker_id, original_subtitle_message
+                    )
+                    logger.info("[SUBTITLE] 話者自身に原文字幕配信（言語一致）")
+        elif speaker_participant and speaker_participant.subtitle_enabled:
+            # 話者が原声モードの場合は原文字幕
+            await conn_mgr.send_to_user(
+                room_id, speaker_id, original_subtitle_message
+            )
+            logger.info("[SUBTITLE] 話者自身に原文字幕配信（原声モード）")
+
+        # S2S翻訳タスク（翻訳音声+翻訳字幕を同時配信）
         s2s_tasks = []
         for target_lang, user_ids in translated_mode_targets.items():
             s2s_tasks.append(
@@ -363,41 +513,28 @@ async def process_audio_dual_path(
                     speaker_lang,
                     target_lang,
                     user_ids,
+                    subtitle_id,
+                    seq,
+                    speaker_id,
+                    participants,
                 )
             )
 
-        # S2S翻訳を並列実行
+        # S2S翻訳を並列実行（翻訳音声と翻訳字幕が同時配信される）
         if s2s_tasks:
             s2s_results = await asyncio.gather(*s2s_tasks, return_exceptions=True)
             for result in s2s_results:
                 if isinstance(result, dict) and result.get("translated_text"):
                     translations[result["target_lang"]] = result["translated_text"]
 
-        # ★改善: 字幕IDベースのオンデマンド翻訳★
-        # 1. 原文をRedisにキャッシュ（翻訳リクエスト時に使用）
-        # 2. 翻訳モード購読者の言語のみを非同期で翻訳
-        # 3. 字幕は即座に配信（翻訳を待たない）
+        # ========================================
+        # 原声モードで字幕翻訳が必要なユーザー向け
+        # （音声は原声、字幕は翻訳が必要な場合）
+        # ========================================
+        background_tasks: list[asyncio.Task] = []
 
-        # 原文をキャッシュ
-        await subtitle_cache.store_original(subtitle_id, original_text, speaker_lang)
-
-        # ★字幕翻訳が必要なユーザーの目標言語を収集
-        # 注意: 原声モードでも字幕翻訳は必要な場合がある
-        needed_langs: set[str] = set()
-        for p in participants.values():
-            if p.subtitle_enabled:  # 字幕が有効なら翻訳対象
-                target_lang = p.target_language or p.native_language
-                if target_lang != speaker_lang:
-                    needed_langs.add(target_lang)
-
-        # S2S翻訳結果をキャッシュに保存
-        for lang, trans_text in translations.items():
-            if trans_text:
-                await subtitle_cache.store_translation(subtitle_id, lang, trans_text)
-
-        # ★非同期で追加翻訳（字幕配信をブロックしない）
         async def translate_and_cache(tgt_lang: str) -> None:
-            """バックグラウンド翻訳タスク"""
+            """バックグラウンド翻訳タスク（字幕のみ）"""
             try:
                 if await subtitle_cache.mark_translation_pending(subtitle_id, tgt_lang):
                     translated = await translate_text_simple(
@@ -408,53 +545,21 @@ async def process_audio_dual_path(
                             subtitle_id, tgt_lang, translated
                         )
                         logger.info(f"[AsyncTranslate] {speaker_lang}->{tgt_lang} 完了")
-                    else:
-                        logger.warning(
-                            f"[AsyncTranslate] 翻訳結果が空: {speaker_lang}->{tgt_lang}"
-                        )
             except Exception as e:
                 logger.error(
                     f"[AsyncTranslate] 翻訳エラー {speaker_lang}->{tgt_lang}: {e}"
                 )
 
-        # S2Sで翻訳されていない言語を非同期で翻訳開始
-        for lang in needed_langs:
-            if lang not in translations:
-                asyncio.create_task(translate_and_cache(lang))
-
-        # ★最小遅延設計: 字幕は原文のみ即時配信★
-        # クライアントは subtitle_id で翻訳を取得
-        subtitle_message = {
-            "type": "subtitle",
-            "id": subtitle_id,
-            "seq": seq,
-            "speaker_id": speaker_id,
-            "original_text": original_text,
-            "source_language": speaker_lang,
-            # translations は含めない（クライアントがIDで取得）
-        }
-
-        # ★字幕は全参加者（話者自身を含む）にブロードキャスト★
-        # 話者自身も会議記録として自分の発言を見る必要がある
-        subtitle_tasks = []
-        logger.info(
-            f"[SUBTITLE] 配信準備: speaker={speaker_id}, "
-            f"participants={list(participants.keys())}, text='{original_text[:30]}...'"
-        )
+        # 原声モードで字幕翻訳が必要な言語を収集
         for p in participants.values():
-            if not p.subtitle_enabled:
-                logger.debug(f"[SUBTITLE] スキップ（字幕無効）: {p.user_id}")
-                continue
-            logger.info(
-                f"[SUBTITLE] 送信: to={p.user_id}, speaker={speaker_id}, "
-                f"is_self={p.user_id == speaker_id}"
-            )
-            subtitle_tasks.append(
-                conn_mgr.send_to_user(room_id, p.user_id, subtitle_message)
-            )
+            if p.subtitle_enabled and p.audio_mode == "original":
+                target_lang = p.target_language or p.native_language
+                if target_lang != speaker_lang and target_lang not in translations:
+                    task = asyncio.create_task(translate_and_cache(target_lang))
+                    background_tasks.append(task)
 
-        if subtitle_tasks:
-            await asyncio.gather(*subtitle_tasks, return_exceptions=True)
+        # タスク参照を維持（GC防止）
+        _ = background_tasks
 
         # DB保存（翻訳結果も含む）
         # ★会議セッションを取得または作成（最初の発言時にセッション開始）★

@@ -51,6 +51,7 @@ class GPTRealtimeProvider(AIProvider):
     async def _get_client(self):
         """OpenAI REST APIクライアント取得（フォールバック用）"""
         if self._client is None:
+            await asyncio.sleep(0)  # 非同期コンテキストを明示
             from openai import AsyncOpenAI
 
             base_url = settings.openai_base_url or "https://api.openai.com/v1"
@@ -144,15 +145,16 @@ class GPTRealtimeProvider(AIProvider):
                         logger.debug("[GPT-Realtime] セッション準備完了")
 
                 # セッション設定（transcriptionモード）
+                # 注意: session.type は存在しないパラメータ
+                lang_for_transcribe = language if language not in ("zh", "multi") else None
+                transcription_config: dict = {"model": settings.openai_transcribe_model}
+                if lang_for_transcribe:
+                    transcription_config["language"] = lang_for_transcribe
                 session_config = {
                     "type": "session.update",
                     "session": {
-                        "type": "transcription",
                         "input_audio_format": "pcm16",
-                        "input_audio_transcription": {
-                            "model": settings.openai_transcribe_model,
-                            "language": language if language != "zh" else "zh",
-                        },
+                        "input_audio_transcription": transcription_config,
                     },
                 }
                 await ws.send(json.dumps(session_config))
@@ -225,15 +227,153 @@ class GPTRealtimeProvider(AIProvider):
             audio_file = io.BytesIO(audio_data)
             audio_file.name = "audio.wav"
 
-            response = await client.audio.transcriptions.create(
-                model=settings.openai_transcribe_model,
-                file=audio_file,
-                language=language if language != "zh" else "zh",
-            )
+            # multi は自動言語検出（language パラメータを省略）
+            # zh はそのまま使用可能
+            transcribe_params: dict = {
+                "model": settings.openai_transcribe_model,
+                "file": audio_file,
+            }
+            if language and language != "multi":
+                transcribe_params["language"] = language
+
+            response = await client.audio.transcriptions.create(**transcribe_params)
             return response.text.strip() if response.text else ""
         except Exception as e:
             logger.error(f"[GPT-Realtime] フォールバックASRエラー: {e}")
             return f"[ASRエラー: {type(e).__name__}]"
+
+    async def transcribe_with_detection(
+        self,
+        audio_data: bytes,
+        hint_language: str = "multi",
+    ) -> tuple[str, str]:
+        """
+        音声認識 + 言語自動検出（Whisper verbose_json形式）
+
+        Whisper APIのverbose_json形式を使用して、認識テキストと
+        検出された言語を同時に取得する。
+
+        Args:
+            audio_data: WAV形式の音声データ
+            hint_language: ヒント言語コード（"multi"で自動検出）
+
+        Returns:
+            (認識テキスト, 検出された言語コード)
+        """
+        import io
+
+        min_size = 44 + 8000
+        if len(audio_data) < min_size:
+            logger.debug(f"[GPT-Realtime] 音声が短すぎる: {len(audio_data)} bytes")
+            return "", hint_language if hint_language != "multi" else ""
+
+        # 設定に基づいて言語検出モードを決定
+        detection_mode = settings.language_detection_mode
+
+        if detection_mode == "hint" and hint_language != "multi":
+            # hintモード: 言語検出せず、ヒント言語でASR実行
+            text = await self.transcribe_audio(audio_data, hint_language)
+            return text, hint_language
+
+        # autoモード: Whisper verbose_json で言語検出
+        try:
+            client = await self._get_client()
+            audio_file = io.BytesIO(audio_data)
+            audio_file.name = "audio.wav"
+
+            # ★厳格なASRプロンプト（幻覚防止）★
+            # モデルが勝手に話し始めないよう制約
+            asr_prompt = (
+                "Transcribe only clear human speech. "
+                "Output ONLY the exact words spoken. "
+                "If silent or unclear, return empty. "
+                "Do NOT add comments or explanations."
+            )
+
+            # verbose_json形式で言語情報を取得
+            # 注意: gpt-4o-transcribe は verbose_json をサポート
+            transcribe_params: dict = {
+                "model": settings.openai_transcribe_model,
+                "file": audio_file,
+                "response_format": "verbose_json",
+                "prompt": asr_prompt,
+            }
+
+            # ★★★ 重要修正: autoモードでは language を設定しない ★★★
+            # Whisperにlanguageを指定すると言語検出が行われないため、
+            # 自動検出モードでは意図的にlanguageパラメータを省略する。
+            # これにより、話者の実際の発話言語を検出できる。
+            # （hint_languageはフォールバック用として保持するが、APIには渡さない）
+            logger.debug(
+                f"[GPT-Realtime] 言語自動検出モード: hint={hint_language}, "
+                "language param省略（Whisperに検出させる）"
+            )
+
+            response = await client.audio.transcriptions.create(**transcribe_params)
+
+            # verbose_json形式のレスポンスから情報を抽出
+            text = ""
+            detected_lang = hint_language
+
+            if hasattr(response, "text"):
+                text = response.text.strip() if response.text else ""
+
+            if hasattr(response, "language"):
+                # Whisperが検出した言語コード（ISO 639-1）
+                detected_lang = response.language or hint_language
+                # 言語コードの正規化（例: "chinese" -> "zh"）
+                detected_lang = self._normalize_language_code(detected_lang)
+
+            # ノイズフィルタリング
+            if text and self._is_noise_transcription(text):
+                logger.debug(f"[GPT-Realtime] ノイズ除外: '{text}'")
+                return "", detected_lang
+
+            if text:
+                logger.info(
+                    f"[GPT-Realtime] ASR+言語検出: '{text[:30]}...' "
+                    f"(detected={detected_lang})"
+                )
+
+            return text, detected_lang
+
+        except Exception as e:
+            logger.error(f"[GPT-Realtime] 言語検出ASRエラー: {e}", exc_info=True)
+            # フォールバック: 通常のASR
+            text = await self._transcribe_fallback(audio_data, hint_language)
+            return text, hint_language if hint_language != "multi" else "ja"
+
+    def _normalize_language_code(self, lang: str) -> str:
+        """
+        言語コードを正規化（Whisperの出力形式 -> ISO 639-1）
+
+        Args:
+            lang: Whisperが返す言語コード（例: "japanese", "chinese", "ja"）
+
+        Returns:
+            正規化された言語コード（例: "ja", "zh", "en"）
+        """
+        # 小文字に統一
+        lang_lower = lang.lower().strip()
+
+        # Whisperが返す可能性のある形式をマッピング
+        lang_map = {
+            # フルネーム -> ISO 639-1
+            "japanese": "ja",
+            "english": "en",
+            "chinese": "zh",
+            "mandarin": "zh",
+            "vietnamese": "vi",
+            "korean": "ko",
+            # 既にISO 639-1形式の場合はそのまま
+            "ja": "ja",
+            "en": "en",
+            "zh": "zh",
+            "vi": "vi",
+            "ko": "ko",
+        }
+
+        return lang_map.get(lang_lower, lang_lower)
 
     async def translate_audio(
         self,
@@ -338,27 +478,34 @@ class GPTRealtimeProvider(AIProvider):
 
             # セッション設定（realtimeモード = S2S）
             # 重要: プロンプトで厳格に翻訳のみを指示し、幻覚を防止
+            # 注意: session.type は存在しないパラメータ
+            # ★★★ 強化された翻訳専用指示（AI乱話防止）★★★
             session_config = {
                 "type": "session.update",
                 "session": {
-                    "type": "realtime",
-                    "model": model,
+                    "modalities": ["text", "audio"],
                     "instructions": (
-                        f"You are a translation-only system for a multilingual meeting. "
-                        f"STRICT RULES:\n"
-                        f"1. ONLY translate speech from {src_name} to {tgt_name}.\n"
-                        f"2. Do NOT add any comments, greetings, or explanations.\n"
-                        f"3. Do NOT speak unless you hear clear speech in the audio.\n"
-                        f"4. If audio is silent, unclear, or contains only noise, "
-                        f"output NOTHING (stay completely silent).\n"
-                        f"5. Translate exactly what is said, nothing more, nothing less.\n"
-                        f"6. Do NOT generate speech on your own initiative."
+                        f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
+                        f"[CRITICAL WARNING] You are a TRANSLATION MACHINE, NOT a conversation partner.\n\n"
+                        f"ABSOLUTE RULES - VIOLATION IS FORBIDDEN:\n"
+                        f"1. TRANSLATE ONLY: Convert {src_name} speech to {tgt_name}. Nothing else.\n"
+                        f"2. NO CONVERSATION: NEVER respond, reply, acknowledge, or engage.\n"
+                        f"3. NO GREETINGS: NEVER say hello, goodbye, or any pleasantries.\n"
+                        f"4. NO COMMENTS: NEVER add explanations, notes, or your opinions.\n"
+                        f"5. NO ACKNOWLEDGMENT: NEVER say 'I understand', 'OK', 'Sure', etc.\n"
+                        f"6. SILENCE ON NOISE: If audio is unclear/silent, output NOTHING.\n"
+                        f"7. LITERAL TRANSLATION: Output ONLY the direct translation of spoken words.\n\n"
+                        f"FORBIDDEN PHRASES (never output these):\n"
+                        f"- 'はい、承知しました' / 'I understand' / '好的，我明白了'\n"
+                        f"- 'どうぞお話しください' / 'Please continue' / '请继续说'\n"
+                        f"- Any response that is not a translation of the input audio\n\n"
+                        f"Remember: You are a machine that converts {src_name} audio to {tgt_name}. "
+                        f"If someone says '今日は会議があります', output ONLY the translation like "
+                        f"'There is a meeting today' - NEVER add 'I understand' or any response."
                     ),
+                    "voice": settings.openai_tts_voice,
                     "input_audio_format": "pcm16",
                     "output_audio_format": "pcm16",
-                    "audio": {
-                        "output": {"voice": settings.openai_tts_voice},
-                    },
                     "input_audio_transcription": {
                         "model": settings.openai_transcribe_model,
                     },
@@ -504,14 +651,22 @@ class GPTRealtimeProvider(AIProvider):
             tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
             translate_model = settings.openai_translate_model
 
+            # ★★★ 強化された翻訳プロンプト（AI乱話防止）★★★
+            src_name = LANGUAGE_NAMES.get(source_language, source_language)
             chat_response = await client.chat.completions.create(
                 model=translate_model,
                 messages=[
                     {
                         "role": "system",
                         "content": (
-                            f"You are a translator. Translate to {tgt_name}. "
-                            "Output only the translated text."
+                            f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
+                            f"[CRITICAL] You are a TRANSLATION MACHINE.\n"
+                            f"Translate the following {src_name} text into {tgt_name}.\n\n"
+                            "ABSOLUTE RULES:\n"
+                            "- Output ONLY the direct translation\n"
+                            "- NEVER add comments or acknowledgments\n"
+                            "- NEVER say 'I understand', 'OK', etc.\n"
+                            "- NEVER engage in conversation"
                         ),
                     },
                     {"role": "user", "content": original_text},
