@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(./scripts/check.sh:*)",
+      "Bash(docker compose restart:*)",
+      "Bash(docker compose build:*)",
+      "Bash(docker compose:*)",
+      "WebSearch",
+      "Bash(python -c:*)",
+      "Bash(ruff format:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm run lint)",
+      "Bash(ruff check:*)"
+    ]
+  }
+}

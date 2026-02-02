@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose restart:*)",
+      "Bash(HOST_IP=172.19.197.130 docker compose up:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl:*)",
+      "Bash(HOST_IP=192.168.210.2 docker compose up:*)",
+      "Bash(tree:*)",
+      "Bash(head:*)",
+      "Bash(wc:*)",
+      "Bash(python:*)",
+      "Bash(./scripts/check.sh:*)",
+      "Bash(docker compose:*)",
+      "Bash(python3:*)",
+      "Bash(npm run build)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker-compose exec:*)"
+    ]
+  }
+}

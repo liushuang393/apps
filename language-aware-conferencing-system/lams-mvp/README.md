@@ -295,7 +295,7 @@ docker compose up -d --build
 cd backend
 docker compose exec backend alembic upgrade head
 # 局域网访问
-HOST_IP=192.168.210.31 ./start-with-keys.sh "docker build"
+HOST_IP=192.168.210.9 ./start-with-keys.sh "docker build"
 # プロバイダー選択: gemini または openai_realtime
 AI_PROVIDER=gemini HOST_IP=192.168.210.6 ./start-with-keys.sh "docker"
 # HOST_IP=192.168.210.6 docker compose up -d --build frontend backend
