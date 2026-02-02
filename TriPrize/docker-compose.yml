@@ -1,0 +1,94 @@
+# Docker Compose Configuration
+# 目的: ローカル開発環境のコンテナ定義
+# 注意点: APP_NAME 環境変数でコンテナ名を変更可能
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${APP_NAME:-triprize}-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-triprize}
+      POSTGRES_USER: ${DB_USER:-triprize}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-triprize_password}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-triprize}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ${APP_NAME:-triprize}-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # API Service
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: ${APP_NAME:-triprize}-api
+    ports:
+      - "${API_PORT:-3000}:3000"
+    environment:
+      # App Config
+      APP_NAME: ${APP_NAME:-TriPrize}
+      APP_DISPLAY_NAME: ${APP_DISPLAY_NAME:-TriPrize}
+      APP_DESCRIPTION: ${APP_DESCRIPTION:-Triangle lottery campaign sales platform}
+
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${DB_USER:-triprize}:${DB_PASSWORD:-triprize_password}@postgres:5432/${DB_NAME:-triprize}
+      REDIS_URL: redis://redis:6379
+
+      # Firebase (from .env file)
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
+
+      # Stripe (from .env file)
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+
+      # AWS S3 (from .env file)
+      AWS_REGION: ${AWS_REGION:-ap-northeast-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+
+      # Security
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./api/logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: ${APP_NAME:-triprize}-network

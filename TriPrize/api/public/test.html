@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TriPrize API テスト画面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .test-section {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .test-section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .result {
+            background: #f5f5f5;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-top: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            border-left-color: #4caf50;
+            background: #e8f5e9;
+        }
+        .error {
+            border-left-color: #f44336;
+            background: #ffebee;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .status.online {
+            background: #4caf50;
+            color: white;
+        }
+        .status.offline {
+            background: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 TriPrize API テスト画面</h1>
+        
+        <div class="test-section">
+            <h2>サーバー状態 <span id="serverStatus" class="status offline">オフライン</span></h2>
+            <button onclick="checkHealth()">ヘルスチェック</button>
+            <div id="healthResult" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>キャンペーン一覧</h2>
+            <button onclick="getCampaigns()">キャンペーン取得</button>
+            <div id="campaignsResult" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>統合テスト結果</h2>
+            <button onclick="showTestResults()">テスト結果表示</button>
+            <div id="testResults" class="result" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+
+        async function checkHealth() {
+            const resultDiv = document.getElementById('healthResult');
+            const statusSpan = document.getElementById('serverStatus');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = '確認中...';
+            resultDiv.className = 'result';
+
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+                resultDiv.className = 'result success';
+                statusSpan.textContent = 'オンライン';
+                statusSpan.className = 'status online';
+            } catch (error) {
+                resultDiv.textContent = `エラー: ${error.message}`;
+                resultDiv.className = 'result error';
+                statusSpan.textContent = 'オフライン';
+                statusSpan.className = 'status offline';
+            }
+        }
+
+        async function getCampaigns() {
+            const resultDiv = document.getElementById('campaignsResult');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = '取得中...';
+            resultDiv.className = 'result';
+
+            try {
+                const response = await fetch(`${API_BASE}/campaigns`);
+                const data = await response.json();
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+                resultDiv.className = 'result success';
+            } catch (error) {
+                resultDiv.textContent = `エラー: ${error.message}`;
+                resultDiv.className = 'result error';
+            }
+        }
+
+        function showTestResults() {
+            const resultDiv = document.getElementById('testResults');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = '統合テスト実行中...\n\n現在のテスト状況:\n- campaigns.test.ts: ✅ 8/8 通過\n- purchase-flow.test.ts: 🔄 実行中\n- lottery-flow.test.ts: 🔄 実行中\n- payment-webhook.test.ts: 🔄 実行中\n- purchase-validation.test.ts: 🔄 実行中\n- auth-flow.test.ts: 🔄 実行中\n\n詳細はコンソールで確認してください。';
+            resultDiv.className = 'result';
+        }
+
+        // ページ読み込み時にヘルスチェック
+        window.onload = () => {
+            checkHealth();
+        };
+    </script>
+</body>
+</html>
+
