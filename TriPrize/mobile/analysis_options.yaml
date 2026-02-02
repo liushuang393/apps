@@ -1,0 +1,83 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    missing_required_param: error
+    missing_return: error
+    todo: ignore
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "build/**"
+  strong-mode:
+    implicit-casts: false
+    implicit-dynamic: false
+
+linter:
+  rules:
+    # Error rules
+    - avoid_relative_lib_imports
+    - avoid_slow_async_io
+    - cancel_subscriptions
+    - close_sinks
+    - comment_references
+    - control_flow_in_finally
+    - empty_statements
+    - hash_and_equals
+    - invariant_booleans
+    - literal_only_boolean_expressions
+    - no_adjacent_strings_in_list
+    - no_duplicate_case_values
+    - test_types_in_equals
+    - throw_in_finally
+    - unnecessary_statements
+    - unrelated_type_equality_checks
+    - valid_regexps
+
+    # Style rules
+    - always_declare_return_types
+    - always_put_required_named_parameters_first
+    - annotate_overrides
+    - avoid_empty_else
+    - avoid_init_to_null
+    - avoid_null_checks_in_equality_operators
+    - avoid_return_types_on_setters
+    - avoid_types_as_parameter_names
+    - camel_case_extensions
+    - camel_case_types
+    - constant_identifier_names
+    - curly_braces_in_flow_control_structures
+    - empty_catches
+    - empty_constructor_bodies
+    - library_names
+    - library_prefixes
+    - no_leading_underscores_for_library_prefixes
+    - no_leading_underscores_for_local_identifiers
+    - non_constant_identifier_names
+    - null_closures
+    - prefer_adjacent_string_concatenation
+    - prefer_collection_literals
+    - prefer_conditional_assignment
+    - prefer_contains
+    - prefer_equal_for_default_values
+    - prefer_final_fields
+    - prefer_for_elements_to_map_fromIterable
+    - prefer_function_declarations_over_variables
+    - prefer_if_null_operators
+    - prefer_initializing_formals
+    - prefer_inlined_adds
+    - prefer_is_empty
+    - prefer_is_not_empty
+    - prefer_iterable_whereType
+    - prefer_single_quotes
+    - prefer_spread_collections
+    - recursive_getters
+    - slash_for_doc_comments
+    - type_init_formals
+    - unawaited_futures
+    - unnecessary_const
+    - unnecessary_new
+    - unnecessary_null_in_if_null_operators
+    - unnecessary_this
+    - use_function_type_syntax_for_parameters
+    - use_rethrow_when_possible

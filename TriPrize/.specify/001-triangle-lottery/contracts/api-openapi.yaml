@@ -1,0 +1,1435 @@
+openapi: 3.0.3
+info:
+  title: Triangle Lottery Sales API
+  description: |
+    REST API for triangle-shaped lottery campaign platform.
+
+    ## Authentication
+    All authenticated endpoints require Firebase ID Token in Authorization header:
+    ```
+    Authorization: Bearer <firebase_id_token>
+    ```
+
+    ## Idempotency
+    POST/PUT/DELETE requests support idempotency via `Idempotency-Key` header:
+    ```
+    Idempotency-Key: <client-generated-uuid>
+    ```
+
+    ## Error Handling
+    All error responses follow this format:
+    ```json
+    {
+      "error": {
+        "code": "ERROR_CODE",
+        "message": "Human-readable error message",
+        "details": {}
+      }
+    }
+    ```
+  version: 1.0.0
+  contact:
+    name: TriPrize API Support
+    email: support@triprize.example.com
+
+servers:
+  - url: https://api.triprize.example.com/v1
+    description: Production server
+  - url: https://api-staging.triprize.example.com/v1
+    description: Staging server
+  - url: http://localhost:3000/v1
+    description: Local development
+
+tags:
+  - name: Auth
+    description: User authentication and registration
+  - name: Campaigns
+    description: Campaign management (create, read, update, delete)
+  - name: Purchases
+    description: Position purchase flow
+  - name: Payments
+    description: Payment processing and status
+  - name: Lottery
+    description: Lottery draw execution and results
+  - name: Users
+    description: User profile and purchase history
+  - name: Notifications
+    description: Push notification management
+  - name: Admin
+    description: Administrative operations
+  - name: Webhooks
+    description: External webhook handlers (Stripe)
+
+security:
+  - FirebaseAuth: []
+
+paths:
+  # Auth endpoints
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      description: Create a new user account with Firebase Authentication (FR-033, FR-034)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, displayName]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: SecurePassword123!
+                displayName:
+                  type: string
+                  example: John Doe
+                phoneNumber:
+                  type: string
+                  example: "+81 90-1234-5678"
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  idToken:
+                    type: string
+                    description: Firebase ID token
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: User login
+      description: Authenticate user with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  idToken:
+                    type: string
+                    description: Firebase ID token
+                  refreshToken:
+                    type: string
+                    description: Firebase refresh token
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Campaign endpoints
+  /campaigns:
+    get:
+      tags: [Campaigns]
+      summary: List campaigns
+      description: Get paginated list of campaigns (FR-010)
+      security: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, published, active, sold_out, drawn, completed]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at, start_date, end_date, positions_sold]
+            default: start_date
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: List of campaigns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Campaign'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags: [Campaigns, Admin]
+      summary: Create campaign
+      description: Create a new lottery campaign (FR-001 to FR-009)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignCreate'
+      responses:
+        '201':
+          description: Campaign created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /campaigns/{campaignId}:
+    get:
+      tags: [Campaigns]
+      summary: Get campaign details
+      description: Get detailed campaign information (FR-011)
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: Campaign details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Campaigns, Admin]
+      summary: Update campaign
+      description: Update campaign details
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignUpdate'
+      responses:
+        '200':
+          description: Campaign updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Campaigns, Admin]
+      summary: Delete campaign
+      description: Delete a campaign (only if status is 'draft')
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '204':
+          description: Campaign deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /campaigns/{campaignId}/positions:
+    get:
+      tags: [Campaigns]
+      summary: Get campaign positions
+      description: Get all positions for a campaign with availability status
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - name: layerNumber
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [available, reserved, sold]
+      responses:
+        '200':
+          description: List of positions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  positions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Position'
+                  summary:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      available:
+                        type: integer
+                      sold:
+                        type: integer
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Purchase endpoints
+  /purchases:
+    post:
+      tags: [Purchases]
+      summary: Purchase position
+      description: Initiate position purchase with payment (FR-012 to FR-017)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreate'
+      responses:
+        '201':
+          description: Purchase created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Position not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: POSITION_UNAVAILABLE
+                  message: The selected position is no longer available
+                  details:
+                    campaignId: "uuid"
+                    layerNumber: 1
+
+    get:
+      tags: [Purchases]
+      summary: Get user purchases
+      description: Get all purchases for the authenticated user
+      parameters:
+        - name: campaignId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, reserved, completed, failed, cancelled]
+      responses:
+        '200':
+          description: List of purchases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  purchases:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Purchase'
+
+  /purchases/{purchaseId}:
+    get:
+      tags: [Purchases]
+      summary: Get purchase details
+      description: Get detailed purchase information
+      parameters:
+        - $ref: '#/components/parameters/PurchaseId'
+      responses:
+        '200':
+          description: Purchase details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseDetail'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Purchases]
+      summary: Cancel purchase
+      description: Cancel pending purchase (only before payment completion)
+      parameters:
+        - $ref: '#/components/parameters/PurchaseId'
+      responses:
+        '204':
+          description: Purchase cancelled successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Payment endpoints
+  /payments/intent:
+    post:
+      tags: [Payments]
+      summary: Create payment intent
+      description: Create Stripe PaymentIntent for purchase (FR-018 to FR-021)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purchaseId, paymentMethod]
+              properties:
+                purchaseId:
+                  type: string
+                  format: uuid
+                paymentMethod:
+                  type: string
+                  enum: [credit_card, debit_card, konbini]
+                paymentMethodId:
+                  type: string
+                  description: Stripe PaymentMethod ID (for card payments)
+                konbiniStore:
+                  type: string
+                  enum: [familymart, lawson, ministop, seicomart]
+                  description: Required for konbini payments
+      responses:
+        '201':
+          description: PaymentIntent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /payments/{paymentIntentId}:
+    get:
+      tags: [Payments]
+      summary: Get payment status
+      description: Get payment intent status (FR-024)
+      parameters:
+        - name: paymentIntentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Lottery endpoints
+  /lottery/{campaignId}/draw:
+    post:
+      tags: [Lottery, Admin]
+      summary: Execute lottery draw
+      description: Execute lottery draw for campaign (FR-027 to FR-029)
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Lottery executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotteryResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Lottery already executed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /lottery/{campaignId}/results:
+    get:
+      tags: [Lottery]
+      summary: Get lottery results
+      description: Get lottery results for campaign (FR-031, FR-032)
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: Lottery results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotteryResults'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '425':
+          description: Lottery not yet executed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # User endpoints
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      description: Get authenticated user profile (FR-035, FR-036)
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags: [Users]
+      summary: Update user profile
+      description: Update authenticated user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                phoneNumber:
+                  type: string
+                photoUrl:
+                  type: string
+                  format: uri
+                notificationEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/me/campaigns:
+    get:
+      tags: [Users]
+      summary: Get user's campaigns
+      description: Get campaigns where user has purchased positions (FR-026)
+      responses:
+        '200':
+          description: User's campaigns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        campaign:
+                          $ref: '#/components/schemas/Campaign'
+                        purchaseCount:
+                          type: integer
+                        totalSpent:
+                          type: integer
+                        won:
+                          type: boolean
+
+  /users/me/purchases:
+    get:
+      tags: [Users]
+      summary: Get user's purchase history
+      description: Get all purchases for authenticated user
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, completed, failed, cancelled]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Purchase history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  purchases:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchaseDetail'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  # Notification endpoints
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: Get user notifications
+      description: Get notifications for authenticated user (FR-039)
+      parameters:
+        - name: read
+          in: query
+          schema:
+            type: boolean
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [purchase_confirmed, payment_pending, lottery_drawn, prize_won, campaign_ending, admin_message]
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+
+  /notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark notification as read
+      description: Mark a notification as read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Notification marked as read
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notifications/register-token:
+    post:
+      tags: [Notifications]
+      summary: Register FCM token
+      description: Register device FCM token for push notifications (FR-037)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fcmToken]
+              properties:
+                fcmToken:
+                  type: string
+                  description: Firebase Cloud Messaging token
+                platform:
+                  type: string
+                  enum: [ios, android]
+      responses:
+        '204':
+          description: Token registered successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Admin endpoints
+  /admin/campaigns:
+    get:
+      tags: [Admin]
+      summary: Get all campaigns (admin)
+      description: Get all campaigns with admin details
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: createdBy
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of campaigns with admin details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CampaignAdmin'
+
+  /admin/campaigns/{campaignId}/publish:
+    post:
+      tags: [Admin]
+      summary: Publish campaign
+      description: Change campaign status from draft to published
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: Campaign published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: Get all users (admin)
+      description: Get all users with admin details
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [user, admin]
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by email or display name
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserAdmin'
+
+  # Webhook endpoints
+  /webhooks/stripe:
+    post:
+      tags: [Webhooks]
+      summary: Stripe webhook handler
+      description: Handle Stripe webhook events (FR-022)
+      security: []
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook processed successfully
+        '400':
+          description: Invalid signature or payload
+        '500':
+          description: Processing error
+
+components:
+  securitySchemes:
+    FirebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase ID Token
+
+  parameters:
+    CampaignId:
+      name: campaignId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    PurchaseId:
+      name: purchaseId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Client-generated UUID for idempotency
+
+  schemas:
+    Campaign:
+      type: object
+      properties:
+        campaignId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        baseLength:
+          type: integer
+          minimum: 3
+          maximum: 50
+        positionsTotal:
+          type: integer
+        positionsSold:
+          type: integer
+        totalRevenue:
+          type: integer
+        profitMarginPercent:
+          type: number
+          format: float
+        status:
+          type: string
+          enum: [draft, published, active, sold_out, drawn, completed, cancelled]
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        soldOutAt:
+          type: string
+          format: date-time
+        drawnAt:
+          type: string
+          format: date-time
+
+    CampaignDetail:
+      allOf:
+        - $ref: '#/components/schemas/Campaign'
+        - type: object
+          properties:
+            layers:
+              type: array
+              items:
+                $ref: '#/components/schemas/Layer'
+            prizes:
+              type: array
+              items:
+                $ref: '#/components/schemas/Prize'
+            purchaseLimit:
+              type: integer
+            layerPrices:
+              type: object
+              additionalProperties:
+                type: integer
+
+    CampaignCreate:
+      type: object
+      required: [name, description, imageUrl, baseLength, layerPrices, prizes, startDate, endDate]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        baseLength:
+          type: integer
+          minimum: 3
+          maximum: 50
+        layerPrices:
+          type: object
+          description: "Price for each layer {1: 1000, 2: 1500, ...}"
+          additionalProperties:
+            type: integer
+            minimum: 100
+        prizes:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [rank, name, description, value, quantity]
+            properties:
+              rank:
+                type: integer
+                minimum: 1
+              name:
+                type: string
+              description:
+                type: string
+              imageUrl:
+                type: string
+                format: uri
+              value:
+                type: integer
+                minimum: 0
+              quantity:
+                type: integer
+                minimum: 1
+        purchaseLimit:
+          type: integer
+          minimum: 1
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+
+    CampaignUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        purchaseLimit:
+          type: integer
+
+    CampaignAdmin:
+      allOf:
+        - $ref: '#/components/schemas/CampaignDetail'
+        - type: object
+          properties:
+            createdBy:
+              type: string
+              format: uuid
+            updatedAt:
+              type: string
+              format: date-time
+
+    Layer:
+      type: object
+      properties:
+        layerId:
+          type: string
+          format: uuid
+        layerNumber:
+          type: integer
+        positionsCount:
+          type: integer
+        price:
+          type: integer
+        positionsSold:
+          type: integer
+        positionsAvailable:
+          type: integer
+
+    Position:
+      type: object
+      properties:
+        positionId:
+          type: string
+          format: uuid
+        layerNumber:
+          type: integer
+        rowNumber:
+          type: integer
+        colNumber:
+          type: integer
+        price:
+          type: integer
+        status:
+          type: string
+          enum: [available, reserved, sold, expired]
+        userId:
+          type: string
+          format: uuid
+
+    Prize:
+      type: object
+      properties:
+        prizeId:
+          type: string
+          format: uuid
+        rank:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        value:
+          type: integer
+        quantity:
+          type: integer
+        winningLayerNumber:
+          type: integer
+        winnerUserId:
+          type: string
+          format: uuid
+        awarded:
+          type: boolean
+
+    Purchase:
+      type: object
+      properties:
+        purchaseId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        campaignId:
+          type: string
+          format: uuid
+        positionId:
+          type: string
+          format: uuid
+        price:
+          type: integer
+        purchaseMethod:
+          type: string
+          enum: [credit_card, debit_card, konbini]
+        status:
+          type: string
+          enum: [pending, reserved, completed, failed, cancelled]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    PurchaseDetail:
+      allOf:
+        - $ref: '#/components/schemas/Purchase'
+        - type: object
+          properties:
+            campaign:
+              $ref: '#/components/schemas/Campaign'
+            position:
+              $ref: '#/components/schemas/Position'
+            paymentTransaction:
+              $ref: '#/components/schemas/PaymentTransaction'
+
+    PurchaseCreate:
+      type: object
+      required: [campaignId, layerNumber]
+      properties:
+        campaignId:
+          type: string
+          format: uuid
+        layerNumber:
+          type: integer
+          minimum: 1
+
+    PurchaseResponse:
+      type: object
+      properties:
+        purchase:
+          $ref: '#/components/schemas/Purchase'
+        position:
+          $ref: '#/components/schemas/Position'
+        nextStep:
+          type: string
+          enum: [payment_required, completed]
+          description: Next action for client
+
+    PaymentIntentResponse:
+      type: object
+      properties:
+        paymentIntentId:
+          type: string
+        clientSecret:
+          type: string
+          description: Stripe client secret for card payments
+        konbiniDetails:
+          type: object
+          description: Konbini payment details
+          properties:
+            storeName:
+              type: string
+            confirmationNumber:
+              type: string
+            paymentDeadline:
+              type: string
+              format: date-time
+            receiptUrl:
+              type: string
+              format: uri
+        status:
+          type: string
+          enum: [requires_payment_method, requires_confirmation, requires_action, processing, succeeded]
+
+    PaymentStatus:
+      type: object
+      properties:
+        paymentIntentId:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, succeeded, failed, canceled]
+        amount:
+          type: integer
+        purchaseId:
+          type: string
+          format: uuid
+
+    PaymentTransaction:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        stripePaymentIntentId:
+          type: string
+        amount:
+          type: integer
+        paymentMethodType:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        succeededAt:
+          type: string
+          format: date-time
+
+    LotteryResult:
+      type: object
+      properties:
+        campaignId:
+          type: string
+          format: uuid
+        drawnAt:
+          type: string
+          format: date-time
+        prizes:
+          type: array
+          items:
+            type: object
+            properties:
+              prizeId:
+                type: string
+                format: uuid
+              rank:
+                type: integer
+              name:
+                type: string
+              winningPosition:
+                $ref: '#/components/schemas/Position'
+              winnerUserId:
+                type: string
+                format: uuid
+
+    LotteryResults:
+      type: object
+      properties:
+        campaignId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [not_drawn, drawn]
+        drawnAt:
+          type: string
+          format: date-time
+        winners:
+          type: array
+          items:
+            type: object
+            properties:
+              prize:
+                $ref: '#/components/schemas/Prize'
+              position:
+                $ref: '#/components/schemas/Position'
+              user:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                    format: uuid
+                  displayName:
+                    type: string
+
+    User:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        photoUrl:
+          type: string
+          format: uri
+        createdAt:
+          type: string
+          format: date-time
+
+    UserProfile:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            phoneNumber:
+              type: string
+            notificationEnabled:
+              type: boolean
+            totalPurchases:
+              type: integer
+            totalSpent:
+              type: integer
+            prizesWon:
+              type: integer
+            lastLoginAt:
+              type: string
+              format: date-time
+
+    UserAdmin:
+      allOf:
+        - $ref: '#/components/schemas/UserProfile'
+        - type: object
+          properties:
+            role:
+              type: string
+              enum: [user, admin]
+            fcmToken:
+              type: string
+
+    Notification:
+      type: object
+      properties:
+        notificationId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+        notificationType:
+          type: string
+          enum: [purchase_confirmed, payment_pending, lottery_drawn, prize_won, campaign_ending, admin_message]
+        campaignId:
+          type: string
+          format: uuid
+        purchaseId:
+          type: string
+          format: uuid
+        data:
+          type: object
+          description: Additional data for deep linking
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Invalid request parameters
+              details:
+                field: email
+                issue: Invalid email format
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Authentication required
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: Insufficient permissions
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: Resource not found
+
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: DUPLICATE_REQUEST
+              message: Duplicate request detected
+              details:
+                idempotencyKey: "uuid"

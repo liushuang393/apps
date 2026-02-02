@@ -1,0 +1,142 @@
+# =====================================================
+# 安全情報 / Sensitive Information (絶対にコミット禁止)
+# =====================================================
+
+# Environment files（環境変数ファイル）
+.env
+.env.*
+!.env.example
+*.env
+!example.env
+
+# Firebase credentials（Firebase認証情報）
+**/google-services.json
+**/GoogleService-Info.plist
+**/firebase_app_id_file.json
+serviceAccount*.json
+firebase-adminsdk*.json
+*-firebase-adminsdk*.json
+*firebase*adminsdk*.json
+
+# API Keys and Secrets（APIキーとシークレット）
+*secret*
+*credential*
+*.secrets
+
+# =====================================================
+# Node.js / API
+# =====================================================
+node_modules/
+api/node_modules/
+api/dist/
+api/coverage/
+api/logs/
+api/.eslintcache
+api/npm-debug.log*
+api/yarn-debug.log*
+api/yarn-error.log*
+api/test-results*.json
+
+# =====================================================
+# Flutter / Mobile
+# =====================================================
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/.pub-cache/
+mobile/.pub/
+mobile/build/
+mobile/coverage/
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/ios/Flutter/Flutter.framework
+mobile/ios/Flutter/Flutter.podspec
+mobile/ios/Runner.xcworkspace/
+mobile/android/.gradle/
+mobile/android/captures/
+mobile/android/gradle/
+mobile/android/gradlew
+mobile/android/gradlew.bat
+mobile/android/local.properties
+mobile/android/.idea/
+mobile/windows/flutter/ephemeral/
+
+# =====================================================
+# Build & Dist（ビルド成果物）
+# =====================================================
+dist/
+build/
+*.js.map
+*.d.ts.map
+
+# =====================================================
+# IDE & Editor
+# =====================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+NUL
+
+# =====================================================
+# Database
+# =====================================================
+*.sqlite
+*.sqlite3
+*.db
+
+# =====================================================
+# Logs（ログファイル）
+# =====================================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log
+
+# =====================================================
+# Testing（テスト関連）
+# =====================================================
+coverage/
+.nyc_output/
+test-reports/
+test-results/
+*.png
+!assets/*.png
+a11y_tree*.json
+
+# =====================================================
+# Temporary files（一時ファイル）
+# =====================================================
+tmp/
+temp/
+*.tmp
+
+# =====================================================
+# Firebase
+# =====================================================
+.firebase/
+
+# =====================================================
+# AWS
+# =====================================================
+.aws/
+
+# =====================================================
+# Certificates（証明書）
+# =====================================================
+*.pem
+*.key
+*.crt
+*.p12
+
+# =====================================================
+# Backup files（バックアップ）
+# =====================================================
+*.bak
+*.backup
