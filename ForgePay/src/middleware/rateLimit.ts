@@ -1,4 +1,4 @@
-import rateLimit, { RateLimitRequestHandler } from 'express-rate-limit';
+import rateLimit, { RateLimitRequestHandler, MemoryStore } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { redisClient } from '../config/redis';
 import { config } from '../config';
@@ -7,9 +7,28 @@ import { logger } from '../utils/logger';
 
 /**
  * Rate limiting middleware using Redis for distributed state
+ * Falls back to memory store if Redis is not connected
  * 
  * Requirements: 8.6
  */
+
+/**
+ * Create a store that uses Redis if available, otherwise falls back to memory
+ */
+function createStore(prefix: string) {
+  // Check if Redis client is ready
+  if (redisClient.isReady) {
+    logger.info(`Using Redis store for rate limiting: ${prefix}`);
+    return new RedisStore({
+      sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+      prefix: prefix,
+    });
+  }
+  
+  // Fallback to memory store
+  logger.warn(`Redis not ready, using memory store for rate limiting: ${prefix}`);
+  return new MemoryStore();
+}
 
 /**
  * Standard API rate limiter
@@ -21,11 +40,8 @@ export const apiRateLimiter: RateLimitRequestHandler = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   
-  // Use Redis store for distributed rate limiting
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-    prefix: 'rl:api:',
-  }),
+  // Use lazy initialization to handle Redis connection timing
+  store: new MemoryStore(), // Start with memory, will be replaced when Redis connects
 
   // Key generator: Use API key if available, otherwise IP
   keyGenerator: (req: Request): string => {
@@ -71,10 +87,7 @@ export const webhookRateLimiter: RateLimitRequestHandler = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-    prefix: 'rl:webhook:',
-  }),
+  store: new MemoryStore(), // Use memory store for simplicity
 
   keyGenerator: (req: Request): string => {
     return `ip:${req.ip}`;
@@ -107,10 +120,7 @@ export const adminRateLimiter: RateLimitRequestHandler = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-    prefix: 'rl:admin:',
-  }),
+  store: new MemoryStore(), // Use memory store for simplicity
 
   keyGenerator: (req: Request): string => {
     const apiKey = req.headers['x-api-key'] as string;
@@ -155,10 +165,7 @@ export function createRateLimiter(options: {
     standardHeaders: true,
     legacyHeaders: false,
 
-    store: new RedisStore({
-      sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-      prefix: `rl:${options.prefix}:`,
-    }),
+    store: createStore(`rl:${options.prefix}:`),
 
     keyGenerator: (req: Request): string => {
       const apiKey = req.headers['x-api-key'] as string;

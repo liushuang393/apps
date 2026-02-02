@@ -80,6 +80,198 @@ Key variables:
    - `charge.dispute.created`
    - `charge.dispute.closed`
 
+### ローカル開発環境セットアップ（完全ガイド）
+
+ローカル環境でStripe Webhookをテストするための完全な手順です。
+
+#### 前提条件
+
+- Node.js 18+
+- Docker Desktop（PostgreSQL/Redis用）
+- Stripeアカウント（テストモード）
+
+#### Step 1: 依存関係のインストール
+
+```bash
+# プロジェクトのルートで実行
+npm install
+```
+
+#### Step 2: Docker でデータベース起動
+
+```bash
+# PostgreSQL と Redis を起動
+docker-compose up -d postgres redis
+
+# 起動確認
+docker ps
+```
+
+#### Step 3: データベースマイグレーション
+
+```bash
+npm run migrate:up
+```
+
+#### Step 4: Stripe CLI のインストール
+
+```bash
+# Windows (Winget - 推奨)
+winget install Stripe.StripeCLI
+
+# Windows (Scoop)
+scoop install stripe
+
+# Windows (手動インストール)
+# https://github.com/stripe/stripe-cli/releases からダウンロード
+
+# Mac (Homebrew)
+brew install stripe/stripe-cli/stripe
+
+# Linux (apt)
+curl -s https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public | gpg --dearmor | sudo tee /usr/share/keyrings/stripe.gpg
+echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" | sudo tee /etc/apt/sources.list.d/stripe.list
+sudo apt update && sudo apt install stripe
+
+# インストール確認
+stripe --version
+```
+
+#### Step 5: Stripe CLI にログイン
+
+```bash
+stripe login
+```
+
+ブラウザが自動で開き、Stripeアカウントへの認証を求められます。
+「Allow access」をクリックして認証を完了してください。
+
+認証成功時の表示:
+```
+> Your pairing code is: enjoy-adore-glad-poise
+> This pairing code verifies your authentication with Stripe.
+> Press Enter to open the browser or visit https://dashboard.stripe.com/stripecli/confirm_auth?t=...
+> Done! The Stripe CLI is configured for [your-account-name]
+```
+
+#### Step 6: Webhook シークレットキーの取得
+
+**新しいターミナルを開いて**以下を実行（サーバー起動中に実行）:
+
+```bash
+stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe
+```
+
+出力例:
+```
+> Ready! You are using Stripe API Version [2023-10-16].
+> Your webhook signing secret is whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+**重要**: `whsec_` で始まるシークレットキーをコピーしてください。
+
+#### Step 7: .env ファイルの設定
+
+`.env.example` をコピーして `.env` を作成:
+
+```bash
+cp .env.example .env
+```
+
+`.env` ファイルを編集して以下を設定:
+
+```env
+# Stripe テストキー（Stripe Dashboardから取得）
+STRIPE_TEST_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxx
+STRIPE_TEST_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxx
+
+# Webhook シークレット（stripe listen コマンドから取得）
+STRIPE_TEST_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+#### Step 8: サーバー起動
+
+```bash
+npm run dev
+```
+
+正常起動時のログ:
+```
+{"level":"info","message":"Database connection successful"}
+{"level":"info","message":"Redis connection successful"}
+{"level":"info","message":"ForgePayBridge server started","port":3000}
+```
+
+#### Step 9: 動作確認
+
+```bash
+# ヘルスチェック
+curl http://localhost:3000/health
+
+# API ドキュメント
+# ブラウザで http://localhost:3000/api-docs を開く
+```
+
+#### Step 10: Webhook テスト
+
+stripe listen を実行中の状態で、別のターミナルからテストイベントを送信:
+
+```bash
+# チェックアウト完了イベント
+stripe trigger checkout.session.completed
+
+# 支払い成功イベント
+stripe trigger payment_intent.succeeded
+
+# サブスクリプション更新イベント
+stripe trigger invoice.paid
+
+# 返金イベント
+stripe trigger charge.refunded
+
+# 全イベント一覧
+stripe trigger --help
+```
+
+#### テストカード番号
+
+| カード番号 | 結果 | 用途 |
+|-----------|------|------|
+| `4242 4242 4242 4242` | 成功 | 通常の支払いテスト |
+| `4000 0025 0000 3155` | 3Dセキュア認証必要 | 認証フローテスト |
+| `4000 0000 0000 0002` | 拒否 | エラーハンドリングテスト |
+| `4000 0000 0000 9995` | 残高不足 | 残高エラーテスト |
+| `4000 0000 0000 3220` | 3Dセキュア2必須 | SCA対応テスト |
+
+**共通設定**:
+- 有効期限: 任意の将来日付（例: 12/34）
+- CVC: 任意の3桁（例: 123）
+- 郵便番号: 任意（例: 12345）
+
+#### トラブルシューティング
+
+**Stripe CLI が見つからない場合**:
+```bash
+# パス再読み込み（Windows PowerShell）
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+# または新しいターミナルを開く
+```
+
+**Webhook が届かない場合**:
+1. `stripe listen` が実行中か確認
+2. サーバーがポート3000で起動しているか確認
+3. `.env` の `STRIPE_TEST_WEBHOOK_SECRET` が正しいか確認
+
+**データベース接続エラー**:
+```bash
+# コンテナ状態確認
+docker ps
+
+# コンテナ再起動
+docker-compose restart postgres redis
+```
+
 ## Development
 
 ### Available Scripts

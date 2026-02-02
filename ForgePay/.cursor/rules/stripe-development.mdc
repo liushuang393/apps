@@ -1,0 +1,94 @@
+---
+description: Stripe開発環境セットアップガイド - ローカルでのWebhookテスト手順
+globs: ["**/*.ts", "**/*.env*", "**/stripe*"]
+alwaysApply: false
+---
+
+# Stripe 開発環境セットアップ手順
+
+Stripeを使用したプロジェクトでローカル開発環境をセットアップする際の標準手順です。
+
+## 前提条件
+
+- Node.js 18+
+- Docker Desktop
+- Stripeアカウント（テストモード）
+
+## セットアップ手順
+
+### 1. Stripe CLI インストール
+
+```bash
+# Windows (Winget - 推奨)
+winget install Stripe.StripeCLI --accept-package-agreements --accept-source-agreements
+
+# Windows (Scoop)
+scoop install stripe
+
+# Mac (Homebrew)
+brew install stripe/stripe-cli/stripe
+
+# インストール確認
+stripe --version
+```
+
+### 2. Stripe CLI ログイン
+
+```bash
+stripe login
+```
+
+ブラウザが開き認証を完了。成功メッセージを確認。
+
+### 3. Webhook リスナー起動
+
+```bash
+stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe
+```
+
+出力される `whsec_...` キーをコピー。
+
+### 4. 環境変数設定
+
+`.env` ファイルに以下を設定:
+
+```env
+STRIPE_TEST_SECRET_KEY=sk_test_...
+STRIPE_TEST_PUBLISHABLE_KEY=pk_test_...
+STRIPE_TEST_WEBHOOK_SECRET=whsec_...  # stripe listen から取得
+```
+
+### 5. テストイベント送信
+
+```bash
+stripe trigger checkout.session.completed
+stripe trigger payment_intent.succeeded
+stripe trigger invoice.paid
+stripe trigger charge.refunded
+```
+
+## テストカード
+
+| カード番号 | 結果 |
+|-----------|------|
+| 4242 4242 4242 4242 | 成功 |
+| 4000 0025 0000 3155 | 3Dセキュア |
+| 4000 0000 0000 0002 | 拒否 |
+
+有効期限: 将来日付、CVC: 任意3桁
+
+## トラブルシューティング
+
+- **CLI が見つからない**: 新しいターミナルを開く
+- **Webhook 届かない**: stripe listen 実行中か確認
+- **認証エラー**: stripe login を再実行
+
+## AI アシスタントへの指示
+
+Stripe プロジェクトのセットアップ時:
+
+1. 上記手順をユーザーに提示
+2. Stripe CLI を自動インストール（winget/scoop/brew）
+3. ユーザーに `stripe login` と `stripe listen` の実行を依頼
+4. Webhook シークレットキーを受け取り .env に設定
+5. サーバー起動とテストイベントで動作確認
