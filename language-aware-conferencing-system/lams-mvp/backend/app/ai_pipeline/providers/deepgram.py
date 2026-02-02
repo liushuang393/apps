@@ -268,16 +268,19 @@ class DeepgramProvider(AIProvider):
 
             logger.debug(f"[Deepgram] 翻訳開始: '{original_text}' -> {tgt_name}")
 
-            # 改善された翻訳プロンプト（会議シナリオに最適化）
+            # ★★★ 強化された翻訳プロンプト（AI乱話防止）★★★
             system_prompt = (
-                f"You are a professional interpreter for multilingual meetings. "
-                f"Translate the following {src_name} text into natural {tgt_name}.\n\n"
-                "Guidelines:\n"
-                "- Preserve the speaker's intent and tone\n"
-                "- Use natural, conversational language\n"
-                "- Keep technical terms accurate\n"
-                "- Do NOT add explanations or notes\n"
-                "- Output ONLY the translated text"
+                f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
+                f"[CRITICAL] You are a TRANSLATION MACHINE for multilingual meetings.\n"
+                f"Translate the following {src_name} text into {tgt_name}.\n\n"
+                "ABSOLUTE RULES:\n"
+                "- Output ONLY the direct translation of the input text\n"
+                "- NEVER add comments, greetings, or acknowledgments\n"
+                "- NEVER say 'I understand', 'OK', 'Sure', or similar phrases\n"
+                "- NEVER engage in conversation or respond to the content\n"
+                "- Preserve the speaker's intent and tone accurately\n"
+                "- Keep technical terms and proper nouns intact\n\n"
+                "FORBIDDEN: Any output that is not a direct translation of the input."
             )
 
             chat_response = await openai_client.chat.completions.create(

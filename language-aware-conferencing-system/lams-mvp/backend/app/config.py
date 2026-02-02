@@ -142,6 +142,14 @@ class Settings(BaseSettings):
     openai_tts_voice: str = "alloy"
 
     # -------------------------------------------
+    # 言語検出設定
+    # -------------------------------------------
+    # 言語検出モード:
+    #   - auto: 自動検出（Whisper/GPT-4oで言語を検出）
+    #   - hint: 話者のnative_languageをヒントとして使用（検出なし）
+    language_detection_mode: Literal["auto", "hint"] = "auto"
+
+    # -------------------------------------------
     # Deepgram API 設定（ASR用、200-400ms）
     # -------------------------------------------
     deepgram_api_key: str | None = None

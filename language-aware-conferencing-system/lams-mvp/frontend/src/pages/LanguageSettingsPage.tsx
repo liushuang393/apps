@@ -132,7 +132,9 @@ export function LanguageSettingsPage() {
                 <div className="lang-name">{lang.name}</div>
                 <div className="lang-code">{lang.code.toUpperCase()}</div>
                 <div className="lang-tier">{TIER_LABELS[lang.tier]}</div>
-                {isSelected && <div className="check-mark">✓</div>}
+                <span className={`status-badge ${isSelected ? 'active' : 'inactive'}`}>
+                  {isSelected ? '有効' : '無効'}
+                </span>
               </button>
             );
           })}

@@ -191,9 +191,9 @@ LAMSは**翻訳ツールではありません**。社内の多言語会議にお
               ▼               ▼               ▼
 ┌──────────────────┐ ┌──────────────┐ ┌──────────────────────┐
 │    PostgreSQL    │ │    Redis     │ │    AI Provider       │
-│  ・ユーザー情報   │ │ ・セッション  │ │ ・Gemini 2.5 Flash   │
-│  ・会議室情報     │ │ ・参加者状態  │ │ ・OpenAI Realtime    │
-│  ・永続化データ   │ │ ・翻訳キャッシュ│ │ ・ASR/翻訳/TTS       │
+│  ・ユーザー情報   │ │ ・セッション  │ │ ・GPT-4o-transcribe  │
+│  ・会議室情報     │ │ ・参加者状態  │ │ ・GPT-Realtime       │
+│  ・永続化データ   │ │ ・翻訳キャッシュ│ │ ・Deepgram Nova-3    │
 └──────────────────┘ └──────────────┘ └──────────────────────┘
 ```
 
@@ -232,8 +232,9 @@ LAMSは**翻訳ツールではありません**。社内の多言語会議にお
 
 | プロバイダー | 特徴 | ユースケース |
 |-------------|------|-------------|
-| **Gemini 2.5 Flash** | Native Audio対応、低遅延 | 推奨（デフォルト） |
-| **OpenAI Realtime** | Whisper + GPT-4、高精度 | 精度重視の場合 |
+| **gpt4o_transcribe** | GPT-4o-transcribe (ASR 300-500ms) + GPT-4o-mini翻訳 + TTS | 推奨（デフォルト） |
+| **gpt_realtime** | GPT-Realtime S2S (音声直接翻訳 200-400ms) | 最低遅延が必要な場合 |
+| **deepgram** | Deepgram Nova-3 (ASR <300ms) + GPT-4o-mini翻訳 + TTS | 高精度ASRが必要な場合 |
 
 ---
 
@@ -263,10 +264,10 @@ DATABASE_URL=postgresql://lams:lams_secret_2024@localhost:5432/lams
 REDIS_URL=redis://localhost:6379/0
 JWT_SECRET=your-secret-key-change-in-production
 
-# AIプロバイダー設定（いずれか一方openai_realtime, gemini）
-AI_PROVIDER=gemini
-GEMINI_API_KEY=your-gemini-api-key
-# OPENAI_API_KEY=your-openai-api-key
+# AIプロバイダー設定（gpt4o_transcribe, gpt_realtime, deepgram）
+AI_PROVIDER=gpt4o_transcribe
+OPENAI_API_KEY=your-openai-api-key
+# DEEPGRAM_API_KEY=your-deepgram-api-key  # deepgramプロバイダー使用時
 ```
 
 ####起動方式１ Docker での起動（推奨）
@@ -294,7 +295,7 @@ docker compose up -d --build
 cd backend
 docker compose exec backend alembic upgrade head
 # 局域网访问
-HOST_IP=192.168.210.33 ./start-with-keys.sh "docker build"
+HOST_IP=192.168.210.9 ./start-with-keys.sh "docker build"
 # プロバイダー選択: gemini または openai_realtime
 AI_PROVIDER=gemini HOST_IP=192.168.210.6 ./start-with-keys.sh "docker"
 # HOST_IP=192.168.210.6 docker compose up -d --build frontend backend
@@ -441,8 +442,18 @@ lams-mvp/
 │   │   │   └── routes.py        # 会議室・会議記録APIエンドポイント
 │   │   ├── ai_pipeline/    # AI処理
 │   │   │   ├── pipeline.py      # メイン処理パイプライン
-│   │   │   ├── providers.py     # AIプロバイダー抽象化
-│   │   │   └── qos.py           # 品質監視コントローラー
+│   │   │   ├── providers.py     # プロバイダー取得ユーティリティ
+│   │   │   ├── qos.py           # 品質監視コントローラー
+│   │   │   └── providers/       # AIプロバイダー実装
+│   │   │       ├── base.py          # 基底クラス・共通定義
+│   │   │       ├── gpt4o_transcribe.py  # GPT-4o-transcribe
+│   │   │       ├── gpt_realtime.py      # GPT-Realtime S2S
+│   │   │       └── deepgram.py          # Deepgram Nova-3
+│   │   ├── audio/          # 音声処理
+│   │   │   └── vad.py           # 音声アクティビティ検出
+│   │   ├── translate/      # 翻訳処理
+│   │   │   ├── routes.py        # 翻訳APIエンドポイント
+│   │   │   └── subtitle_cache.py # 字幕キャッシュ
 │   │   ├── websocket/      # リアルタイム通信
 │   │   │   └── handler.py       # WebSocketハンドラー
 │   │   ├── config.py       # 設定管理
@@ -454,8 +465,10 @@ lams-mvp/
 │   ├── src/
 │   │   ├── api/            # APIクライアント
 │   │   ├── components/     # UIコンポーネント
-│   │   ├── hooks/          # カスタムフック
-│   │   ├── pages/          # ページコンポーネント
+│   │   ├── constants/      # 定数定義（言語設定等）
+│   │   ├── hooks/          # カスタムフック（4ファイル）
+│   │   ├── i18n/           # 多言語対応
+│   │   ├── pages/          # ページコンポーネント（10ファイル）
 │   │   ├── store/          # Zustand状態管理
 │   │   ├── types/          # TypeScript型定義
 │   │   └── styles/         # CSS
@@ -595,6 +608,8 @@ UI表示・自動フォールバックは今後拡張予定です。
 | GET | `/api/admin/users/{id}` | ユーザー詳細 |
 | PATCH | `/api/admin/users/{id}` | ユーザー更新 |
 | GET | `/api/admin/stats` | システム統計 |
+| GET | `/api/admin/settings/languages` | 言語設定取得 |
+| PUT | `/api/admin/settings/languages` | 言語設定更新 |
 
 #### 翻訳 API（クライアント側翻訳用）
 
