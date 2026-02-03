@@ -24,6 +24,11 @@ yarn-error.log*
 coverage/
 .nyc_output/
 
+# Playwright
+playwright-report/
+test-results/
+playwright/.cache/
+
 # IDE
 .vscode/
 .idea/

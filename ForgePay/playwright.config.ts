@@ -5,7 +5,8 @@ import { defineConfig, devices } from '@playwright/test'
  * 
  * Prerequisites:
  * - Backend running on http://localhost:3000
- * - Dashboard running on http://localhost:5173
+ * - Dashboard running on http://localhost:3001
+ * - Test developer created (run: node scripts/setup-test-developer.js)
  * 
  * Run tests: npx playwright test
  * Run with UI: npx playwright test --ui
@@ -22,7 +23,7 @@ export default defineConfig({
     ['html', { outputFolder: 'playwright-report' }],
   ],
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: 'http://localhost:3001',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -53,7 +54,7 @@ export default defineConfig({
     },
     {
       command: 'cd dashboard && npm run dev',
-      url: 'http://localhost:5173',
+      url: 'http://localhost:3001',
       reuseExistingServer: !process.env.CI,
       timeout: 120000,
     },

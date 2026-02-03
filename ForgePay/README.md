@@ -48,8 +48,8 @@ npm run migrate:up
 ```bash
 npm run dev
 ```
-6. e2e test
-ENABLE_E2E_TESTS=true npm test
+
+6. (Optional) Run E2E tests - see [Testing](#testing) section below
 
 ## Configuration
 
@@ -276,16 +276,23 @@ docker-compose restart postgres redis
 
 ### Available Scripts
 
-- `npm run dev` - Start development server with hot reload
-- `npm run build` - Build for production
-- `npm start` - Start production server
-- `npm test` - Run tests
-- `npm run test:watch` - Run tests in watch mode
-- `npm run test:coverage` - Generate test coverage report
-- `npm run migrate:up` - Run database migrations
-- `npm run migrate:down` - Rollback database migrations
-- `npm run lint` - Lint code
-- `npm run format` - Format code with Prettier
+| コマンド | 説明 |
+|---------|------|
+| `npm run dev` | 開発サーバー起動（ホットリロード） |
+| `npm run build` | 本番ビルド |
+| `npm start` | 本番サーバー起動 |
+| `npm test` | 単体テスト実行 |
+| `npm run test:watch` | ウォッチモードでテスト |
+| `npm run test:coverage` | カバレッジレポート生成 |
+| `npm run test:e2e:setup` | E2E テスト開発者作成 |
+| `npm run test:e2e:api` | API E2E テスト実行 |
+| `npm run test:e2e` | Playwright UI テスト |
+| `npm run migrate:up` | マイグレーション実行 |
+| `npm run migrate:down` | マイグレーションロールバック |
+| `npm run lint` | Lint 実行 |
+| `npm run format` | Prettier でフォーマット |
+| `npm run docker:up` | PostgreSQL/Redis 起動 |
+| `npm run docker:down` | Docker コンテナ停止 |
 
 ### Project Structure
 
@@ -310,24 +317,237 @@ forgepaybridge/
 
 ## Testing
 
-### Unit Tests
+### 単体テスト（Unit Tests）
 
 ```bash
 npm test
 ```
 
-### Property-Based Tests
+### プロパティベーステスト（Property-Based Tests）
 
-Property-based tests use `fast-check` to verify universal properties:
+`fast-check` を使用したプロパティベーステスト:
 
 ```bash
 npm test -- --testPathPattern=property
 ```
 
-### Integration Tests
+### 統合テスト（Integration Tests）
 
 ```bash
 npm test -- --testPathPattern=integration
+```
+
+---
+
+## E2E テスト完全ガイド
+
+### 前提条件
+
+- Node.js 18+
+- Docker Desktop（PostgreSQL/Redis用）
+- バックエンドサーバーが起動していること
+
+### Step 1: 環境準備
+
+```bash
+# 依存関係インストール
+npm install
+
+# Docker でデータベース起動
+docker-compose up -d postgres redis
+
+# マイグレーション実行
+npm run migrate:up
+```
+
+### Step 2: バックエンドサーバー起動
+
+**ターミナル1** で実行:
+
+```bash
+npm run dev
+```
+
+正常起動の確認:
+```bash
+curl http://localhost:3000/health
+# → {"status":"ok","timestamp":"...","environment":"development"}
+```
+
+### Step 3: テスト開発者の作成
+
+**ターミナル2** で実行:
+
+```bash
+npm run test:e2e:setup
+```
+
+出力例:
+```
+🚀 Setting up test developer via API...
+✅ Developer registered successfully!
+
+============================================================
+🔑 TEST API KEY (Save this - it will not be shown again!)
+============================================================
+
+   fpb_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+============================================================
+
+✅ API key verified successfully!
+   Developer ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+   Email: e2e-test@forgepay.io
+   Test Mode: true
+
+✨ Setup complete!
+```
+
+**重要**: 出力された API キーを `.env` ファイルに保存:
+
+```env
+TEST_API_KEY=fpb_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+### Step 4: API E2E テスト実行
+
+```bash
+# 簡単な方法（推奨）- .env から API Key を自動読み込み
+npm run test:e2e:api
+```
+
+期待される出力:
+```
+🧪 Running E2E Tests...
+   API Key: fpb_test_xxxxx...
+
+PASS src/__tests__/e2e/payment-flow.e2e.test.ts (11 s)
+  E2E: ForgePay Payment Platform
+    Health Check Endpoints
+      ✓ GET /health - should return healthy status
+      ✓ GET /api/v1/health - should return detailed health status
+      ✓ GET /api/v1/health/live - should return alive
+      ✓ GET /api/v1/health/ready - should return ready status
+    API Authentication
+      ✓ should reject requests without API key
+      ✓ should reject requests with invalid API key
+      ✓ should accept requests with valid API key
+    Checkout Flow
+      ✓ should create checkout session with valid data
+      ... (全44テスト)
+
+Test Suites: 1 passed, 1 total
+Tests:       44 passed, 44 total
+
+✅ E2E Tests completed successfully!
+```
+
+### Step 5: Playwright UI テスト（オプション）
+
+ブラウザベースの UI テストを実行する場合:
+
+```bash
+# ターミナル3: ダッシュボード起動
+cd dashboard && npm run dev
+
+# ターミナル2: Playwright テスト実行
+npm run test:e2e          # ヘッドレスモード
+npm run test:e2e:headed   # ブラウザ表示あり
+npm run test:e2e:ui       # インタラクティブ UI
+npm run test:e2e:debug    # デバッグモード
+```
+
+---
+
+### E2E テスト用 npm スクリプト一覧
+
+| コマンド | 説明 |
+|---------|------|
+| `npm run test:e2e:setup` | テスト開発者を API 経由で作成 |
+| `npm run test:e2e:api` | Jest + Supertest の API テストを実行（44テスト） |
+| `npm run test:e2e` | Playwright UI テストを実行 |
+| `npm run test:e2e:headed` | ブラウザ表示ありで実行 |
+| `npm run test:e2e:ui` | インタラクティブ UI で実行 |
+| `npm run test:e2e:debug` | デバッグモードで実行 |
+| `npm run test:e2e:report` | テストレポートを表示 |
+
+---
+
+### テスト設計原則
+
+**重要**: E2Eテストはすべてのテストデータを **API経由** で作成します。
+
+✅ **正しい方法**:
+- `/api/v1/onboarding/register` でテスト開発者を作成
+- `/api/v1/admin/products` でテスト商品を作成
+- `/api/v1/checkout/sessions` でチェックアウトセッションを作成
+- テスト後は API 経由でクリーンアップ
+
+❌ **禁止された方法**:
+- データベースに直接 INSERT 文を実行
+- `pool.query()` で直接データを挿入
+
+これにより、実際のユーザーフローと同じパスでテストが実行されます。
+
+---
+
+### テストカバレッジ
+
+**API テスト（44テスト）**:
+| カテゴリ | テスト数 | 内容 |
+|---------|---------|------|
+| Health Check | 4 | ヘルスチェックエンドポイント |
+| API Authentication | 3 | API Key 認証 |
+| Checkout Flow | 4 | チェックアウトフロー |
+| Entitlement | 3 | エンタイトルメント検証 |
+| Admin Products | 4 | 商品管理 API |
+| Admin Customers | 2 | 顧客管理 API |
+| Coupon System | 3 | クーポンシステム |
+| Multi-Currency | 3 | 多通貨サポート |
+| Legal Templates | 3 | 法的テンプレート |
+| GDPR Compliance | 2 | GDPR コンプライアンス |
+| Monitoring | 2 | モニタリング・メトリクス |
+| Developer Onboarding | 3 | 開発者オンボーディング |
+| Invoice System | 2 | 請求書システム |
+| Audit Logs | 2 | 監査ログ |
+| Error Handling | 2 | エラーハンドリング |
+| API Documentation | 2 | API ドキュメント |
+
+**UI テスト（Playwright）**:
+- Admin Dashboard: ログイン、ダッシュボード、商品管理、顧客管理、Webhook監視、監査ログ
+- Customer Portal: マジックリンクログイン、ダッシュボード
+- Integration: チェックアウトフロー、Entitlement検証
+
+---
+
+### トラブルシューティング
+
+**問題: "TEST_API_KEY is not set"**
+```bash
+# 解決策: テスト開発者を作成して .env に API Key を設定
+npm run test:e2e:setup
+# → 出力された API Key を .env に保存
+```
+
+**問題: "Developer already exists"**
+```bash
+# 解決策: 既存のテスト開発者を削除して再作成
+docker exec forgepaybridge-postgres psql -U postgres -d forgepaybridge \
+  -c "DELETE FROM developers WHERE email = 'e2e-test@forgepay.io';"
+npm run test:e2e:setup
+```
+
+**問題: "Database connection failed"**
+```bash
+# 解決策: Docker コンテナを再起動
+docker-compose restart postgres redis
+```
+
+**問題: Port 3000 is already in use**
+```powershell
+# 解決策 (PowerShell): ポートを使用しているプロセスを終了
+Get-NetTCPConnection -LocalPort 3000 | Select-Object OwningProcess
+Stop-Process -Id <PID> -Force
 ```
 
 ## API Documentation

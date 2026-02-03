@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { logger } from '../utils/logger';
-import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 /**
  * Extended Request interface with developer context
@@ -19,9 +19,17 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
+ * Hash API key using SHA-256 (same as DeveloperService)
+ */
+function hashApiKey(apiKey: string): string {
+  return crypto.createHash('sha256').update(apiKey).digest('hex');
+}
+
+/**
  * API key authentication middleware
  * 
  * Validates API key from x-api-key header and attaches developer context to request.
+ * Uses SHA-256 hash comparison (consistent with DeveloperService).
  * 
  * Requirements: 10.7
  */
@@ -44,19 +52,16 @@ export async function apiKeyAuth(
   }
 
   try {
-    // Hash the API key to compare with stored hash
-    // For performance, we could use a prefix-based lookup first
+    // Hash the API key and look up the developer
+    const apiKeyHash = hashApiKey(apiKey);
+    
     const query = `
       SELECT id, email, api_key_hash, test_mode, stripe_account_id, webhook_secret, created_at, updated_at
       FROM developers
-      WHERE id = (
-        SELECT id FROM developers 
-        WHERE LEFT(api_key_hash, 7) = LEFT($1, 7)
-        LIMIT 1
-      )
+      WHERE api_key_hash = $1
     `;
 
-    const result = await pool.query(query, [apiKey]);
+    const result = await pool.query(query, [apiKeyHash]);
 
     if (result.rows.length === 0) {
       logger.warn('Invalid API key attempt', {
@@ -75,24 +80,6 @@ export async function apiKeyAuth(
     }
 
     const developer = result.rows[0];
-
-    // Verify full API key hash
-    const isValid = await bcrypt.compare(apiKey, developer.api_key_hash);
-    if (!isValid) {
-      logger.warn('Invalid API key hash', {
-        developerId: developer.id,
-        ip: req.ip,
-      });
-
-      res.status(401).json({
-        error: {
-          code: 'unauthorized',
-          message: 'Invalid API key.',
-          type: 'authentication_error',
-        },
-      });
-      return;
-    }
 
     // Attach developer to request
     req.developer = {

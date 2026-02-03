@@ -28,7 +28,8 @@ export function Products() {
     },
   })
 
-  const products: Product[] = data?.data?.products || []
+  // data = axios response, data.data = API response body { data: [...] }
+  const products: Product[] = Array.isArray(data?.data?.data) ? data.data.data : (Array.isArray(data?.data) ? data.data : [])
 
   const handleDelete = (product: Product) => {
     if (confirm(`Are you sure you want to archive "${product.name}"?`)) {
