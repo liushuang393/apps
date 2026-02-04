@@ -23,6 +23,7 @@ jest.mock('../../../repositories/EntitlementRepository', () => ({
     create: jest.fn(),
     findById: jest.fn(),
     findByPurchaseIntentId: jest.fn(),
+    findBySubscriptionId: jest.fn(),
     findByCustomerId: jest.fn(),
     findActiveByCustomerId: jest.fn(),
     suspend: jest.fn(),
@@ -374,6 +375,156 @@ describe('EntitlementService', () => {
       const result = await service.renewEntitlement('invalid-id', new Date());
 
       expect(result).toBeNull();
+    });
+
+    it('should rollback and throw error on database failure', async () => {
+      const newExpiryDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+      mockEntitlementRepository.findById.mockResolvedValue(mockEntitlement);
+      mockEntitlementRepository.extendExpiration.mockRejectedValue(new Error('Database error'));
+
+      await expect(service.renewEntitlement('ent-123', newExpiryDate)).rejects.toThrow('Database error');
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    });
+  });
+
+  describe('suspendEntitlement error handling', () => {
+    it('should rollback and throw error on database failure', async () => {
+      mockEntitlementRepository.findById.mockResolvedValue(mockEntitlement);
+      mockEntitlementRepository.suspend.mockRejectedValue(new Error('Database error'));
+
+      await expect(service.suspendEntitlement('ent-123', 'Test reason')).rejects.toThrow('Database error');
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    });
+  });
+
+  describe('revokeEntitlement error handling', () => {
+    it('should return null if entitlement not found', async () => {
+      mockEntitlementRepository.findById.mockResolvedValue(null);
+
+      const result = await service.revokeEntitlement('invalid-id', 'Test reason');
+
+      expect(result).toBeNull();
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('should rollback and throw error on database failure', async () => {
+      mockEntitlementRepository.findById.mockResolvedValue(mockEntitlement);
+      mockEntitlementRepository.revoke.mockRejectedValue(new Error('Database error'));
+
+      await expect(service.revokeEntitlement('ent-123', 'Refund')).rejects.toThrow('Database error');
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    });
+  });
+
+  describe('reactivateEntitlement error handling', () => {
+    it('should return null if entitlement not found', async () => {
+      mockEntitlementRepository.findById.mockResolvedValue(null);
+
+      const result = await service.reactivateEntitlement('invalid-id');
+
+      expect(result).toBeNull();
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('should rollback and throw error on database failure', async () => {
+      mockEntitlementRepository.findById.mockResolvedValue(mockEntitlement);
+      mockEntitlementRepository.reactivate.mockRejectedValue(new Error('Database error'));
+
+      await expect(service.reactivateEntitlement('ent-123')).rejects.toThrow('Database error');
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    });
+  });
+
+  describe('getEntitlementBySubscriptionId', () => {
+    it('should return entitlement by subscription ID', async () => {
+      const subEntitlement = { ...mockEntitlement, subscriptionId: 'sub_123' };
+      mockEntitlementRepository.findBySubscriptionId.mockResolvedValue(subEntitlement);
+
+      const result = await service.getEntitlementBySubscriptionId('sub_123');
+
+      expect(result).toEqual(subEntitlement);
+      expect(mockEntitlementRepository.findBySubscriptionId).toHaveBeenCalledWith('sub_123');
+    });
+
+    it('should return null if not found', async () => {
+      mockEntitlementRepository.findBySubscriptionId.mockResolvedValue(null);
+
+      const result = await service.getEntitlementBySubscriptionId('invalid-sub');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getEntitlementsByCustomerId', () => {
+    it('should return all entitlements for customer', async () => {
+      const entitlements = [
+        mockEntitlement,
+        { ...mockEntitlement, id: 'ent-456', productId: 'prod-456' },
+      ];
+      mockEntitlementRepository.findByCustomerId.mockResolvedValue(entitlements);
+
+      const result = await service.getEntitlementsByCustomerId('cust-123');
+
+      expect(result).toEqual(entitlements);
+      expect(result).toHaveLength(2);
+      expect(mockEntitlementRepository.findByCustomerId).toHaveBeenCalledWith('cust-123');
+    });
+
+    it('should return empty array if no entitlements found', async () => {
+      mockEntitlementRepository.findByCustomerId.mockResolvedValue([]);
+
+      const result = await service.getEntitlementsByCustomerId('cust-no-entitlements');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getActiveEntitlementsByCustomerId', () => {
+    it('should return only active entitlements for customer', async () => {
+      const activeEntitlements = [mockEntitlement];
+      mockEntitlementRepository.findActiveByCustomerId.mockResolvedValue(activeEntitlements);
+
+      const result = await service.getActiveEntitlementsByCustomerId('cust-123');
+
+      expect(result).toEqual(activeEntitlements);
+      expect(mockEntitlementRepository.findActiveByCustomerId).toHaveBeenCalledWith('cust-123');
+    });
+
+    it('should return empty array if no active entitlements', async () => {
+      mockEntitlementRepository.findActiveByCustomerId.mockResolvedValue([]);
+
+      const result = await service.getActiveEntitlementsByCustomerId('cust-no-active');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('constructor dependency injection', () => {
+    it('should use injected dependencies', async () => {
+      const customEntitlementRepo = {
+        findById: jest.fn().mockResolvedValue(mockEntitlement),
+        findByPurchaseIntentId: jest.fn(),
+        findBySubscriptionId: jest.fn(),
+        findByCustomerId: jest.fn(),
+        findActiveByCustomerId: jest.fn(),
+        create: jest.fn(),
+        suspend: jest.fn(),
+        reactivate: jest.fn(),
+        revoke: jest.fn(),
+        extendExpiration: jest.fn(),
+      };
+      const customAuditRepo = { create: jest.fn() };
+      const customTokenSvc = { generateUnlockToken: jest.fn(), verifyUnlockToken: jest.fn() };
+
+      const customService = new EntitlementService(
+        customEntitlementRepo as any,
+        customAuditRepo as any,
+        customTokenSvc as any
+      );
+
+      await customService.getEntitlement('ent-123');
+
+      expect(customEntitlementRepo.findById).toHaveBeenCalledWith('ent-123');
     });
   });
 });

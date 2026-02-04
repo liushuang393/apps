@@ -611,4 +611,351 @@ describe('PriceRepository', () => {
       expect(result.interval).toBe('year');
     });
   });
+
+  describe('error handling', () => {
+    it('should throw error on create failure', async () => {
+      const params: CreatePriceParams = {
+        productId: 'prod-123',
+        stripePriceId: 'price_stripe_123',
+        amount: 2000,
+        currency: 'USD',
+      };
+
+      mockPool.query.mockRejectedValueOnce(new Error('Database connection failed'));
+
+      await expect(repository.create(params)).rejects.toThrow('Database connection failed');
+    });
+
+    it('should throw error on findById failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.findById('price-123')).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on findByStripePriceId failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.findByStripePriceId('price_stripe_123')).rejects.toThrow('Database error');
+    });
+
+    it('should return null for findByStripePriceId if not found', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      } as any);
+
+      const result = await repository.findByStripePriceId('nonexistent');
+
+      expect(result).toBeNull();
+    });
+
+    it('should throw error on findByProductId failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.findByProductId('prod-123')).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on findByProductIdAndCurrency failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.findByProductIdAndCurrency('prod-123', 'usd')).rejects.toThrow('Database error');
+    });
+
+    it('should filter by active in findByProductIdAndCurrency when activeOnly is true', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      } as any);
+
+      await repository.findByProductIdAndCurrency('prod-123', 'usd', true);
+
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND active = true'),
+        expect.any(Array)
+      );
+    });
+
+    it('should throw error on findByCurrency failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.findByCurrency('usd')).rejects.toThrow('Database error');
+    });
+
+    it('should filter by active in findByCurrency when activeOnly is true', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      } as any);
+
+      await repository.findByCurrency('usd', true);
+
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND active = true'),
+        expect.any(Array)
+      );
+    });
+
+    it('should throw error on update failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.update('price-123', { active: false })).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on deactivate failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.deactivate('price-123')).rejects.toThrow('Database error');
+    });
+
+    it('should return null on deactivate if price not found', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      } as any);
+
+      const result = await repository.deactivate('nonexistent');
+
+      expect(result).toBeNull();
+    });
+
+    it('should throw error on delete failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.delete('price-123')).rejects.toThrow('Database error');
+    });
+
+    it('should handle null rowCount on delete', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [],
+        rowCount: null,
+      } as any);
+
+      const result = await repository.delete('price-123');
+
+      expect(result).toBe(false);
+    });
+
+    it('should throw error on countByProductId failure', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('Database error'));
+
+      await expect(repository.countByProductId('prod-123')).rejects.toThrow('Database error');
+    });
+  });
+
+  describe('findActiveByProductId', () => {
+    it('should call findByProductId with activeOnly true', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      } as any);
+
+      await repository.findActiveByProductId('prod-123');
+
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND active = true'),
+        ['prod-123']
+      );
+    });
+  });
+
+  describe('findActiveByProductIdAndCurrency', () => {
+    it('should call findByProductIdAndCurrency with activeOnly true', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      } as any);
+
+      await repository.findActiveByProductIdAndCurrency('prod-123', 'usd');
+
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND active = true'),
+        expect.arrayContaining(['prod-123', 'usd'])
+      );
+    });
+  });
+
+  describe('transaction support', () => {
+    it('should use provided client for create', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [{
+            id: 'price-123',
+            product_id: 'prod-123',
+            stripe_price_id: 'price_stripe_123',
+            amount: 2000,
+            currency: 'usd',
+            interval: null,
+            active: true,
+            created_at: new Date('2024-01-01'),
+          }],
+          rowCount: 1,
+        }),
+      };
+
+      const params: CreatePriceParams = {
+        productId: 'prod-123',
+        stripePriceId: 'price_stripe_123',
+        amount: 2000,
+        currency: 'usd',
+      };
+
+      await repository.create(params, mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for findById', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [{
+            id: 'price-123',
+            product_id: 'prod-123',
+            stripe_price_id: 'price_stripe_123',
+            amount: 2000,
+            currency: 'usd',
+            interval: null,
+            active: true,
+            created_at: new Date('2024-01-01'),
+          }],
+          rowCount: 1,
+        }),
+      };
+
+      await repository.findById('price-123', mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for findByStripePriceId', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [],
+          rowCount: 0,
+        }),
+      };
+
+      await repository.findByStripePriceId('price_stripe_123', mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for findByProductId', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [],
+          rowCount: 0,
+        }),
+      };
+
+      await repository.findByProductId('prod-123', false, mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for findByProductIdAndCurrency', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [],
+          rowCount: 0,
+        }),
+      };
+
+      await repository.findByProductIdAndCurrency('prod-123', 'usd', false, mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for findByCurrency', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [],
+          rowCount: 0,
+        }),
+      };
+
+      await repository.findByCurrency('usd', false, mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for update', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [{
+            id: 'price-123',
+            product_id: 'prod-123',
+            stripe_price_id: 'price_stripe_123',
+            amount: 2000,
+            currency: 'usd',
+            interval: null,
+            active: false,
+            created_at: new Date('2024-01-01'),
+          }],
+          rowCount: 1,
+        }),
+      };
+
+      await repository.update('price-123', { active: false }, mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for deactivate', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [{
+            id: 'price-123',
+            product_id: 'prod-123',
+            stripe_price_id: 'price_stripe_123',
+            amount: 2000,
+            currency: 'usd',
+            interval: null,
+            active: false,
+            created_at: new Date('2024-01-01'),
+          }],
+          rowCount: 1,
+        }),
+      };
+
+      await repository.deactivate('price-123', mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for delete', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [],
+          rowCount: 1,
+        }),
+      };
+
+      await repository.delete('price-123', mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for countByProductId', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [{ count: '5' }],
+          rowCount: 1,
+        }),
+      };
+
+      await repository.countByProductId('prod-123', false, mockClient as any);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+  });
 });

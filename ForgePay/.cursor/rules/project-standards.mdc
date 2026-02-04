@@ -1,0 +1,100 @@
+# プロジェクト標準規約 (Project Standards)
+
+## 言語規約 (Language Standards)
+
+### コードコメント・ドキュメント
+- **すべてのコードコメントは日本語で記述すること**
+- **すべてのドキュメント（README、GUIDE等）は日本語で記述すること**
+- 変数名・関数名・クラス名は英語（キャメルケース/パスカルケース）
+
+### コメント例
+```typescript
+// 悪い例 (BAD)
+// Get user by ID
+const user = await userRepository.findById(id);
+
+// 良い例 (GOOD)
+// IDでユーザーを取得する
+const user = await userRepository.findById(id);
+```
+
+### JSDocコメント例
+```typescript
+/**
+ * チェックアウトセッションを作成する
+ * @param params - セッション作成パラメータ
+ * @returns 作成されたセッション
+ * @throws {ValidationError} パラメータが無効な場合
+ */
+async createSession(params: CreateSessionParams): Promise<CheckoutSession> {
+  // 実装...
+}
+```
+
+---
+
+## コーディング規約
+
+### エラーハンドリング
+- **例外を握りつぶさない** - 必ずログ出力またはリスローすること
+- エラーメッセージは具体的に記述する
+
+```typescript
+// 悪い例 (BAD) - 例外の握りつぶし
+try {
+  await someOperation();
+} catch (error) {
+  // 何もしない
+}
+
+// 良い例 (GOOD)
+try {
+  await someOperation();
+} catch (error) {
+  logger.error('操作に失敗しました', { error, context: { ... } });
+  throw error;
+}
+```
+
+### ログ出力
+- 重要な処理の開始・終了をログに記録
+- エラーは必ず `logger.error()` で記録
+- 機密情報（パスワード、APIキー等）をログに出力しない
+
+---
+
+## ファイル構成規約
+
+### テストファイル
+- テストファイルは `src/__tests__/` 配下に配置
+- ソースファイルと同じ場所にテストを置かない
+- 詳細は `testing.mdc` を参照
+
+### 設定ファイル
+- 環境変数は `.env` で管理
+- 機密情報は `.env` に記載し、`.gitignore` に追加
+
+---
+
+## Git コミット規約
+
+### コミットメッセージ
+- 日本語または英語で記述（プロジェクト内で統一）
+- 変更内容を簡潔に説明
+
+```
+feat: ユーザー認証機能を追加
+fix: チェックアウト時のエラーを修正
+docs: READMEを更新
+test: CheckoutServiceのテストを追加
+refactor: CustomerRepositoryをリファクタリング
+```
+
+---
+
+## 依存関係
+
+### パッケージ追加時
+- `npm install` でバージョンを固定
+- セキュリティ脆弱性のあるパッケージを使用しない
+- 不要なパッケージは削除する

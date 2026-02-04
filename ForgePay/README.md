@@ -586,6 +586,76 @@ $env:TEST_API_KEY="fpb_test_xxx..."  # PowerShell
 - Customer Portal: マジックリンクログイン、ダッシュボード
 - Integration: チェックアウトフロー、Entitlement検証
 
+### 総合テスト準備の概要
+
+**必要な準備**
+- Docker Desktop を起動
+- Node.js 18+ をインストール
+
+**テスト実行手順**
+
+```powershell
+# 環境チェック
+.\scripts\env-checker.ps1
+
+# 環境準備（Docker起動、DB移行）
+.\scripts\test-runner.ps1 -Setup
+
+# 単体テスト
+.\scripts\test-runner.ps1 -Unit
+```
+
+**E2Eテスト（サーバー起動が必要）**
+
+```powershell
+# ターミナル1: サーバー起動
+npm run dev
+
+# ターミナル2: テスト実行
+.\scripts\test-runner.ps1 -E2E
+```
+
+```
+┌──────────────┐        ┌─────────────────────────────┐
+│  テストコード  │  HTTP  │  実際のサーバー              │
+│              │ ────→  │  localhost:3000             │
+│  Jest +      │        │    ↓                        │
+│  Supertest   │ ←────  │  DB/Redis (実際に接続)       │
+└──────────────┘        └─────────────────────────────┘
+```
+
+**Playwright (UI E2Eテスト)（サーバー起動が必要）**
+
+```powershell
+# ターミナル1: バックエンド起動
+npm run dev
+
+# ターミナル2: フロントエンド起動
+cd dashboard && npm run dev
+
+# ターミナル3: テスト実行
+.\scripts\test-runner.ps1 -Playwright
+```
+
+```
+┌──────────────┐        ┌─────────────────────────────┐
+│  Playwright  │        │  Dashboard (フロントエンド)   │
+│  (ブラウザ)   │ ────→  │  localhost:3001             │
+│              │        │    ↓ API呼び出し             │
+│  ボタンクリック │        │  Backend (バックエンド)      │
+│  入力操作     │        │  localhost:3000             │
+│  画面確認     │        │    ↓                        │
+│              │ ←────  │  DB/Redis                   │
+└──────────────┘        └─────────────────────────────┘
+```
+
+**テストの種類**
+| オプション | 説明 | サーバー |
+|------------|------|----------|
+| `-Unit` | コードだけテスト（速い） | 不要 |
+| `-E2E` | API通信テスト | 1つ必要 |
+| `-Playwright` | 画面操作テスト | 2つ必要 |
+
 ---
 
 ### クイックリファレンス：Playwright テスト実行手順

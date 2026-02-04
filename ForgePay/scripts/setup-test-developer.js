@@ -1,18 +1,56 @@
 /**
- * Setup Test Developer for E2E Tests
+ * E2Eテスト用開発者セットアップスクリプト
  * 
- * This script creates a test developer via the public API (not direct DB insertion)
- * to ensure the E2E tests are realistic.
+ * このスクリプトは公開APIを通じてテスト開発者を作成し、
+ * 生成されたAPIキーを自動的に.envファイルに設定します。
  * 
- * Prerequisites:
- * - Backend server running on http://localhost:3000
- * - PostgreSQL and Redis running
+ * 前提条件:
+ * - バックエンドサーバー起動中 (http://localhost:3000)
+ * - PostgreSQLとRedis起動中
  * 
- * Usage: node scripts/setup-test-developer.js
+ * 使用方法: node scripts/setup-test-developer.js
  */
+
+const fs = require('fs');
+const path = require('path');
 
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
 const TEST_EMAIL = 'e2e-test@forgepay.io';
+const ENV_FILE_PATH = path.join(__dirname, '..', '.env');
+
+/**
+ * .envファイルのTEST_API_KEYを更新する
+ * @param {string} apiKey - 新しいAPIキー
+ */
+function updateEnvFile(apiKey) {
+  try {
+    let envContent = '';
+    
+    if (fs.existsSync(ENV_FILE_PATH)) {
+      envContent = fs.readFileSync(ENV_FILE_PATH, 'utf8');
+    }
+    
+    // TEST_API_KEY行を探して更新、なければ追加
+    const testApiKeyRegex = /^TEST_API_KEY=.*$/m;
+    const newLine = `TEST_API_KEY=${apiKey}`;
+    
+    if (testApiKeyRegex.test(envContent)) {
+      // 既存の行を更新
+      envContent = envContent.replace(testApiKeyRegex, newLine);
+      console.log('📝 .envファイルのTEST_API_KEYを更新しました');
+    } else {
+      // 新しい行を追加
+      envContent = envContent.trimEnd() + '\n' + newLine + '\n';
+      console.log('📝 .envファイルにTEST_API_KEYを追加しました');
+    }
+    
+    fs.writeFileSync(ENV_FILE_PATH, envContent);
+    return true;
+  } catch (error) {
+    console.error('⚠️  .envファイルの更新に失敗:', error.message);
+    return false;
+  }
+}
 
 async function setupTestDeveloper() {
   console.log('🚀 Setting up test developer via API...\n');
@@ -56,24 +94,27 @@ async function setupTestDeveloper() {
     const registerData = await registerResponse.json();
     console.log('✅ Developer registered successfully!\n');
 
-    // Step 2: Display the API key (use .key not .full)
+    // Step 2: APIキーを表示
     const apiKey = registerData.apiKey.key;
     
     console.log('='.repeat(60));
-    console.log('🔑 TEST API KEY (Save this - it will not be shown again!)');
+    console.log('🔑 TEST API KEY');
     console.log('='.repeat(60));
     console.log(`\n   ${apiKey}\n`);
     console.log('='.repeat(60));
 
-    // Step 3: Provide instructions
-    console.log('\n📋 Next Steps:\n');
-    console.log('1. Add this API key to your .env file:');
-    console.log(`   TEST_API_KEY=${apiKey}\n`);
+    // Step 3: .envファイルを自動更新
+    console.log('\n📝 .envファイルを自動更新中...');
+    const envUpdated = updateEnvFile(apiKey);
     
-    console.log('2. Update dashboard .env (if separate):');
-    console.log(`   VITE_TEST_API_KEY=${apiKey}\n`);
+    if (envUpdated) {
+      console.log('✅ TEST_API_KEYが.envファイルに設定されました\n');
+    } else {
+      console.log('\n⚠️  手動で.envファイルに追加してください:');
+      console.log(`   TEST_API_KEY=${apiKey}\n`);
+    }
 
-    console.log('3. Run E2E tests:');
+    console.log('📋 E2Eテストを実行:');
     console.log('   npm run test:e2e\n');
 
     // Step 4: Verify the API key works by making a test request

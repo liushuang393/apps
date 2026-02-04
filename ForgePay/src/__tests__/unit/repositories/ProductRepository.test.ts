@@ -517,4 +517,169 @@ describe('ProductRepository', () => {
       expect(result).toBe(0);
     });
   });
+
+  describe('error handling', () => {
+    it('should throw error on findById failure', async () => {
+      mockPool.query.mockRejectedValue(new Error('Database error'));
+
+      await expect(repository.findById('prod-123')).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on findByStripeProductId failure', async () => {
+      mockPool.query.mockRejectedValue(new Error('Database error'));
+
+      await expect(repository.findByStripeProductId('prod_stripe_123')).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on findByDeveloperId failure', async () => {
+      mockPool.query.mockRejectedValue(new Error('Database error'));
+
+      await expect(repository.findByDeveloperId('dev-123')).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on update failure', async () => {
+      mockPool.query.mockRejectedValue(new Error('Database error'));
+
+      await expect(repository.update('prod-123', { name: 'New Name' })).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on archive failure', async () => {
+      mockPool.query.mockRejectedValue(new Error('Database error'));
+
+      await expect(repository.archive('prod-123')).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on delete failure', async () => {
+      mockPool.query.mockRejectedValue(new Error('Database error'));
+
+      await expect(repository.delete('prod-123')).rejects.toThrow('Database error');
+    });
+
+    it('should throw error on countByDeveloperId failure', async () => {
+      mockPool.query.mockRejectedValue(new Error('Database error'));
+
+      await expect(repository.countByDeveloperId('dev-123')).rejects.toThrow('Database error');
+    });
+
+    it('should handle null rowCount on delete', async () => {
+      mockPool.query.mockResolvedValue({ rowCount: null } as any);
+
+      const result = await repository.delete('prod-123');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('transaction support', () => {
+    it('should use provided client for findById', async () => {
+      const mockRow = {
+        id: 'prod-123',
+        developer_id: 'dev-123',
+        stripe_product_id: 'prod_stripe_123',
+        name: 'Pro Plan',
+        description: null,
+        type: 'subscription',
+        active: true,
+        metadata: null,
+        created_at: new Date('2024-01-01'),
+        updated_at: new Date('2024-01-01'),
+      };
+
+      mockClient.query.mockResolvedValue({ rows: [mockRow] } as any);
+
+      await repository.findById('prod-123', mockClient);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for findByStripeProductId', async () => {
+      mockClient.query.mockResolvedValue({ rows: [] } as any);
+
+      await repository.findByStripeProductId('prod_stripe_123', mockClient);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for findByDeveloperId', async () => {
+      mockClient.query.mockResolvedValue({ rows: [] } as any);
+
+      await repository.findByDeveloperId('dev-123', false, mockClient);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for findActiveByDeveloperId', async () => {
+      mockClient.query.mockResolvedValue({ rows: [] } as any);
+
+      await repository.findActiveByDeveloperId('dev-123', mockClient);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for update', async () => {
+      const mockRow = {
+        id: 'prod-123',
+        developer_id: 'dev-123',
+        stripe_product_id: 'prod_stripe_123',
+        name: 'Updated Name',
+        description: null,
+        type: 'subscription',
+        active: true,
+        metadata: null,
+        created_at: new Date('2024-01-01'),
+        updated_at: new Date('2024-01-02'),
+      };
+
+      mockClient.query.mockResolvedValue({ rows: [mockRow] } as any);
+
+      await repository.update('prod-123', { name: 'Updated Name' }, mockClient);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for archive', async () => {
+      const mockRow = {
+        id: 'prod-123',
+        developer_id: 'dev-123',
+        stripe_product_id: 'prod_stripe_123',
+        name: 'Pro Plan',
+        description: null,
+        type: 'subscription',
+        active: false,
+        metadata: null,
+        created_at: new Date('2024-01-01'),
+        updated_at: new Date('2024-01-02'),
+      };
+
+      mockClient.query.mockResolvedValue({ rows: [mockRow] } as any);
+
+      await repository.archive('prod-123', mockClient);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for delete', async () => {
+      mockClient.query.mockResolvedValue({ rowCount: 1 } as any);
+
+      await repository.delete('prod-123', mockClient);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use provided client for countByDeveloperId', async () => {
+      mockClient.query.mockResolvedValue({ rows: [{ count: '5' }] } as any);
+
+      await repository.countByDeveloperId('dev-123', false, mockClient);
+
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+  });
 });

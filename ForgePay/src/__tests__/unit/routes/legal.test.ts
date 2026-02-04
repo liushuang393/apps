@@ -41,6 +41,9 @@ const mockLegalTemplateService = legalTemplateService as jest.Mocked<typeof lega
 const mockApiKeyAuth = apiKeyAuth as jest.MockedFunction<typeof apiKeyAuth>;
 const mockLogger = logger as jest.Mocked<typeof logger>;
 
+// Increase timeout for this test suite due to route compilation overhead
+jest.setTimeout(30000);
+
 describe('Legal Routes', () => {
   let app: Express;
 
@@ -85,7 +88,7 @@ describe('Legal Routes', () => {
     // Reset apiKeyAuth to attach developer and pass through
     mockApiKeyAuth.mockImplementation(async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
       req.developer = mockDeveloper;
-      next();
+      return next();
     });
   });
 

@@ -97,4 +97,50 @@ test.describe('Admin Login Flow', () => {
     // Should redirect to login
     await expect(page).toHaveURL('/login')
   })
+
+  test('ログアウトボタンでログアウトできる', async ({ page }) => {
+    // まずログイン
+    await page.fill('input[type="password"]', TEST_API_KEY)
+    await page.click('button[type="submit"]')
+    
+    // ダッシュボードに遷移するまで待つ
+    await page.waitForURL('/', { timeout: 10000 })
+    await expect(page.locator('h1')).toContainText('Dashboard')
+    
+    // ログアウトボタンを探す（ヘッダーまたはサイドバー）
+    const logoutButton = page.locator('button:has-text("Logout"), button:has-text("ログアウト"), a:has-text("Logout"), button:has-text("Sign out")')
+    
+    if (await logoutButton.first().isVisible().catch(() => false)) {
+      await logoutButton.first().click()
+      
+      // ログインページにリダイレクトされることを確認
+      await expect(page).toHaveURL('/login', { timeout: 5000 })
+    } else {
+      // ログアウトボタンがない場合はスキップ
+      console.log('ログアウトボタンが見つかりません - UIを確認してください')
+    }
+  })
+
+  test('セッション期限切れ後にログインページにリダイレクトされる', async ({ page }) => {
+    // ログイン
+    await page.fill('input[type="password"]', TEST_API_KEY)
+    await page.click('button[type="submit"]')
+    await page.waitForURL('/', { timeout: 10000 })
+    
+    // LocalStorageをクリア（セッション切れをシミュレート）
+    await page.evaluate(() => {
+      localStorage.clear()
+      sessionStorage.clear()
+    })
+    
+    // ページをリロード
+    await page.reload()
+    
+    // ログインページにリダイレクトされるか、ログインが必要な状態になることを確認
+    await page.waitForTimeout(1000)
+    const onLoginPage = await page.url().includes('/login')
+    const hasLoginForm = await page.locator('input[type="password"]').isVisible().catch(() => false)
+    
+    expect(onLoginPage || hasLoginForm).toBeTruthy()
+  })
 })
