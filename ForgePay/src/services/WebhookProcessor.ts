@@ -683,6 +683,13 @@ export class WebhookProcessor {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
+      logger.error('Error processing webhook event', {
+        error,
+        stripeEventId: webhookLog.stripeEventId,
+        eventType: webhookLog.eventType,
+        attempts: webhookLog.attempts + 1,
+      });
+
       const attempts = webhookLog.attempts + 1;
       if (attempts >= MAX_RETRY_ATTEMPTS) {
         await this.webhookLogRepo.moveToDLQ(webhookLog.id, errorMessage);

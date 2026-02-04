@@ -446,15 +446,83 @@ Tests:       44 passed, 44 total
 
 ブラウザベースの UI テストを実行する場合:
 
-```bash
-# ターミナル3: ダッシュボード起動
-cd dashboard && npm run dev
+#### 5-1: TEST_API_KEY の設定確認
 
-# ターミナル2: Playwright テスト実行
-npm run test:e2e          # ヘッドレスモード
-npm run test:e2e:headed   # ブラウザ表示あり
-npm run test:e2e:ui       # インタラクティブ UI
-npm run test:e2e:debug    # デバッグモード
+Playwright テストには `TEST_API_KEY` 環境変数が **必須** です。
+Step 3 で取得した API キーが `.env` に設定されていることを確認:
+
+```env
+# .env ファイル
+TEST_API_KEY=fpb_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+または PowerShell で直接設定:
+
+```powershell
+$env:TEST_API_KEY="fpb_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+#### 5-2: ダッシュボード起動
+
+**ターミナル3** で実行:
+
+```bash
+cd dashboard && npm install && npm run dev
+```
+
+ダッシュボードが `http://localhost:3001` で起動していることを確認。
+
+#### 5-3: Playwright テスト実行
+
+**ターミナル2** で実行:
+
+```bash
+# ヘッドレスモード（CI向け）
+npm run test:e2e
+
+# ブラウザ表示あり（デバッグ向け）
+npm run test:e2e:headed
+
+# インタラクティブ UI モード（推奨）
+npm run test:e2e:ui
+
+# デバッグモード
+npm run test:e2e:debug
+```
+
+期待される出力:
+```
+Running 10 tests using 1 worker
+
+  ✓ admin-login.spec.ts:20:5 › Admin Login Flow › should display login page correctly
+  ✓ admin-login.spec.ts:36:5 › Admin Login Flow › should login with valid API key
+  ✓ admin-dashboard.spec.ts:15:5 › Admin Dashboard › should display dashboard
+  ...
+
+  10 passed (15s)
+```
+
+#### TEST_API_KEY が設定されていない場合のエラー
+
+`TEST_API_KEY` が未設定の場合、以下のエラーが表示されます:
+
+```
+⚠️  TEST_API_KEY is not set!
+    E2E tests require a valid API key.
+    
+To fix:
+1. Start the server: npm run dev
+2. Run setup: node scripts/setup-test-developer.js
+3. Set the API key: export TEST_API_KEY=<your_api_key>
+```
+
+**解決策**:
+```bash
+# Step 3 を再実行して API Key を取得
+npm run test:e2e:setup
+
+# 出力された API Key を .env に保存、または環境変数に設定
+$env:TEST_API_KEY="fpb_test_xxx..."  # PowerShell
 ```
 
 ---
@@ -517,6 +585,31 @@ npm run test:e2e:debug    # デバッグモード
 - Admin Dashboard: ログイン、ダッシュボード、商品管理、顧客管理、Webhook監視、監査ログ
 - Customer Portal: マジックリンクログイン、ダッシュボード
 - Integration: チェックアウトフロー、Entitlement検証
+
+---
+
+### クイックリファレンス：Playwright テスト実行手順
+
+```bash
+# 1. Docker 起動
+docker-compose up -d postgres redis
+
+# 2. マイグレーション
+npm run migrate:up
+
+# 3. バックエンド起動（ターミナル1）
+npm run dev
+
+# 4. テスト開発者作成（ターミナル2）- 初回のみ
+npm run test:e2e:setup
+# → 出力された fpb_test_xxx... を .env の TEST_API_KEY に保存
+
+# 5. ダッシュボード起動（ターミナル3）
+cd dashboard && npm run dev
+
+# 6. Playwright テスト実行（ターミナル2）
+npm run test:e2e
+```
 
 ---
 

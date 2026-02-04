@@ -1,8 +1,8 @@
-import { pool } from '../config/database';
+import { pool } from '../../config/database';
 import {
   ProductRepository,
   CreateProductParams,
-} from './ProductRepository';
+} from '../../repositories/ProductRepository';
 
 /**
  * Integration tests for ProductRepository

@@ -1,4 +1,19 @@
-import { test as base, expect, Page } from '@playwright/test'
+import { test as base, expect, Page, Route } from '@playwright/test'
+
+// Type definitions for API responses
+interface ProductResponse {
+  id: string
+  name: string
+  description?: string
+  type?: string
+}
+
+interface PriceResponse {
+  id: string
+  productId: string
+  amount: number
+  currency: string
+}
 
 /**
  * Test fixtures for ForgePay E2E tests
@@ -103,7 +118,7 @@ export const test = base.extend<{
   },
 })
 
-export { expect }
+export { expect, Route }
 
 /**
  * Helper to wait for API response
@@ -125,7 +140,7 @@ export async function createTestProduct(
   apiKey: string, 
   name: string, 
   type: 'one_time' | 'subscription' = 'one_time'
-) {
+): Promise<ProductResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/admin/products`, {
     method: 'POST',
     headers: {
@@ -144,7 +159,7 @@ export async function createTestProduct(
     throw new Error(`Failed to create test product: ${response.status} - ${error}`)
   }
   
-  return response.json()
+  return response.json() as Promise<ProductResponse>
 }
 
 /**
@@ -156,7 +171,7 @@ export async function createTestPrice(
   amount: number,
   currency: string,
   interval?: 'month' | 'year'
-) {
+): Promise<PriceResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/admin/prices`, {
     method: 'POST',
     headers: {
@@ -176,7 +191,7 @@ export async function createTestPrice(
     throw new Error(`Failed to create test price: ${response.status} - ${error}`)
   }
   
-  return response.json()
+  return response.json() as Promise<PriceResponse>
 }
 
 /**
@@ -189,7 +204,7 @@ export async function createCheckoutSession(
   customerEmail: string,
   successUrl: string = 'http://localhost:3001/success',
   cancelUrl: string = 'http://localhost:3001/cancel'
-) {
+): Promise<{ sessionId: string; url: string; purchaseIntentId: string }> {
   const purchaseIntentId = `e2e_test_${Date.now()}`
   
   const response = await fetch(`${API_BASE_URL}/api/v1/checkout/sessions`, {
@@ -213,7 +228,7 @@ export async function createCheckoutSession(
     throw new Error(`Failed to create checkout session: ${response.status} - ${error}`)
   }
   
-  const data = await response.json()
+  const data = await response.json() as { sessionId: string; url: string }
   return {
     ...data,
     purchaseIntentId,

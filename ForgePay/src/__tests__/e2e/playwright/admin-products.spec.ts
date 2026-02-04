@@ -1,4 +1,4 @@
-import { test, expect, TEST_API_KEY, API_BASE_URL } from './fixtures'
+import { test, expect } from './fixtures'
 
 /**
  * E2E Tests for Products Management

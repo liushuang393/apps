@@ -163,7 +163,7 @@ test.describe('Webhooks Monitoring', () => {
       
       // Should show loading state (spin animation on icon)
       const spinningIcon = page.locator('.animate-spin')
-      const hasSpinner = await spinningIcon.isVisible().catch(() => false)
+      const _hasSpinner = await spinningIcon.isVisible().catch(() => false)
       
       // Note: This may be too fast to catch, so we just verify the button was clickable
       expect(true).toBeTruthy()

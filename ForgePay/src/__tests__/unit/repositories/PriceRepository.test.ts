@@ -1,7 +1,7 @@
-import { PriceRepository, CreatePriceParams, UpdatePriceParams } from './PriceRepository';
+import { PriceRepository, CreatePriceParams, UpdatePriceParams } from '../../../repositories/PriceRepository';
 
 // Mock the logger
-jest.mock('../utils/logger', () => ({
+jest.mock('../../../utils/logger', () => ({
   logger: {
     info: jest.fn(),
     error: jest.fn(),

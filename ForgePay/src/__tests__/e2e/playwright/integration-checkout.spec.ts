@@ -17,7 +17,7 @@ test.describe('Complete Checkout Flow Integration', () => {
   const testProductName = `Integration Test ${Date.now()}`
   let createdProductId: string | null = null
   let createdPriceId: string | null = null
-  let createdSessionId: string | null = null
+  let _createdSessionId: string | null = null
 
   test.afterAll(async () => {
     // Cleanup: Archive test product if created
@@ -106,7 +106,7 @@ test.describe('Complete Checkout Flow Integration', () => {
     // May fail if Stripe is not configured properly
     if (checkoutResponse.ok()) {
       const sessionData = await checkoutResponse.json()
-      createdSessionId = sessionData.session?.id || sessionData.id
+      _createdSessionId = sessionData.session?.id || sessionData.id
       
       expect(sessionData).toHaveProperty('checkout_url')
     }
@@ -135,7 +135,7 @@ test.describe('Complete Checkout Flow Integration', () => {
     await expect(page.locator('text=Recent Products')).toBeVisible({ timeout: 10000 })
 
     // Check if our test product appears
-    const hasTestProduct = await page.locator(`text=${testProductName}`).isVisible().catch(() => false)
+    const _hasTestProduct = await page.locator(`text=${testProductName}`).isVisible().catch(() => false)
     
     // May or may not appear depending on timing and number of products
     expect(true).toBeTruthy() // Test passes as we verified the section loads
@@ -157,7 +157,7 @@ test.describe('Complete Checkout Flow Integration', () => {
     await page.waitForTimeout(500)
 
     // Should find product-related audit logs
-    const hasProductLogs = await page.locator('text=/product\\.created|product/')
+    const _hasProductLogs = await page.locator('text=/product\\.created|product/')
       .first()
       .isVisible()
       .catch(() => false)

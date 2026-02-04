@@ -1,0 +1,62 @@
+# Test File Organization Rules
+
+## Test Directory Structure
+
+All test files MUST be placed in the `src/__tests__/` directory following this structure:
+
+```
+src/__tests__/
+├── unit/                    # Unit tests
+│   ├── services/           # Service unit tests
+│   ├── repositories/       # Repository unit tests
+│   ├── routes/             # Route/Controller tests
+│   ├── middleware/         # Middleware tests
+│   ├── config/             # Config tests
+│   └── utils/              # Utility tests
+├── integration/            # Integration tests
+│   └── *.integration.test.ts
+└── e2e/                    # End-to-End tests
+    ├── *.e2e.test.ts       # API E2E tests (Jest/Supertest)
+    └── playwright/         # UI E2E tests (Playwright)
+        └── *.spec.ts
+```
+
+## Naming Conventions
+
+- **Unit tests**: `{ClassName}.test.ts` (e.g., `CheckoutService.test.ts`)
+- **Integration tests**: `{ClassName}.integration.test.ts`
+- **E2E API tests**: `{feature}.e2e.test.ts`
+- **Playwright tests**: `{feature}.spec.ts`
+
+## Import Paths
+
+When creating test files, use relative imports from the `__tests__` folder:
+
+```typescript
+// In src/__tests__/unit/services/MyService.test.ts
+import { MyService } from '../../../services/MyService';
+import { myRepository } from '../../../repositories/MyRepository';
+import { logger } from '../../../utils/logger';
+
+jest.mock('../../../utils/logger');
+jest.mock('../../../repositories/MyRepository');
+```
+
+## Rules
+
+1. **NEVER** place test files alongside source files
+2. **ALWAYS** place tests in the appropriate `__tests__/` subdirectory
+3. **ALWAYS** use the correct naming convention for test type
+4. **ALWAYS** update imports when moving test files
+
+## Jest Configuration
+
+The `jest.config.js` is configured to find tests only in `src/__tests__/`:
+
+```javascript
+testMatch: [
+  '**/src/__tests__/unit/**/*.test.ts',
+  '**/src/__tests__/integration/**/*.test.ts',
+  '**/src/__tests__/e2e/**/*.e2e.test.ts',
+]
+```

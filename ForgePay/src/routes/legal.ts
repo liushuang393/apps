@@ -13,8 +13,6 @@ const isValidType = (type: string): type is LegalTemplateType => {
   return VALID_TYPES.includes(type as LegalTemplateType);
 };
 
-// ==================== Public Routes ====================
-
 // Simple markdown to HTML converter (basic implementation)
 function markdownToHtml(markdown: string): string {
   return markdown
@@ -31,96 +29,9 @@ function markdownToHtml(markdown: string): string {
     });
 }
 
-/**
- * GET /legal/:developerId/:type
- * Get active legal template for public viewing
- */
-router.get('/:developerId/:type', async (req: Request, res: Response) => {
-  try {
-    const { developerId, type } = req.params;
-    const format = req.query.format as string || 'html';
-
-    if (!isValidType(type)) {
-      res.status(400).json({ error: 'Invalid template type' });
-      return;
-    }
-
-    const template = await legalTemplateService.getActiveTemplate(developerId, type);
-
-    if (!template) {
-      res.status(404).json({ error: 'Template not found' });
-      return;
-    }
-
-    if (format === 'json') {
-      res.json({
-        id: template.id,
-        type: template.type,
-        title: template.title,
-        content: template.content,
-        version: template.version,
-        effectiveDate: template.effectiveDate,
-        language: template.language,
-      });
-    } else {
-      // Return as HTML page
-      const contentHtml = template.contentHtml || markdownToHtml(template.content);
-      res.send(`
-<!DOCTYPE html>
-<html lang="${template.language}">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${template.title}</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
-      color: #333;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    h1, h2, h3 { color: #1a1a1a; }
-    h1 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
-    .meta { color: #666; font-size: 14px; margin-bottom: 20px; }
-  </style>
-</head>
-<body>
-  <h1>${template.title}</h1>
-  <div class="meta">Version ${template.version} | ${template.effectiveDate ? new Date(template.effectiveDate).toLocaleDateString() : 'Effective immediately'}</div>
-  <div class="content">
-    ${contentHtml}
-  </div>
-</body>
-</html>
-      `);
-    }
-  } catch (error) {
-    logger.error('Error getting public template', { error });
-    res.status(500).json({ error: 'Failed to get template' });
-  }
-});
-
-/**
- * GET /legal/:developerId/urls
- * Get URLs for all legal templates
- */
-router.get('/:developerId/urls', async (req: Request, res: Response) => {
-  try {
-    const { developerId } = req.params;
-    const baseUrl = `${req.protocol}://${req.get('host')}/api/v1/legal`;
-
-    const urls = await legalTemplateService.getLegalUrls(developerId, baseUrl);
-
-    res.json({ urls });
-  } catch (error) {
-    logger.error('Error getting legal URLs', { error });
-    res.status(500).json({ error: 'Failed to get legal URLs' });
-  }
-});
-
 // ==================== Admin Routes (Authenticated) ====================
+// NOTE: Admin routes MUST be defined before public routes with dynamic parameters
+// to ensure proper route matching (Express matches routes in order of definition)
 
 /**
  * GET /legal/admin/templates
@@ -387,6 +298,100 @@ router.get('/admin/templates/:type/history', apiKeyAuth, async (req: Authenticat
   } catch (error) {
     logger.error('Error getting version history', { error });
     res.status(500).json({ error: 'Failed to get version history' });
+  }
+});
+
+// ==================== Public Routes ====================
+// NOTE: These routes with dynamic parameters MUST be defined AFTER admin routes
+// to prevent /:developerId/:type from matching /admin/templates
+
+/**
+ * GET /legal/:developerId/urls
+ * Get URLs for all legal templates
+ */
+router.get('/:developerId/urls', async (req: Request, res: Response) => {
+  try {
+    const { developerId } = req.params;
+    const baseUrl = `${req.protocol}://${req.get('host')}/api/v1/legal`;
+
+    const urls = await legalTemplateService.getLegalUrls(developerId, baseUrl);
+
+    res.json({ urls });
+  } catch (error) {
+    logger.error('Error getting legal URLs', { error });
+    res.status(500).json({ error: 'Failed to get legal URLs' });
+  }
+});
+
+/**
+ * GET /legal/:developerId/:type
+ * Get active legal template for public viewing
+ * NOTE: This is the most generic route and MUST be defined last
+ */
+router.get('/:developerId/:type', async (req: Request, res: Response) => {
+  try {
+    const { developerId, type } = req.params;
+    const format = req.query.format as string || 'html';
+
+    if (!isValidType(type)) {
+      res.status(400).json({ error: 'Invalid template type' });
+      return;
+    }
+
+    const template = await legalTemplateService.getActiveTemplate(developerId, type);
+
+    if (!template) {
+      res.status(404).json({ error: 'Template not found' });
+      return;
+    }
+
+    if (format === 'json') {
+      res.json({
+        id: template.id,
+        type: template.type,
+        title: template.title,
+        content: template.content,
+        version: template.version,
+        effectiveDate: template.effectiveDate,
+        language: template.language,
+      });
+    } else {
+      // Return as HTML page
+      const contentHtml = template.contentHtml || markdownToHtml(template.content);
+      res.send(`
+<!DOCTYPE html>
+<html lang="${template.language}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${template.title}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1, h2, h3 { color: #1a1a1a; }
+    h1 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
+    .meta { color: #666; font-size: 14px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>${template.title}</h1>
+  <div class="meta">Version ${template.version} | ${template.effectiveDate ? new Date(template.effectiveDate).toLocaleDateString() : 'Effective immediately'}</div>
+  <div class="content">
+    ${contentHtml}
+  </div>
+</body>
+</html>
+      `);
+    }
+  } catch (error) {
+    logger.error('Error getting public template', { error });
+    res.status(500).json({ error: 'Failed to get template' });
   }
 });
 

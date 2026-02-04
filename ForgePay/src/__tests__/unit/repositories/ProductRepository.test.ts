@@ -2,10 +2,10 @@ import {
   ProductRepository,
   CreateProductParams,
   UpdateProductParams,
-} from './ProductRepository';
+} from '../../../repositories/ProductRepository';
 
 // Mock the logger
-jest.mock('../utils/logger', () => ({
+jest.mock('../../../utils/logger', () => ({
   logger: {
     info: jest.fn(),
     error: jest.fn(),

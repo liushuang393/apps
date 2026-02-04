@@ -1,4 +1,4 @@
-import { config } from './index';
+import { config } from '../../../config';
 
 describe('Configuration', () => {
   it('should load configuration', () => {

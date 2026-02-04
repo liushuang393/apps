@@ -358,6 +358,7 @@ export class MetricsService {
         latencyMs: Date.now() - dbStart,
       };
     } catch (error) {
+      logger.error('Database health check failed', { error });
       checks.database = {
         status: 'unhealthy',
         latencyMs: Date.now() - dbStart,

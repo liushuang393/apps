@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, Route } from './fixtures'
 
 /**
  * E2E Tests for Customer Portal Dashboard
@@ -19,7 +19,7 @@ test.describe('Customer Portal Dashboard', () => {
   // Helper to set up authenticated portal session
   const setupPortalSession = async (page: any) => {
     // Mock the portal API responses for testing
-    await page.route('**/api/v1/portal/me', route => {
+    await page.route('**/api/v1/portal/me', (route: Route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -31,7 +31,7 @@ test.describe('Customer Portal Dashboard', () => {
       })
     })
 
-    await page.route('**/api/v1/portal/subscriptions', route => {
+    await page.route('**/api/v1/portal/subscriptions', (route: Route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -56,7 +56,7 @@ test.describe('Customer Portal Dashboard', () => {
       })
     })
 
-    await page.route('**/api/v1/portal/entitlements', route => {
+    await page.route('**/api/v1/portal/entitlements', (route: Route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',

@@ -71,6 +71,7 @@ router.get('/health/ready', async (_req: Request, res: Response) => {
 
     res.json({ status: 'ready', checks: health.checks });
   } catch (error) {
+    logger.error('Readiness check failed', { error });
     res.status(503).json({ status: 'not ready', error: 'Check failed' });
   }
 });

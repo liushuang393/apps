@@ -120,7 +120,7 @@ test.describe('Customer Portal Magic Link Login', () => {
     const emailInput = page.locator('input[type="email"]')
     
     // Check for HTML5 validation
-    const validity = await emailInput.evaluate((el: HTMLInputElement) => el.validity.valid)
+    const validity = await emailInput.evaluate((el) => (el as HTMLInputElement).validity.valid)
     expect(validity).toBe(false)
   })
 
@@ -135,7 +135,7 @@ test.describe('Customer Portal Magic Link Login', () => {
     await expect(emailInput).toHaveAttribute('required', '')
     
     // Check validity
-    const validity = await emailInput.evaluate((el: HTMLInputElement) => el.validity.valid)
+    const validity = await emailInput.evaluate((el) => (el as HTMLInputElement).validity.valid)
     expect(validity).toBe(false)
   })
 

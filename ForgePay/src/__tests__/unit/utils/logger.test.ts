@@ -1,4 +1,4 @@
-import { logger } from './logger';
+import { logger } from '../../../utils/logger';
 import * as fc from 'fast-check';
 
 describe('Logger', () => {

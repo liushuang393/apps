@@ -171,6 +171,7 @@ export class TokenService {
       };
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
+        logger.warn('Token expired during read-only verification', { error });
         return {
           valid: false,
           error: 'Token has expired',
@@ -178,12 +179,14 @@ export class TokenService {
       }
 
       if (error instanceof jwt.JsonWebTokenError) {
+        logger.warn('Invalid token during read-only verification', { error });
         return {
           valid: false,
           error: 'Invalid token',
         };
       }
 
+      logger.error('Token verification error during read-only verification', { error });
       return {
         valid: false,
         error: 'Token verification failed',
