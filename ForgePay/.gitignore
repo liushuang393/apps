@@ -22,12 +22,17 @@ yarn-error.log*
 
 # Testing
 coverage/
+coverage-output.txt
 .nyc_output/
 
 # Playwright
 playwright-report/
 test-results/
 playwright/.cache/
+.e2e-state.json
+
+# AI development tools
+.kiro/
 
 # IDE
 .vscode/

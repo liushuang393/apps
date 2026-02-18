@@ -54,15 +54,45 @@ jest.mock('../../../services', () => ({
   },
 }));
 
+// Mock StripeClientFactory - admin route uses getClient() for per-developer Stripe client
+jest.mock('../../../services/StripeClientFactory', () => {
+  const mockClient = {
+    createProduct: jest.fn(),
+    updateProduct: jest.fn(),
+    archiveProduct: jest.fn(),
+    createPrice: jest.fn(),
+    getPaymentIntent: jest.fn(),
+    createRefund: jest.fn(),
+  };
+  return {
+    stripeClientFactory: {
+      getClient: jest.fn(() => mockClient),
+    },
+  };
+});
+
 // Mock the middleware
 jest.mock('../../../middleware', () => ({
   apiKeyAuth: jest.fn((req: Request, _res: Response, next: NextFunction) => {
     (req as any).developer = {
       id: 'dev-123',
       email: 'developer@example.com',
-      testMode: true,
       stripeAccountId: 'acct_123',
+      apiKeyHash: 'hashed-key',
       webhookSecret: 'whsec_123',
+      testMode: true,
+      defaultSuccessUrl: null,
+      defaultCancelUrl: null,
+defaultLocale: 'auto',
+    defaultCurrency: 'usd',
+      defaultPaymentMethods: ['card'],
+      callbackUrl: null,
+      callbackSecret: null,
+      companyName: null,
+      stripeSecretKeyEnc: null,
+      stripePublishableKey: null,
+      stripeWebhookEndpointSecret: null,
+      stripeConfigured: false,
       createdAt: new Date('2024-01-01'),
       updatedAt: new Date('2024-01-01'),
     };
@@ -117,8 +147,12 @@ import {
   webhookLogRepository,
   auditLogRepository,
 } from '../../../repositories';
-import { stripeClient, entitlementService } from '../../../services';
+import { entitlementService } from '../../../services';
+import { stripeClientFactory } from '../../../services/StripeClientFactory';
 import { apiKeyAuth } from '../../../middleware';
+
+// Get the mock Stripe client returned by stripeClientFactory.getClient()
+const mockStripeClient = (stripeClientFactory.getClient as jest.Mock)();
 
 describe('Admin Routes', () => {
   let app: Express;
@@ -154,11 +188,13 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: { category: 'test' },
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
 
-      (stripeClient.createProduct as jest.Mock).mockResolvedValue(mockStripeProduct);
+      (mockStripeClient.createProduct as jest.Mock).mockResolvedValue(mockStripeProduct);
       (productRepository.create as jest.Mock).mockResolvedValue(mockProduct);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -179,7 +215,7 @@ describe('Admin Routes', () => {
         created_at: mockProduct.createdAt.toISOString(),
       });
 
-      expect(stripeClient.createProduct).toHaveBeenCalledWith({
+      expect(mockStripeClient.createProduct).toHaveBeenCalledWith({
         name: validPayload.name,
         description: validPayload.description,
         type: validPayload.type,
@@ -217,11 +253,13 @@ describe('Admin Routes', () => {
         type: 'subscription',
         active: true,
         metadata: subscriptionPayload.metadata,
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
 
-      (stripeClient.createProduct as jest.Mock).mockResolvedValue(mockStripeProduct);
+      (mockStripeClient.createProduct as jest.Mock).mockResolvedValue(mockStripeProduct);
       (productRepository.create as jest.Mock).mockResolvedValue(mockProduct);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -286,7 +324,7 @@ describe('Admin Routes', () => {
     });
 
     it('should return 500 when Stripe API fails', async () => {
-      (stripeClient.createProduct as jest.Mock).mockRejectedValue(new Error('Stripe API error'));
+      (mockStripeClient.createProduct as jest.Mock).mockRejectedValue(new Error('Stripe API error'));
 
       const response = await request(app)
         .post('/admin/products')
@@ -313,6 +351,8 @@ describe('Admin Routes', () => {
           type: 'one_time',
           active: true,
           metadata: {},
+          slug: null,
+          paymentMethods: ['card'],
           createdAt: new Date('2024-01-01'),
           updatedAt: new Date('2024-01-02'),
         },
@@ -324,6 +364,8 @@ describe('Admin Routes', () => {
           type: 'subscription',
           active: false,
           metadata: {},
+          slug: null,
+          paymentMethods: ['card'],
           createdAt: new Date('2024-01-03'),
           updatedAt: new Date('2024-01-04'),
         },
@@ -404,6 +446,8 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-02'),
       };
@@ -457,6 +501,8 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-02'),
       };
@@ -511,6 +557,8 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
@@ -525,7 +573,7 @@ describe('Admin Routes', () => {
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
-      (stripeClient.updateProduct as jest.Mock).mockResolvedValue({});
+      (mockStripeClient.updateProduct as jest.Mock).mockResolvedValue({});
       (productRepository.update as jest.Mock).mockResolvedValue(mockUpdatedProduct);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -539,7 +587,7 @@ describe('Admin Routes', () => {
       expect(response.body.description).toBe(updatePayload.description);
       expect(response.body.active).toBe(updatePayload.active);
 
-      expect(stripeClient.updateProduct).toHaveBeenCalledWith(mockProduct.stripeProductId, {
+      expect(mockStripeClient.updateProduct).toHaveBeenCalledWith(mockProduct.stripeProductId, {
         name: updatePayload.name,
         description: updatePayload.description,
         active: updatePayload.active,
@@ -559,6 +607,8 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
@@ -570,7 +620,7 @@ describe('Admin Routes', () => {
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
-      (stripeClient.updateProduct as jest.Mock).mockResolvedValue({});
+      (mockStripeClient.updateProduct as jest.Mock).mockResolvedValue({});
       (productRepository.update as jest.Mock).mockResolvedValue(mockUpdatedProduct);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -605,6 +655,8 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
@@ -629,12 +681,14 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
-      (stripeClient.updateProduct as jest.Mock).mockRejectedValue(new Error('Stripe error'));
+      (mockStripeClient.updateProduct as jest.Mock).mockRejectedValue(new Error('Stripe error'));
 
       const response = await request(app)
         .put(`/admin/products/${validProductId}`)
@@ -659,12 +713,14 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
-      (stripeClient.archiveProduct as jest.Mock).mockResolvedValue({});
+      (mockStripeClient.archiveProduct as jest.Mock).mockResolvedValue({});
       (productRepository.archive as jest.Mock).mockResolvedValue({});
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -673,7 +729,7 @@ describe('Admin Routes', () => {
         .set('x-api-key', 'test_api_key');
 
       expect(response.status).toBe(204);
-      expect(stripeClient.archiveProduct).toHaveBeenCalledWith(mockProduct.stripeProductId);
+      expect(mockStripeClient.archiveProduct).toHaveBeenCalledWith(mockProduct.stripeProductId);
       expect(productRepository.archive).toHaveBeenCalledWith(validProductId);
       expect(auditLogRepository.create).toHaveBeenCalled();
     });
@@ -699,6 +755,8 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
@@ -722,12 +780,14 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
-      (stripeClient.archiveProduct as jest.Mock).mockRejectedValue(new Error('Stripe error'));
+      (mockStripeClient.archiveProduct as jest.Mock).mockRejectedValue(new Error('Stripe error'));
 
       const response = await request(app)
         .delete(`/admin/products/${validProductId}`)
@@ -771,7 +831,7 @@ describe('Admin Routes', () => {
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
-      (stripeClient.createPrice as jest.Mock).mockResolvedValue(mockStripePrice);
+      (mockStripeClient.createPrice as jest.Mock).mockResolvedValue(mockStripePrice);
       (priceRepository.create as jest.Mock).mockResolvedValue(mockPrice);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -804,6 +864,8 @@ describe('Admin Routes', () => {
         developerId: 'dev-123',
         stripeProductId: 'prod_stripe_123',
         type: 'subscription',
+        slug: null,
+        paymentMethods: ['card'],
       };
 
       const mockStripePrice = { id: 'price_stripe_sub' };
@@ -819,7 +881,7 @@ describe('Admin Routes', () => {
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
-      (stripeClient.createPrice as jest.Mock).mockResolvedValue(mockStripePrice);
+      (mockStripeClient.createPrice as jest.Mock).mockResolvedValue(mockStripePrice);
       (priceRepository.create as jest.Mock).mockResolvedValue(mockPrice);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -831,7 +893,7 @@ describe('Admin Routes', () => {
       expect(response.status).toBe(201);
       expect(response.body.interval).toBe('month');
 
-      expect(stripeClient.createPrice).toHaveBeenCalledWith({
+      expect(mockStripeClient.createPrice).toHaveBeenCalledWith({
         productId: mockProduct.stripeProductId,
         unitAmount: subscriptionPayload.amount,
         currency: 'usd',
@@ -846,6 +908,8 @@ describe('Admin Routes', () => {
         developerId: 'dev-123',
         stripeProductId: 'prod_stripe_123',
         type: 'subscription',
+        slug: null,
+        paymentMethods: ['card'],
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
@@ -877,6 +941,8 @@ describe('Admin Routes', () => {
         developerId: 'different-dev',
         stripeProductId: 'prod_stripe_123',
         type: 'one_time',
+        slug: null,
+        paymentMethods: ['card'],
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
@@ -912,7 +978,7 @@ describe('Admin Routes', () => {
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
-      (stripeClient.createPrice as jest.Mock).mockRejectedValue(new Error('Stripe error'));
+      (mockStripeClient.createPrice as jest.Mock).mockRejectedValue(new Error('Stripe error'));
 
       const response = await request(app)
         .post('/admin/prices')
@@ -972,6 +1038,8 @@ describe('Admin Routes', () => {
       const mockProduct = {
         id: productId,
         developerId: 'dev-123',
+        slug: null,
+        paymentMethods: ['card'],
       };
 
       const mockPrices = [
@@ -1004,6 +1072,8 @@ describe('Admin Routes', () => {
       const mockProduct = {
         id: productId,
         developerId: 'dev-123',
+        slug: null,
+        paymentMethods: ['card'],
       };
 
       const mockPrices = [
@@ -1072,6 +1142,8 @@ describe('Admin Routes', () => {
       const mockProduct = {
         id: productId,
         developerId: 'different-dev',
+        slug: null,
+        paymentMethods: ['card'],
       };
 
       (productRepository.findById as jest.Mock).mockResolvedValue(mockProduct);
@@ -1304,8 +1376,8 @@ describe('Admin Routes', () => {
         status: 'active',
       };
 
-      (stripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
-      (stripeClient.createRefund as jest.Mock).mockResolvedValue(mockRefund);
+      (mockStripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
+      (mockStripeClient.createRefund as jest.Mock).mockResolvedValue(mockRefund);
       (entitlementRepository.findByPaymentId as jest.Mock).mockResolvedValue(mockEntitlement);
       (entitlementService.revokeEntitlement as jest.Mock).mockResolvedValue({});
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
@@ -1358,8 +1430,8 @@ describe('Admin Routes', () => {
         status: 'active',
       };
 
-      (stripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
-      (stripeClient.createRefund as jest.Mock).mockResolvedValue(mockRefund);
+      (mockStripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
+      (mockStripeClient.createRefund as jest.Mock).mockResolvedValue(mockRefund);
       (entitlementRepository.findByPaymentId as jest.Mock).mockResolvedValue(mockEntitlement);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -1388,8 +1460,8 @@ describe('Admin Routes', () => {
         created: 1704067200,
       };
 
-      (stripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
-      (stripeClient.createRefund as jest.Mock).mockResolvedValue(mockRefund);
+      (mockStripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
+      (mockStripeClient.createRefund as jest.Mock).mockResolvedValue(mockRefund);
       (entitlementRepository.findByPaymentId as jest.Mock).mockResolvedValue(null);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -1403,7 +1475,7 @@ describe('Admin Routes', () => {
     });
 
     it('should return 404 when payment intent not found', async () => {
-      (stripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(null);
+      (mockStripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(null);
 
       const response = await request(app)
         .post('/admin/refunds')
@@ -1420,8 +1492,8 @@ describe('Admin Routes', () => {
         amount: 1999,
       };
 
-      (stripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
-      (stripeClient.createRefund as jest.Mock).mockRejectedValue(new Error('No charge for this payment intent'));
+      (mockStripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
+      (mockStripeClient.createRefund as jest.Mock).mockRejectedValue(new Error('No charge for this payment intent'));
 
       const response = await request(app)
         .post('/admin/refunds')
@@ -1438,8 +1510,8 @@ describe('Admin Routes', () => {
         amount: 1999,
       };
 
-      (stripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
-      (stripeClient.createRefund as jest.Mock).mockRejectedValue(new Error('Unknown error'));
+      (mockStripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
+      (mockStripeClient.createRefund as jest.Mock).mockRejectedValue(new Error('Unknown error'));
 
       const response = await request(app)
         .post('/admin/refunds')
@@ -1464,8 +1536,8 @@ describe('Admin Routes', () => {
           created: 1704067200,
         };
 
-        (stripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
-        (stripeClient.createRefund as jest.Mock).mockResolvedValue(mockRefund);
+        (mockStripeClient.getPaymentIntent as jest.Mock).mockResolvedValue(mockPaymentIntent);
+        (mockStripeClient.createRefund as jest.Mock).mockResolvedValue(mockRefund);
         (entitlementRepository.findByPaymentId as jest.Mock).mockResolvedValue(null);
         (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -2242,6 +2314,8 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: null,
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-02'),
       };
@@ -2277,11 +2351,13 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: null,
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
 
-      (stripeClient.createProduct as jest.Mock).mockResolvedValue(mockStripeProduct);
+      (mockStripeClient.createProduct as jest.Mock).mockResolvedValue(mockStripeProduct);
       (productRepository.create as jest.Mock).mockResolvedValue(mockProduct);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -2304,6 +2380,8 @@ describe('Admin Routes', () => {
           type: 'one_time',
           active: true,
           metadata: {},
+          slug: null,
+          paymentMethods: ['card'],
           createdAt: new Date('2024-01-01'),
           updatedAt: new Date('2024-01-02'),
         },
@@ -2349,11 +2427,13 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: specialMetadata,
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       };
 
-      (stripeClient.createProduct as jest.Mock).mockResolvedValue(mockStripeProduct);
+      (mockStripeClient.createProduct as jest.Mock).mockResolvedValue(mockStripeProduct);
       (productRepository.create as jest.Mock).mockResolvedValue(mockProduct);
       (auditLogRepository.create as jest.Mock).mockResolvedValue({});
 
@@ -2392,6 +2472,8 @@ describe('Admin Routes', () => {
         type: 'one_time',
         active: true,
         metadata: {},
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01T12:30:45.123Z'),
         updatedAt: new Date('2024-01-02T15:45:30.456Z'),
       };

@@ -1,9 +1,8 @@
 import dotenv from 'dotenv';
 
-// Load environment variables
 dotenv.config();
 
-export interface Config {
+export interface AppConfig {
   app: {
     env: string;
     port: number;
@@ -36,32 +35,18 @@ export interface Config {
     windowMs: number;
     maxRequests: number;
   };
-  email?: {
-    enabled: boolean;
-    provider: string;
-    fromEmail: string;
-    fromName: string;
-    // SendGrid
-    sendgridApiKey?: string;
-    // AWS SES
-    awsRegion?: string;
-    // SMTP
+  email: {
+    from: string;
     smtpHost?: string;
-    smtpPort?: number;
-    smtpSecure?: boolean;
+    smtpPort: number;
+    smtpSecure: boolean;
     smtpUser?: string;
     smtpPass?: string;
-  };
-  tax?: {
-    enabled: boolean;
-    sellerCountry: string;
-    automaticTax: boolean;
   };
 }
 
 function getStripeKeys(): { secretKey: string; publishableKey: string; webhookSecret: string } {
   const mode = (process.env.STRIPE_MODE || 'test') as 'test' | 'live';
-  
   if (mode === 'live') {
     return {
       secretKey: process.env.STRIPE_LIVE_SECRET_KEY || '',
@@ -69,7 +54,6 @@ function getStripeKeys(): { secretKey: string; publishableKey: string; webhookSe
       webhookSecret: process.env.STRIPE_LIVE_WEBHOOK_SECRET || '',
     };
   }
-  
   return {
     secretKey: process.env.STRIPE_TEST_SECRET_KEY || '',
     publishableKey: process.env.STRIPE_TEST_PUBLISHABLE_KEY || '',
@@ -79,7 +63,7 @@ function getStripeKeys(): { secretKey: string; publishableKey: string; webhookSe
 
 const stripeKeys = getStripeKeys();
 
-export const config: Config = {
+export const config: AppConfig = {
   app: {
     env: process.env.NODE_ENV || 'development',
     port: parseInt(process.env.PORT || '3000', 10),
@@ -87,9 +71,7 @@ export const config: Config = {
   },
   stripe: {
     mode: (process.env.STRIPE_MODE || 'test') as 'test' | 'live',
-    secretKey: stripeKeys.secretKey,
-    publishableKey: stripeKeys.publishableKey,
-    webhookSecret: stripeKeys.webhookSecret,
+    ...stripeKeys,
   },
   database: {
     url: process.env.DATABASE_URL || 'postgresql://localhost:5432/forgepaybridge',
@@ -113,55 +95,36 @@ export const config: Config = {
     maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
   },
   email: {
-    enabled: process.env.EMAIL_ENABLED !== 'false',
-    provider: process.env.EMAIL_PROVIDER || 'console',
-    fromEmail: process.env.EMAIL_FROM || 'noreply@forgepaybridge.com',
-    fromName: process.env.EMAIL_FROM_NAME || 'ForgePay',
-    // SendGrid
-    sendgridApiKey: process.env.SENDGRID_API_KEY,
-    // AWS SES
-    awsRegion: process.env.AWS_REGION || 'us-east-1',
-    // SMTP
-    smtpHost: process.env.SMTP_HOST,
-    smtpPort: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
-    smtpSecure: process.env.SMTP_SECURE === 'true',
-    smtpUser: process.env.SMTP_USER,
-    smtpPass: process.env.SMTP_PASS,
-  },
-  tax: {
-    enabled: process.env.TAX_ENABLED !== 'false',
-    sellerCountry: process.env.TAX_SELLER_COUNTRY || 'US',
-    automaticTax: process.env.TAX_AUTOMATIC !== 'false',
+    from: process.env.EMAIL_FROM || 'noreply@forgepay.io',
+    smtpHost: process.env.EMAIL_SMTP_HOST,
+    smtpPort: parseInt(process.env.EMAIL_SMTP_PORT || '587', 10),
+    smtpSecure: process.env.EMAIL_SMTP_SECURE === 'true',
+    smtpUser: process.env.EMAIL_SMTP_USER,
+    smtpPass: process.env.EMAIL_SMTP_PASS,
   },
 };
 
-// Validate required configuration
 function validateConfig(): void {
-  const required = [
-    { key: 'STRIPE_SECRET_KEY', value: config.stripe.secretKey },
+  const missing = [
     { key: 'DATABASE_URL', value: config.database.url },
     { key: 'REDIS_URL', value: config.redis.url },
     { key: 'JWT_SECRET', value: config.jwt.secret },
-  ];
-
-  const missing = required.filter((item) => !item.value);
+  ].filter((item) => !item.value);
 
   if (missing.length > 0) {
     throw new Error(
-      `Missing required environment variables: ${missing.map((item) => item.key).join(', ')}`
+      `必須環境変数が未設定です: ${missing.map((item) => item.key).join(', ')}`
     );
   }
 
-  // Warn if using default JWT secret in production
   if (
     config.app.env === 'production' &&
     config.jwt.secret === 'change-this-secret-in-production'
   ) {
-    console.warn('WARNING: Using default JWT secret in production!');
+    console.warn('⚠️  WARNING: 本番環境でデフォルトの JWT シークレットが使用されています。変更してください。');
   }
 }
 
-// Validate on import
 if (process.env.NODE_ENV !== 'test') {
   validateConfig();
 }

@@ -13,6 +13,30 @@ export interface AuthenticatedRequest extends Request {
     testMode: boolean;
     stripeAccountId: string | null;
     webhookSecret: string | null;
+    /** 決済成功時のデフォルトリダイレクトURL */
+    defaultSuccessUrl: string | null;
+    /** 決済キャンセル時のデフォルトリダイレクトURL */
+    defaultCancelUrl: string | null;
+    /** デフォルトロケール */
+    defaultLocale: string;
+    /** デフォルト通貨 */
+    defaultCurrency: string;
+    /** デフォルト決済方法 */
+    defaultPaymentMethods: string[];
+    /** コールバックURL */
+    callbackUrl: string | null;
+    /** コールバック署名用シークレット */
+    callbackSecret: string | null;
+    /** 会社名/サービス名 */
+    companyName: string | null;
+    /** 暗号化された Stripe Secret Key */
+    stripeSecretKeyEnc: string | null;
+    /** Stripe Publishable Key */
+    stripePublishableKey: string | null;
+    /** Stripe Webhook Endpoint Secret */
+    stripeWebhookEndpointSecret: string | null;
+    /** Stripe 設定済みフラグ */
+    stripeConfigured: boolean;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -56,7 +80,12 @@ export async function apiKeyAuth(
     const apiKeyHash = hashApiKey(apiKey);
     
     const query = `
-      SELECT id, email, api_key_hash, test_mode, stripe_account_id, webhook_secret, created_at, updated_at
+      SELECT id, email, api_key_hash, test_mode, stripe_account_id, webhook_secret,
+             default_success_url, default_cancel_url, default_locale, default_currency,
+             default_payment_methods, callback_url, callback_secret, company_name,
+             stripe_secret_key_enc, stripe_publishable_key, stripe_webhook_endpoint_secret,
+             stripe_configured,
+             created_at, updated_at
       FROM developers
       WHERE api_key_hash = $1
     `;
@@ -88,6 +117,18 @@ export async function apiKeyAuth(
       testMode: developer.test_mode,
       stripeAccountId: developer.stripe_account_id,
       webhookSecret: developer.webhook_secret,
+      defaultSuccessUrl: developer.default_success_url || null,
+      defaultCancelUrl: developer.default_cancel_url || null,
+      defaultLocale: developer.default_locale || 'auto',
+      defaultCurrency: developer.default_currency || 'usd',
+      defaultPaymentMethods: developer.default_payment_methods || ['card'],
+      callbackUrl: developer.callback_url || null,
+      callbackSecret: developer.callback_secret || null,
+      companyName: developer.company_name || null,
+      stripeSecretKeyEnc: developer.stripe_secret_key_enc || null,
+      stripePublishableKey: developer.stripe_publishable_key || null,
+      stripeWebhookEndpointSecret: developer.stripe_webhook_endpoint_secret || null,
+      stripeConfigured: developer.stripe_configured || false,
       createdAt: new Date(developer.created_at),
       updatedAt: new Date(developer.updated_at),
     };
@@ -108,44 +149,6 @@ export async function apiKeyAuth(
       },
     });
   }
-}
-
-/**
- * Simple API key authentication (without database lookup)
- * For development/testing purposes
- */
-export function simpleApiKeyAuth(validApiKeys: string[]) {
-  return (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction
-  ): void => {
-    const apiKey = req.headers['x-api-key'] as string;
-
-    if (!apiKey) {
-      res.status(401).json({
-        error: {
-          code: 'unauthorized',
-          message: 'Missing API key. Include x-api-key header.',
-          type: 'authentication_error',
-        },
-      });
-      return;
-    }
-
-    if (!validApiKeys.includes(apiKey)) {
-      res.status(401).json({
-        error: {
-          code: 'unauthorized',
-          message: 'Invalid API key.',
-          type: 'authentication_error',
-        },
-      });
-      return;
-    }
-
-    next();
-  };
 }
 
 /**

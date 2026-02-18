@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { logger } from '../utils/logger';
+import { buildUpdateSets } from '../utils/db';
 
 /**
  * Price entity representing a price in the database
@@ -345,27 +346,18 @@ export class PriceRepository {
   ): Promise<Price | null> {
     const dbClient = client || this.pool;
 
-    // Build dynamic update query
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
+    const { sets, values, nextIndex } = buildUpdateSets(params as Record<string, unknown>, {
+      active: 'active',
+    });
 
-    if (params.active !== undefined) {
-      updates.push(`active = $${paramIndex++}`);
-      values.push(params.active);
-    }
-
-    if (updates.length === 0) {
-      // Nothing to update
-      return this.findById(id, client);
-    }
+    if (sets.length === 0) return this.findById(id, client);
 
     values.push(id);
 
     const query = `
       UPDATE prices
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      SET ${sets.join(', ')}
+      WHERE id = $${nextIndex}
       RETURNING *
     `;
 

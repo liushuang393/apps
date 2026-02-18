@@ -1,0 +1,166 @@
+openapi: "3.1.0"
+info:
+  title: ForgePay Checkout API
+  description: |
+    OpenAI ChatGPT Actions 用の ForgePay 決済 API スキーマ。
+    ChatGPT App にこのスキーマを設定することで、会話の中から決済フローを開始できます。
+  version: "2.0.0"
+
+servers:
+  - url: https://your-forgepay-instance.com/api/v1
+    description: 本番環境
+  - url: http://localhost:3000/api/v1
+    description: ローカル開発環境
+
+paths:
+  /checkout/sessions:
+    post:
+      operationId: createCheckoutSession
+      summary: 決済セッションを開始する
+      description: |
+        ユーザーが有料機能にアクセスしようとした際に呼び出す。
+        Stripe Checkout URL を返すので、ユーザーをそのURLに誘導する。
+        purchase_intent_id は OpenAI から提供される一意の決済意図 ID。
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - product_id
+                - price_id
+                - purchase_intent_id
+                - success_url
+                - cancel_url
+              properties:
+                product_id:
+                  type: string
+                  description: ForgePay ダッシュボードで作成した商品 ID
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                price_id:
+                  type: string
+                  description: ForgePay ダッシュボードで作成した価格 ID
+                  example: "550e8400-e29b-41d4-a716-446655440001"
+                purchase_intent_id:
+                  type: string
+                  description: OpenAI から提供される purchase_intent_id
+                  example: "pi_3MtwBwLkdIwHu7ix28a3tqPa"
+                customer_email:
+                  type: string
+                  format: email
+                  description: ユーザーのメールアドレス（オプション）
+                  example: "user@example.com"
+                success_url:
+                  type: string
+                  format: uri
+                  description: 決済成功時のリダイレクト先 URL
+                  example: "https://your-app.com/payment/success"
+                cancel_url:
+                  type: string
+                  format: uri
+                  description: 決済キャンセル時のリダイレクト先 URL
+                  example: "https://your-app.com/payment/cancel"
+      responses:
+        "201":
+          description: 決済セッション作成成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_url:
+                    type: string
+                    description: ユーザーをリダイレクトする Stripe Checkout URL
+                    example: "https://checkout.stripe.com/pay/cs_test_..."
+                  session_id:
+                    type: string
+                    description: ForgePay セッション ID
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: セッション有効期限（通常 30 分）
+        "400":
+          description: リクエストエラー（商品・価格が無効など）
+        "401":
+          description: API キー認証エラー
+
+  /entitlements/verify:
+    get:
+      operationId: verifyEntitlement
+      summary: unlock_token を検証して有料機能へのアクセスを確認する
+      description: |
+        決済完了後に ChatGPT App が呼び出す。
+        unlock_token が有効な場合、ユーザーは有料機能にアクセスできる。
+        このトークンは 5 分で期限切れになり、一度使用すると無効になる（使い捨て）。
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: query
+          name: unlock_token
+          required: true
+          schema:
+            type: string
+          description: 決済完了後に ForgePay から発行された JWT トークン
+      responses:
+        "200":
+          description: トークン検証成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    description: トークンが有効かどうか
+                  entitlement_id:
+                    type: string
+                    description: エンタイトルメント ID
+                  product_id:
+                    type: string
+                    description: 購入した商品 ID
+                  customer_id:
+                    type: string
+                    description: 顧客 ID
+                  status:
+                    type: string
+                    enum: [active, expired, cancelled]
+                    description: エンタイトルメントのステータス
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: エンタイトルメント有効期限
+        "401":
+          description: トークンが無効または期限切れ
+
+  /entitlements/{id}:
+    get:
+      operationId: getEntitlement
+      summary: エンタイトルメントの詳細を取得する
+      description: ユーザーの有料機能へのアクセス状態を確認する
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: エンタイトルメント ID
+      responses:
+        "200":
+          description: エンタイトルメント詳細
+        "404":
+          description: エンタイトルメントが見つからない
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        ForgePay の API キー。登録時にメールで送付されます。
+        形式: fpb_test_xxxxx または fpb_live_xxxxx

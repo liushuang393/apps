@@ -14,20 +14,16 @@ import {
   priceRepository,
 } from '../repositories/PriceRepository';
 import {
-  CustomerRepository,
-  customerRepository,
-} from '../repositories/CustomerRepository';
-import {
   StripeClient,
-  stripeClient,
   CreateCheckoutSessionParams as StripeCheckoutParams,
 } from './StripeClient';
+import { StripeClientFactory, stripeClientFactory } from './StripeClientFactory';
+import { DeveloperRepository, developerRepository } from '../repositories/DeveloperRepository';
 import { logger } from '../utils/logger';
 
-import { SupportedCurrency } from './CurrencyService';
-
 /**
- * Create session parameters
+ * チェックアウトセッション作成パラメータ
+ * 通貨・税金・クーポンは Stripe に委譲するためシンプルな構成
  */
 export interface CreateSessionParams {
   developerId: string;
@@ -37,13 +33,11 @@ export interface CreateSessionParams {
   customerEmail?: string;
   successUrl: string;
   cancelUrl: string;
-  currency?: SupportedCurrency;
   metadata?: Record<string, string>;
-  couponCode?: string;
 }
 
 /**
- * Create session result
+ * チェックアウトセッション作成結果
  */
 export interface CreateSessionResult {
   sessionId: string;
@@ -52,39 +46,52 @@ export interface CreateSessionResult {
 }
 
 /**
- * CheckoutService orchestrates checkout operations
- * 
- * Responsibilities:
- * - Create Stripe checkout sessions
- * - Store session metadata with purchase_intent_id
- * - Manage session lifecycle
- * 
- * Requirements: 1.1, 1.2, 4.2
+ * CheckoutService — OpenAI purchase_intent_id と Stripe Checkout Session のマッピング
+ *
+ * 薄いレイヤーとして以下のみを担当:
+ * - purchase_intent_id を含む Stripe Checkout Session の作成
+ * - セッションメタデータの DB 保存
+ * - セッションライフサイクル管理
+ *
+ * 通貨変換・クーポン・税金計算は全て Stripe に委譲
  */
 export class CheckoutService {
   private checkoutSessionRepo: CheckoutSessionRepository;
   private productRepo: ProductRepository;
   private priceRepo: PriceRepository;
-  private stripe: StripeClient;
+  private stripeFactory: StripeClientFactory;
+  private developerRepo: DeveloperRepository;
 
   constructor(
     checkoutSessionRepo: CheckoutSessionRepository = checkoutSessionRepository,
     productRepo: ProductRepository = productRepository,
     priceRepo: PriceRepository = priceRepository,
-    _customerRepo: CustomerRepository = customerRepository, // Reserved for future use
-    stripe: StripeClient = stripeClient
+    stripeFactory: StripeClientFactory = stripeClientFactory,
+    devRepo: DeveloperRepository = developerRepository
   ) {
     this.checkoutSessionRepo = checkoutSessionRepo;
     this.productRepo = productRepo;
     this.priceRepo = priceRepo;
-    this.stripe = stripe;
+    this.stripeFactory = stripeFactory;
+    this.developerRepo = devRepo;
   }
 
   /**
-   * Create a checkout session
-   * 
-   * @param params - Session parameters
-   * @returns Created session with checkout URL
+   * 開発者IDからStripeクライアントを取得（マルチテナント対応）
+   */
+  private async getStripeClient(developerId: string): Promise<StripeClient> {
+    const developer = await this.developerRepo.findById(developerId);
+    return this.stripeFactory.getClient(
+      developer?.stripeSecretKeyEnc || null,
+      developerId
+    );
+  }
+
+  /**
+   * チェックアウトセッションを作成
+   *
+   * purchase_intent_id を Stripe session の client_reference_id にマッピングし、
+   * DB に保存する。通貨・税金は Stripe が自動処理。
    */
   async createSession(params: CreateSessionParams): Promise<CreateSessionResult> {
     const client = await pool.connect();
@@ -92,7 +99,7 @@ export class CheckoutService {
     try {
       await client.query('BEGIN');
 
-      // Validate product exists and is active
+      // 商品の存在と有効性を検証
       const product = await this.productRepo.findById(params.productId, client);
       if (!product) {
         throw new Error('Product not found');
@@ -101,7 +108,7 @@ export class CheckoutService {
         throw new Error('Product is not active');
       }
 
-      // Validate price exists and is active
+      // 価格の存在と有効性を検証
       const price = await this.priceRepo.findById(params.priceId, client);
       if (!price) {
         throw new Error('Price not found');
@@ -113,14 +120,13 @@ export class CheckoutService {
         throw new Error('Price does not belong to the specified product');
       }
 
-      // Check if session already exists for this purchase intent
+      // 冪等性: 同じ purchase_intent_id のセッションが既に存在するか確認
       const existingSession = await this.checkoutSessionRepo.findByPurchaseIntentId(
         params.purchaseIntentId,
         client
       );
 
       if (existingSession && existingSession.status === 'open') {
-        // Return existing session if still open
         await client.query('COMMIT');
         return {
           sessionId: existingSession.id,
@@ -129,63 +135,24 @@ export class CheckoutService {
         };
       }
 
-      // Handle currency selection
-      const requestedCurrency = params.currency || 'usd';
-      let selectedPrice = price;
-      
-      // Check if the selected price matches the requested currency
-      if (price.currency.toLowerCase() !== requestedCurrency) {
-        // Try to find a price in the requested currency for this product
-        const pricesInCurrency = await this.priceRepo.findByProductIdAndCurrency(
-          params.productId,
-          requestedCurrency,
-          true, // activeOnly
-          client
-        );
-        
-        if (pricesInCurrency.length > 0) {
-          // Use the first active price in the requested currency
-          const activePriceInCurrency = pricesInCurrency.find(p => p.active);
-          if (activePriceInCurrency) {
-            selectedPrice = activePriceInCurrency;
-            logger.info('Using alternative price for currency', {
-              requestedCurrency,
-              originalPriceId: params.priceId,
-              selectedPriceId: selectedPrice.id,
-            });
-          }
-        } else {
-          // Log that we're using the original price even though currency doesn't match
-          logger.info('No price found for requested currency, using original', {
-            requestedCurrency,
-            priceCurrency: price.currency,
-            priceId: params.priceId,
-          });
-        }
-      }
-
-      // Determine checkout mode based on product type
+      // Stripe Checkout Session を作成
       const mode = product.type === 'subscription' ? 'subscription' : 'payment';
 
-      // Create Stripe checkout session
       const stripeParams: StripeCheckoutParams = {
         productId: params.productId,
-        priceId: selectedPrice.stripePriceId,
+        priceId: price.stripePriceId,
         purchaseIntentId: params.purchaseIntentId,
         customerEmail: params.customerEmail,
         successUrl: params.successUrl,
         cancelUrl: params.cancelUrl,
         mode,
-        metadata: {
-          ...params.metadata,
-          requested_currency: requestedCurrency,
-          original_price_id: params.priceId,
-        },
+        metadata: params.metadata,
       };
 
-      const stripeSession = await this.stripe.createCheckoutSession(stripeParams);
+      const stripe = await this.getStripeClient(params.developerId);
+      const stripeSession = await stripe.createCheckoutSession(stripeParams);
 
-      // Store session in database
+      // DB にセッション情報を保存
       const createParams: CreateCheckoutSessionParams = {
         developerId: params.developerId,
         stripeSessionId: stripeSession.sessionId,
@@ -202,7 +169,7 @@ export class CheckoutService {
 
       await client.query('COMMIT');
 
-      logger.info('Checkout session created', {
+      logger.info('チェックアウトセッション作成', {
         sessionId: session.id,
         stripeSessionId: stripeSession.sessionId,
         purchaseIntentId: params.purchaseIntentId,
@@ -216,7 +183,7 @@ export class CheckoutService {
       };
     } catch (error) {
       await client.query('ROLLBACK');
-      logger.error('Error creating checkout session', {
+      logger.error('チェックアウトセッション作成エラー', {
         error,
         params: { ...params, customerEmail: '***' },
       });
@@ -227,20 +194,14 @@ export class CheckoutService {
   }
 
   /**
-   * Get a checkout session by ID
-   * 
-   * @param sessionId - Session ID
-   * @returns Checkout session or null
+   * セッションIDでチェックアウトセッションを取得
    */
   async getSession(sessionId: string): Promise<CheckoutSession | null> {
     return this.checkoutSessionRepo.findById(sessionId);
   }
 
   /**
-   * Get a checkout session by Stripe session ID
-   * 
-   * @param stripeSessionId - Stripe session ID
-   * @returns Checkout session or null
+   * Stripe セッションIDでチェックアウトセッションを取得
    */
   async getSessionByStripeId(
     stripeSessionId: string
@@ -249,10 +210,7 @@ export class CheckoutService {
   }
 
   /**
-   * Get a checkout session by purchase intent ID
-   * 
-   * @param purchaseIntentId - Purchase intent ID
-   * @returns Checkout session or null
+   * purchase_intent_id でチェックアウトセッションを取得
    */
   async getSessionByPurchaseIntentId(
     purchaseIntentId: string
@@ -261,11 +219,7 @@ export class CheckoutService {
   }
 
   /**
-   * Mark a session as complete
-   * 
-   * @param sessionId - Session ID
-   * @param customerId - Customer ID
-   * @returns Updated session
+   * セッションを完了済みに更新
    */
   async markSessionComplete(
     sessionId: string,
@@ -277,7 +231,7 @@ export class CheckoutService {
     );
 
     if (session) {
-      logger.info('Checkout session marked complete', {
+      logger.info('チェックアウトセッション完了', {
         sessionId: session.id,
         customerId,
       });
@@ -287,16 +241,13 @@ export class CheckoutService {
   }
 
   /**
-   * Mark a session as expired
-   * 
-   * @param sessionId - Session ID
-   * @returns Updated session
+   * セッションを期限切れに更新
    */
   async markSessionExpired(sessionId: string): Promise<CheckoutSession | null> {
     const session = await this.checkoutSessionRepo.markExpired(sessionId);
 
     if (session) {
-      logger.info('Checkout session marked expired', {
+      logger.info('チェックアウトセッション期限切れ', {
         sessionId: session.id,
       });
     }
@@ -305,10 +256,7 @@ export class CheckoutService {
   }
 
   /**
-   * Expire a session (also expires in Stripe)
-   * 
-   * @param sessionId - Session ID
-   * @returns Updated session
+   * セッションを期限切れにする（Stripe 側も含む）
    */
   async expireSession(sessionId: string): Promise<CheckoutSession | null> {
     const session = await this.checkoutSessionRepo.findById(sessionId);
@@ -317,25 +265,21 @@ export class CheckoutService {
       return null;
     }
 
-    // Expire in Stripe
+    const stripe = await this.getStripeClient(session.developerId);
     try {
-      await this.stripe.expireCheckoutSession(session.stripeSessionId);
+      await stripe.expireCheckoutSession(session.stripeSessionId);
     } catch (error) {
-      logger.warn('Failed to expire Stripe session', {
+      logger.warn('Stripe セッション期限切れ処理失敗', {
         error,
         stripeSessionId: session.stripeSessionId,
       });
-      // Continue - session might already be expired in Stripe
     }
 
-    // Mark as expired in database
     return this.markSessionExpired(sessionId);
   }
 
   /**
-   * Process expired sessions (cleanup job)
-   * 
-   * @returns Number of sessions expired
+   * 期限切れセッションのクリーンアップ
    */
   async processExpiredSessions(): Promise<number> {
     const expiredSessions = await this.checkoutSessionRepo.findExpiredSessions();
@@ -346,7 +290,7 @@ export class CheckoutService {
         await this.markSessionExpired(session.id);
         count++;
       } catch (error) {
-        logger.error('Error marking session as expired', {
+        logger.error('セッション期限切れ処理エラー', {
           error,
           sessionId: session.id,
         });
@@ -354,19 +298,14 @@ export class CheckoutService {
     }
 
     if (count > 0) {
-      logger.info('Processed expired checkout sessions', { count });
+      logger.info('期限切れセッション処理完了', { count });
     }
 
     return count;
   }
 
   /**
-   * Get checkout sessions by developer
-   * 
-   * @param developerId - Developer ID
-   * @param status - Optional status filter
-   * @param limit - Maximum number of results
-   * @returns Array of checkout sessions
+   * 開発者のチェックアウトセッション一覧を取得
    */
   async getSessionsByDeveloper(
     developerId: string,
@@ -377,5 +316,5 @@ export class CheckoutService {
   }
 }
 
-// Export singleton instance
+// シングルトンインスタンス
 export const checkoutService = new CheckoutService();

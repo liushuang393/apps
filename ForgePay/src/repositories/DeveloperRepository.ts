@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { logger } from '../utils/logger';
+import { buildUpdateSets } from '../utils/db';
 
 /**
  * Developer entity
@@ -12,6 +13,30 @@ export interface Developer {
   apiKeyHash: string;
   webhookSecret: string | null;
   testMode: boolean;
+  /** 決済成功時のデフォルトリダイレクトURL */
+  defaultSuccessUrl: string | null;
+  /** 決済キャンセル時のデフォルトリダイレクトURL */
+  defaultCancelUrl: string | null;
+  /** デフォルトロケール */
+  defaultLocale: string;
+  /** デフォルト通貨 */
+  defaultCurrency: string;
+  /** デフォルト決済方法 */
+  defaultPaymentMethods: string[];
+  /** コールバックURL */
+  callbackUrl: string | null;
+  /** コールバック署名用シークレット */
+  callbackSecret: string | null;
+  /** 会社名/サービス名 */
+  companyName: string | null;
+  /** 暗号化された Stripe Secret Key */
+  stripeSecretKeyEnc: string | null;
+  /** Stripe Publishable Key */
+  stripePublishableKey: string | null;
+  /** Stripe Webhook Endpoint Secret */
+  stripeWebhookEndpointSecret: string | null;
+  /** Stripe 設定済みフラグ */
+  stripeConfigured: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +61,18 @@ export interface UpdateDeveloperParams {
   webhookSecret?: string;
   testMode?: boolean;
   apiKeyHash?: string;
+  defaultSuccessUrl?: string | null;
+  defaultCancelUrl?: string | null;
+  defaultLocale?: string;
+  defaultCurrency?: string;
+  defaultPaymentMethods?: string[];
+  callbackUrl?: string | null;
+  callbackSecret?: string | null;
+  companyName?: string | null;
+  stripeSecretKeyEnc?: string | null;
+  stripePublishableKey?: string | null;
+  stripeWebhookEndpointSecret?: string | null;
+  stripeConfigured?: boolean;
 }
 
 /**
@@ -177,7 +214,7 @@ export class DeveloperRepository {
   }
 
   /**
-   * Update a developer
+   * 開発者情報を更新する
    */
   async update(
     id: string,
@@ -186,42 +223,42 @@ export class DeveloperRepository {
   ): Promise<Developer | null> {
     const dbClient = client || this.pool;
 
-    const updates: string[] = [];
-    const values: unknown[] = [];
-    let paramIndex = 1;
+    const normalizedParams: Record<string, unknown> = {
+      ...params,
+      defaultPaymentMethods: params.defaultPaymentMethods !== undefined
+        ? JSON.stringify(params.defaultPaymentMethods)
+        : undefined,
+    };
 
-    if (params.email !== undefined) {
-      updates.push(`email = $${paramIndex++}`);
-      values.push(params.email);
-    }
-    if (params.stripeAccountId !== undefined) {
-      updates.push(`stripe_account_id = $${paramIndex++}`);
-      values.push(params.stripeAccountId);
-    }
-    if (params.webhookSecret !== undefined) {
-      updates.push(`webhook_secret = $${paramIndex++}`);
-      values.push(params.webhookSecret);
-    }
-    if (params.testMode !== undefined) {
-      updates.push(`test_mode = $${paramIndex++}`);
-      values.push(params.testMode);
-    }
-    if (params.apiKeyHash !== undefined) {
-      updates.push(`api_key_hash = $${paramIndex++}`);
-      values.push(params.apiKeyHash);
-    }
+    const { sets, values, nextIndex } = buildUpdateSets(normalizedParams, {
+      email: 'email',
+      stripeAccountId: 'stripe_account_id',
+      webhookSecret: 'webhook_secret',
+      testMode: 'test_mode',
+      apiKeyHash: 'api_key_hash',
+      defaultSuccessUrl: 'default_success_url',
+      defaultCancelUrl: 'default_cancel_url',
+      defaultLocale: 'default_locale',
+      defaultCurrency: 'default_currency',
+      defaultPaymentMethods: 'default_payment_methods',
+      callbackUrl: 'callback_url',
+      callbackSecret: 'callback_secret',
+      companyName: 'company_name',
+      stripeSecretKeyEnc: 'stripe_secret_key_enc',
+      stripePublishableKey: 'stripe_publishable_key',
+      stripeWebhookEndpointSecret: 'stripe_webhook_endpoint_secret',
+      stripeConfigured: 'stripe_configured',
+    });
 
-    if (updates.length === 0) {
-      return this.findById(id, client);
-    }
+    if (sets.length === 0) return this.findById(id, client);
 
-    updates.push(`updated_at = NOW()`);
+    sets.push('updated_at = NOW()');
     values.push(id);
 
     const query = `
       UPDATE developers
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      SET ${sets.join(', ')}
+      WHERE id = $${nextIndex}
       RETURNING *
     `;
 
@@ -313,6 +350,18 @@ export class DeveloperRepository {
       apiKeyHash: row.api_key_hash as string,
       webhookSecret: row.webhook_secret as string | null,
       testMode: row.test_mode as boolean,
+      defaultSuccessUrl: (row.default_success_url as string) || null,
+      defaultCancelUrl: (row.default_cancel_url as string) || null,
+      defaultLocale: (row.default_locale as string) || 'auto',
+      defaultCurrency: (row.default_currency as string) || 'usd',
+      defaultPaymentMethods: (row.default_payment_methods as string[]) || ['card'],
+      callbackUrl: (row.callback_url as string) || null,
+      callbackSecret: (row.callback_secret as string) || null,
+      companyName: (row.company_name as string) || null,
+      stripeSecretKeyEnc: (row.stripe_secret_key_enc as string) || null,
+      stripePublishableKey: (row.stripe_publishable_key as string) || null,
+      stripeWebhookEndpointSecret: (row.stripe_webhook_endpoint_secret as string) || null,
+      stripeConfigured: (row.stripe_configured as boolean) || false,
       createdAt: new Date(row.created_at as string),
       updatedAt: new Date(row.updated_at as string),
     };

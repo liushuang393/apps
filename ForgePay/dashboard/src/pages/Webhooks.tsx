@@ -18,7 +18,8 @@ export function Webhooks() {
     },
   })
 
-  const webhooks: WebhookLog[] = data?.data?.webhooks || []
+  // バックエンドは { data: [...] } を返す
+  const webhooks: WebhookLog[] = data?.data?.data || []
   const failedWebhooks = webhooks.filter((w) => w.status === 'failed' || w.status === 'dlq')
 
   return (
@@ -28,7 +29,7 @@ export function Webhooks() {
         <p className="text-gray-600 mt-1">Monitor and retry failed webhook events</p>
       </div>
 
-      {/* Summary Cards */}
+      {/* サマリーカード */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center justify-between">
@@ -69,7 +70,7 @@ export function Webhooks() {
         </div>
       </div>
 
-      {/* Webhooks Table */}
+      {/* Webhook テーブル */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Failed Webhooks</h2>
@@ -119,7 +120,7 @@ export function Webhooks() {
                     <div className="flex items-center">
                       <Webhook className="h-5 w-5 text-gray-400 mr-2" />
                       <span className="font-mono text-sm text-gray-900">
-                        {webhook.eventType}
+                        {webhook.event_type}
                       </span>
                     </div>
                   </td>
@@ -139,11 +140,11 @@ export function Webhooks() {
                   </td>
                   <td className="px-6 py-4">
                     <p className="text-sm text-red-600 max-w-xs truncate">
-                      {webhook.errorMessage || 'Unknown error'}
+                      {webhook.error_message || 'Unknown error'}
                     </p>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDistanceToNow(new Date(webhook.createdAt), { addSuffix: true })}
+                    {formatDistanceToNow(new Date(webhook.created_at), { addSuffix: true })}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                     <button

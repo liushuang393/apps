@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { apiKeyAuth, simpleApiKeyAuth, optionalApiKeyAuth, AuthenticatedRequest } from '../../../middleware/auth';
+import { apiKeyAuth, optionalApiKeyAuth, AuthenticatedRequest } from '../../../middleware/auth';
 
 // Mock dependencies
 jest.mock('../../../config/database', () => ({
@@ -172,9 +172,21 @@ describe('Auth Middleware', () => {
         expect((mockRequest as AuthenticatedRequest).developer).toEqual({
           id: 'dev-123',
           email: 'test@example.com',
-          testMode: true,
           stripeAccountId: 'acct_123',
           webhookSecret: 'whsec_123',
+          testMode: true,
+          defaultSuccessUrl: null,
+          defaultCancelUrl: null,
+          defaultLocale: 'auto',
+          defaultCurrency: 'usd',
+          defaultPaymentMethods: ['card'],
+          callbackUrl: null,
+          callbackSecret: null,
+          companyName: null,
+          stripeSecretKeyEnc: null,
+          stripePublishableKey: null,
+          stripeWebhookEndpointSecret: null,
+          stripeConfigured: false,
           createdAt: expect.any(Date),
           updatedAt: expect.any(Date),
         });
@@ -370,160 +382,6 @@ describe('Auth Middleware', () => {
     });
   });
 
-  describe('simpleApiKeyAuth', () => {
-    const validApiKeys = ['test-key-1', 'test-key-2', 'admin-key'];
-
-    describe('when API key is missing', () => {
-      it('should return 401 with missing API key error', () => {
-        const middleware = simpleApiKeyAuth(validApiKeys);
-        mockRequest.headers = {};
-
-        middleware(
-          mockRequest as AuthenticatedRequest,
-          mockResponse as Response,
-          mockNext
-        );
-
-        expect(statusMock).toHaveBeenCalledWith(401);
-        expect(jsonMock).toHaveBeenCalledWith({
-          error: {
-            code: 'unauthorized',
-            message: 'Missing API key. Include x-api-key header.',
-            type: 'authentication_error',
-          },
-        });
-        expect(mockNext).not.toHaveBeenCalled();
-      });
-    });
-
-    describe('when API key is invalid', () => {
-      it('should return 401 with invalid API key error', () => {
-        const middleware = simpleApiKeyAuth(validApiKeys);
-        mockRequest.headers = { 'x-api-key': 'invalid-key' };
-
-        middleware(
-          mockRequest as AuthenticatedRequest,
-          mockResponse as Response,
-          mockNext
-        );
-
-        expect(statusMock).toHaveBeenCalledWith(401);
-        expect(jsonMock).toHaveBeenCalledWith({
-          error: {
-            code: 'unauthorized',
-            message: 'Invalid API key.',
-            type: 'authentication_error',
-          },
-        });
-        expect(mockNext).not.toHaveBeenCalled();
-      });
-
-      it('should reject key not in valid list', () => {
-        const middleware = simpleApiKeyAuth(validApiKeys);
-        mockRequest.headers = { 'x-api-key': 'not-in-list' };
-
-        middleware(
-          mockRequest as AuthenticatedRequest,
-          mockResponse as Response,
-          mockNext
-        );
-
-        expect(statusMock).toHaveBeenCalledWith(401);
-        expect(mockNext).not.toHaveBeenCalled();
-      });
-    });
-
-    describe('when API key is valid', () => {
-      it('should call next for valid API key', () => {
-        const middleware = simpleApiKeyAuth(validApiKeys);
-        mockRequest.headers = { 'x-api-key': 'test-key-1' };
-
-        middleware(
-          mockRequest as AuthenticatedRequest,
-          mockResponse as Response,
-          mockNext
-        );
-
-        expect(mockNext).toHaveBeenCalled();
-        expect(statusMock).not.toHaveBeenCalled();
-      });
-
-      it('should accept any key from the valid list', () => {
-        const middleware = simpleApiKeyAuth(validApiKeys);
-
-        for (const key of validApiKeys) {
-          jest.clearAllMocks();
-          mockRequest.headers = { 'x-api-key': key };
-
-          middleware(
-            mockRequest as AuthenticatedRequest,
-            mockResponse as Response,
-            mockNext
-          );
-
-          expect(mockNext).toHaveBeenCalled();
-        }
-      });
-    });
-
-    describe('edge cases', () => {
-      it('should work with empty valid keys array', () => {
-        const middleware = simpleApiKeyAuth([]);
-        mockRequest.headers = { 'x-api-key': 'any-key' };
-
-        middleware(
-          mockRequest as AuthenticatedRequest,
-          mockResponse as Response,
-          mockNext
-        );
-
-        expect(statusMock).toHaveBeenCalledWith(401);
-        expect(mockNext).not.toHaveBeenCalled();
-      });
-
-      it('should be case-sensitive for API keys', () => {
-        const middleware = simpleApiKeyAuth(['Test-Key']);
-        mockRequest.headers = { 'x-api-key': 'test-key' };
-
-        middleware(
-          mockRequest as AuthenticatedRequest,
-          mockResponse as Response,
-          mockNext
-        );
-
-        expect(statusMock).toHaveBeenCalledWith(401);
-        expect(mockNext).not.toHaveBeenCalled();
-      });
-
-      it('should not trim whitespace from API keys', () => {
-        const middleware = simpleApiKeyAuth(['test-key']);
-        mockRequest.headers = { 'x-api-key': ' test-key ' };
-
-        middleware(
-          mockRequest as AuthenticatedRequest,
-          mockResponse as Response,
-          mockNext
-        );
-
-        expect(statusMock).toHaveBeenCalledWith(401);
-        expect(mockNext).not.toHaveBeenCalled();
-      });
-
-      it('should work with single valid key', () => {
-        const middleware = simpleApiKeyAuth(['only-key']);
-        mockRequest.headers = { 'x-api-key': 'only-key' };
-
-        middleware(
-          mockRequest as AuthenticatedRequest,
-          mockResponse as Response,
-          mockNext
-        );
-
-        expect(mockNext).toHaveBeenCalled();
-      });
-    });
-  });
-
   describe('optionalApiKeyAuth', () => {
     describe('when API key is not provided', () => {
       it('should call next without authentication', async () => {
@@ -582,9 +440,21 @@ describe('Auth Middleware', () => {
         expect((mockRequest as AuthenticatedRequest).developer).toEqual({
           id: 'dev-123',
           email: 'test@example.com',
-          testMode: true,
           stripeAccountId: 'acct_123',
           webhookSecret: 'whsec_123',
+          testMode: true,
+          defaultSuccessUrl: null,
+          defaultCancelUrl: null,
+          defaultLocale: 'auto',
+          defaultCurrency: 'usd',
+          defaultPaymentMethods: ['card'],
+          callbackUrl: null,
+          callbackSecret: null,
+          companyName: null,
+          stripeSecretKeyEnc: null,
+          stripePublishableKey: null,
+          stripeWebhookEndpointSecret: null,
+          stripeConfigured: false,
           createdAt: expect.any(Date),
           updatedAt: expect.any(Date),
         });

@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { EntitlementStatus } from '../types';
 import { logger } from '../utils/logger';
+import { buildUpdateSets } from '../utils/db';
 
 /**
  * Entitlement entity representing an entitlement in the database
@@ -365,40 +366,21 @@ export class EntitlementRepository {
   ): Promise<Entitlement | null> {
     const dbClient = client || this.pool;
 
-    // Build dynamic update query
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
+    const { sets, values, nextIndex } = buildUpdateSets(params as Record<string, unknown>, {
+      status: 'status',
+      expiresAt: 'expires_at',
+      revokedReason: 'revoked_reason',
+    });
 
-    if (params.status !== undefined) {
-      updates.push(`status = $${paramIndex++}`);
-      values.push(params.status);
-    }
+    if (sets.length === 0) return this.findById(id, client);
 
-    if (params.expiresAt !== undefined) {
-      updates.push(`expires_at = $${paramIndex++}`);
-      values.push(params.expiresAt);
-    }
-
-    if (params.revokedReason !== undefined) {
-      updates.push(`revoked_reason = $${paramIndex++}`);
-      values.push(params.revokedReason);
-    }
-
-    // Always update updated_at
-    updates.push(`updated_at = NOW()`);
-
-    if (updates.length === 1) {
-      // Only updated_at would be updated, nothing to do
-      return this.findById(id, client);
-    }
-
+    sets.push('updated_at = NOW()');
     values.push(id);
 
     const query = `
       UPDATE entitlements
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      SET ${sets.join(', ')}
+      WHERE id = $${nextIndex}
       RETURNING *
     `;
 

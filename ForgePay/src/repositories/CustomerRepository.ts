@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { logger } from '../utils/logger';
+import { buildUpdateSets } from '../utils/db';
 
 /**
  * Customer entity representing a customer in the database
@@ -317,40 +318,26 @@ export class CustomerRepository {
   ): Promise<Customer | null> {
     const dbClient = client || this.pool;
 
-    // Build dynamic update query
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
+    const normalizedParams: Record<string, unknown> = {
+      ...params,
+      metadata: params.metadata !== undefined ? JSON.stringify(params.metadata) : undefined,
+    };
 
-    if (params.email !== undefined) {
-      updates.push(`email = $${paramIndex++}`);
-      values.push(params.email);
-    }
+    const { sets, values, nextIndex } = buildUpdateSets(normalizedParams, {
+      email: 'email',
+      name: 'name',
+      metadata: 'metadata',
+    });
 
-    if (params.name !== undefined) {
-      updates.push(`name = $${paramIndex++}`);
-      values.push(params.name);
-    }
+    if (sets.length === 0) return this.findById(id, client);
 
-    if (params.metadata !== undefined) {
-      updates.push(`metadata = $${paramIndex++}`);
-      values.push(JSON.stringify(params.metadata));
-    }
-
-    // Always update updated_at
-    updates.push(`updated_at = NOW()`);
-
-    if (updates.length === 1) {
-      // Only updated_at would be updated, nothing to do
-      return this.findById(id, client);
-    }
-
+    sets.push('updated_at = NOW()');
     values.push(id);
 
     const query = `
       UPDATE customers
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      SET ${sets.join(', ')}
+      WHERE id = $${nextIndex}
       RETURNING *
     `;
 

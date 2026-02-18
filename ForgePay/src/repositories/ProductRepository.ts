@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { ProductType } from '../types';
 import { logger } from '../utils/logger';
+import { buildUpdateSets } from '../utils/db';
 
 /**
  * Product entity representing a product in the database
@@ -15,6 +16,10 @@ export interface Product {
   type: ProductType;
   active: boolean;
   metadata: Record<string, any> | null;
+  /** 決済リンクURL用のスラグ */
+  slug: string | null;
+  /** 利用可能な決済方法 */
+  paymentMethods: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,6 +35,8 @@ export interface CreateProductParams {
   type: ProductType;
   active?: boolean;
   metadata?: Record<string, any>;
+  slug?: string;
+  paymentMethods?: string[];
 }
 
 /**
@@ -40,6 +47,8 @@ export interface UpdateProductParams {
   description?: string;
   active?: boolean;
   metadata?: Record<string, any>;
+  slug?: string;
+  paymentMethods?: string[];
 }
 
 /**
@@ -80,8 +89,10 @@ export class ProductRepository {
         description,
         type,
         active,
-        metadata
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        metadata,
+        slug,
+        payment_methods
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `;
 
@@ -93,6 +104,8 @@ export class ProductRepository {
       params.type,
       params.active !== undefined ? params.active : true,
       params.metadata ? JSON.stringify(params.metadata) : null,
+      params.slug || null,
+      params.paymentMethods ? JSON.stringify(params.paymentMethods) : JSON.stringify(['card']),
     ];
 
     try {
@@ -252,45 +265,31 @@ export class ProductRepository {
   ): Promise<Product | null> {
     const dbClient = client || this.pool;
 
-    // Build dynamic update query
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
+    // metadata と paymentMethods は JSON 直列化が必要なため個別処理
+    const normalizedParams: Record<string, unknown> = {
+      ...params,
+      metadata: params.metadata !== undefined ? JSON.stringify(params.metadata) : undefined,
+      paymentMethods: params.paymentMethods !== undefined ? JSON.stringify(params.paymentMethods) : undefined,
+    };
 
-    if (params.name !== undefined) {
-      updates.push(`name = $${paramIndex++}`);
-      values.push(params.name);
-    }
+    const { sets, values, nextIndex } = buildUpdateSets(normalizedParams, {
+      name: 'name',
+      description: 'description',
+      active: 'active',
+      metadata: 'metadata',
+      slug: 'slug',
+      paymentMethods: 'payment_methods',
+    });
 
-    if (params.description !== undefined) {
-      updates.push(`description = $${paramIndex++}`);
-      values.push(params.description);
-    }
+    if (sets.length === 0) return this.findById(id, client);
 
-    if (params.active !== undefined) {
-      updates.push(`active = $${paramIndex++}`);
-      values.push(params.active);
-    }
-
-    if (params.metadata !== undefined) {
-      updates.push(`metadata = $${paramIndex++}`);
-      values.push(JSON.stringify(params.metadata));
-    }
-
-    // Always update updated_at
-    updates.push(`updated_at = NOW()`);
-
-    if (updates.length === 1) {
-      // Only updated_at would be updated, nothing to do
-      return this.findById(id, client);
-    }
-
+    sets.push('updated_at = NOW()');
     values.push(id);
 
     const query = `
       UPDATE products
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      SET ${sets.join(', ')}
+      WHERE id = $${nextIndex}
       RETURNING *
     `;
 
@@ -396,6 +395,43 @@ export class ProductRepository {
   }
 
   /**
+   * スラグで商品を検索
+   * 
+   * @param slug - 商品スラグ
+   * @param developerId - 開発者ID（オプション）
+   * @param client - DBクライアント
+   * @returns 商品 or null
+   */
+  async findBySlug(
+    slug: string,
+    developerId?: string,
+    client?: PoolClient
+  ): Promise<Product | null> {
+    const dbClient = client || this.pool;
+
+    let query = `SELECT * FROM products WHERE slug = $1`;
+    const values: any[] = [slug];
+
+    if (developerId) {
+      query += ` AND developer_id = $2`;
+      values.push(developerId);
+    }
+
+    query += ` AND active = true LIMIT 1`;
+
+    try {
+      const result = await dbClient.query(query, values);
+      if (result.rows.length === 0) {
+        return null;
+      }
+      return this.mapRowToProduct(result.rows[0]);
+    } catch (error) {
+      logger.error('Error finding product by slug', { error, slug });
+      throw error;
+    }
+  }
+
+  /**
    * Count products for a developer
    * 
    * @param developerId - Developer ID
@@ -451,6 +487,8 @@ export class ProductRepository {
       type: row.type as ProductType,
       active: row.active,
       metadata: row.metadata,
+      slug: row.slug || null,
+      paymentMethods: row.payment_methods || ['card'],
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };

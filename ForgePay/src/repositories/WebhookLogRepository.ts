@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { WebhookEventStatus } from '../types';
 import { logger } from '../utils/logger';
+import { buildUpdateSets } from '../utils/db';
 
 /**
  * WebhookLog entity representing a webhook event in the database
@@ -338,41 +339,21 @@ export class WebhookLogRepository {
   ): Promise<WebhookLog | null> {
     const dbClient = client || this.pool;
 
-    // Build dynamic update query
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
+    const { sets, values, nextIndex } = buildUpdateSets(params as Record<string, unknown>, {
+      status: 'status',
+      attempts: 'attempts',
+      lastAttemptAt: 'last_attempt_at',
+      errorMessage: 'error_message',
+    });
 
-    if (params.status !== undefined) {
-      updates.push(`status = $${paramIndex++}`);
-      values.push(params.status);
-    }
-
-    if (params.attempts !== undefined) {
-      updates.push(`attempts = $${paramIndex++}`);
-      values.push(params.attempts);
-    }
-
-    if (params.lastAttemptAt !== undefined) {
-      updates.push(`last_attempt_at = $${paramIndex++}`);
-      values.push(params.lastAttemptAt);
-    }
-
-    if (params.errorMessage !== undefined) {
-      updates.push(`error_message = $${paramIndex++}`);
-      values.push(params.errorMessage);
-    }
-
-    if (updates.length === 0) {
-      return this.findById(id, client);
-    }
+    if (sets.length === 0) return this.findById(id, client);
 
     values.push(id);
 
     const query = `
       UPDATE webhook_events
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      SET ${sets.join(', ')}
+      WHERE id = $${nextIndex}
       RETURNING *
     `;
 

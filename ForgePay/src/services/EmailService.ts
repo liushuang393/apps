@@ -1,616 +1,366 @@
-import { config } from '../config';
 import { logger } from '../utils/logger';
+import { config } from '../config';
 
 /**
- * Email recipient info
+ * メール送信サービス
+ *
+ * 環境変数 EMAIL_SMTP_HOST が設定されている場合は nodemailer で SMTP 送信。
+ * 未設定（開発環境）の場合はコンソールにログ出力するコンソールトランスポートを使用。
+ *
+ * 本番環境での利用:
+ *   npm install nodemailer
+ *   EMAIL_SMTP_HOST=smtp.example.com
+ *   EMAIL_SMTP_PORT=587
+ *   EMAIL_SMTP_USER=user@example.com
+ *   EMAIL_SMTP_PASS=password
+ *   EMAIL_FROM=noreply@forgepay.io
  */
-export interface EmailRecipient {
-  email: string;
-  name?: string;
-}
 
-/**
- * Base email options
- */
-export interface EmailOptions {
-  to: EmailRecipient | EmailRecipient[];
+export interface SendMailOptions {
+  to: string;
   subject: string;
+  html: string;
   text?: string;
-  html?: string;
-  replyTo?: string;
+}
+
+export interface EmailService {
+  sendMail(options: SendMailOptions): Promise<void>;
+  sendWelcomeEmail(to: string, apiKey: string): Promise<void>;
+  sendForgotKeyEmail(to: string, newApiKey: string): Promise<void>;
+  sendKeyRegeneratedEmail(to: string, newApiKey: string, hasPendingPayments: boolean): Promise<void>;
+  sendStripeSetupGuideEmail(to: string, dashboardUrl: string): Promise<void>;
 }
 
 /**
- * Payment failure notification data
+ * コンソールトランスポート（開発環境・デフォルト）
+ * メール内容をログに出力する
  */
-export interface PaymentFailureNotificationData {
-  customerEmail: string;
-  customerName?: string;
-  productName: string;
-  amount: number;
-  currency: string;
-  failureReason?: string;
-  retryDate?: Date;
-  updatePaymentUrl: string;
-}
-
-/**
- * Chargeback notification data
- */
-export interface ChargebackNotificationData {
-  developerEmail: string;
-  customerEmail: string;
-  productName: string;
-  amount: number;
-  currency: string;
-  chargebackReason?: string;
-  chargebackId: string;
-  respondByDate?: Date;
-}
-
-/**
- * Subscription cancelled notification data
- */
-export interface SubscriptionCancelledNotificationData {
-  customerEmail: string;
-  customerName?: string;
-  productName: string;
-  cancellationDate: Date;
-  accessEndDate: Date;
-}
-
-/**
- * Welcome notification data
- */
-export interface WelcomeNotificationData {
-  customerEmail: string;
-  customerName?: string;
-  productName: string;
-  accessUrl?: string;
-}
-
-/**
- * Email template types
- */
-export type EmailTemplate =
-  | 'payment_failure'
-  | 'chargeback_created'
-  | 'subscription_cancelled'
-  | 'welcome'
-  | 'refund_processed';
-
-/**
- * EmailService handles all email notifications
- *
- * Responsibilities:
- * - Send payment failure notifications to customers
- * - Send chargeback notifications to developers
- * - Send subscription lifecycle notifications
- * - Support multiple email providers (SMTP, SendGrid, SES)
- *
- * Requirements: 13.2, 12.5
- */
-export class EmailService {
-  private provider: string;
-  private fromEmail: string;
-  private fromName: string;
-  private enabled: boolean;
-
-  constructor() {
-    this.provider = config.email?.provider || 'console';
-    this.fromEmail = config.email?.fromEmail || 'noreply@forgepay.com';
-    this.fromName = config.email?.fromName || 'ForgePay';
-    this.enabled = config.email?.enabled !== false;
-  }
-
-  /**
-   * Send an email using the configured provider
-   *
-   * @param options - Email options
-   * @returns True if sent successfully
-   */
-  async send(options: EmailOptions): Promise<boolean> {
-    if (!this.enabled) {
-      logger.info('Email sending disabled, skipping', {
-        to: options.to,
-        subject: options.subject,
-      });
-      return true;
-    }
-
-    try {
-      switch (this.provider) {
-        case 'sendgrid':
-          return await this.sendViaSendGrid(options);
-        case 'ses':
-          return await this.sendViaSES(options);
-        case 'smtp':
-          return await this.sendViaSMTP(options);
-        case 'console':
-        default:
-          return await this.sendViaConsole(options);
-      }
-    } catch (error) {
-      logger.error('Failed to send email', {
-        error,
-        to: options.to,
-        subject: options.subject,
-      });
-      return false;
-    }
-  }
-
-  /**
-   * Send payment failure notification to customer
-   *
-   * @param data - Payment failure notification data
-   * @returns True if sent successfully
-   */
-  async sendPaymentFailureNotification(
-    data: PaymentFailureNotificationData
-  ): Promise<boolean> {
-    const subject = `Payment failed for ${data.productName}`;
-
-    const text = `
-Hi ${data.customerName || 'there'},
-
-We were unable to process your payment of ${this.formatCurrency(data.amount, data.currency)} for ${data.productName}.
-
-${data.failureReason ? `Reason: ${data.failureReason}` : ''}
-
-${data.retryDate ? `We will automatically retry on ${data.retryDate.toLocaleDateString()}.` : ''}
-
-To update your payment method and ensure uninterrupted access, please visit:
-${data.updatePaymentUrl}
-
-If you have any questions, please reply to this email.
-
-Best regards,
-${this.fromName}
-    `.trim();
-
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .header { background: #f8f9fa; padding: 20px; border-radius: 8px 8px 0 0; }
-    .content { background: #fff; padding: 20px; border: 1px solid #e9ecef; }
-    .footer { background: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center; font-size: 12px; color: #6c757d; }
-    .button { display: inline-block; padding: 12px 24px; background: #007bff; color: #fff; text-decoration: none; border-radius: 4px; margin: 20px 0; }
-    .alert { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 4px; margin: 15px 0; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h2 style="margin: 0;">Payment Failed</h2>
-    </div>
-    <div class="content">
-      <p>Hi ${data.customerName || 'there'},</p>
-      
-      <div class="alert">
-        We were unable to process your payment of <strong>${this.formatCurrency(data.amount, data.currency)}</strong> for <strong>${data.productName}</strong>.
-      </div>
-      
-      ${data.failureReason ? `<p><strong>Reason:</strong> ${data.failureReason}</p>` : ''}
-      
-      ${data.retryDate ? `<p>We will automatically retry on <strong>${data.retryDate.toLocaleDateString()}</strong>.</p>` : ''}
-      
-      <p>To update your payment method and ensure uninterrupted access:</p>
-      
-      <a href="${data.updatePaymentUrl}" class="button">Update Payment Method</a>
-      
-      <p>If you have any questions, please reply to this email.</p>
-    </div>
-    <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} ${this.fromName}. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const result = await this.send({
-      to: { email: data.customerEmail, name: data.customerName },
-      subject,
-      text,
-      html,
-    });
-
-    if (result) {
-      logger.info('Payment failure notification sent', {
-        customerEmail: data.customerEmail,
-        productName: data.productName,
-      });
-    }
-
-    return result;
-  }
-
-  /**
-   * Send chargeback notification to developer
-   *
-   * @param data - Chargeback notification data
-   * @returns True if sent successfully
-   */
-  async sendChargebackNotification(
-    data: ChargebackNotificationData
-  ): Promise<boolean> {
-    const subject = `⚠️ Chargeback Alert: ${this.formatCurrency(data.amount, data.currency)} dispute`;
-
-    const text = `
-URGENT: Chargeback Received
-
-A chargeback has been filed against a payment.
-
-Details:
-- Amount: ${this.formatCurrency(data.amount, data.currency)}
-- Product: ${data.productName}
-- Customer: ${data.customerEmail}
-- Chargeback ID: ${data.chargebackId}
-${data.chargebackReason ? `- Reason: ${data.chargebackReason}` : ''}
-${data.respondByDate ? `- Respond By: ${data.respondByDate.toLocaleDateString()}` : ''}
-
-Actions Taken:
-- Customer's entitlement has been automatically revoked
-- This dispute has been logged in your dashboard
-
-Next Steps:
-1. Review the transaction in your Stripe dashboard
-2. Gather evidence to support your case
-3. Submit your response before the deadline
-
-If you have any questions, please contact support.
-
-Best regards,
-${this.fromName}
-    `.trim();
-
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .header { background: #dc3545; padding: 20px; border-radius: 8px 8px 0 0; color: #fff; }
-    .content { background: #fff; padding: 20px; border: 1px solid #e9ecef; }
-    .footer { background: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center; font-size: 12px; color: #6c757d; }
-    .details { background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 15px 0; }
-    .details dt { font-weight: bold; }
-    .details dd { margin: 0 0 10px 0; }
-    .urgent { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 4px; margin: 15px 0; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h2 style="margin: 0;">⚠️ Chargeback Alert</h2>
-    </div>
-    <div class="content">
-      <div class="urgent">
-        <strong>URGENT:</strong> A chargeback has been filed against a payment.
-      </div>
-      
-      <dl class="details">
-        <dt>Amount:</dt>
-        <dd>${this.formatCurrency(data.amount, data.currency)}</dd>
-        
-        <dt>Product:</dt>
-        <dd>${data.productName}</dd>
-        
-        <dt>Customer:</dt>
-        <dd>${data.customerEmail}</dd>
-        
-        <dt>Chargeback ID:</dt>
-        <dd>${data.chargebackId}</dd>
-        
-        ${data.chargebackReason ? `<dt>Reason:</dt><dd>${data.chargebackReason}</dd>` : ''}
-        
-        ${data.respondByDate ? `<dt>Respond By:</dt><dd><strong style="color: #dc3545;">${data.respondByDate.toLocaleDateString()}</strong></dd>` : ''}
-      </dl>
-      
-      <h3>Actions Taken:</h3>
-      <ul>
-        <li>Customer's entitlement has been automatically revoked</li>
-        <li>This dispute has been logged in your dashboard</li>
-      </ul>
-      
-      <h3>Next Steps:</h3>
-      <ol>
-        <li>Review the transaction in your Stripe dashboard</li>
-        <li>Gather evidence to support your case</li>
-        <li>Submit your response before the deadline</li>
-      </ol>
-    </div>
-    <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} ${this.fromName}. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const result = await this.send({
-      to: { email: data.developerEmail },
-      subject,
-      text,
-      html,
-    });
-
-    if (result) {
-      logger.info('Chargeback notification sent', {
-        developerEmail: data.developerEmail,
-        chargebackId: data.chargebackId,
-      });
-    }
-
-    return result;
-  }
-
-  /**
-   * Send subscription cancelled notification
-   *
-   * @param data - Subscription cancelled notification data
-   * @returns True if sent successfully
-   */
-  async sendSubscriptionCancelledNotification(
-    data: SubscriptionCancelledNotificationData
-  ): Promise<boolean> {
-    const subject = `Your ${data.productName} subscription has been cancelled`;
-
-    const text = `
-Hi ${data.customerName || 'there'},
-
-Your subscription to ${data.productName} has been cancelled.
-
-Cancellation Date: ${data.cancellationDate.toLocaleDateString()}
-Access Until: ${data.accessEndDate.toLocaleDateString()}
-
-You will continue to have access until ${data.accessEndDate.toLocaleDateString()}.
-
-If this was a mistake or you'd like to resubscribe, you can do so at any time.
-
-Thank you for being a customer.
-
-Best regards,
-${this.fromName}
-    `.trim();
-
-    const result = await this.send({
-      to: { email: data.customerEmail, name: data.customerName },
-      subject,
-      text,
-    });
-
-    if (result) {
-      logger.info('Subscription cancelled notification sent', {
-        customerEmail: data.customerEmail,
-        productName: data.productName,
-      });
-    }
-
-    return result;
-  }
-
-  /**
-   * Send welcome notification after successful purchase
-   *
-   * @param data - Welcome notification data
-   * @returns True if sent successfully
-   */
-  async sendWelcomeNotification(data: WelcomeNotificationData): Promise<boolean> {
-    const subject = `Welcome! Your access to ${data.productName} is ready`;
-
-    const text = `
-Hi ${data.customerName || 'there'},
-
-Thank you for your purchase! Your access to ${data.productName} is now active.
-
-${data.accessUrl ? `Get started here: ${data.accessUrl}` : ''}
-
-If you have any questions, please reply to this email.
-
-Best regards,
-${this.fromName}
-    `.trim();
-
-    const result = await this.send({
-      to: { email: data.customerEmail, name: data.customerName },
-      subject,
-      text,
-    });
-
-    if (result) {
-      logger.info('Welcome notification sent', {
-        customerEmail: data.customerEmail,
-        productName: data.productName,
-      });
-    }
-
-    return result;
-  }
-
-  /**
-   * Format currency amount for display
-   *
-   * @param amount - Amount in cents
-   * @param currency - Currency code
-   * @returns Formatted currency string
-   */
-  private formatCurrency(amount: number, currency: string): string {
-    const majorAmount = amount / 100;
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency.toUpperCase(),
-    }).format(majorAmount);
-  }
-
-  /**
-   * Send email via console (for development/testing)
-   */
-  private async sendViaConsole(options: EmailOptions): Promise<boolean> {
-    const recipients = Array.isArray(options.to) ? options.to : [options.to];
-    const toAddresses = recipients.map((r) => r.name ? `${r.name} <${r.email}>` : r.email);
-
-    logger.info('Email sent (console provider)', {
-      from: `${this.fromName} <${this.fromEmail}>`,
-      to: toAddresses.join(', '),
+class ConsoleEmailTransport implements EmailService {
+  async sendMail(options: SendMailOptions): Promise<void> {
+    logger.info('📧 [EmailService - Console] メール送信（開発環境）', {
+      to: options.to,
       subject: options.subject,
-      textLength: options.text?.length || 0,
-      htmlLength: options.html?.length || 0,
+      preview: options.text?.substring(0, 200) ?? 'HTMLメール',
     });
-
-    // In development, log the email content
-    if (config.app.env === 'development') {
-      console.log('\n========== EMAIL ==========');
-      console.log(`From: ${this.fromName} <${this.fromEmail}>`);
-      console.log(`To: ${toAddresses.join(', ')}`);
-      console.log(`Subject: ${options.subject}`);
-      console.log('------- TEXT -------');
-      console.log(options.text);
-      console.log('============================\n');
-    }
-
-    return true;
+    console.log('─'.repeat(60));
+    console.log(`📧 To: ${options.to}`);
+    console.log(`📧 Subject: ${options.subject}`);
+    console.log(`📧 Body:\n${options.text ?? '(HTMLメール - テキスト版なし)'}`);
+    console.log('─'.repeat(60));
   }
 
-  /**
-   * Send email via SendGrid
-   * Note: Requires @sendgrid/mail package and SENDGRID_API_KEY env var
-   */
-  private async sendViaSendGrid(options: EmailOptions): Promise<boolean> {
-    try {
-      // Dynamic import to avoid requiring the package if not used
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const sgMail = require('@sendgrid/mail');
-      sgMail.setApiKey(config.email?.sendgridApiKey || '');
-
-      const recipients = Array.isArray(options.to) ? options.to : [options.to];
-
-      const msg = {
-        to: recipients.map((r) => ({ email: r.email, name: r.name })),
-        from: { email: this.fromEmail, name: this.fromName },
-        subject: options.subject,
-        text: options.text || '',
-        html: options.html || options.text || '',
-        replyTo: options.replyTo,
-      };
-
-      await sgMail.send(msg);
-
-      logger.info('Email sent via SendGrid', {
-        to: recipients.map((r) => r.email),
-        subject: options.subject,
-      });
-
-      return true;
-    } catch (error) {
-      logger.error('SendGrid email failed', { error });
-      // Fall back to console logging
-      return this.sendViaConsole(options);
-    }
+  async sendWelcomeEmail(to: string, apiKey: string): Promise<void> {
+    await this.sendMail({
+      to,
+      subject: '【ForgePay】ご登録ありがとうございます — API キーをご確認ください',
+      html: buildWelcomeHtml(apiKey),
+      text: buildWelcomeText(apiKey),
+    });
   }
 
-  /**
-   * Send email via AWS SES
-   * Note: Requires @aws-sdk/client-ses package and AWS credentials
-   */
-  private async sendViaSES(options: EmailOptions): Promise<boolean> {
-    try {
-      // Dynamic import to avoid requiring the package if not used
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
-
-      const client = new SESClient({
-        region: config.email?.awsRegion || 'us-east-1',
-      });
-
-      const recipients = Array.isArray(options.to) ? options.to : [options.to];
-      const toAddresses = recipients.map((r) => r.email);
-
-      const command = new SendEmailCommand({
-        Source: `${this.fromName} <${this.fromEmail}>`,
-        Destination: {
-          ToAddresses: toAddresses,
-        },
-        Message: {
-          Subject: { Data: options.subject },
-          Body: {
-            Text: { Data: options.text || '' },
-            Html: { Data: options.html || options.text || '' },
-          },
-        },
-        ReplyToAddresses: options.replyTo ? [options.replyTo] : undefined,
-      });
-
-      await client.send(command);
-
-      logger.info('Email sent via AWS SES', {
-        to: toAddresses,
-        subject: options.subject,
-      });
-
-      return true;
-    } catch (error) {
-      logger.error('AWS SES email failed', { error });
-      // Fall back to console logging
-      return this.sendViaConsole(options);
-    }
+  async sendForgotKeyEmail(to: string, newApiKey: string): Promise<void> {
+    await this.sendMail({
+      to,
+      subject: '【ForgePay】API キーを再発行しました',
+      html: buildForgotKeyHtml(newApiKey),
+      text: buildForgotKeyText(newApiKey),
+    });
   }
 
-  /**
-   * Send email via SMTP
-   * Note: Requires nodemailer package and SMTP configuration
-   */
-  private async sendViaSMTP(options: EmailOptions): Promise<boolean> {
+  async sendKeyRegeneratedEmail(to: string, newApiKey: string, hasPendingPayments: boolean): Promise<void> {
+    await this.sendMail({
+      to,
+      subject: '【ForgePay】API キーが再発行されました',
+      html: buildKeyRegeneratedHtml(newApiKey, hasPendingPayments),
+      text: buildKeyRegeneratedText(newApiKey, hasPendingPayments),
+    });
+  }
+
+  async sendStripeSetupGuideEmail(to: string, dashboardUrl: string): Promise<void> {
+    await this.sendMail({
+      to,
+      subject: '【ForgePay】次のステップ: Stripe アカウントを接続してください',
+      html: buildStripeSetupHtml(dashboardUrl),
+      text: buildStripeSetupText(dashboardUrl),
+    });
+  }
+}
+
+/**
+ * SMTP トランスポート（本番環境）
+ * nodemailer を動的にロードする
+ */
+class SmtpEmailTransport extends ConsoleEmailTransport {
+  private transporter: unknown = null;
+
+  private async getTransporter() {
+    if (this.transporter) return this.transporter;
+
     try {
-      // Dynamic import to avoid requiring the package if not used
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // nodemailer はオプション依存。npm install nodemailer で有効化
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const nodemailer = require('nodemailer');
-
-      const transporter = nodemailer.createTransport({
-        host: config.email?.smtpHost || 'localhost',
-        port: config.email?.smtpPort || 587,
-        secure: config.email?.smtpSecure || false,
-        auth: config.email?.smtpUser
-          ? {
-              user: config.email.smtpUser,
-              pass: config.email.smtpPass,
-            }
-          : undefined,
+      this.transporter = nodemailer.createTransport({
+        host: config.email.smtpHost,
+        port: config.email.smtpPort,
+        secure: config.email.smtpSecure,
+        auth:
+          config.email.smtpUser && config.email.smtpPass
+            ? { user: config.email.smtpUser, pass: config.email.smtpPass }
+            : undefined,
       });
+      return this.transporter;
+    } catch {
+      logger.warn('nodemailer が未インストール → コンソールモードにフォールバック (npm install nodemailer で SMTP 送信を有効化)');
+      return null;
+    }
+  }
 
-      const recipients = Array.isArray(options.to) ? options.to : [options.to];
-      const toAddresses = recipients.map((r) => r.name ? `${r.name} <${r.email}>` : r.email);
+  async sendMail(options: SendMailOptions): Promise<void> {
+    const transporter = await this.getTransporter() as any;
+    if (!transporter) {
+      // nodemailer が使えない場合はコンソールにフォールバック
+      return super.sendMail(options);
+    }
 
+    try {
       await transporter.sendMail({
-        from: `${this.fromName} <${this.fromEmail}>`,
-        to: toAddresses.join(', '),
+        from: config.email.from,
+        to: options.to,
         subject: options.subject,
-        text: options.text,
         html: options.html,
-        replyTo: options.replyTo,
+        text: options.text,
       });
-
-      logger.info('Email sent via SMTP', {
-        to: toAddresses,
-        subject: options.subject,
-      });
-
-      return true;
+      logger.info('メール送信完了 (SMTP)', { to: options.to, subject: options.subject });
     } catch (error) {
-      logger.error('SMTP email failed', { error });
-      // Fall back to console logging
-      return this.sendViaConsole(options);
+      logger.error('SMTP メール送信失敗', { error, to: options.to });
+      // 送信失敗はアプリを止めない（メールは補助的な機能）
     }
   }
 }
 
-// Export singleton instance
-export const emailService = new EmailService();
+// ============================================================
+// メールテンプレート
+// ============================================================
+
+function buildWelcomeHtml(apiKey: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+  <h1 style="color: #4F46E5;">ForgePay へようこそ 🎉</h1>
+  <p>ご登録ありがとうございます。以下の API キーでダッシュボードにログインできます。</p>
+
+  <div style="background: #F5F3FF; border: 2px solid #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0;">
+    <p style="margin: 0 0 8px; font-size: 12px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em;">YOUR API KEY</p>
+    <code style="font-size: 14px; word-break: break-all; color: #1E1B4B;">${apiKey}</code>
+  </div>
+
+  <div style="background: #FEF3C7; border-radius: 8px; padding: 12px 16px; margin: 16px 0;">
+    <strong>⚠️ 重要:</strong> この API キーは<strong>一度しか表示されません</strong>。
+    今すぐ安全な場所に保存してください。
+  </div>
+
+  <h2 style="color: #374151; font-size: 16px;">次のステップ</h2>
+  <ol style="line-height: 1.8;">
+    <li>ダッシュボードにログイン</li>
+    <li>Settings → Stripe API Keys で Stripe アカウントを接続</li>
+    <li>Products で最初の商品を作成</li>
+    <li>API で決済フローを実装</li>
+  </ol>
+
+  <p style="color: #6B7280; font-size: 12px; margin-top: 30px; border-top: 1px solid #E5E7EB; padding-top: 16px;">
+    ForgePay — OpenAI ChatGPT Apps 収益化プラットフォーム
+  </p>
+</body>
+</html>`;
+}
+
+function buildWelcomeText(apiKey: string): string {
+  return `ForgePay へようこそ！
+
+API キー: ${apiKey}
+
+⚠️ 重要: この API キーは一度しか表示されません。今すぐ保存してください。
+
+次のステップ:
+1. ダッシュボードにログイン
+2. Settings → Stripe API Keys で Stripe アカウントを接続
+3. Products で最初の商品を作成
+4. API で決済フローを実装
+
+---
+ForgePay`;
+}
+
+function buildForgotKeyHtml(newApiKey: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+  <h1 style="color: #4F46E5;">API キーを再発行しました</h1>
+  <p>API キー再発行のリクエストを受け付け、新しいキーを発行しました。</p>
+  <p><strong>旧キーは即時無効になっています。</strong></p>
+
+  <div style="background: #F5F3FF; border: 2px solid #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0;">
+    <p style="margin: 0 0 8px; font-size: 12px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em;">NEW API KEY</p>
+    <code style="font-size: 14px; word-break: break-all; color: #1E1B4B;">${newApiKey}</code>
+  </div>
+
+  <div style="background: #FEF3C7; border-radius: 8px; padding: 12px 16px; margin: 16px 0;">
+    <strong>⚠️ 重要:</strong> このキーも<strong>一度しか表示されません</strong>。
+    今すぐ保存してください。
+  </div>
+
+  <div style="background: #FEE2E2; border-radius: 8px; padding: 12px 16px; margin: 16px 0;">
+    <strong>🚨 このメールに心当たりがない場合:</strong>
+    第三者が API キーの再発行を試みた可能性があります。
+    直ちにサポートまでご連絡ください。
+  </div>
+
+  <p style="color: #6B7280; font-size: 12px; margin-top: 30px; border-top: 1px solid #E5E7EB; padding-top: 16px;">
+    ForgePay — OpenAI ChatGPT Apps 収益化プラットフォーム
+  </p>
+</body>
+</html>`;
+}
+
+function buildForgotKeyText(newApiKey: string): string {
+  return `API キーを再発行しました
+
+新しい API キー: ${newApiKey}
+
+⚠️ 旧キーは即時無効です。新しいキーを今すぐ保存してください。
+
+このメールに心当たりがない場合は直ちにサポートへご連絡ください。
+
+---
+ForgePay`;
+}
+
+function buildKeyRegeneratedHtml(newApiKey: string, hasPendingPayments: boolean): string {
+  const pendingWarning = hasPendingPayments ? `
+  <div style="background: #FEF3C7; border-radius: 8px; padding: 12px 16px; margin: 16px 0;">
+    <strong>⚠️ 注意:</strong> キー再発行時に<strong>処理中の決済セッションが存在していました</strong>。
+    それらのセッションは正常に完了しますが、<br>完了後の Webhook 通知には新しいキーが必要です。
+  </div>` : '';
+
+  return `
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+  <h1 style="color: #4F46E5;">API キーが再発行されました</h1>
+  <p>API キーが正常に再発行されました。新しいキーは以下の通りです。</p>
+
+  <div style="background: #F5F3FF; border: 2px solid #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0;">
+    <p style="margin: 0 0 8px; font-size: 12px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em;">NEW API KEY</p>
+    <code style="font-size: 14px; word-break: break-all; color: #1E1B4B;">${newApiKey}</code>
+  </div>
+
+  ${pendingWarning}
+
+  <div style="background: #FEE2E2; border-radius: 8px; padding: 12px 16px; margin: 16px 0;">
+    <strong>🚨 このメールに心当たりがない場合:</strong>
+    第三者があなたの API キーを再発行した可能性があります。
+    直ちにサポートまでご連絡ください。
+  </div>
+
+  <p style="color: #6B7280; font-size: 12px; margin-top: 30px; border-top: 1px solid #E5E7EB; padding-top: 16px;">
+    ForgePay — OpenAI ChatGPT Apps 収益化プラットフォーム
+  </p>
+</body>
+</html>`;
+}
+
+function buildKeyRegeneratedText(newApiKey: string, hasPendingPayments: boolean): string {
+  const pendingNote = hasPendingPayments
+    ? '\n⚠️ 注意: 再発行時に処理中の決済セッションが存在しました。それらは正常完了しますが、アプリのキー設定を更新してください。\n'
+    : '';
+  return `API キーが再発行されました
+
+新しい API キー: ${newApiKey}
+${pendingNote}
+旧キーは即時無効です。アプリの API キー設定を更新してください。
+
+このメールに心当たりがない場合は直ちにサポートへご連絡ください。
+
+---
+ForgePay`;
+}
+
+function buildStripeSetupHtml(dashboardUrl: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+  <h1 style="color: #4F46E5;">Stripe アカウントを接続しましょう</h1>
+  <p>ForgePay の登録が完了しました。決済を受け取るには <strong>Stripe アカウントの接続</strong> が必要です。</p>
+
+  <h2 style="font-size: 16px; color: #374151;">手順（3ステップ）</h2>
+
+  <div style="background: #F9FAFB; border-radius: 8px; padding: 16px; margin: 12px 0;">
+    <strong>Step 1: Stripe にサインアップ / ログイン</strong><br>
+    <a href="https://dashboard.stripe.com/register" style="color: #4F46E5;">https://dashboard.stripe.com/register</a>
+  </div>
+
+  <div style="background: #F9FAFB; border-radius: 8px; padding: 16px; margin: 12px 0;">
+    <strong>Step 2: API キーを取得</strong><br>
+    Stripe Dashboard → Developers → API keys<br>
+    <a href="https://dashboard.stripe.com/test/apikeys" style="color: #4F46E5;">https://dashboard.stripe.com/test/apikeys</a><br>
+    <br>
+    取得するキー:<br>
+    • <strong>Secret key</strong> (sk_test_... または sk_live_...)<br>
+    • <strong>Publishable key</strong> (pk_test_... または pk_live_...)
+  </div>
+
+  <div style="background: #F9FAFB; border-radius: 8px; padding: 16px; margin: 12px 0;">
+    <strong>Step 3: ForgePay ダッシュボードで設定</strong><br>
+    以下のリンクから Settings → Stripe API Keys に貼り付けてください:<br>
+    <a href="${dashboardUrl}/settings" style="color: #4F46E5;">${dashboardUrl}/settings</a>
+  </div>
+
+  <div style="background: #ECFDF5; border-radius: 8px; padding: 12px 16px; margin: 16px 0;">
+    <strong>💡 Webhook Secret（オプション）</strong><br>
+    決済完了の通知を受け取るには Stripe CLI でローカル転送するか、
+    Stripe Dashboard で Webhook エンドポイントを登録してください。
+  </div>
+
+  <p style="color: #6B7280; font-size: 12px; margin-top: 30px; border-top: 1px solid #E5E7EB; padding-top: 16px;">
+    ForgePay — OpenAI ChatGPT Apps 収益化プラットフォーム
+  </p>
+</body>
+</html>`;
+}
+
+function buildStripeSetupText(dashboardUrl: string): string {
+  return `Stripe アカウントを接続しましょう
+
+Step 1: Stripe にサインアップ
+https://dashboard.stripe.com/register
+
+Step 2: API キーを取得
+Stripe Dashboard → Developers → API keys
+https://dashboard.stripe.com/test/apikeys
+取得するキー: Secret key (sk_test_...) と Publishable key (pk_test_...)
+
+Step 3: ForgePay ダッシュボードで設定
+${dashboardUrl}/settings → Stripe API Keys
+
+---
+ForgePay`;
+}
+
+// ============================================================
+// シングルトン（環境変数で自動切替）
+// ============================================================
+
+function createEmailService(): EmailService {
+  if (config.email.smtpHost) {
+    logger.info('EmailService: SMTP モードで初期化', { host: config.email.smtpHost });
+    return new SmtpEmailTransport();
+  }
+  logger.info('EmailService: コンソールモードで初期化 (EMAIL_SMTP_HOST 未設定)');
+  return new ConsoleEmailTransport();
+}
+
+export const emailService = createEmailService();

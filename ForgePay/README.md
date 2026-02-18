@@ -1,815 +1,315 @@
-# ForgePayBridge (フォージペイ)
+# ForgePay
 
-A SaaS platform that wraps Stripe to provide a turnkey payment solution for OpenAI ChatGPT Apps monetization.
+**OpenAI ChatGPT Apps の収益化を実現する Stripe 直接連携レイヤー。**
 
-## Features
+ChatGPT の [External Checkout Flow](https://platform.openai.com/docs/actions/monetization) に対応したマルチテナント決済 API。  
+Stripe の機能（決済・サブスク・税金・不正防止）をそのまま活用し、**OpenAI 固有の `purchase_intent_id` マッピングと Entitlement 管理のみ**を担う最小設計。
 
-- 🔐 **Hosted Checkout Pages** - Stripe-powered payment pages with automatic tax calculation
-- 🎫 **Entitlement Management** - Automatic access control for one-time and subscription purchases
-- 🔄 **Reliable Webhooks** - Idempotent webhook processing with retry logic and DLQ
-- 🤖 **ChatGPT Integration** - Seamless integration with OpenAI's External Checkout flow
-- 📊 **Admin Dashboard** - Web interface for product management and analytics
-- 🌍 **Multi-Currency** - Support for USD, EUR, GBP, JPY, AUD, and more
-- 💰 **Tax Handling** - Automatic VAT, GST, and sales tax calculation
-- 🛡️ **Security** - PCI-compliant via Stripe, fraud prevention with Stripe Radar
+```
+ChatGPT App ──→ ForgePay API ──→ Stripe（決済処理）
+                    │
+                    ├─ purchase_intent_id ↔ Stripe Session マッピング
+                    ├─ Webhook 受信（冪等性付き）
+                    └─ JWT unlock_token 発行・検証
+```
 
-## Prerequisites
+| レイヤー | 技術 |
+|---------|------|
+| API | Node.js 18+ / Express / TypeScript |
+| DB | PostgreSQL |
+| Cache | Redis |
+| Dashboard | React + Vite + TailwindCSS |
 
-- Node.js 18+ (LTS)
-- PostgreSQL 14+
-- Redis 6+
-- Stripe account (test and/or live mode)
+---
 
-## Installation
+## セットアップ
 
-1. Clone the repository:
+### 前提条件
+
+- Node.js >= 18、Docker
+- [Stripe アカウント](https://dashboard.stripe.com/register)（無料）
+
+### 1. インストール
+
 ```bash
 git clone <repository-url>
-cd forgepaybridge
+cd ForgePay
+npm install && cd dashboard && npm install && cd ..
 ```
 
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Set up environment variables:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-4. Run database migrations:
-```bash
-npm run migrate:up
-```
-
-5. Start the development server:
-```bash
-npm run dev
-```
-
-6. (Optional) Run E2E tests - see [Testing](#testing) section below
-
-## Configuration
-
-### Environment Variables
-
-See `.env.example` for all available configuration options.
-
-Key variables:
-- `STRIPE_MODE` - Set to `test` or `live`
-- `STRIPE_TEST_SECRET_KEY` - Your Stripe test secret key
-- `STRIPE_TEST_WEBHOOK_SECRET` - Your Stripe test webhook secret
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
-- `JWT_SECRET` - Secret for signing unlock tokens
-
-### Stripe Setup
-
-1. Create a Stripe account at https://stripe.com
-2. Get your API keys from the Stripe Dashboard
-3. Configure webhook endpoint: `https://yourdomain.com/api/v1/webhooks/stripe`
-4. Select webhook events:
-   - `checkout.session.completed`
-   - `invoice.paid`
-   - `invoice.payment_failed`
-   - `customer.subscription.updated`
-   - `customer.subscription.deleted`
-   - `charge.refunded`
-   - `charge.dispute.created`
-   - `charge.dispute.closed`
-
-### ローカル開発環境セットアップ（完全ガイド）
-
-ローカル環境でStripe Webhookをテストするための完全な手順です。
-
-#### 前提条件
-
-- Node.js 18+
-- Docker Desktop（PostgreSQL/Redis用）
-- Stripeアカウント（テストモード）
-
-#### Step 1: 依存関係のインストール
+### 2. セットアップウィザードを起動
 
 ```bash
-# プロジェクトのルートで実行
-npm install
+npm run setup
 ```
 
-#### Step 2: Docker でデータベース起動
+対話形式で以下を自動実行します:
+
+1. Stripe キー入力 → `.env` 自動生成（JWT シークレットも自動生成）
+2. Docker で PostgreSQL + Redis 起動
+3. DB マイグレーション実行
+4. 開発者アカウント登録 → **API キーが発行され、メールで届きます**
+
+### 3. ダッシュボード起動
 
 ```bash
-# PostgreSQL と Redis を起動
-docker-compose up -d postgres redis
-
-# 起動確認
-docker ps
+cd dashboard && npm run dev
+# http://localhost:3001
 ```
 
-#### Step 3: データベースマイグレーション
+取得した API キー（`fpb_test_...`）でログイン。
+
+---
+
+## Stripe の接続
+
+ダッシュボードの **Settings → Stripe API Keys** から接続できます。
+
+1. [Stripe API キーを取得](https://dashboard.stripe.com/test/apikeys)（`sk_test_...` / `pk_test_...`）
+2. Settings ページに貼り付け → **「接続テスト」で確認** → **「保存」**
+
+> Settings ページに Stripe アカウント作成からキー入力までのガイドが表示されます。
+
+---
+
+## API の使い方
+
+すべてのリクエストに `X-API-Key: YOUR_API_KEY` ヘッダーが必要です（登録・キー再発行系を除く）。
+
+### 商品・価格の作成
 
 ```bash
-npm run migrate:up
+# 商品作成
+curl -X POST http://localhost:3000/api/v1/admin/products \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Premium Plan", "type": "subscription"}'
+
+# 価格作成
+curl -X POST http://localhost:3000/api/v1/admin/prices \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id": "PRODUCT_ID", "amount": 1000, "currency": "jpy", "interval": "month"}'
 ```
 
-#### Step 4: Stripe CLI のインストール
+### 決済フロー（ChatGPT App 連携）
+
+**① Checkout Session 作成**
 
 ```bash
-# Windows (Winget - 推奨)
-winget install Stripe.StripeCLI
-
-# Windows (Scoop)
-scoop install stripe
-
-# Windows (手動インストール)
-# https://github.com/stripe/stripe-cli/releases からダウンロード
-
-# Mac (Homebrew)
-brew install stripe/stripe-cli/stripe
-
-# Linux (apt)
-curl -s https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public | gpg --dearmor | sudo tee /usr/share/keyrings/stripe.gpg
-echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" | sudo tee /etc/apt/sources.list.d/stripe.list
-sudo apt update && sudo apt install stripe
-
-# インストール確認
-stripe --version
+curl -X POST http://localhost:3000/api/v1/checkout/sessions \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "product_id": "PRODUCT_ID",
+    "price_id": "PRICE_ID",
+    "purchase_intent_id": "pi_from_openai_12345",
+    "customer_email": "user@example.com",
+    "success_url": "https://your-app.com/success",
+    "cancel_url": "https://your-app.com/cancel"
+  }'
 ```
 
-#### Step 5: Stripe CLI にログイン
+```json
+{
+  "checkout_url": "https://checkout.stripe.com/pay/cs_test_...",
+  "session_id": "sess_uuid",
+  "expires_at": "2024-01-01T01:00:00Z"
+}
+```
+
+ユーザーを `checkout_url` にリダイレクト → Stripe が決済処理 → Webhook で ForgePay に通知 → `unlock_token` 自動発行。
+
+**② Entitlement 検証（アクセス許可）**
 
 ```bash
-stripe login
+curl "http://localhost:3000/api/v1/entitlements/verify?unlock_token=JWT_TOKEN" \
+  -H "X-API-Key: YOUR_API_KEY"
 ```
 
-ブラウザが自動で開き、Stripeアカウントへの認証を求められます。
-「Allow access」をクリックして認証を完了してください。
-
-認証成功時の表示:
-```
-> Your pairing code is: enjoy-adore-glad-poise
-> This pairing code verifies your authentication with Stripe.
-> Press Enter to open the browser or visit https://dashboard.stripe.com/stripecli/confirm_auth?t=...
-> Done! The Stripe CLI is configured for [your-account-name]
+```json
+{ "valid": true, "product_id": "...", "status": "active", "expires_at": "..." }
 ```
 
-#### Step 6: Webhook シークレットキーの取得
+### 返金
 
-**新しいターミナルを開いて**以下を実行（サーバー起動中に実行）:
+```bash
+curl -X POST http://localhost:3000/api/v1/admin/refunds \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"payment_intent_id": "pi_stripe_...", "amount": 1000, "reason": "customer_request"}'
+```
 
+---
+
+## API キーの管理
+
+| 状況 | 方法 |
+|------|------|
+| 初回登録 | `POST /api/v1/onboarding/register` → レスポンスとメールに届く |
+| キー紛失 | `POST /api/v1/onboarding/forgot-key` → メールで新キー発行（旧キー即無効） |
+| キー更新 | `POST /api/v1/onboarding/api-key/regenerate` → 旧キーで認証して再発行 |
+
+```bash
+# 登録
+curl -X POST http://localhost:3000/api/v1/onboarding/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "your@email.com"}'
+
+# キー紛失時
+curl -X POST http://localhost:3000/api/v1/onboarding/forgot-key \
+  -H "Content-Type: application/json" \
+  -d '{"email": "your@email.com"}'
+```
+
+> キー再発行時に処理中の決済セッションがある場合、安全チェック後に警告メールが届きます。
+
+---
+
+## ダッシュボード
+
+| ページ | 機能 |
+|--------|------|
+| `/` | 売上・顧客・Webhook の状況 |
+| `/products` | 商品・価格の作成・編集 |
+| `/customers` | 顧客の決済状況確認 |
+| `/webhooks` | 失敗 Webhook の確認・再送 |
+| `/audit-logs` | 全操作の履歴 |
+| `/settings` | Stripe 接続・API キー管理・デフォルト設定 |
+
+---
+
+## API リファレンス
+
+### コア API
+
+| Method | Path | 認証 | 説明 |
+|--------|------|------|------|
+| GET | `/health` | 不要 | ヘルスチェック |
+| POST | `/api/v1/checkout/sessions` | API Key | Checkout Session 作成 |
+| GET | `/api/v1/checkout/sessions/:id` | API Key | Session 取得 |
+| GET | `/api/v1/entitlements/verify` | API Key | unlock_token 検証 |
+| POST | `/api/v1/webhooks/stripe` | 署名検証 | Stripe Webhook 受信 |
+
+### 管理 API（`X-API-Key` 必須）
+
+| Method | Path | 説明 |
+|--------|------|------|
+| POST/GET | `/api/v1/admin/products` | 商品管理 |
+| POST | `/api/v1/admin/prices` | 価格作成 |
+| GET | `/api/v1/admin/customers` | 顧客一覧 |
+| POST | `/api/v1/admin/refunds` | 返金処理 |
+| GET | `/api/v1/admin/audit-logs` | 監査ログ |
+| GET | `/api/v1/admin/webhooks/failed` | 失敗 Webhook 一覧 |
+
+### オンボーディング API
+
+| Method | Path | 認証 | 説明 |
+|--------|------|------|------|
+| POST | `/api/v1/onboarding/register` | 不要 | 開発者登録・API キー発行 |
+| POST | `/api/v1/onboarding/forgot-key` | 不要 | キー紛失時の再発行（メール送信） |
+| GET | `/api/v1/onboarding/me` | API Key | 開発者情報取得 |
+| GET | `/api/v1/onboarding/status` | API Key | オンボーディング進捗確認 |
+| POST | `/api/v1/onboarding/stripe/keys` | API Key | Stripe キー設定 |
+| POST | `/api/v1/onboarding/stripe/verify` | API Key | Stripe キー接続テスト |
+| POST | `/api/v1/onboarding/api-key/regenerate` | API Key | API キー再発行 |
+| DELETE | `/api/v1/onboarding/account` | API Key | アカウント削除 |
+
+---
+
+## npm スクリプト
+
+| コマンド | 説明 |
+|---------|------|
+| `npm run setup` | セットアップウィザード起動 |
+| `npm run dev` | バックエンド開発サーバー起動 |
+| `npm run build` | TypeScript ビルド |
+| `npm run migrate:up` | DB マイグレーション実行 |
+| `npm run migrate:down` | マイグレーション巻き戻し |
+| `npm run docker:up` | PostgreSQL + Redis 起動 |
+| `npm run docker:down` | Docker コンテナ停止 |
+| `npm test` | ユニットテスト実行 |
+| `npm run test:e2e` | E2E テスト実行（全自動） |
+
+---
+
+## ChatGPT App 連携サンプル
+
+`examples/` フォルダに参照実装が含まれています:
+
+- `examples/openai-action-schema.yaml` — OpenAI Actions に設定する OpenAPI スキーマ
+- `examples/chatgpt-app-integration.ts` — TypeScript による checkout〜verify の実装例
+
+---
+
+## 付録
+
+<details>
+<summary>セキュリティ設計</summary>
+
+| 項目 | 実装 |
+|-----|------|
+| API 認証 | SHA-256 ハッシュ済み API キー（`X-API-Key` ヘッダー） |
+| Webhook 検証 | Stripe 署名検証（`stripe-signature` ヘッダー） |
+| unlock_token | 短命 JWT（5分）+ Redis JTI 追跡（使い捨て） |
+| Stripe キー保護 | AES-256-GCM で暗号化して DB 保存 |
+| レート制限 | Redis ベースのスライディングウィンドウ |
+| CORS | 本番環境ではホワイトリスト方式 |
+
+</details>
+
+<details>
+<summary>DB テーブル構成</summary>
+
+| テーブル | 目的 |
+|---------|------|
+| `developers` | 開発者アカウント・API キー（SHA-256 ハッシュ） |
+| `products` / `prices` | 商品・価格（Stripe にマッピング） |
+| `customers` | 顧客情報（Stripe Customer にマッピング） |
+| `checkout_sessions` | `purchase_intent_id` ↔ Stripe Session マッピング |
+| `entitlements` | Entitlement 状態管理 |
+| `webhook_events` | Webhook 冪等性管理・DLQ |
+| `used_tokens` | JWT 使い捨てトークン管理 |
+| `audit_logs` | 全操作の監査ログ |
+
+</details>
+
+<details>
+<summary>トラブルシューティング</summary>
+
+**サーバーに接続できない**
+```bash
+npm run docker:up && npm run dev
+curl http://localhost:3000/health
+```
+
+**DB マイグレーションエラー**
+```bash
+npm run migrate:down && npm run migrate:up
+```
+
+**Stripe Webhook が届かない**
 ```bash
 stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe
 ```
 
-出力例:
-```
-> Ready! You are using Stripe API Version [2023-10-16].
-> Your webhook signing secret is whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+**メール送信を有効にする（本番環境）**
 
-**重要**: `whsec_` で始まるシークレットキーをコピーしてください。
-
-#### Step 7: .env ファイルの設定
-
-`.env.example` をコピーして `.env` を作成:
-
-```bash
-cp .env.example .env
-```
-
-`.env` ファイルを編集して以下を設定:
-
+`npm install nodemailer` を実行後、`.env` に以下を追加:
 ```env
-# Stripe テストキー（Stripe Dashboardから取得）
-STRIPE_TEST_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxx
-STRIPE_TEST_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxx
-
-# Webhook シークレット（stripe listen コマンドから取得）
-STRIPE_TEST_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EMAIL_SMTP_HOST=smtp.example.com
+EMAIL_SMTP_PORT=587
+EMAIL_SMTP_USER=user@example.com
+EMAIL_SMTP_PASS=password
+EMAIL_FROM=noreply@forgepay.io
 ```
+> Gmail: `smtp.gmail.com` / ポート `587` / アプリパスワードを使用。  
+> 未設定時はコンソールにログ出力（開発環境向けフォールバック）。
 
-#### Step 8: サーバー起動
-
-```bash
-npm run dev
-```
-
-正常起動時のログ:
-```
-{"level":"info","message":"Database connection successful"}
-{"level":"info","message":"Redis connection successful"}
-{"level":"info","message":"ForgePayBridge server started","port":3000}
-```
-
-#### Step 9: 動作確認
-
-```bash
-# ヘルスチェック
-curl http://localhost:3000/health
-
-# API ドキュメント
-# ブラウザで http://localhost:3000/api-docs を開く
-```
-
-#### Step 10: Webhook テスト
-
-stripe listen を実行中の状態で、別のターミナルからテストイベントを送信:
-
-```bash
-# チェックアウト完了イベント
-stripe trigger checkout.session.completed
-
-# 支払い成功イベント
-stripe trigger payment_intent.succeeded
-
-# サブスクリプション更新イベント
-stripe trigger invoice.paid
-
-# 返金イベント
-stripe trigger charge.refunded
-
-# 全イベント一覧
-stripe trigger --help
-```
-
-#### テストカード番号
-
-| カード番号 | 結果 | 用途 |
-|-----------|------|------|
-| `4242 4242 4242 4242` | 成功 | 通常の支払いテスト |
-| `4000 0025 0000 3155` | 3Dセキュア認証必要 | 認証フローテスト |
-| `4000 0000 0000 0002` | 拒否 | エラーハンドリングテスト |
-| `4000 0000 0000 9995` | 残高不足 | 残高エラーテスト |
-| `4000 0000 0000 3220` | 3Dセキュア2必須 | SCA対応テスト |
-
-**共通設定**:
-- 有効期限: 任意の将来日付（例: 12/34）
-- CVC: 任意の3桁（例: 123）
-- 郵便番号: 任意（例: 12345）
-
-#### トラブルシューティング
-
-**Stripe CLI が見つからない場合**:
-```bash
-# パス再読み込み（Windows PowerShell）
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-
-# または新しいターミナルを開く
-```
-
-**Webhook が届かない場合**:
-1. `stripe listen` が実行中か確認
-2. サーバーがポート3000で起動しているか確認
-3. `.env` の `STRIPE_TEST_WEBHOOK_SECRET` が正しいか確認
-
-**データベース接続エラー**:
-```bash
-# コンテナ状態確認
-docker ps
-
-# コンテナ再起動
-docker-compose restart postgres redis
-```
-
-## Development
-
-### Available Scripts
-
-| コマンド | 説明 |
-|---------|------|
-| `npm run dev` | 開発サーバー起動（ホットリロード） |
-| `npm run build` | 本番ビルド |
-| `npm start` | 本番サーバー起動 |
-| `npm test` | 単体テスト実行 |
-| `npm run test:watch` | ウォッチモードでテスト |
-| `npm run test:coverage` | カバレッジレポート生成 |
-| `npm run test:e2e:setup` | E2E テスト開発者作成 |
-| `npm run test:e2e:api` | API E2E テスト実行 |
-| `npm run test:e2e` | Playwright UI テスト |
-| `npm run migrate:up` | マイグレーション実行 |
-| `npm run migrate:down` | マイグレーションロールバック |
-| `npm run lint` | Lint 実行 |
-| `npm run format` | Prettier でフォーマット |
-| `npm run docker:up` | PostgreSQL/Redis 起動 |
-| `npm run docker:down` | Docker コンテナ停止 |
-
-### Project Structure
-
-```
-forgepaybridge/
-├── src/
-│   ├── config/          # Configuration files
-│   ├── controllers/     # API controllers
-│   ├── services/        # Business logic services
-│   ├── repositories/    # Data access layer
-│   ├── middleware/      # Express middleware
-│   ├── routes/          # API routes
-│   ├── types/           # TypeScript type definitions
-│   ├── utils/           # Utility functions
-│   ├── app.ts           # Express app setup
-│   └── index.ts         # Application entry point
-├── migrations/          # Database migrations
-├── tests/               # Test files
-├── logs/                # Application logs
-└── dist/                # Compiled JavaScript (generated)
-```
-
-## Testing
-
-### 単体テスト（Unit Tests）
-
-```bash
-npm test
-```
-
-### プロパティベーステスト（Property-Based Tests）
-
-`fast-check` を使用したプロパティベーステスト:
-
-```bash
-npm test -- --testPathPattern=property
-```
-
-### 統合テスト（Integration Tests）
-
-```bash
-npm test -- --testPathPattern=integration
-```
+</details>
 
 ---
 
-## E2E テスト完全ガイド
-
-### 前提条件
-
-- Node.js 18+
-- Docker Desktop（PostgreSQL/Redis用）
-- バックエンドサーバーが起動していること
-
-### Step 1: 環境準備
-
-```bash
-# 依存関係インストール
-npm install
-
-# Docker でデータベース起動
-docker-compose up -d postgres redis
-
-# マイグレーション実行
-npm run migrate:up
-```
-
-### Step 2: バックエンドサーバー起動
-
-**ターミナル1** で実行:
-
-```bash
-npm run dev
-```
-
-正常起動の確認:
-```bash
-curl http://localhost:3000/health
-# → {"status":"ok","timestamp":"...","environment":"development"}
-```
-
-### Step 3: テスト開発者の作成
-
-**ターミナル2** で実行:
-
-```bash
-npm run test:e2e:setup
-```
-
-出力例:
-```
-🚀 Setting up test developer via API...
-✅ Developer registered successfully!
-
-============================================================
-🔑 TEST API KEY (Save this - it will not be shown again!)
-============================================================
-
-   fpb_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-============================================================
-
-✅ API key verified successfully!
-   Developer ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-   Email: e2e-test@forgepay.io
-   Test Mode: true
-
-✨ Setup complete!
-```
-
-**重要**: 出力された API キーを `.env` ファイルに保存:
-
-```env
-TEST_API_KEY=fpb_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-### Step 4: API E2E テスト実行
-
-```bash
-# 簡単な方法（推奨）- .env から API Key を自動読み込み
-npm run test:e2e:api
-```
-
-期待される出力:
-```
-🧪 Running E2E Tests...
-   API Key: fpb_test_xxxxx...
-
-PASS src/__tests__/e2e/payment-flow.e2e.test.ts (11 s)
-  E2E: ForgePay Payment Platform
-    Health Check Endpoints
-      ✓ GET /health - should return healthy status
-      ✓ GET /api/v1/health - should return detailed health status
-      ✓ GET /api/v1/health/live - should return alive
-      ✓ GET /api/v1/health/ready - should return ready status
-    API Authentication
-      ✓ should reject requests without API key
-      ✓ should reject requests with invalid API key
-      ✓ should accept requests with valid API key
-    Checkout Flow
-      ✓ should create checkout session with valid data
-      ... (全44テスト)
-
-Test Suites: 1 passed, 1 total
-Tests:       44 passed, 44 total
-
-✅ E2E Tests completed successfully!
-```
-
-### Step 5: Playwright UI テスト（オプション）
-
-ブラウザベースの UI テストを実行する場合:
-
-#### 5-1: TEST_API_KEY の設定確認
-
-Playwright テストには `TEST_API_KEY` 環境変数が **必須** です。
-Step 3 で取得した API キーが `.env` に設定されていることを確認:
-
-```env
-# .env ファイル
-TEST_API_KEY=fpb_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-または PowerShell で直接設定:
-
-```powershell
-$env:TEST_API_KEY="fpb_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
-
-#### 5-2: ダッシュボード起動
-
-**ターミナル3** で実行:
-
-```bash
-cd dashboard && npm install && npm run dev
-```
-
-ダッシュボードが `http://localhost:3001` で起動していることを確認。
-
-#### 5-3: Playwright テスト実行
-
-**ターミナル2** で実行:
-
-```bash
-# ヘッドレスモード（CI向け）
-npm run test:e2e
-
-# ブラウザ表示あり（デバッグ向け）
-npm run test:e2e:headed
-
-# インタラクティブ UI モード（推奨）
-npm run test:e2e:ui
-
-# デバッグモード
-npm run test:e2e:debug
-```
-
-期待される出力:
-```
-Running 10 tests using 1 worker
-
-  ✓ admin-login.spec.ts:20:5 › Admin Login Flow › should display login page correctly
-  ✓ admin-login.spec.ts:36:5 › Admin Login Flow › should login with valid API key
-  ✓ admin-dashboard.spec.ts:15:5 › Admin Dashboard › should display dashboard
-  ...
-
-  10 passed (15s)
-```
-
-#### TEST_API_KEY が設定されていない場合のエラー
-
-`TEST_API_KEY` が未設定の場合、以下のエラーが表示されます:
-
-```
-⚠️  TEST_API_KEY is not set!
-    E2E tests require a valid API key.
-    
-To fix:
-1. Start the server: npm run dev
-2. Run setup: node scripts/setup-test-developer.js
-3. Set the API key: export TEST_API_KEY=<your_api_key>
-```
-
-**解決策**:
-```bash
-# Step 3 を再実行して API Key を取得
-npm run test:e2e:setup
-
-# 出力された API Key を .env に保存、または環境変数に設定
-$env:TEST_API_KEY="fpb_test_xxx..."  # PowerShell
-```
-
----
-
-### E2E テスト用 npm スクリプト一覧
-
-| コマンド | 説明 |
-|---------|------|
-| `npm run test:e2e:setup` | テスト開発者を API 経由で作成 |
-| `npm run test:e2e:api` | Jest + Supertest の API テストを実行（44テスト） |
-| `npm run test:e2e` | Playwright UI テストを実行 |
-| `npm run test:e2e:headed` | ブラウザ表示ありで実行 |
-| `npm run test:e2e:ui` | インタラクティブ UI で実行 |
-| `npm run test:e2e:debug` | デバッグモードで実行 |
-| `npm run test:e2e:report` | テストレポートを表示 |
-
----
-
-### テスト設計原則
-
-**重要**: E2Eテストはすべてのテストデータを **API経由** で作成します。
-
-✅ **正しい方法**:
-- `/api/v1/onboarding/register` でテスト開発者を作成
-- `/api/v1/admin/products` でテスト商品を作成
-- `/api/v1/checkout/sessions` でチェックアウトセッションを作成
-- テスト後は API 経由でクリーンアップ
-
-❌ **禁止された方法**:
-- データベースに直接 INSERT 文を実行
-- `pool.query()` で直接データを挿入
-
-これにより、実際のユーザーフローと同じパスでテストが実行されます。
-
----
-
-### テストカバレッジ
-
-**API テスト（44テスト）**:
-| カテゴリ | テスト数 | 内容 |
-|---------|---------|------|
-| Health Check | 4 | ヘルスチェックエンドポイント |
-| API Authentication | 3 | API Key 認証 |
-| Checkout Flow | 4 | チェックアウトフロー |
-| Entitlement | 3 | エンタイトルメント検証 |
-| Admin Products | 4 | 商品管理 API |
-| Admin Customers | 2 | 顧客管理 API |
-| Coupon System | 3 | クーポンシステム |
-| Multi-Currency | 3 | 多通貨サポート |
-| Legal Templates | 3 | 法的テンプレート |
-| GDPR Compliance | 2 | GDPR コンプライアンス |
-| Monitoring | 2 | モニタリング・メトリクス |
-| Developer Onboarding | 3 | 開発者オンボーディング |
-| Invoice System | 2 | 請求書システム |
-| Audit Logs | 2 | 監査ログ |
-| Error Handling | 2 | エラーハンドリング |
-| API Documentation | 2 | API ドキュメント |
-
-**UI テスト（Playwright）**:
-- Admin Dashboard: ログイン、ダッシュボード、商品管理、顧客管理、Webhook監視、監査ログ
-- Customer Portal: マジックリンクログイン、ダッシュボード
-- Integration: チェックアウトフロー、Entitlement検証
-
-### 総合テスト準備の概要
-
-**必要な準備**
-- Docker Desktop を起動
-- Node.js 18+ をインストール
-
-**テスト実行手順**
-
-```powershell
-# 環境チェック
-.\scripts\env-checker.ps1
-
-# 環境準備（Docker起動、DB移行）
-.\scripts\test-runner.ps1 -Setup
-
-# 単体テスト
-.\scripts\test-runner.ps1 -Unit
-```
-
-**E2Eテスト（サーバー起動が必要）**
-
-```powershell
-# ターミナル1: サーバー起動
-npm run dev
-
-# ターミナル2: テスト実行
-.\scripts\test-runner.ps1 -E2E
-```
-
-```
-┌──────────────┐        ┌─────────────────────────────┐
-│  テストコード  │  HTTP  │  実際のサーバー              │
-│              │ ────→  │  localhost:3000             │
-│  Jest +      │        │    ↓                        │
-│  Supertest   │ ←────  │  DB/Redis (実際に接続)       │
-└──────────────┘        └─────────────────────────────┘
-```
-
-**Playwright (UI E2Eテスト)（サーバー起動が必要）**
-
-```powershell
-# ターミナル1: バックエンド起動
-npm run dev
-
-# ターミナル2: フロントエンド起動
-cd dashboard && npm run dev
-
-# ターミナル3: テスト実行
-.\scripts\test-runner.ps1 -Playwright
-```
-
-```
-┌──────────────┐        ┌─────────────────────────────┐
-│  Playwright  │        │  Dashboard (フロントエンド)   │
-│  (ブラウザ)   │ ────→  │  localhost:3001             │
-│              │        │    ↓ API呼び出し             │
-│  ボタンクリック │        │  Backend (バックエンド)      │
-│  入力操作     │        │  localhost:3000             │
-│  画面確認     │        │    ↓                        │
-│              │ ←────  │  DB/Redis                   │
-└──────────────┘        └─────────────────────────────┘
-```
-
-**テストの種類**
-| オプション | 説明 | サーバー |
-|------------|------|----------|
-| `-Unit` | コードだけテスト（速い） | 不要 |
-| `-E2E` | API通信テスト | 1つ必要 |
-| `-Playwright` | 画面操作テスト | 2つ必要 |
-
----
-
-### クイックリファレンス：Playwright テスト実行手順
-
-```bash
-# 1. Docker 起動
-docker-compose up -d postgres redis
-
-# 2. マイグレーション
-npm run migrate:up
-
-# 3. バックエンド起動（ターミナル1）
-npm run dev
-
-# 4. テスト開発者作成（ターミナル2）- 初回のみ
-npm run test:e2e:setup
-# → 出力された fpb_test_xxx... を .env の TEST_API_KEY に保存
-
-# 5. ダッシュボード起動（ターミナル3）
-cd dashboard && npm run dev
-
-# 6. Playwright テスト実行（ターミナル2）
-npm run test:e2e
-```
-
----
-
-### トラブルシューティング
-
-**問題: "TEST_API_KEY is not set"**
-```bash
-# 解決策: テスト開発者を作成して .env に API Key を設定
-npm run test:e2e:setup
-# → 出力された API Key を .env に保存
-```
-
-**問題: "Developer already exists"**
-```bash
-# 解決策: 既存のテスト開発者を削除して再作成
-docker exec forgepaybridge-postgres psql -U postgres -d forgepaybridge \
-  -c "DELETE FROM developers WHERE email = 'e2e-test@forgepay.io';"
-npm run test:e2e:setup
-```
-
-**問題: "Database connection failed"**
-```bash
-# 解決策: Docker コンテナを再起動
-docker-compose restart postgres redis
-```
-
-**問題: Port 3000 is already in use**
-```powershell
-# 解決策 (PowerShell): ポートを使用しているプロセスを終了
-Get-NetTCPConnection -LocalPort 3000 | Select-Object OwningProcess
-Stop-Process -Id <PID> -Force
-```
-
-## API Documentation
-
-### Checkout API
-
-**Create Checkout Session**
-```
-POST /api/v1/checkout/sessions
-Content-Type: application/json
-Authorization: Bearer <api_key>
-
-{
-  "product_id": "prod_123",
-  "price_id": "price_456",
-  "purchase_intent_id": "pi_openai_789",
-  "success_url": "https://chat.openai.com/success",
-  "cancel_url": "https://chat.openai.com/cancel"
-}
-```
-
-**Verify Entitlement**
-```
-GET /api/v1/entitlements/verify?unlock_token=<token>
-Authorization: Bearer <api_key>
-```
-
-### Webhook Endpoint
-
-```
-POST /api/v1/webhooks/stripe
-Stripe-Signature: <signature>
-
-<Stripe event payload>
-```
-
-## Deployment
-
-### Production Checklist
-
-- [ ] Set `NODE_ENV=production`
-- [ ] Set `STRIPE_MODE=live`
-- [ ] Configure live Stripe API keys
-- [ ] Set strong `JWT_SECRET`
-- [ ] Configure production database
-- [ ] Configure production Redis
-- [ ] Set up SSL/TLS certificates
-- [ ] Configure CORS allowed origins
-- [ ] Set up monitoring and alerts
-- [ ] Configure log aggregation
-- [ ] Test webhook delivery
-- [ ] Complete Stripe account verification
-
-### Docker Deployment
-
-```bash
-docker build -t forgepaybridge .
-docker run -p 3000:3000 --env-file .env forgepaybridge
-```
-
-## Monitoring
-
-### Health Check
-
-```
-GET /health
-```
-
-Returns:
-```json
-{
-  "status": "ok",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "environment": "production",
-  "stripeMode": "live"
-}
-```
-
-### Logs
-
-Logs are written to:
-- `logs/combined.log` - All logs
-- `logs/error.log` - Error logs only
-
-Logs are structured JSON for easy parsing and aggregation.
-
-## Security
-
-- All card data is handled by Stripe (PCI-compliant)
-- Webhook signatures are verified
-- API keys are hashed before storage
-- Rate limiting on all endpoints
-- Customer PII is encrypted at rest
-- GDPR-compliant data export and deletion
-
-## License
+## ライセンス
 
 MIT
-
-## Support
-
-For issues and questions, please open an issue on GitHub.

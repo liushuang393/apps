@@ -15,12 +15,13 @@ import {
 import { productRepository } from '../repositories/ProductRepository';
 import { EntitlementService, entitlementService } from './EntitlementService';
 import { StripeClient, stripeClient } from './StripeClient';
-import { EmailService, emailService } from './EmailService';
-import { config } from '../config';
+import { StripeClientFactory, stripeClientFactory } from './StripeClientFactory';
+import { DeveloperRepository, developerRepository } from '../repositories/DeveloperRepository';
+import { CallbackService, callbackService, CallbackEventType } from './CallbackService';
 import { logger } from '../utils/logger';
 
 /**
- * Webhook processing result
+ * Webhook 処理結果
  */
 export interface ProcessResult {
   success: boolean;
@@ -31,28 +32,28 @@ export interface ProcessResult {
 }
 
 /**
- * Retry configuration
+ * リトライ設定
  */
 const RETRY_INTERVALS = [
-  60 * 1000,      // 1 minute
-  5 * 60 * 1000,  // 5 minutes
-  15 * 60 * 1000, // 15 minutes
-  60 * 60 * 1000, // 1 hour
-  6 * 60 * 60 * 1000, // 6 hours
+  60 * 1000,          // 1分
+  5 * 60 * 1000,      // 5分
+  15 * 60 * 1000,     // 15分
+  60 * 60 * 1000,     // 1時間
+  6 * 60 * 60 * 1000, // 6時間
 ];
 
 const MAX_RETRY_ATTEMPTS = 5;
 
 /**
- * WebhookProcessor handles Stripe webhook events
- * 
- * Responsibilities:
- * - Verify webhook signatures
- * - Process events idempotently
- * - Route events to appropriate handlers
- * - Manage retry logic and dead letter queue
- * 
- * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8
+ * WebhookProcessor — Stripe Webhook イベントの冪等処理
+ *
+ * 薄いレイヤーとして以下のみを担当:
+ * - Webhook 署名検証
+ * - 冪等性保証（イベントID重複チェック）
+ * - イベントルーティング → Entitlement 状態遷移
+ * - リトライ / DLQ 管理
+ *
+ * メール通知・請求書生成は Stripe に委譲（Stripe Dashboard で設定）
  */
 export class WebhookProcessor {
   private webhookLogRepo: WebhookLogRepository;
@@ -60,7 +61,9 @@ export class WebhookProcessor {
   private checkoutSessionRepo: CheckoutSessionRepository;
   private entitlementSvc: EntitlementService;
   private stripe: StripeClient;
-  private emailSvc: EmailService;
+  private stripeFactory: StripeClientFactory;
+  private developerRepo: DeveloperRepository;
+  private callbackSvc: CallbackService;
 
   constructor(
     webhookLogRepo: WebhookLogRepository = webhookLogRepository,
@@ -68,22 +71,33 @@ export class WebhookProcessor {
     checkoutSessionRepo: CheckoutSessionRepository = checkoutSessionRepository,
     entitlementSvc: EntitlementService = entitlementService,
     stripe: StripeClient = stripeClient,
-    emailSvc: EmailService = emailService
+    callbackSvc: CallbackService = callbackService,
+    stripeFactory: StripeClientFactory = stripeClientFactory,
+    devRepo: DeveloperRepository = developerRepository
   ) {
     this.webhookLogRepo = webhookLogRepo;
     this.customerRepo = customerRepo;
     this.checkoutSessionRepo = checkoutSessionRepo;
     this.entitlementSvc = entitlementSvc;
     this.stripe = stripe;
-    this.emailSvc = emailSvc;
+    this.stripeFactory = stripeFactory;
+    this.developerRepo = devRepo;
+    this.callbackSvc = callbackSvc;
   }
 
   /**
-   * Process a webhook event
-   * 
-   * @param payload - Raw request body
-   * @param signature - Stripe signature header
-   * @returns Processing result
+   * 開発者IDからStripeクライアントを取得（マルチテナント対応）
+   */
+  private async getStripeClientForDeveloper(developerId: string): Promise<StripeClient> {
+    const developer = await this.developerRepo.findById(developerId);
+    return this.stripeFactory.getClient(
+      developer?.stripeSecretKeyEnc || null,
+      developerId
+    );
+  }
+
+  /**
+   * Webhook イベントを処理（冪等性付き）
    */
   async processWebhook(
     payload: string | Buffer,
@@ -91,11 +105,11 @@ export class WebhookProcessor {
   ): Promise<ProcessResult> {
     let event: Stripe.Event;
 
-    // Verify signature
+    // 署名検証
     try {
       event = this.stripe.verifyWebhookSignature(payload, signature);
     } catch (error) {
-      logger.warn('Webhook signature verification failed', { error });
+      logger.warn('Webhook 署名検証失敗', { error });
       return {
         success: false,
         eventId: '',
@@ -105,10 +119,10 @@ export class WebhookProcessor {
       };
     }
 
-    // Check idempotency
+    // 冪等性チェック
     const existingLog = await this.webhookLogRepo.findByStripeEventId(event.id);
     if (existingLog && existingLog.status === 'processed') {
-      logger.info('Webhook event already processed', {
+      logger.info('Webhook イベント処理済み（スキップ）', {
         stripeEventId: event.id,
         eventType: event.type,
       });
@@ -116,11 +130,11 @@ export class WebhookProcessor {
         success: true,
         eventId: event.id,
         eventType: event.type,
-        processed: false, // Already processed
+        processed: false,
       };
     }
 
-    // Create or update webhook log
+    // Webhook ログを作成または更新
     let webhookLog: WebhookLog;
     if (existingLog) {
       webhookLog = existingLog;
@@ -134,14 +148,13 @@ export class WebhookProcessor {
       });
     }
 
-    // Process event
+    // イベント処理
     try {
       await this.handleEvent(event);
 
-      // Mark as processed
       await this.webhookLogRepo.markProcessed(webhookLog.id);
 
-      logger.info('Webhook event processed successfully', {
+      logger.info('Webhook イベント処理成功', {
         stripeEventId: event.id,
         eventType: event.type,
       });
@@ -155,11 +168,10 @@ export class WebhookProcessor {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-      // Check if should retry or move to DLQ
       const attempts = webhookLog.attempts + 1;
       if (attempts >= MAX_RETRY_ATTEMPTS) {
         await this.webhookLogRepo.moveToDLQ(webhookLog.id, errorMessage);
-        logger.error('Webhook moved to DLQ after max retries', {
+        logger.error('Webhook を DLQ に移動（リトライ上限到達）', {
           stripeEventId: event.id,
           eventType: event.type,
           attempts,
@@ -167,7 +179,7 @@ export class WebhookProcessor {
         });
       } else {
         await this.webhookLogRepo.markFailed(webhookLog.id, errorMessage);
-        logger.error('Webhook processing failed, will retry', {
+        logger.error('Webhook 処理失敗（リトライ予定）', {
           stripeEventId: event.id,
           eventType: event.type,
           attempts,
@@ -186,9 +198,7 @@ export class WebhookProcessor {
   }
 
   /**
-   * Handle a webhook event by routing to appropriate handler
-   * 
-   * @param event - Stripe event
+   * イベントを適切なハンドラにルーティング
    */
   private async handleEvent(event: Stripe.Event): Promise<void> {
     switch (event.type) {
@@ -217,15 +227,14 @@ export class WebhookProcessor {
         await this.handleDisputeClosed(event);
         break;
       default:
-        logger.debug('Unhandled webhook event type', {
+        logger.debug('未対応の Webhook イベント', {
           eventType: event.type,
         });
     }
   }
 
   /**
-   * Handle checkout.session.completed event
-   * Grant entitlement to customer
+   * checkout.session.completed — Entitlement を付与
    */
   private async handleCheckoutSessionCompleted(event: Stripe.Event): Promise<void> {
     const session = event.data.object as Stripe.Checkout.Session;
@@ -234,31 +243,29 @@ export class WebhookProcessor {
       session.metadata?.purchase_intent_id;
 
     if (!purchaseIntentId) {
-      throw new Error('Missing purchase_intent_id in checkout session');
+      throw new Error('checkout session に purchase_intent_id が未設定');
     }
 
-    // Get our checkout session record
     const checkoutSession = await this.checkoutSessionRepo.findByStripeSessionId(
       session.id
     );
 
     if (!checkoutSession) {
-      throw new Error(`Checkout session not found: ${session.id}`);
+      throw new Error(`チェックアウトセッション未検出: ${session.id}`);
     }
 
-    // Find or create customer
+    // 顧客の検索/作成
     const stripeCustomerId = typeof session.customer === 'string'
       ? session.customer
       : session.customer?.id;
 
     if (!stripeCustomerId) {
-      throw new Error('Missing customer in checkout session');
+      throw new Error('checkout session に customer が未設定');
     }
 
-    // Get customer email from session
     const customerEmail = session.customer_details?.email;
     if (!customerEmail) {
-      throw new Error('Missing customer email in checkout session');
+      throw new Error('checkout session に customer email が未設定');
     }
 
     const { customer } = await this.customerRepo.findOrCreate({
@@ -268,10 +275,10 @@ export class WebhookProcessor {
       name: session.customer_details?.name || undefined,
     });
 
-    // Mark checkout session as complete
+    // セッションを完了に更新
     await this.checkoutSessionRepo.markComplete(checkoutSession.id, customer.id);
 
-    // Get payment info
+    // 決済情報の取得
     const paymentIntentId = typeof session.payment_intent === 'string'
       ? session.payment_intent
       : session.payment_intent?.id || '';
@@ -280,14 +287,15 @@ export class WebhookProcessor {
       ? session.subscription
       : session.subscription?.id || undefined;
 
-    // Calculate expiration for subscriptions
+    // サブスクリプションの有効期限を取得
     let expiresAt: Date | null = null;
     if (subscriptionId) {
-      const subscription = await this.stripe.getSubscription(subscriptionId);
+      const devStripe = await this.getStripeClientForDeveloper(checkoutSession.developerId);
+      const subscription = await devStripe.getSubscription(subscriptionId);
       expiresAt = new Date(subscription.current_period_end * 1000);
     }
 
-    // Grant entitlement
+    // Entitlement を付与
     await this.entitlementSvc.grantEntitlement({
       customerId: customer.id,
       productId: checkoutSession.productId,
@@ -297,22 +305,48 @@ export class WebhookProcessor {
       expiresAt,
     });
 
-    logger.info('Checkout completed, entitlement granted', {
+    logger.info('チェックアウト完了、Entitlement 付与', {
       sessionId: session.id,
       purchaseIntentId,
       customerId: customer.id,
       productId: checkoutSession.productId,
     });
+
+    // 開発者にコールバック通知
+    const product = await productRepository.findById(checkoutSession.productId);
+    const eventType: CallbackEventType = subscriptionId ? 'subscription.created' : 'payment.completed';
+    await this.callbackSvc.send(checkoutSession.developerId, {
+      event_id: event.id,
+      event_type: eventType,
+      timestamp: new Date().toISOString(),
+      product: product ? {
+        id: product.id,
+        name: product.name,
+        type: product.type,
+      } : undefined,
+      customer: {
+        email: customerEmail,
+        name: session.customer_details?.name || undefined,
+      },
+      amount: session.amount_total ? {
+        value: session.amount_total,
+        currency: session.currency || 'usd',
+        formatted: `${(session.amount_total / 100).toFixed(2)} ${(session.currency || 'usd').toUpperCase()}`,
+      } : undefined,
+      metadata: {
+        purchase_intent_id: purchaseIntentId,
+        session_id: session.id,
+      },
+    });
   }
 
   /**
-   * Handle invoice.paid event
-   * Renew subscription entitlement
+   * invoice.paid — サブスクリプション Entitlement を更新
    */
   private async handleInvoicePaid(event: Stripe.Event): Promise<void> {
     const invoice = event.data.object as Stripe.Invoice;
 
-    // Only handle subscription invoices (not first payment)
+    // 初回の subscription_create は checkout.session.completed で処理済み
     if (!invoice.subscription || invoice.billing_reason === 'subscription_create') {
       return;
     }
@@ -321,24 +355,26 @@ export class WebhookProcessor {
       ? invoice.subscription
       : invoice.subscription.id;
 
-    // Find entitlement by subscription
     const entitlement = await this.entitlementSvc.getEntitlementBySubscriptionId(
       subscriptionId
     );
 
     if (!entitlement) {
-      logger.warn('No entitlement found for subscription', { subscriptionId });
+      logger.warn('サブスクリプションに対応する Entitlement 未検出', { subscriptionId });
       return;
     }
 
-    // Get subscription to get new period end
-    const subscription = await this.stripe.getSubscription(subscriptionId);
+    // 開発者ごとの Stripe クライアントで subscription を取得
+    const customer = await this.customerRepo.findById(entitlement.customerId);
+    const devStripe = customer
+      ? await this.getStripeClientForDeveloper(customer.developerId)
+      : this.stripe;
+    const subscription = await devStripe.getSubscription(subscriptionId);
     const newExpiresAt = new Date(subscription.current_period_end * 1000);
 
-    // Renew entitlement
     await this.entitlementSvc.renewEntitlement(entitlement.id, newExpiresAt);
 
-    logger.info('Subscription renewed, entitlement extended', {
+    logger.info('サブスクリプション更新、Entitlement 延長', {
       subscriptionId,
       entitlementId: entitlement.id,
       newExpiresAt,
@@ -346,8 +382,8 @@ export class WebhookProcessor {
   }
 
   /**
-   * Handle invoice.payment_failed event
-   * May suspend entitlement after grace period
+   * invoice.payment_failed — 決済失敗時に Entitlement を停止
+   * メール通知は Stripe Dashboard の自動メール機能に委譲
    */
   private async handleInvoicePaymentFailed(event: Stripe.Event): Promise<void> {
     const invoice = event.data.object as Stripe.Invoice;
@@ -360,64 +396,43 @@ export class WebhookProcessor {
       ? invoice.subscription
       : invoice.subscription.id;
 
-    // Find entitlement
     const entitlement = await this.entitlementSvc.getEntitlementBySubscriptionId(
       subscriptionId
     );
 
     if (!entitlement) {
-      logger.warn('No entitlement found for subscription', { subscriptionId });
+      logger.warn('サブスクリプションに対応する Entitlement 未検出', { subscriptionId });
       return;
     }
 
-    // Get customer info
-    const customer = await this.customerRepo.findById(entitlement.customerId);
-    const product = await productRepository.findById(entitlement.productId);
-
-    // Check if this is the final failure (subscription will cancel)
-    logger.warn('Subscription payment failed', {
+    logger.warn('サブスクリプション決済失敗', {
       subscriptionId,
       entitlementId: entitlement.id,
       attemptCount: invoice.attempt_count,
     });
 
-    // Get subscription status for notification and entitlement handling
-    const subscriptionData = await this.stripe.getSubscription(subscriptionId);
+    // 開発者ごとの Stripe クライアントで subscription ステータスを確認
+    const customer = await this.customerRepo.findById(entitlement.customerId);
+    const devStripe = customer
+      ? await this.getStripeClientForDeveloper(customer.developerId)
+      : this.stripe;
+    const subscriptionData = await devStripe.getSubscription(subscriptionId);
 
-    // Send notification email to customer
-    if (customer && product) {
-      // Calculate next retry date (Stripe typically retries after 3-7 days)
-      const retryDate = new Date();
-      retryDate.setDate(retryDate.getDate() + 3);
-
-      await this.emailSvc.sendPaymentFailureNotification({
-        customerEmail: customer.email,
-        customerName: customer.name || undefined,
-        productName: product.name,
-        amount: invoice.amount_due,
-        currency: invoice.currency,
-        failureReason: invoice.last_finalization_error?.message,
-        retryDate,
-        updatePaymentUrl: `${config.app.baseUrl}/update-payment?subscription=${subscriptionId}`,
-      });
-    }
-
-    // If subscription is past due, suspend entitlement
+    // past_due なら Entitlement を停止
     if (subscriptionData.status === 'past_due') {
       await this.entitlementSvc.suspendEntitlement(
         entitlement.id,
-        'Payment failed, subscription past due'
+        '決済失敗、サブスクリプション延滞'
       );
     }
   }
 
   /**
-   * Handle customer.subscription.updated event
+   * customer.subscription.updated — サブスクリプション状態変更への対応
    */
   private async handleSubscriptionUpdated(event: Stripe.Event): Promise<void> {
     const subscription = event.data.object as Stripe.Subscription;
 
-    // Find entitlement
     const entitlement = await this.entitlementSvc.getEntitlementBySubscriptionId(
       subscription.id
     );
@@ -426,9 +441,8 @@ export class WebhookProcessor {
       return;
     }
 
-    // Handle cancellation at period end
     if (subscription.cancel_at_period_end) {
-      logger.info('Subscription scheduled for cancellation', {
+      logger.info('サブスクリプションのキャンセル予約', {
         subscriptionId: subscription.id,
         entitlementId: entitlement.id,
         cancelAt: subscription.cancel_at
@@ -437,11 +451,10 @@ export class WebhookProcessor {
       });
     }
 
-    // Handle status changes
     if (subscription.status === 'past_due') {
       await this.entitlementSvc.suspendEntitlement(
         entitlement.id,
-        'Subscription past due'
+        'サブスクリプション延滞'
       );
     } else if (subscription.status === 'active' && entitlement.status === 'suspended') {
       await this.entitlementSvc.reactivateEntitlement(entitlement.id);
@@ -449,13 +462,11 @@ export class WebhookProcessor {
   }
 
   /**
-   * Handle customer.subscription.deleted event
-   * Revoke entitlement when subscription ends
+   * customer.subscription.deleted — Entitlement を取り消し
    */
   private async handleSubscriptionDeleted(event: Stripe.Event): Promise<void> {
     const subscription = event.data.object as Stripe.Subscription;
 
-    // Find entitlement
     const entitlement = await this.entitlementSvc.getEntitlementBySubscriptionId(
       subscription.id
     );
@@ -464,29 +475,25 @@ export class WebhookProcessor {
       return;
     }
 
-    // Revoke entitlement
     await this.entitlementSvc.revokeEntitlement(
       entitlement.id,
-      'Subscription cancelled'
+      'サブスクリプションキャンセル'
     );
 
-    logger.info('Subscription deleted, entitlement revoked', {
+    logger.info('サブスクリプション削除、Entitlement 取り消し', {
       subscriptionId: subscription.id,
       entitlementId: entitlement.id,
     });
   }
 
   /**
-   * Handle charge.refunded event
-   * Revoke entitlement for full refunds
+   * charge.refunded — 全額返金時に Entitlement を取り消し
    */
   private async handleChargeRefunded(event: Stripe.Event): Promise<void> {
     const charge = event.data.object as Stripe.Charge;
 
-    // Determine if full or partial refund
     const isFullRefund = charge.amount_refunded >= charge.amount;
 
-    // Get payment intent ID
     const paymentIntentId = typeof charge.payment_intent === 'string'
       ? charge.payment_intent
       : charge.payment_intent?.id;
@@ -495,29 +502,26 @@ export class WebhookProcessor {
       return;
     }
 
-    // Find entitlement by payment ID
     const entitlement = await this.entitlementSvc.getEntitlement(paymentIntentId);
 
     if (!entitlement) {
-      logger.warn('No entitlement found for refunded payment', { paymentIntentId });
+      logger.warn('返金対象の Entitlement 未検出', { paymentIntentId });
       return;
     }
 
     if (isFullRefund) {
-      // Full refund - revoke entitlement
       await this.entitlementSvc.revokeEntitlement(
         entitlement.id,
-        'Full refund processed'
+        '全額返金処理'
       );
 
-      logger.info('Full refund processed, entitlement revoked', {
+      logger.info('全額返金、Entitlement 取り消し', {
         paymentIntentId,
         entitlementId: entitlement.id,
         amountRefunded: charge.amount_refunded,
       });
     } else {
-      // Partial refund - log but maintain entitlement
-      logger.info('Partial refund processed, entitlement maintained', {
+      logger.info('部分返金、Entitlement 維持', {
         paymentIntentId,
         entitlementId: entitlement.id,
         amountRefunded: charge.amount_refunded,
@@ -527,13 +531,11 @@ export class WebhookProcessor {
   }
 
   /**
-   * Handle charge.dispute.created event
-   * Immediately revoke entitlement
+   * charge.dispute.created — チャージバック発生で即座に Entitlement を取り消し
    */
   private async handleDisputeCreated(event: Stripe.Event): Promise<void> {
     const dispute = event.data.object as Stripe.Dispute;
 
-    // Get payment intent ID
     const paymentIntentId = typeof dispute.payment_intent === 'string'
       ? dispute.payment_intent
       : dispute.payment_intent?.id;
@@ -542,61 +544,32 @@ export class WebhookProcessor {
       return;
     }
 
-    // Find entitlement by payment ID
     const entitlement = await this.entitlementSvc.getEntitlement(paymentIntentId);
 
     if (!entitlement) {
-      logger.warn('No entitlement found for disputed payment', { paymentIntentId });
+      logger.warn('チャージバック対象の Entitlement 未検出', { paymentIntentId });
       return;
     }
 
-    // Immediately revoke entitlement
     await this.entitlementSvc.revokeEntitlement(
       entitlement.id,
-      `Chargeback dispute created: ${dispute.reason}`
+      `チャージバック: ${dispute.reason}`
     );
 
-    logger.warn('Chargeback dispute created, entitlement revoked', {
+    logger.warn('チャージバック発生、Entitlement 取り消し', {
       disputeId: dispute.id,
       paymentIntentId,
       entitlementId: entitlement.id,
       reason: dispute.reason,
     });
-
-    // Get customer and product info for notification
-    const customer = await this.customerRepo.findById(entitlement.customerId);
-    const product = await productRepository.findById(entitlement.productId);
-
-    // Send notification email to developer
-    // Note: In a real implementation, we'd look up the developer's email
-    // For now, we'll use the customer email placeholder
-    if (customer && product) {
-      // Calculate respond by date (typically 7-21 days)
-      const respondByDate = dispute.evidence_details?.due_by
-        ? new Date(dispute.evidence_details.due_by * 1000)
-        : undefined;
-
-      await this.emailSvc.sendChargebackNotification({
-        developerEmail: config.email?.fromEmail || 'developer@example.com', // TODO: Get from developer record
-        customerEmail: customer.email,
-        productName: product.name,
-        amount: dispute.amount,
-        currency: dispute.currency,
-        chargebackReason: dispute.reason || undefined,
-        chargebackId: dispute.id,
-        respondByDate,
-      });
-    }
   }
 
   /**
-   * Handle charge.dispute.closed event
-   * Restore entitlement if dispute won
+   * charge.dispute.closed — チャージバック勝利時に Entitlement を復活
    */
   private async handleDisputeClosed(event: Stripe.Event): Promise<void> {
     const dispute = event.data.object as Stripe.Dispute;
 
-    // Get payment intent ID
     const paymentIntentId = typeof dispute.payment_intent === 'string'
       ? dispute.payment_intent
       : dispute.payment_intent?.id;
@@ -605,7 +578,6 @@ export class WebhookProcessor {
       return;
     }
 
-    // Find entitlement by payment ID
     const entitlement = await this.entitlementSvc.getEntitlement(paymentIntentId);
 
     if (!entitlement) {
@@ -613,16 +585,15 @@ export class WebhookProcessor {
     }
 
     if (dispute.status === 'won') {
-      // Dispute won - restore entitlement
       await this.entitlementSvc.reactivateEntitlement(entitlement.id);
 
-      logger.info('Chargeback dispute won, entitlement restored', {
+      logger.info('チャージバック勝利、Entitlement 復活', {
         disputeId: dispute.id,
         paymentIntentId,
         entitlementId: entitlement.id,
       });
     } else {
-      logger.info('Chargeback dispute lost, entitlement remains revoked', {
+      logger.info('チャージバック敗北、Entitlement 取り消し維持', {
         disputeId: dispute.id,
         paymentIntentId,
         entitlementId: entitlement.id,
@@ -632,10 +603,7 @@ export class WebhookProcessor {
   }
 
   /**
-   * Retry a failed webhook from the database
-   * 
-   * @param webhookLogId - Webhook log ID
-   * @returns Processing result
+   * 失敗した Webhook をリトライ
    */
   async retryFailedWebhook(webhookLogId: string): Promise<ProcessResult> {
     const webhookLog = await this.webhookLogRepo.findById(webhookLogId);
@@ -660,7 +628,6 @@ export class WebhookProcessor {
       };
     }
 
-    // Process the stored event
     const event = webhookLog.payload as unknown as Stripe.Event;
 
     try {
@@ -668,7 +635,7 @@ export class WebhookProcessor {
 
       await this.webhookLogRepo.markProcessed(webhookLog.id);
 
-      logger.info('Webhook retry successful', {
+      logger.info('Webhook リトライ成功', {
         webhookLogId,
         stripeEventId: webhookLog.stripeEventId,
         eventType: webhookLog.eventType,
@@ -682,13 +649,6 @@ export class WebhookProcessor {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-      logger.error('Error processing webhook event', {
-        error,
-        stripeEventId: webhookLog.stripeEventId,
-        eventType: webhookLog.eventType,
-        attempts: webhookLog.attempts + 1,
-      });
 
       const attempts = webhookLog.attempts + 1;
       if (attempts >= MAX_RETRY_ATTEMPTS) {
@@ -708,10 +668,7 @@ export class WebhookProcessor {
   }
 
   /**
-   * Get the next retry interval based on attempt count
-   * 
-   * @param attempts - Number of attempts so far
-   * @returns Retry interval in milliseconds
+   * リトライ間隔を取得
    */
   getRetryInterval(attempts: number): number {
     if (attempts >= RETRY_INTERVALS.length) {
@@ -721,15 +678,12 @@ export class WebhookProcessor {
   }
 
   /**
-   * Check if more retries are allowed
-   * 
-   * @param attempts - Number of attempts so far
-   * @returns True if more retries are allowed
+   * リトライ可能かどうかを判定
    */
   canRetry(attempts: number): boolean {
     return attempts < MAX_RETRY_ATTEMPTS;
   }
 }
 
-// Export singleton instance
+// シングルトンインスタンス
 export const webhookProcessor = new WebhookProcessor();

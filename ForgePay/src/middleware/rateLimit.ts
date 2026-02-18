@@ -6,99 +6,68 @@ import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 
 /**
- * Rate limiting middleware using Redis for distributed state
- * Falls back to memory store if Redis is not connected
- * 
- * Requirements: 8.6
- */
-
-/**
- * Create a store that uses Redis if available, otherwise falls back to memory
+ * Redis が接続済みなら RedisStore、未接続なら MemoryStore を返す
  */
 function createStore(prefix: string) {
-  // Check if Redis client is ready
   if (redisClient.isReady) {
-    logger.info(`Using Redis store for rate limiting: ${prefix}`);
     return new RedisStore({
       sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-      prefix: prefix,
+      prefix,
     });
   }
-  
-  // Fallback to memory store
-  logger.warn(`Redis not ready, using memory store for rate limiting: ${prefix}`);
+  logger.warn(`Redis 未接続のため MemoryStore にフォールバック: ${prefix}`);
   return new MemoryStore();
 }
 
-/**
- * Standard API rate limiter
- * 100 requests per minute per API key or IP
- */
-export const apiRateLimiter: RateLimitRequestHandler = rateLimit({
-  windowMs: config.rateLimit.windowMs,
-  max: config.rateLimit.maxRequests,
-  standardHeaders: true,
-  legacyHeaders: false,
-  
-  // Use lazy initialization to handle Redis connection timing
-  store: new MemoryStore(), // Start with memory, will be replaced when Redis connects
+/** API キーまたは IP をレート制限キーとして返す */
+function keyByApiKeyOrIp(req: Request): string {
+  const apiKey = req.headers['x-api-key'] as string;
+  return apiKey ? `key:${apiKey.substring(0, 20)}` : `ip:${req.ip}`;
+}
 
-  // Key generator: Use API key if available, otherwise IP
-  keyGenerator: (req: Request): string => {
-    const apiKey = req.headers['x-api-key'] as string;
-    if (apiKey) {
-      return `key:${apiKey.substring(0, 20)}`;
-    }
-    return `ip:${req.ip}`;
-  },
-
-  // Custom handler for rate limit exceeded
-  handler: (req: Request, res: Response) => {
-    logger.warn('Rate limit exceeded', {
-      ip: req.ip,
-      apiKey: (req.headers['x-api-key'] as string)?.substring(0, 10) + '...',
-      path: req.path,
-    });
-
+/** レート制限超過時のレスポンス */
+function rateLimitHandler(retryAfterSec: number) {
+  return (_req: Request, res: Response) => {
     res.status(429).json({
       error: {
         code: 'rate_limit_exceeded',
         message: 'Too many requests. Please try again later.',
         type: 'rate_limit_error',
-        retryAfter: Math.ceil(config.rateLimit.windowMs / 1000),
+        retryAfter: retryAfterSec,
       },
     });
-  },
+  };
+}
 
-  // Skip rate limiting for certain paths
-  skip: (req: Request): boolean => {
-    // Skip rate limiting for health check
-    return req.path === '/health';
-  },
+/**
+ * 汎用 API レートリミッター（100 req/min）
+ * テスト・開発環境では上限を大幅に緩和
+ */
+export const apiRateLimiter: RateLimitRequestHandler = rateLimit({
+  windowMs: config.rateLimit.windowMs,
+  max: config.app?.env === 'test' || config.app?.env === 'development'
+    ? 10000
+    : config.rateLimit.maxRequests,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createStore('rl:api:'),
+  keyGenerator: keyByApiKeyOrIp,
+  handler: rateLimitHandler(Math.ceil(config.rateLimit.windowMs / 1000)),
+  skip: (req: Request) => req.path === '/health',
 });
 
 /**
- * Webhook rate limiter
- * Higher limit for webhook endpoints (1000 per minute)
+ * Webhook レートリミッター（1000 req/min）
+ * Stripe からの大量 Webhook に対応
  */
 export const webhookRateLimiter: RateLimitRequestHandler = rateLimit({
-  windowMs: 60000, // 1 minute
+  windowMs: 60_000,
   max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
-
-  store: new MemoryStore(), // Use memory store for simplicity
-
-  keyGenerator: (req: Request): string => {
-    return `ip:${req.ip}`;
-  },
-
-  handler: (req: Request, res: Response) => {
-    logger.warn('Webhook rate limit exceeded', {
-      ip: req.ip,
-      path: req.path,
-    });
-
+  store: createStore('rl:webhook:'),
+  keyGenerator: (req: Request) => `ip:${req.ip}`,
+  handler: (_req: Request, res: Response) => {
     res.status(429).json({
       error: {
         code: 'rate_limit_exceeded',
@@ -111,31 +80,17 @@ export const webhookRateLimiter: RateLimitRequestHandler = rateLimit({
 });
 
 /**
- * Admin rate limiter
- * Lower limit for admin endpoints (30 per minute)
+ * 管理 API レートリミッター（30 req/min）
+ * 管理操作の過剰実行を防止
  */
 export const adminRateLimiter: RateLimitRequestHandler = rateLimit({
-  windowMs: 60000, // 1 minute
-  max: 30,
+  windowMs: 60_000,
+  max: config.app?.env === 'test' || config.app?.env === 'development' ? 1000 : 30,
   standardHeaders: true,
   legacyHeaders: false,
-
-  store: new MemoryStore(), // Use memory store for simplicity
-
-  keyGenerator: (req: Request): string => {
-    const apiKey = req.headers['x-api-key'] as string;
-    if (apiKey) {
-      return `key:${apiKey.substring(0, 20)}`;
-    }
-    return `ip:${req.ip}`;
-  },
-
-  handler: (req: Request, res: Response) => {
-    logger.warn('Admin rate limit exceeded', {
-      ip: req.ip,
-      path: req.path,
-    });
-
+  store: createStore('rl:admin:'),
+  keyGenerator: keyByApiKeyOrIp,
+  handler: (_req: Request, res: Response) => {
     res.status(429).json({
       error: {
         code: 'rate_limit_exceeded',
@@ -148,10 +103,7 @@ export const adminRateLimiter: RateLimitRequestHandler = rateLimit({
 });
 
 /**
- * Create a custom rate limiter
- * 
- * @param options - Rate limiter options
- * @returns Rate limiter middleware
+ * カスタムレートリミッターファクトリ
  */
 export function createRateLimiter(options: {
   windowMs: number;
@@ -164,22 +116,13 @@ export function createRateLimiter(options: {
     max: options.max,
     standardHeaders: true,
     legacyHeaders: false,
-
     store: createStore(`rl:${options.prefix}:`),
-
-    keyGenerator: (req: Request): string => {
-      const apiKey = req.headers['x-api-key'] as string;
-      if (apiKey) {
-        return `key:${apiKey.substring(0, 20)}`;
-      }
-      return `ip:${req.ip}`;
-    },
-
+    keyGenerator: keyByApiKeyOrIp,
     handler: (_req: Request, res: Response) => {
       res.status(429).json({
         error: {
           code: 'rate_limit_exceeded',
-          message: options.message || 'Too many requests. Please try again later.',
+          message: options.message ?? 'Too many requests. Please try again later.',
           type: 'rate_limit_error',
           retryAfter: Math.ceil(options.windowMs / 1000),
         },

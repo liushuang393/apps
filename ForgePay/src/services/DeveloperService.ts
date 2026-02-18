@@ -5,10 +5,12 @@ import {
   Developer,
   CreateDeveloperParams,
 } from '../repositories/DeveloperRepository';
-import { LegalTemplateService, legalTemplateService } from './LegalTemplateService';
-import { EmailService, emailService } from './EmailService';
-import { config } from '../config';
+import {
+  ProductRepository,
+  productRepository,
+} from '../repositories/ProductRepository';
 import { logger } from '../utils/logger';
+import { emailService } from './EmailService';
 
 /**
  * API key with plain text (only returned once on creation)
@@ -47,44 +49,48 @@ export interface OnboardingStatus {
 }
 
 /**
- * DeveloperService handles developer registration and onboarding
- * 
- * Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6
+ * DeveloperService — 開発者登録・オンボーディング管理
+ *
+ * 薄いレイヤーとして以下のみを担当:
+ * - 開発者アカウント作成・管理
+ * - API キー発行・検証
+ * - Stripe 接続設定
+ * - オンボーディングステータス管理
+ *
+ * 削除済み（外部サービスに委譲）:
+ * - 法的テンプレート → 外部法的テンプレートサービス
+ * - メール送信 → 外部メールサービス（将来的に統合）
  */
 export class DeveloperService {
   private developerRepo: DeveloperRepository;
-  private legalService: LegalTemplateService;
-  private emailSvc: EmailService;
+  private productRepo: ProductRepository;
   private readonly API_KEY_PREFIX = 'fpb'; // ForgePay Bridge
 
   constructor(
     developerRepo: DeveloperRepository = developerRepository,
-    legalService: LegalTemplateService = legalTemplateService,
-    emailSvc: EmailService = emailService
+    productRepo: ProductRepository = productRepository
   ) {
     this.developerRepo = developerRepo;
-    this.legalService = legalService;
-    this.emailSvc = emailSvc;
+    this.productRepo = productRepo;
   }
 
   /**
-   * Register a new developer
+   * 開発者登録 + ウェルカムメール送信
    */
   async register(
     email: string,
     options?: { testMode?: boolean }
   ): Promise<RegistrationResult> {
-    // Check if email already exists
+    // メールアドレス重複チェック
     const existing = await this.developerRepo.findByEmail(email);
     if (existing) {
       throw new Error('Email already registered');
     }
 
-    // Generate API key
+    // API キー生成
     const apiKey = this.generateApiKey(options?.testMode ?? true);
     const apiKeyHash = await this.hashApiKey(apiKey.apiKey);
 
-    // Create developer
     const createParams: CreateDeveloperParams = {
       email,
       apiKeyHash,
@@ -93,38 +99,38 @@ export class DeveloperService {
 
     const developer = await this.developerRepo.create(createParams);
 
-    // Create default legal templates
-    try {
-      await this.legalService.createDefaultTemplates(developer.id);
-    } catch (error) {
-      logger.warn('Failed to create default legal templates', { error, developerId: developer.id });
-    }
+    // ウェルカムメール送信（失敗してもアプリは止まらない）
+    const dashboardUrl = process.env.DASHBOARD_URL ?? 'http://localhost:3001';
+    emailService.sendWelcomeEmail(email, apiKey.apiKey).catch((err) =>
+      logger.warn('ウェルカムメール送信失敗（登録自体は成功）', { error: err })
+    );
+    emailService.sendStripeSetupGuideEmail(email, dashboardUrl).catch((err) =>
+      logger.warn('Stripe セットアップガイドメール送信失敗', { error: err })
+    );
 
-    // Send welcome email
-    try {
-      await this.sendWelcomeEmail(developer, apiKey.apiKey);
-    } catch (error) {
-      logger.warn('Failed to send welcome email', { error, developerId: developer.id });
-    }
-
-    logger.info('Developer registered', {
+    logger.info('開発者登録完了', {
       developerId: developer.id,
       testMode: developer.testMode,
     });
 
-    return {
-      developer,
-      apiKey,
-    };
+    return { developer, apiKey };
   }
 
   /**
-   * Generate a new API key for a developer
+   * API キー再発行（処理中の決済セッションを事前チェック）
+   *
+   * @returns { apiKey, hasPendingPayments } — hasPendingPayments=true の場合は注意が必要
    */
-  async regenerateApiKey(developerId: string): Promise<ApiKeyResult> {
+  async regenerateApiKey(developerId: string): Promise<ApiKeyResult & { hasPendingPayments: boolean }> {
     const developer = await this.developerRepo.findById(developerId);
     if (!developer) {
       throw new Error('Developer not found');
+    }
+
+    // 処理中の決済セッションが存在するか確認
+    const hasPendingPayments = await this.hasPendingCheckoutSessions(developerId);
+    if (hasPendingPayments) {
+      logger.warn('API キー再発行: 処理中の決済セッションあり', { developerId });
     }
 
     const apiKey = this.generateApiKey(developer.testMode);
@@ -132,9 +138,67 @@ export class DeveloperService {
 
     await this.developerRepo.update(developerId, { apiKeyHash });
 
-    logger.info('API key regenerated', { developerId });
+    // 再発行通知メール（失敗してもアプリは止まらない）
+    emailService.sendKeyRegeneratedEmail(developer.email, apiKey.apiKey, hasPendingPayments).catch((err) =>
+      logger.warn('再発行通知メール送信失敗', { error: err })
+    );
 
-    return apiKey;
+    logger.info('API キー再発行完了', { developerId, hasPendingPayments });
+
+    return { ...apiKey, hasPendingPayments };
+  }
+
+  /**
+   * メールアドレスで API キーを忘れた場合の再発行
+   * 旧キーはハッシュ化されているため平文では取得不可 → 新しいキーを発行してメール送信
+   */
+  async forgotApiKey(email: string): Promise<{ sent: boolean }> {
+    const developer = await this.developerRepo.findByEmail(email);
+
+    // セキュリティ上、メールが存在しない場合も同じレスポンスを返す（ユーザー列挙防止）
+    if (!developer) {
+      logger.info('forgot-key: メールアドレス不明（セキュリティ上同レスポンス）', { email: '***' });
+      return { sent: true };
+    }
+
+    // 処理中の決済セッションを確認
+    const hasPendingPayments = await this.hasPendingCheckoutSessions(developer.id);
+
+    // 新しい API キーを生成
+    const apiKey = this.generateApiKey(developer.testMode);
+    const apiKeyHash = await this.hashApiKey(apiKey.apiKey);
+    await this.developerRepo.update(developer.id, { apiKeyHash });
+
+    // メール送信
+    emailService.sendForgotKeyEmail(email, apiKey.apiKey).catch((err) =>
+      logger.warn('forgot-key メール送信失敗', { error: err })
+    );
+
+    if (hasPendingPayments) {
+      logger.warn('forgot-key: 処理中の決済セッションあり — キー更新済み', { developerId: developer.id });
+    }
+
+    logger.info('forgot-key: 新しい API キーを発行してメール送信', { developerId: developer.id });
+    return { sent: true };
+  }
+
+  /**
+   * 処理中の決済セッションが存在するか確認
+   * API キー変更前のセーフティチェックに使用
+   */
+  private async hasPendingCheckoutSessions(developerId: string): Promise<boolean> {
+    try {
+      const { pool } = await import('../config/database');
+      const result = await pool.query(
+        `SELECT COUNT(*) as count FROM checkout_sessions
+         WHERE developer_id = $1 AND status = 'open'`,
+        [developerId]
+      );
+      return parseInt(result.rows[0].count, 10) > 0;
+    } catch {
+      // DB エラーはセーフティチェックの失敗として扱わない（ブロックしない）
+      return false;
+    }
   }
 
   /**
@@ -161,12 +225,25 @@ export class DeveloperService {
 
   /**
    * Update developer settings
+   * ノーコード決済リンク用のデフォルト設定を含む
    */
   async updateSettings(
     developerId: string,
     settings: {
       testMode?: boolean;
       webhookSecret?: string;
+      defaultSuccessUrl?: string | null;
+      defaultCancelUrl?: string | null;
+      defaultLocale?: string;
+      defaultCurrency?: string;
+      defaultPaymentMethods?: string[];
+      callbackUrl?: string | null;
+      callbackSecret?: string | null;
+      companyName?: string | null;
+      stripeSecretKeyEnc?: string | null;
+      stripePublishableKey?: string | null;
+      stripeWebhookEndpointSecret?: string | null;
+      stripeConfigured?: boolean;
     }
   ): Promise<Developer | null> {
     return this.developerRepo.update(developerId, settings);
@@ -202,36 +279,29 @@ export class DeveloperService {
       return null;
     }
 
-    // Check various onboarding steps
-    const legalTemplates = await this.legalService.getActiveTemplates(developerId);
-    const hasLegalTemplates = Object.values(legalTemplates).some(Boolean);
-
-    // We would check products, but for now we'll assume this step needs to be checked elsewhere
-    // In a full implementation, inject ProductRepository
-
+    // オンボーディングステップの確認
+    const products = await this.productRepo.findByDeveloperId(developer.id, true);
     const steps = {
-      accountCreated: true, // Always true if we have a developer
-      apiKeyGenerated: true, // Always true if we have a developer
-      stripeConnected: !!developer.stripeAccountId,
-      firstProductCreated: false, // Would check via ProductRepository
-      legalTemplatesConfigured: hasLegalTemplates,
-      webhookConfigured: !!developer.webhookSecret,
+      accountCreated: true,
+      apiKeyGenerated: true,
+      stripeConnected: !!developer.stripeAccountId || !!developer.stripeSecretKeyEnc,
+      firstProductCreated: products.length > 0,
+      legalTemplatesConfigured: true, // 外部サービスに委譲済みのためスキップ
+      webhookConfigured: !!developer.webhookSecret || !!developer.callbackUrl,
     };
 
     const completedSteps = Object.values(steps).filter(Boolean).length;
     const totalSteps = Object.keys(steps).length;
     const isComplete = completedSteps === totalSteps;
 
-    // Determine next step
+    // 次のステップを決定
     let nextStep: string | null = null;
     if (!steps.stripeConnected) {
-      nextStep = 'Connect your Stripe account';
+      nextStep = 'Stripe アカウントを接続してください';
     } else if (!steps.firstProductCreated) {
-      nextStep = 'Create your first product';
-    } else if (!steps.legalTemplatesConfigured) {
-      nextStep = 'Configure legal templates';
+      nextStep = '最初の商品を作成してください';
     } else if (!steps.webhookConfigured) {
-      nextStep = 'Set up webhooks';
+      nextStep = 'Webhook / コールバック URL を設定してください';
     }
 
     return {
@@ -292,102 +362,6 @@ export class DeveloperService {
     return crypto.createHash('sha256').update(apiKey).digest('hex');
   }
 
-  /**
-   * Send welcome email to new developer
-   */
-  private async sendWelcomeEmail(developer: Developer, apiKey: string): Promise<void> {
-    await this.emailSvc.send({
-      to: { email: developer.email },
-      subject: 'Welcome to ForgePay!',
-      html: this.getWelcomeEmailHtml(developer, apiKey),
-      text: this.getWelcomeEmailText(developer, apiKey),
-    });
-  }
-
-  /**
-   * Get welcome email HTML
-   */
-  private getWelcomeEmailHtml(developer: Developer, apiKey: string): string {
-    const dashboardUrl = config.app.baseUrl + '/dashboard';
-    const docsUrl = config.app.baseUrl + '/docs';
-
-    return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-</head>
-<body style="font-family: sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="text-align: center; margin-bottom: 30px;">
-    <h1 style="color: #0284c7;">Welcome to ForgePay!</h1>
-  </div>
-
-  <p>Hi there!</p>
-
-  <p>Thank you for signing up for ForgePay. Your account has been created and you're ready to start accepting payments.</p>
-
-  <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-    <h3 style="margin-top: 0;">Your API Key</h3>
-    <p style="font-family: monospace; background: #fff; padding: 10px; border-radius: 4px; word-break: break-all;">
-      ${apiKey}
-    </p>
-    <p style="font-size: 14px; color: #666;">
-      <strong>Important:</strong> This is the only time your API key will be shown. Please save it securely.
-    </p>
-  </div>
-
-  <h3>Next Steps</h3>
-  <ol>
-    <li>Save your API key securely</li>
-    <li>Connect your Stripe account</li>
-    <li>Create your first product</li>
-    <li>Integrate the checkout API</li>
-  </ol>
-
-  <div style="margin-top: 30px;">
-    <a href="${dashboardUrl}" style="display: inline-block; background: #0284c7; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-right: 10px;">Go to Dashboard</a>
-    <a href="${docsUrl}" style="display: inline-block; background: #f5f5f5; color: #333; padding: 12px 24px; text-decoration: none; border-radius: 6px;">View Docs</a>
-  </div>
-
-  <p style="margin-top: 30px; color: #666; font-size: 14px;">
-    You're currently in <strong>${developer.testMode ? 'Test Mode' : 'Live Mode'}</strong>. 
-    Test mode uses Stripe test keys and won't process real payments.
-  </p>
-
-  <hr style="margin-top: 40px; border: none; border-top: 1px solid #eee;">
-  <p style="font-size: 12px; color: #999;">
-    This email was sent by ForgePay. If you didn't create this account, please contact us.
-  </p>
-</body>
-</html>
-    `;
-  }
-
-  /**
-   * Get welcome email text
-   */
-  private getWelcomeEmailText(developer: Developer, apiKey: string): string {
-    return `
-Welcome to ForgePay!
-
-Thank you for signing up. Your account has been created.
-
-YOUR API KEY:
-${apiKey}
-
-IMPORTANT: This is the only time your API key will be shown. Please save it securely.
-
-NEXT STEPS:
-1. Save your API key securely
-2. Connect your Stripe account
-3. Create your first product
-4. Integrate the checkout API
-
-You're currently in ${developer.testMode ? 'Test Mode' : 'Live Mode'}.
-
-If you didn't create this account, please contact us.
-    `.trim();
-  }
 }
 
 // Export singleton instance

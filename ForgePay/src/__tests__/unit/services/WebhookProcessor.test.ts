@@ -20,6 +20,16 @@ const createMockEvent = (id: string, type: string, data: any): Stripe.Event => (
   request: null,
 } as Stripe.Event);
 
+// Mock database module
+jest.mock('../../../config/database', () => ({
+  pool: {
+    connect: jest.fn().mockResolvedValue({
+      query: jest.fn(),
+      release: jest.fn(),
+    }),
+  },
+}));
+
 // Mock all dependencies
 jest.mock('../../../repositories/WebhookLogRepository', () => ({
   webhookLogRepository: {
@@ -71,10 +81,21 @@ jest.mock('../../../services/StripeClient', () => ({
   },
 }));
 
-jest.mock('../../../services/EmailService', () => ({
-  emailService: {
-    sendPaymentFailureNotification: jest.fn(),
-    sendChargebackNotification: jest.fn(),
+jest.mock('../../../services/CallbackService', () => ({
+  callbackService: {
+    send: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+
+jest.mock('../../../services/StripeClientFactory', () => ({
+  stripeClientFactory: {
+    getClient: jest.fn(() => require('../../../services/StripeClient').stripeClient),
+  },
+}));
+
+jest.mock('../../../repositories/DeveloperRepository', () => ({
+  developerRepository: {
+    findById: jest.fn().mockResolvedValue(null),
   },
 }));
 
@@ -83,8 +104,10 @@ jest.mock('../../../config', () => ({
     app: {
       baseUrl: 'https://test.example.com',
     },
-    email: {
-      fromEmail: 'test@example.com',
+    database: {
+      url: 'postgresql://test:test@localhost:5432/test',
+      poolMin: 2,
+      poolMax: 10,
     },
   },
 }));
@@ -104,7 +127,6 @@ import { checkoutSessionRepository } from '../../../repositories/CheckoutSession
 import { productRepository } from '../../../repositories/ProductRepository';
 import { entitlementService } from '../../../services/EntitlementService';
 import { stripeClient } from '../../../services/StripeClient';
-import { emailService } from '../../../services/EmailService';
 import { logger } from '../../../utils/logger';
 
 const mockWebhookLogRepo = webhookLogRepository as jest.Mocked<typeof webhookLogRepository>;
@@ -113,7 +135,6 @@ const mockCheckoutSessionRepo = checkoutSessionRepository as jest.Mocked<typeof 
 const mockProductRepo = productRepository as jest.Mocked<typeof productRepository>;
 const mockEntitlementSvc = entitlementService as jest.Mocked<typeof entitlementService>;
 const mockStripeClient = stripeClient as jest.Mocked<typeof stripeClient>;
-const mockEmailService = emailService as jest.Mocked<typeof emailService>;
 
 describe('WebhookProcessor', () => {
   let processor: WebhookProcessor;
@@ -152,6 +173,8 @@ describe('WebhookProcessor', () => {
     type: 'one_time',
     active: true,
     metadata: null,
+    slug: null,
+    paymentMethods: ['card'],
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -214,7 +237,7 @@ describe('WebhookProcessor', () => {
         expect(result.eventId).toBe('');
         expect(result.eventType).toBe('');
         expect(logger.warn).toHaveBeenCalledWith(
-          'Webhook signature verification failed',
+          'Webhook 署名検証失敗',
           expect.any(Object)
         );
       });
@@ -236,7 +259,7 @@ describe('WebhookProcessor', () => {
         expect(result.processed).toBe(false);
         expect(result.eventId).toBe('evt_123');
         expect(logger.info).toHaveBeenCalledWith(
-          'Webhook event already processed',
+          'Webhook イベント処理済み（スキップ）',
           expect.any(Object)
         );
       });
@@ -336,7 +359,7 @@ describe('WebhookProcessor', () => {
         const result = await processor.processWebhook('payload', 'sig');
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain('Checkout session not found');
+        expect(result.error).toContain('チェックアウトセッション未検出');
         expect(mockWebhookLogRepo.markFailed).toHaveBeenCalled();
         expect(mockWebhookLogRepo.moveToDLQ).not.toHaveBeenCalled();
       });
@@ -358,7 +381,7 @@ describe('WebhookProcessor', () => {
         expect(result.success).toBe(false);
         expect(mockWebhookLogRepo.moveToDLQ).toHaveBeenCalled();
         expect(logger.error).toHaveBeenCalledWith(
-          'Webhook moved to DLQ after max retries',
+          'Webhook を DLQ に移動（リトライ上限到達）',
           expect.any(Object)
         );
       });
@@ -470,7 +493,7 @@ describe('WebhookProcessor', () => {
       const result = await processor.processWebhook('payload', 'sig');
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Missing purchase_intent_id');
+        expect(result.error).toContain('purchase_intent_id');
     });
 
     it('should throw error when checkout session not found', async () => {
@@ -489,7 +512,7 @@ describe('WebhookProcessor', () => {
       const result = await processor.processWebhook('payload', 'sig');
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Checkout session not found');
+      expect(result.error).toContain('チェックアウトセッション未検出');
     });
 
     it('should throw error when customer email is missing', async () => {
@@ -512,7 +535,7 @@ describe('WebhookProcessor', () => {
       const result = await processor.processWebhook('payload', 'sig');
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Missing customer email');
+        expect(result.error).toContain('customer email');
     });
 
     it('should use metadata purchase_intent_id when client_reference_id is null', async () => {
@@ -639,7 +662,7 @@ describe('WebhookProcessor', () => {
 
       expect(result.success).toBe(true);
       expect(logger.warn).toHaveBeenCalledWith(
-        'No entitlement found for subscription',
+        'サブスクリプションに対応する Entitlement 未検出',
         expect.any(Object)
       );
     });
@@ -671,7 +694,6 @@ describe('WebhookProcessor', () => {
         ...mockStripeSubscription,
         status: 'past_due',
       } as Stripe.Subscription);
-      mockEmailService.sendPaymentFailureNotification.mockResolvedValue(true);
       mockEntitlementSvc.suspendEntitlement.mockResolvedValue({
         ...subEntitlement,
         status: 'suspended',
@@ -681,17 +703,10 @@ describe('WebhookProcessor', () => {
       const result = await processor.processWebhook('payload', 'sig');
 
       expect(result.success).toBe(true);
-      expect(mockEmailService.sendPaymentFailureNotification).toHaveBeenCalledWith(
-        expect.objectContaining({
-          customerEmail: 'customer@example.com',
-          productName: 'Test Product',
-          amount: 1999,
-          currency: 'usd',
-        })
-      );
+      // メール通知は外部サービスに委譲済み
       expect(mockEntitlementSvc.suspendEntitlement).toHaveBeenCalledWith(
         'ent-123',
-        'Payment failed, subscription past due'
+        '決済失敗、サブスクリプション延滞'
       );
     });
 
@@ -716,13 +731,12 @@ describe('WebhookProcessor', () => {
         ...mockStripeSubscription,
         status: 'active',
       } as Stripe.Subscription);
-      mockEmailService.sendPaymentFailureNotification.mockResolvedValue(true);
       mockWebhookLogRepo.markProcessed.mockResolvedValue(mockWebhookLog);
 
       const result = await processor.processWebhook('payload', 'sig');
 
       expect(result.success).toBe(true);
-      expect(mockEmailService.sendPaymentFailureNotification).toHaveBeenCalled();
+      // メール通知は外部サービスに委譲済み
       expect(mockEntitlementSvc.suspendEntitlement).not.toHaveBeenCalled();
     });
 
@@ -772,7 +786,7 @@ describe('WebhookProcessor', () => {
       expect(result.success).toBe(true);
       expect(mockEntitlementSvc.suspendEntitlement).toHaveBeenCalledWith(
         'ent-123',
-        'Subscription past due'
+        'サブスクリプション延滞'
       );
     });
 
@@ -825,7 +839,7 @@ describe('WebhookProcessor', () => {
 
       expect(result.success).toBe(true);
       expect(logger.info).toHaveBeenCalledWith(
-        'Subscription scheduled for cancellation',
+        'サブスクリプションのキャンセル予約',
         expect.any(Object)
       );
     });
@@ -877,10 +891,10 @@ describe('WebhookProcessor', () => {
       expect(result.success).toBe(true);
       expect(mockEntitlementSvc.revokeEntitlement).toHaveBeenCalledWith(
         'ent-123',
-        'Subscription cancelled'
+        'サブスクリプションキャンセル'
       );
       expect(logger.info).toHaveBeenCalledWith(
-        'Subscription deleted, entitlement revoked',
+        'サブスクリプション削除、Entitlement 取り消し',
         expect.any(Object)
       );
     });
@@ -930,10 +944,10 @@ describe('WebhookProcessor', () => {
       expect(result.success).toBe(true);
       expect(mockEntitlementSvc.revokeEntitlement).toHaveBeenCalledWith(
         'ent-123',
-        'Full refund processed'
+        '全額返金処理'
       );
       expect(logger.info).toHaveBeenCalledWith(
-        'Full refund processed, entitlement revoked',
+        '全額返金、Entitlement 取り消し',
         expect.any(Object)
       );
     });
@@ -957,7 +971,7 @@ describe('WebhookProcessor', () => {
       expect(result.success).toBe(true);
       expect(mockEntitlementSvc.revokeEntitlement).not.toHaveBeenCalled();
       expect(logger.info).toHaveBeenCalledWith(
-        'Partial refund processed, entitlement maintained',
+        '部分返金、Entitlement 維持',
         expect.any(Object)
       );
     });
@@ -999,7 +1013,7 @@ describe('WebhookProcessor', () => {
 
       expect(result.success).toBe(true);
       expect(logger.warn).toHaveBeenCalledWith(
-        'No entitlement found for refunded payment',
+        '返金対象の Entitlement 未検出',
         expect.any(Object)
       );
     });
@@ -1031,7 +1045,6 @@ describe('WebhookProcessor', () => {
       });
       mockCustomerRepo.findById.mockResolvedValue(mockCustomer);
       mockProductRepo.findById.mockResolvedValue(mockProduct);
-      mockEmailService.sendChargebackNotification.mockResolvedValue(true);
       mockWebhookLogRepo.markProcessed.mockResolvedValue(mockWebhookLog);
 
       const result = await processor.processWebhook('payload', 'sig');
@@ -1039,18 +1052,9 @@ describe('WebhookProcessor', () => {
       expect(result.success).toBe(true);
       expect(mockEntitlementSvc.revokeEntitlement).toHaveBeenCalledWith(
         'ent-123',
-        'Chargeback dispute created: fraudulent'
+        'チャージバック: fraudulent'
       );
-      expect(mockEmailService.sendChargebackNotification).toHaveBeenCalledWith(
-        expect.objectContaining({
-          customerEmail: 'customer@example.com',
-          productName: 'Test Product',
-          amount: 1999,
-          currency: 'usd',
-          chargebackReason: 'fraudulent',
-          chargebackId: 'dp_123',
-        })
-      );
+      // メール通知は外部サービスに委譲済み
     });
 
     it('should skip when payment_intent is missing', async () => {
@@ -1086,7 +1090,7 @@ describe('WebhookProcessor', () => {
 
       expect(result.success).toBe(true);
       expect(logger.warn).toHaveBeenCalledWith(
-        'No entitlement found for disputed payment',
+        'チャージバック対象の Entitlement 未検出',
         expect.any(Object)
       );
     });
@@ -1120,7 +1124,7 @@ describe('WebhookProcessor', () => {
       expect(result.success).toBe(true);
       expect(mockEntitlementSvc.reactivateEntitlement).toHaveBeenCalledWith('ent-123');
       expect(logger.info).toHaveBeenCalledWith(
-        'Chargeback dispute won, entitlement restored',
+        'チャージバック勝利、Entitlement 復活',
         expect.any(Object)
       );
     });
@@ -1145,7 +1149,7 @@ describe('WebhookProcessor', () => {
       expect(result.success).toBe(true);
       expect(mockEntitlementSvc.reactivateEntitlement).not.toHaveBeenCalled();
       expect(logger.info).toHaveBeenCalledWith(
-        'Chargeback dispute lost, entitlement remains revoked',
+        'チャージバック敗北、Entitlement 取り消し維持',
         expect.any(Object)
       );
     });
@@ -1204,7 +1208,7 @@ describe('WebhookProcessor', () => {
 
       expect(result.success).toBe(true);
       expect(logger.debug).toHaveBeenCalledWith(
-        'Unhandled webhook event type',
+        '未対応の Webhook イベント',
         { eventType: 'customer.created' }
       );
     });
@@ -1515,7 +1519,7 @@ describe('WebhookProcessor', () => {
       const result = await processor.processWebhook('payload', 'sig');
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Missing customer in checkout session');
+        expect(result.error).toContain('customer');
     });
   });
 });

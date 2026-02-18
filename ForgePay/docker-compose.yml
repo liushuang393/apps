@@ -33,7 +33,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # Application (optional - for production-like testing)
+  # バックエンド API サーバー
+  # マイグレーション → サーバー起動 の順で自動実行
   app:
     build: .
     container_name: forgepaybridge-app
@@ -48,10 +49,14 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/forgepaybridge
       REDIS_URL: redis://redis:6379
       STRIPE_MODE: test
-      STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY}
-      STRIPE_TEST_PUBLISHABLE_KEY: ${STRIPE_TEST_PUBLISHABLE_KEY}
-      STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET}
+      STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY:-}
+      STRIPE_TEST_PUBLISHABLE_KEY: ${STRIPE_TEST_PUBLISHABLE_KEY:-}
+      STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET:-}
       JWT_SECRET: ${JWT_SECRET:-development-secret-change-in-production}
+      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3001}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@forgepay.io}
+    # マイグレーション実行後にサーバーを起動（DB 準備完了を待ってから）
+    command: sh -c "npm run migrate:up && npm start"
     ports:
       - "3000:3000"
     volumes:

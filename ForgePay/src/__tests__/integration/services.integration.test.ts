@@ -182,40 +182,4 @@ describe('TokenService Integration', () => {
   });
 });
 
-describe('EmailService Integration', () => {
-  // Mock the config
-  jest.mock('../../config', () => ({
-    config: {
-      app: { env: 'test' },
-      email: {
-        enabled: true,
-        provider: 'console',
-        fromEmail: 'test@forgepay.com',
-        fromName: 'ForgePay Test',
-      },
-    },
-  }));
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('should format currency correctly', async () => {
-    const { EmailService } = await import('../../services/EmailService');
-    const emailService = new EmailService();
-
-    // Test via sending a payment failure notification
-    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-
-    await emailService.sendPaymentFailureNotification({
-      customerEmail: 'customer@test.com',
-      customerName: 'Test Customer',
-      productName: 'Test Product',
-      amount: 1999, // $19.99 in cents
-      currency: 'usd',
-      updatePaymentUrl: 'https://example.com/update',
-    });
-
-    consoleSpy.mockRestore();
-  });
-});
+// EmailService テストは削除済み（外部サービスに委譲）

@@ -1,8 +1,8 @@
 /**
- * Repository exports
- * 
- * Repositories handle all database operations for their respective entities.
- * They provide a clean abstraction over the database layer.
+ * リポジトリエクスポート
+ *
+ * DB アクセス層。薄いレイヤーに必要なテーブルのみ管理。
+ * 請求書・クーポン・法的テンプレートは Stripe に委譲したため削除済み。
  */
 
 export {
@@ -61,40 +61,9 @@ export {
 } from './CheckoutSessionRepository';
 
 export {
-  LegalTemplateRepository,
-  legalTemplateRepository,
-  LegalTemplate,
-  LegalTemplateType,
-  CustomerLegalAcceptance,
-  CreateLegalTemplateParams,
-  UpdateLegalTemplateParams,
-  RecordAcceptanceParams,
-} from './LegalTemplateRepository';
-
-export {
   DeveloperRepository,
   developerRepository,
   Developer,
   CreateDeveloperParams,
   UpdateDeveloperParams,
 } from './DeveloperRepository';
-
-export {
-  InvoiceRepository,
-  invoiceRepository,
-  Invoice,
-  InvoiceStatus,
-  InvoiceLineItem,
-  CreateInvoiceParams,
-} from './InvoiceRepository';
-
-export {
-  CouponRepository,
-  couponRepository,
-  Coupon,
-  CouponRedemption,
-  DiscountType,
-  CreateCouponParams,
-  UpdateCouponParams,
-  RecordRedemptionParams,
-} from './CouponRepository';

@@ -1,7 +1,7 @@
 import { DeveloperService } from '../../../services/DeveloperService';
 import { Developer } from '../../../repositories/DeveloperRepository';
 
-// Mock dependencies
+// 依存関係のモック
 jest.mock('../../../repositories/DeveloperRepository', () => ({
   developerRepository: {
     create: jest.fn(),
@@ -13,24 +13,9 @@ jest.mock('../../../repositories/DeveloperRepository', () => ({
   },
 }));
 
-jest.mock('../../../services/LegalTemplateService', () => ({
-  legalTemplateService: {
-    createDefaultTemplates: jest.fn(),
-    getActiveTemplates: jest.fn(),
-  },
-}));
-
-jest.mock('../../../services/EmailService', () => ({
-  emailService: {
-    send: jest.fn(),
-  },
-}));
-
-jest.mock('../../../config', () => ({
-  config: {
-    app: {
-      baseUrl: 'http://localhost:3000',
-    },
+jest.mock('../../../repositories/ProductRepository', () => ({
+  productRepository: {
+    findByDeveloperId: jest.fn(),
   },
 }));
 
@@ -44,12 +29,10 @@ jest.mock('../../../utils/logger', () => ({
 }));
 
 import { developerRepository } from '../../../repositories/DeveloperRepository';
-import { legalTemplateService } from '../../../services/LegalTemplateService';
-import { emailService } from '../../../services/EmailService';
+import { productRepository } from '../../../repositories/ProductRepository';
 
 const mockDeveloperRepository = developerRepository as jest.Mocked<typeof developerRepository>;
-const mockLegalTemplateService = legalTemplateService as jest.Mocked<typeof legalTemplateService>;
-const mockEmailService = emailService as jest.Mocked<typeof emailService>;
+const mockProductRepository = productRepository as jest.Mocked<typeof productRepository>;
 
 describe('DeveloperService', () => {
   let service: DeveloperService;
@@ -61,6 +44,18 @@ describe('DeveloperService', () => {
     testMode: true,
     stripeAccountId: null,
     webhookSecret: null,
+    defaultSuccessUrl: null,
+    defaultCancelUrl: null,
+    defaultLocale: 'auto',
+    defaultCurrency: 'usd',
+    defaultPaymentMethods: ['card'],
+    callbackUrl: null,
+    callbackSecret: null,
+    companyName: null,
+    stripeSecretKeyEnc: null,
+    stripePublishableKey: null,
+    stripeWebhookEndpointSecret: null,
+    stripeConfigured: false,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -71,11 +66,9 @@ describe('DeveloperService', () => {
   });
 
   describe('register', () => {
-    it('should register a new developer successfully', async () => {
+    it('新規開発者を正常に登録できること', async () => {
       mockDeveloperRepository.findByEmail.mockResolvedValue(null);
       mockDeveloperRepository.create.mockResolvedValue(mockDeveloper);
-      (mockLegalTemplateService.createDefaultTemplates as jest.Mock).mockResolvedValue([]);
-      (mockEmailService.send as jest.Mock).mockResolvedValue(true);
 
       const result = await service.register('test@example.com');
 
@@ -85,7 +78,7 @@ describe('DeveloperService', () => {
       expect(mockDeveloperRepository.create).toHaveBeenCalled();
     });
 
-    it('should throw error if email already registered', async () => {
+    it('既存メールアドレスでエラーになること', async () => {
       mockDeveloperRepository.findByEmail.mockResolvedValue(mockDeveloper);
 
       await expect(service.register('test@example.com')).rejects.toThrow(
@@ -93,47 +86,21 @@ describe('DeveloperService', () => {
       );
     });
 
-    it('should register in live mode when specified', async () => {
+    it('liveモードで登録できること', async () => {
       mockDeveloperRepository.findByEmail.mockResolvedValue(null);
       mockDeveloperRepository.create.mockResolvedValue({
         ...mockDeveloper,
         testMode: false,
       });
-      (mockLegalTemplateService.createDefaultTemplates as jest.Mock).mockResolvedValue([]);
-      (mockEmailService.send as jest.Mock).mockResolvedValue(true);
 
       const result = await service.register('test@example.com', { testMode: false });
 
       expect(result.apiKey.apiKey).toContain('fpb_live_');
     });
-
-    it('should continue if legal template creation fails', async () => {
-      mockDeveloperRepository.findByEmail.mockResolvedValue(null);
-      mockDeveloperRepository.create.mockResolvedValue(mockDeveloper);
-      (mockLegalTemplateService.createDefaultTemplates as jest.Mock).mockRejectedValue(
-        new Error('Template error')
-      );
-      (mockEmailService.send as jest.Mock).mockResolvedValue(true);
-
-      const result = await service.register('test@example.com');
-
-      expect(result.developer).toEqual(mockDeveloper);
-    });
-
-    it('should continue if email sending fails', async () => {
-      mockDeveloperRepository.findByEmail.mockResolvedValue(null);
-      mockDeveloperRepository.create.mockResolvedValue(mockDeveloper);
-      (mockLegalTemplateService.createDefaultTemplates as jest.Mock).mockResolvedValue([]);
-      (mockEmailService.send as jest.Mock).mockRejectedValue(new Error('Email error'));
-
-      const result = await service.register('test@example.com');
-
-      expect(result.developer).toEqual(mockDeveloper);
-    });
   });
 
   describe('regenerateApiKey', () => {
-    it('should regenerate API key successfully', async () => {
+    it('APIキーを正常に再生成できること', async () => {
       mockDeveloperRepository.findById.mockResolvedValue(mockDeveloper);
       mockDeveloperRepository.update.mockResolvedValue(mockDeveloper);
 
@@ -143,7 +110,7 @@ describe('DeveloperService', () => {
       expect(mockDeveloperRepository.update).toHaveBeenCalled();
     });
 
-    it('should throw error if developer not found', async () => {
+    it('存在しない開発者でエラーになること', async () => {
       mockDeveloperRepository.findById.mockResolvedValue(null);
 
       await expect(service.regenerateApiKey('invalid-id')).rejects.toThrow(
@@ -151,7 +118,7 @@ describe('DeveloperService', () => {
       );
     });
 
-    it('should generate live mode key for live developer', async () => {
+    it('liveモードの開発者にはliveキーが生成されること', async () => {
       mockDeveloperRepository.findById.mockResolvedValue({
         ...mockDeveloper,
         testMode: false,
@@ -165,7 +132,7 @@ describe('DeveloperService', () => {
   });
 
   describe('validateApiKey', () => {
-    it('should return developer for valid API key', async () => {
+    it('有効なAPIキーで開発者を返すこと', async () => {
       mockDeveloperRepository.findByApiKeyHash.mockResolvedValue(mockDeveloper);
 
       const result = await service.validateApiKey('fpb_test_abc123');
@@ -173,7 +140,7 @@ describe('DeveloperService', () => {
       expect(result).toEqual(mockDeveloper);
     });
 
-    it('should return null for invalid API key', async () => {
+    it('無効なAPIキーでnullを返すこと', async () => {
       mockDeveloperRepository.findByApiKeyHash.mockResolvedValue(null);
 
       const result = await service.validateApiKey('invalid-key');
@@ -183,7 +150,7 @@ describe('DeveloperService', () => {
   });
 
   describe('getDeveloper', () => {
-    it('should return developer by ID', async () => {
+    it('IDで開発者を取得できること', async () => {
       mockDeveloperRepository.findById.mockResolvedValue(mockDeveloper);
 
       const result = await service.getDeveloper('dev-123');
@@ -191,7 +158,7 @@ describe('DeveloperService', () => {
       expect(result).toEqual(mockDeveloper);
     });
 
-    it('should return null if not found', async () => {
+    it('存在しない場合nullを返すこと', async () => {
       mockDeveloperRepository.findById.mockResolvedValue(null);
 
       const result = await service.getDeveloper('invalid-id');
@@ -201,7 +168,7 @@ describe('DeveloperService', () => {
   });
 
   describe('getDeveloperByEmail', () => {
-    it('should return developer by email', async () => {
+    it('メールで開発者を取得できること', async () => {
       mockDeveloperRepository.findByEmail.mockResolvedValue(mockDeveloper);
 
       const result = await service.getDeveloperByEmail('test@example.com');
@@ -211,7 +178,7 @@ describe('DeveloperService', () => {
   });
 
   describe('updateSettings', () => {
-    it('should update developer settings', async () => {
+    it('開発者設定を更新できること', async () => {
       const updatedDeveloper = { ...mockDeveloper, webhookSecret: 'secret-123' };
       mockDeveloperRepository.update.mockResolvedValue(updatedDeveloper);
 
@@ -224,7 +191,7 @@ describe('DeveloperService', () => {
   });
 
   describe('connectStripeAccount', () => {
-    it('should connect Stripe account', async () => {
+    it('Stripeアカウントを接続できること', async () => {
       const updatedDeveloper = {
         ...mockDeveloper,
         stripeAccountId: 'acct_123',
@@ -238,13 +205,9 @@ describe('DeveloperService', () => {
   });
 
   describe('getOnboardingStatus', () => {
-    it('should return onboarding status with incomplete steps', async () => {
+    it('未完了ステップのオンボーディング状態を返すこと', async () => {
       mockDeveloperRepository.findById.mockResolvedValue(mockDeveloper);
-      (mockLegalTemplateService.getActiveTemplates as jest.Mock).mockResolvedValue({
-        terms_of_service: null,
-        privacy_policy: null,
-        refund_policy: null,
-      });
+      mockProductRepository.findByDeveloperId.mockResolvedValue([]);
 
       const result = await service.getOnboardingStatus('dev-123');
 
@@ -252,10 +215,11 @@ describe('DeveloperService', () => {
       expect(result?.steps.accountCreated).toBe(true);
       expect(result?.steps.apiKeyGenerated).toBe(true);
       expect(result?.steps.stripeConnected).toBe(false);
-      expect(result?.nextStep).toBe('Connect your Stripe account');
+      expect(result?.steps.firstProductCreated).toBe(false);
+      expect(result?.nextStep).toBe('Stripe アカウントを接続してください');
     });
 
-    it('should return null if developer not found', async () => {
+    it('存在しない開発者でnullを返すこと', async () => {
       mockDeveloperRepository.findById.mockResolvedValue(null);
 
       const result = await service.getOnboardingStatus('invalid-id');
@@ -263,25 +227,63 @@ describe('DeveloperService', () => {
       expect(result).toBeNull();
     });
 
-    it('should show correct next step when Stripe is connected', async () => {
+    it('Stripe接続済みで次のステップが商品作成になること', async () => {
       mockDeveloperRepository.findById.mockResolvedValue({
         ...mockDeveloper,
         stripeAccountId: 'acct_123',
       });
-      (mockLegalTemplateService.getActiveTemplates as jest.Mock).mockResolvedValue({
-        terms_of_service: null,
-        privacy_policy: null,
-        refund_policy: null,
-      });
+      mockProductRepository.findByDeveloperId.mockResolvedValue([]);
 
       const result = await service.getOnboardingStatus('dev-123');
 
-      expect(result?.nextStep).toBe('Create your first product');
+      expect(result?.steps.stripeConnected).toBe(true);
+      expect(result?.nextStep).toBe('最初の商品を作成してください');
+    });
+
+    it('stripeSecretKeyEncでもStripe接続と判定されること', async () => {
+      mockDeveloperRepository.findById.mockResolvedValue({
+        ...mockDeveloper,
+        stripeSecretKeyEnc: 'encrypted-key',
+      });
+      mockProductRepository.findByDeveloperId.mockResolvedValue([]);
+
+      const result = await service.getOnboardingStatus('dev-123');
+
+      expect(result?.steps.stripeConnected).toBe(true);
+    });
+
+    it('商品が存在する場合firstProductCreatedがtrueになること', async () => {
+      mockDeveloperRepository.findById.mockResolvedValue({
+        ...mockDeveloper,
+        stripeAccountId: 'acct_123',
+      });
+      mockProductRepository.findByDeveloperId.mockResolvedValue([
+        { id: 'prod-1', name: 'Test Product' } as any,
+      ]);
+
+      const result = await service.getOnboardingStatus('dev-123');
+
+      expect(result?.steps.firstProductCreated).toBe(true);
+    });
+
+    it('callbackUrlでもwebhook設定済みと判定されること', async () => {
+      mockDeveloperRepository.findById.mockResolvedValue({
+        ...mockDeveloper,
+        stripeAccountId: 'acct_123',
+        callbackUrl: 'https://example.com/callback',
+      });
+      mockProductRepository.findByDeveloperId.mockResolvedValue([
+        { id: 'prod-1', name: 'Test Product' } as any,
+      ]);
+
+      const result = await service.getOnboardingStatus('dev-123');
+
+      expect(result?.steps.webhookConfigured).toBe(true);
     });
   });
 
   describe('switchMode', () => {
-    it('should switch to live mode', async () => {
+    it('liveモードに切替できること', async () => {
       const updatedDeveloper = { ...mockDeveloper, testMode: false };
       mockDeveloperRepository.update.mockResolvedValue(updatedDeveloper);
 
@@ -290,7 +292,7 @@ describe('DeveloperService', () => {
       expect(result?.testMode).toBe(false);
     });
 
-    it('should switch to test mode', async () => {
+    it('testモードに切替できること', async () => {
       mockDeveloperRepository.update.mockResolvedValue(mockDeveloper);
 
       const result = await service.switchMode('dev-123', true);
@@ -300,7 +302,7 @@ describe('DeveloperService', () => {
   });
 
   describe('deleteAccount', () => {
-    it('should delete developer account', async () => {
+    it('開発者アカウントを削除できること', async () => {
       mockDeveloperRepository.delete.mockResolvedValue(true);
 
       const result = await service.deleteAccount('dev-123');
@@ -308,7 +310,7 @@ describe('DeveloperService', () => {
       expect(result).toBe(true);
     });
 
-    it('should return false if deletion fails', async () => {
+    it('削除失敗時にfalseを返すこと', async () => {
       mockDeveloperRepository.delete.mockResolvedValue(false);
 
       const result = await service.deleteAccount('invalid-id');
@@ -317,26 +319,22 @@ describe('DeveloperService', () => {
     });
   });
 
-  describe('API key format', () => {
-    it('should generate valid test mode API key format', async () => {
+  describe('APIキー形式', () => {
+    it('testモードのAPIキー形式が正しいこと', async () => {
       mockDeveloperRepository.findByEmail.mockResolvedValue(null);
       mockDeveloperRepository.create.mockResolvedValue(mockDeveloper);
-      (mockLegalTemplateService.createDefaultTemplates as jest.Mock).mockResolvedValue([]);
-      (mockEmailService.send as jest.Mock).mockResolvedValue(true);
 
       const result = await service.register('test@example.com', { testMode: true });
 
       expect(result.apiKey.apiKey).toMatch(/^fpb_test_[A-Za-z0-9_-]+$/);
     });
 
-    it('should generate valid live mode API key format', async () => {
+    it('liveモードのAPIキー形式が正しいこと', async () => {
       mockDeveloperRepository.findByEmail.mockResolvedValue(null);
       mockDeveloperRepository.create.mockResolvedValue({
         ...mockDeveloper,
         testMode: false,
       });
-      (mockLegalTemplateService.createDefaultTemplates as jest.Mock).mockResolvedValue([]);
-      (mockEmailService.send as jest.Mock).mockResolvedValue(true);
 
       const result = await service.register('test@example.com', { testMode: false });
 

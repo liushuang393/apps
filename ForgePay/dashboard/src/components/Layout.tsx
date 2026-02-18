@@ -5,7 +5,7 @@ import {
   Users,
   Webhook,
   FileText,
-  Scale,
+  Settings,
   LogOut,
   Menu,
   X,
@@ -14,12 +14,12 @@ import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Products', href: '/products', icon: Package },
-  { name: 'Customers', href: '/customers', icon: Users },
-  { name: 'Legal', href: '/legal', icon: Scale },
+  { name: 'ダッシュボード', href: '/', icon: LayoutDashboard },
+  { name: '商品', href: '/products', icon: Package },
+  { name: '顧客', href: '/customers', icon: Users },
   { name: 'Webhooks', href: '/webhooks', icon: Webhook },
-  { name: 'Audit Logs', href: '/audit-logs', icon: FileText },
+  { name: '監査ログ', href: '/audit-logs', icon: FileText },
+  { name: '設定', href: '/settings', icon: Settings },
 ]
 
 export function Layout({ children }: { children: React.ReactNode }) {

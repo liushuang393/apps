@@ -12,7 +12,8 @@ export function Customers() {
     queryFn: () => adminApi.getCustomers(),
   })
 
-  const customers: Customer[] = data?.data?.customers || []
+  // バックエンドは { data: [...] } を返す
+  const customers: Customer[] = data?.data?.data || []
 
   const filteredCustomers = customers.filter(
     (customer) =>
@@ -27,7 +28,7 @@ export function Customers() {
         <p className="text-gray-600 mt-1">View and manage your customers</p>
       </div>
 
-      {/* Search */}
+      {/* 検索 */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
         <input
@@ -39,7 +40,7 @@ export function Customers() {
         />
       </div>
 
-      {/* Customers List */}
+      {/* 顧客一覧 */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center">
@@ -82,7 +83,7 @@ export function Customers() {
                 </div>
                 <div className="flex items-center space-x-4">
                   <span className="text-sm text-gray-500">
-                    {new Date(customer.createdAt).toLocaleDateString()}
+                    {new Date(customer.created_at).toLocaleDateString()}
                   </span>
                   <ChevronRight className="h-5 w-5 text-gray-400" />
                 </div>
@@ -92,7 +93,7 @@ export function Customers() {
         )}
       </div>
 
-      {/* Customer Detail Modal */}
+      {/* 顧客詳細モーダル */}
       {selectedCustomer && (
         <CustomerDetailModal
           customer={selectedCustomer}
@@ -126,7 +127,7 @@ function CustomerDetailModal({ customer, onClose }: CustomerDetailModalProps) {
           </button>
         </div>
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-          {/* Customer Info */}
+          {/* 顧客情報 */}
           <div className="mb-6">
             <div className="flex items-center space-x-4 mb-4">
               <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center">
@@ -148,18 +149,18 @@ function CustomerDetailModal({ customer, onClose }: CustomerDetailModalProps) {
               </div>
               <div>
                 <p className="text-gray-500">Stripe Customer</p>
-                <p className="font-mono text-gray-900">{customer.stripeCustomerId}</p>
+                <p className="font-mono text-gray-900">{customer.stripe_customer_id}</p>
               </div>
               <div>
                 <p className="text-gray-500">Created</p>
                 <p className="text-gray-900">
-                  {new Date(customer.createdAt).toLocaleString()}
+                  {new Date(customer.created_at).toLocaleString()}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Entitlements */}
+          {/* 権限一覧 */}
           <div>
             <h4 className="font-semibold text-gray-900 mb-3">Entitlements</h4>
             {isLoading ? (
@@ -179,11 +180,11 @@ function CustomerDetailModal({ customer, onClose }: CustomerDetailModalProps) {
                   >
                     <div>
                       <p className="font-medium text-gray-900">
-                        Product: {entitlement.productId}
+                        Product: {entitlement.product_id}
                       </p>
                       <p className="text-sm text-gray-500">
-                        {entitlement.expiresAt
-                          ? `Expires: ${new Date(entitlement.expiresAt).toLocaleDateString()}`
+                        {entitlement.expires_at
+                          ? `Expires: ${new Date(entitlement.expires_at).toLocaleDateString()}`
                           : 'Lifetime access'}
                       </p>
                     </div>

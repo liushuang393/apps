@@ -79,6 +79,8 @@ describe('ProductRepository', () => {
         type: params.type,
         active: params.active,
         metadata: params.metadata,
+        slug: null,
+        paymentMethods: ['card'],
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
       });
@@ -93,6 +95,8 @@ describe('ProductRepository', () => {
           params.type,
           params.active,
           JSON.stringify(params.metadata),
+          null,
+          JSON.stringify(['card']),
         ]
       );
     });

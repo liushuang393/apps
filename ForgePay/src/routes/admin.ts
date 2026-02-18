@@ -7,7 +7,8 @@ import {
   webhookLogRepository,
   auditLogRepository,
 } from '../repositories';
-import { stripeClient, entitlementService } from '../services';
+import { entitlementService } from '../services';
+import { stripeClientFactory } from '../services/StripeClientFactory';
 import { AuthenticatedRequest, apiKeyAuth, adminRateLimiter, validate } from '../middleware';
 import {
   createProductSchema,
@@ -27,6 +28,7 @@ import {
 } from '../schemas';
 import { logger } from '../utils/logger';
 import { ProductType } from '../types';
+import { notFound, internalError } from '../utils/errors';
 
 const router = Router();
 
@@ -48,8 +50,14 @@ router.post('/products', validate(createProductSchema), async (req: Authenticate
   try {
     const { name, description, type, metadata } = req.body;
 
+    // 開発者ごとの Stripe クライアントを取得（マルチテナント対応）
+    const devStripeClient = stripeClientFactory.getClient(
+      req.developer!.stripeSecretKeyEnc,
+      req.developer!.id
+    );
+
     // Create product in Stripe
-    const stripeProduct = await stripeClient.createProduct({
+    const stripeProduct = await devStripeClient.createProduct({
       name,
       description,
       type: type as 'one_time' | 'subscription',
@@ -97,13 +105,7 @@ router.post('/products', validate(createProductSchema), async (req: Authenticate
     });
   } catch (error) {
     logger.error('Error creating product', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to create product',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to create product');
   }
 });
 
@@ -137,13 +139,7 @@ router.get('/products', validate(listProductsQuery, 'query'), async (req: Authen
     });
   } catch (error) {
     logger.error('Error listing products', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to list products',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to list products');
   }
 });
 
@@ -158,25 +154,13 @@ router.get('/products/:id', validate(productIdParams, 'params'), async (req: Aut
     const product = await productRepository.findById(req.params.id);
 
     if (!product) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Product not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Product not found');
       return;
     }
 
     // Verify ownership
     if (product.developerId !== req.developer!.id) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Product not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Product not found');
       return;
     }
 
@@ -204,13 +188,7 @@ router.get('/products/:id', validate(productIdParams, 'params'), async (req: Aut
     });
   } catch (error) {
     logger.error('Error retrieving product', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to retrieve product',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to retrieve product');
   }
 });
 
@@ -227,30 +205,24 @@ router.put('/products/:id', validate(productIdParams, 'params'), validate(update
     const product = await productRepository.findById(req.params.id);
 
     if (!product) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Product not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Product not found');
       return;
     }
 
     // Verify ownership
     if (product.developerId !== req.developer!.id) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Product not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Product not found');
       return;
     }
 
+    // 開発者ごとの Stripe クライアントを取得
+    const devStripeClient = stripeClientFactory.getClient(
+      req.developer!.stripeSecretKeyEnc,
+      req.developer!.id
+    );
+
     // Update product in Stripe
-    await stripeClient.updateProduct(product.stripeProductId, {
+    await devStripeClient.updateProduct(product.stripeProductId, {
       name: name !== undefined ? name : undefined,
       description: description !== undefined ? description : undefined,
       active: active !== undefined ? active : undefined,
@@ -294,13 +266,7 @@ router.put('/products/:id', validate(productIdParams, 'params'), validate(update
     });
   } catch (error) {
     logger.error('Error updating product', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to update product',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to update product');
   }
 });
 
@@ -315,30 +281,24 @@ router.delete('/products/:id', validate(productIdParams, 'params'), async (req: 
     const product = await productRepository.findById(req.params.id);
 
     if (!product) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Product not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Product not found');
       return;
     }
 
     // Verify ownership
     if (product.developerId !== req.developer!.id) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Product not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Product not found');
       return;
     }
 
+    // 開発者ごとの Stripe クライアントを取得
+    const devStripeClient = stripeClientFactory.getClient(
+      req.developer!.stripeSecretKeyEnc,
+      req.developer!.id
+    );
+
     // Archive product in Stripe
-    await stripeClient.archiveProduct(product.stripeProductId);
+    await devStripeClient.archiveProduct(product.stripeProductId);
 
     // Archive product in database
     await productRepository.archive(req.params.id);
@@ -361,13 +321,7 @@ router.delete('/products/:id', validate(productIdParams, 'params'), async (req: 
     res.status(204).send();
   } catch (error) {
     logger.error('Error archiving product', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to archive product',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to archive product');
   }
 });
 
@@ -388,13 +342,7 @@ router.post('/prices', validate(createPriceSchema), async (req: AuthenticatedReq
     // Verify product exists and belongs to developer
     const product = await productRepository.findById(product_id);
     if (!product || product.developerId !== req.developer!.id) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Product not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Product not found');
       return;
     }
 
@@ -411,8 +359,14 @@ router.post('/prices', validate(createPriceSchema), async (req: AuthenticatedReq
       return;
     }
 
+    // 開発者ごとの Stripe クライアントを取得
+    const devStripeClient = stripeClientFactory.getClient(
+      req.developer!.stripeSecretKeyEnc,
+      req.developer!.id
+    );
+
     // Create price in Stripe
-    const stripePrice = await stripeClient.createPrice({
+    const stripePrice = await devStripeClient.createPrice({
       productId: product.stripeProductId,
       unitAmount: amount,
       currency: currency.toLowerCase(),
@@ -458,13 +412,7 @@ router.post('/prices', validate(createPriceSchema), async (req: AuthenticatedReq
     });
   } catch (error) {
     logger.error('Error creating price', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to create price',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to create price');
   }
 });
 
@@ -486,13 +434,7 @@ router.get('/prices', validate(listPricesQuery, 'query'), async (req: Authentica
       // Verify product ownership
       const product = await productRepository.findById(product_id as string);
       if (!product || product.developerId !== req.developer!.id) {
-        res.status(404).json({
-          error: {
-            code: 'resource_not_found',
-            message: 'Product not found',
-            type: 'invalid_request_error',
-          },
-        });
+        notFound(res, 'Product not found');
         return;
       }
 
@@ -534,13 +476,7 @@ router.get('/prices', validate(listPricesQuery, 'query'), async (req: Authentica
     });
   } catch (error) {
     logger.error('Error listing prices', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to list prices',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to list prices');
   }
 });
 
@@ -570,13 +506,7 @@ router.get('/customers', async (req: AuthenticatedRequest, res: Response) => {
     });
   } catch (error) {
     logger.error('Error listing customers', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to list customers',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to list customers');
   }
 });
 
@@ -591,25 +521,13 @@ router.get('/customers/:id', validate(customerIdParams, 'params'), async (req: A
     const customer = await customerRepository.findById(req.params.id);
 
     if (!customer) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Customer not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Customer not found');
       return;
     }
 
     // Verify ownership
     if (customer.developerId !== req.developer!.id) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Customer not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Customer not found');
       return;
     }
 
@@ -633,13 +551,7 @@ router.get('/customers/:id', validate(customerIdParams, 'params'), async (req: A
     });
   } catch (error) {
     logger.error('Error retrieving customer', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to retrieve customer',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to retrieve customer');
   }
 });
 
@@ -657,21 +569,21 @@ router.post('/refunds', validate(createRefundSchema), async (req: AuthenticatedR
   try {
     const { payment_intent_id, amount, reason } = req.body;
 
+    // 開発者ごとの Stripe クライアントを取得
+    const devStripeClient = stripeClientFactory.getClient(
+      req.developer!.stripeSecretKeyEnc,
+      req.developer!.id
+    );
+
     // Get payment intent to verify ownership and get amount
-    const paymentIntent = await stripeClient.getPaymentIntent(payment_intent_id);
+    const paymentIntent = await devStripeClient.getPaymentIntent(payment_intent_id);
     if (!paymentIntent) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Payment not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Payment not found');
       return;
     }
 
     // Process refund via Stripe
-    const refund = await stripeClient.createRefund({
+    const refund = await devStripeClient.createRefund({
       paymentIntentId: payment_intent_id,
       amount: amount, // If undefined, full refund
       reason: reason || 'requested_by_customer',
@@ -730,13 +642,7 @@ router.post('/refunds', validate(createRefundSchema), async (req: AuthenticatedR
       return;
     }
 
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to process refund',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to process refund');
   }
 });
 
@@ -812,13 +718,7 @@ router.get('/audit-logs', validate(listAuditLogsQuery, 'query'), async (req: Aut
     });
   } catch (error) {
     logger.error('Error listing audit logs', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to list audit logs',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to list audit logs');
   }
 });
 
@@ -852,13 +752,7 @@ router.get('/webhooks/failed', validate(listFailedWebhooksQuery, 'query'), async
     });
   } catch (error) {
     logger.error('Error listing failed webhooks', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to list webhooks',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to list webhooks');
   }
 });
 
@@ -873,13 +767,7 @@ router.post('/webhooks/:id/retry', validate(webhookIdParams, 'params'), async (r
     const webhook = await webhookLogRepository.findById(req.params.id);
 
     if (!webhook) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Webhook not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Webhook not found');
       return;
     }
 
@@ -911,13 +799,7 @@ router.post('/webhooks/:id/retry', validate(webhookIdParams, 'params'), async (r
     });
   } catch (error) {
     logger.error('Error retrying webhook', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to retry webhook',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to retry webhook');
   }
 });
 
@@ -930,13 +812,7 @@ router.get('/webhooks/:id', validate(webhookIdParams, 'params'), async (req: Aut
     const webhook = await webhookLogRepository.findById(req.params.id);
 
     if (!webhook) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Webhook not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Webhook not found');
       return;
     }
 
@@ -953,13 +829,7 @@ router.get('/webhooks/:id', validate(webhookIdParams, 'params'), async (req: Aut
     });
   } catch (error) {
     logger.error('Error retrieving webhook', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to retrieve webhook',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to retrieve webhook');
   }
 });
 
@@ -984,13 +854,7 @@ router.get('/entitlements', validate(listEntitlementsQuery, 'query'), async (req
       // Verify customer ownership
       const customer = await customerRepository.findById(customer_id as string);
       if (!customer || customer.developerId !== req.developer!.id) {
-        res.status(404).json({
-          error: {
-            code: 'resource_not_found',
-            message: 'Customer not found',
-            type: 'invalid_request_error',
-          },
-        });
+        notFound(res, 'Customer not found');
         return;
       }
 
@@ -1030,13 +894,7 @@ router.get('/entitlements', validate(listEntitlementsQuery, 'query'), async (req
     });
   } catch (error) {
     logger.error('Error listing entitlements', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to list entitlements',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to list entitlements');
   }
 });
 
@@ -1055,26 +913,14 @@ router.post(
     const entitlement = await entitlementRepository.findById(req.params.id);
 
     if (!entitlement) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Entitlement not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Entitlement not found');
       return;
     }
 
     // Verify ownership via customer
     const customer = await customerRepository.findById(entitlement.customerId);
     if (!customer || customer.developerId !== req.developer!.id) {
-      res.status(404).json({
-        error: {
-          code: 'resource_not_found',
-          message: 'Entitlement not found',
-          type: 'invalid_request_error',
-        },
-      });
+      notFound(res, 'Entitlement not found');
       return;
     }
 
@@ -1107,13 +953,7 @@ router.post(
     });
   } catch (error) {
     logger.error('Error revoking entitlement', { error });
-    res.status(500).json({
-      error: {
-        code: 'internal_error',
-        message: 'Failed to revoke entitlement',
-        type: 'api_error',
-      },
-    });
+    internalError(res, 'Failed to revoke entitlement');
   }
 });
 

@@ -115,9 +115,7 @@ describe('Checkout Routes', () => {
         customerEmail: undefined,
         successUrl: validPayload.success_url,
         cancelUrl: validPayload.cancel_url,
-        currency: 'usd',
         metadata: undefined,
-        couponCode: undefined,
       });
     });
 
@@ -125,9 +123,7 @@ describe('Checkout Routes', () => {
       const payloadWithOptionals = {
         ...validPayload,
         customer_email: 'customer@example.com',
-        currency: 'eur',
         metadata: { order_id: 'order_123' },
-        coupon_code: 'SAVE20',
       };
 
       const mockResult = {
@@ -152,13 +148,15 @@ describe('Checkout Routes', () => {
         customerEmail: payloadWithOptionals.customer_email,
         successUrl: payloadWithOptionals.success_url,
         cancelUrl: payloadWithOptionals.cancel_url,
-        currency: 'eur',
         metadata: payloadWithOptionals.metadata,
-        couponCode: payloadWithOptionals.coupon_code,
       });
     });
 
-    it('should default currency to usd when not specified', async () => {
+    it('should pass metadata to createSession when provided', async () => {
+      const payloadWithMetadata = {
+        ...validPayload,
+        metadata: { custom_key: 'custom_value' },
+      };
       const mockResult = {
         sessionId: 'cs_789',
         checkoutUrl: 'https://checkout.stripe.com/pay/cs_789',
@@ -170,11 +168,11 @@ describe('Checkout Routes', () => {
       await request(app)
         .post('/checkout/sessions')
         .set('x-api-key', 'test_api_key')
-        .send(validPayload);
+        .send(payloadWithMetadata);
 
       expect(checkoutService.createSession).toHaveBeenCalledWith(
         expect.objectContaining({
-          currency: 'usd',
+          metadata: { custom_key: 'custom_value' },
         })
       );
     });

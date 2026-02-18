@@ -1,127 +1,158 @@
-import { test as base, expect, Page, Route } from '@playwright/test'
+import { test as base, expect, Page } from '@playwright/test'
 
-// Type definitions for API responses
+/**
+ * API レスポンス型定義
+ */
 interface ProductResponse {
   id: string
   name: string
   description?: string
   type?: string
+  stripe_product_id?: string
 }
 
 interface PriceResponse {
   id: string
-  productId: string
+  product_id: string
+  stripe_price_id: string
   amount: number
   currency: string
 }
 
+interface CheckoutSessionResponse {
+  session_id: string
+  checkout_url: string
+  expires_at: string
+}
+
+interface EntitlementVerifyResponse {
+  status: string
+  has_access: boolean
+  entitlement_id: string | null
+  product_id: string | null
+  expires_at: string | null
+}
+
 /**
- * Test fixtures for ForgePay E2E tests
- * 
- * All test data is created via API requests (not direct DB insertion)
- * to ensure realistic testing scenarios.
+ * ForgePay E2E テストフィクスチャ
+ *
+ * 全テストデータは API 経由で作成（DB 直接操作なし）。
+ * 薄いレイヤーのビジネスフロー100%カバレッジ。
+ *
+ * API キー解決順:
+ *   1. process.env.TEST_API_KEY（globalSetup が設定）
+ *   2. .e2e-state.json（setup スクリプトが生成）
+ *   3. なければエラー
  */
+import fs from 'fs'
+import path from 'path'
 
-// Test API key - set via environment variable or run setup script first
-// Run: node scripts/setup-test-developer.js
-export const TEST_API_KEY = process.env.TEST_API_KEY || ''
+// .e2e-state.json からの読み込み
+function loadApiKeyFromState(): string {
+  try {
+    const statePath = path.resolve(__dirname, '../../../../.e2e-state.json')
+    if (fs.existsSync(statePath)) {
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+      return state.apiKey || ''
+    }
+  } catch {
+    // 読み込み失敗は無視
+  }
+  return ''
+}
 
-// API Base URL
+// テスト用 API キー（globalSetup → .e2e-state.json → 環境変数の順で解決）
+export const TEST_API_KEY = process.env.TEST_API_KEY || loadApiKeyFromState()
+
+// バックエンド API URL
 export const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000'
 
-// Dashboard Base URL  
+// ダッシュボード URL
 export const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:3001'
 
-// Validate API key is set
+// API キー未設定時の警告
 if (!TEST_API_KEY) {
   console.warn(`
-⚠️  TEST_API_KEY is not set!
+⚠️  TEST_API_KEY が未設定です！
 
-To set up a test developer:
-1. Start the backend: npm run dev
-2. Run: node scripts/setup-test-developer.js
-3. Set the API key: export TEST_API_KEY=<your_api_key>
-4. Run tests: npm run test:e2e
+自動セットアップが失敗している可能性があります。
+手動で実行する場合:
+  node scripts/setup-test-developer.js
 `)
 }
 
 /**
- * Extended test with common fixtures
+ * 拡張テストフィクスチャ
  */
 export const test = base.extend<{
   authenticatedPage: Page
   apiKey: string
   testProduct: { id: string; name: string; priceId?: string }
-  testCustomer: { id: string; email: string }
 }>({
   apiKey: TEST_API_KEY,
-  
+
+  // 認証済みページ: 自動ログイン（リトライ付き）
   authenticatedPage: async ({ page }, use) => {
     if (!TEST_API_KEY) {
-      throw new Error('TEST_API_KEY is not set. Run: node scripts/setup-test-developer.js')
+      throw new Error('TEST_API_KEY が未設定。setup-test-developer.js を実行してください')
     }
-    
-    // Navigate to login
-    await page.goto('/login')
-    
-    // Fill in API key
-    await page.fill('input[type="password"]', TEST_API_KEY)
-    
-    // Click login button
-    await page.click('button[type="submit"]')
-    
-    // Wait for redirect to dashboard
-    await page.waitForURL('/')
-    
-    // Verify we're on the dashboard
-    await expect(page.locator('h1')).toContainText('Dashboard')
-    
+
+    // 最大3回リトライ（レート制限やネットワーク遅延対策）
+    let lastError: Error | null = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await page.goto('/login')
+        await page.waitForLoadState('networkidle')
+        await page.fill('input[type="password"]', TEST_API_KEY)
+        await page.click('button[type="submit"]')
+        await page.waitForURL('/', { timeout: 15000 })
+        await expect(page.locator('h1')).toContainText('Dashboard', { timeout: 10000 })
+        lastError = null
+        break
+      } catch (e) {
+        lastError = e as Error
+        if (attempt < 3) {
+          // リトライ前に少し待機
+          await page.waitForTimeout(1000 * attempt)
+        }
+      }
+    }
+    if (lastError) {
+      throw lastError
+    }
+
     await use(page)
   },
 
-  // Create test product via API (not direct DB insertion)
+  // テスト用商品 + 価格を自動作成・自動クリーンアップ
   testProduct: async ({}, use) => {
     if (!TEST_API_KEY) {
-      throw new Error('TEST_API_KEY is not set')
+      throw new Error('TEST_API_KEY が未設定')
     }
 
-    const productName = `E2E Test Product ${Date.now()}`
-    
-    // Create product via API
+    const productName = `E2E テスト商品 ${Date.now()}`
     const product = await createTestProduct(TEST_API_KEY, productName)
-    
-    // Create price via API
     const price = await createTestPrice(TEST_API_KEY, product.id, 999, 'usd')
-    
+
     await use({
       id: product.id,
       name: productName,
       priceId: price.id,
     })
-    
-    // Cleanup: Archive product via API after test
-    await archiveTestProduct(TEST_API_KEY, product.id).catch(() => {
-      // Ignore cleanup errors
-    })
-  },
 
-  // Create test customer via checkout (simulating real user flow)
-  testCustomer: async ({}, use) => {
-    const email = `e2e-test-${Date.now()}@example.com`
-    
-    // Note: In real E2E tests, customers are created through checkout flow
-    // This fixture provides a placeholder for tests that need customer data
-    await use({
-      id: '', // Will be populated after checkout
-      email,
-    })
+    // クリーンアップ
+    await archiveTestProduct(TEST_API_KEY, product.id).catch(() => {})
   },
 })
 
-export { expect, Route }
+export { expect }
+
+// ============================================================
+// API ヘルパー関数
+// ============================================================
 
 /**
- * Helper to wait for API response
+ * API レスポンス待機
  */
 export async function waitForApiResponse(page: Page, urlPattern: string | RegExp) {
   return page.waitForResponse(response => {
@@ -134,11 +165,11 @@ export async function waitForApiResponse(page: Page, urlPattern: string | RegExp
 }
 
 /**
- * Create test product via Admin API
+ * 商品作成（Admin API）
  */
 export async function createTestProduct(
-  apiKey: string, 
-  name: string, 
+  apiKey: string,
+  name: string,
   type: 'one_time' | 'subscription' = 'one_time'
 ): Promise<ProductResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/admin/products`, {
@@ -149,21 +180,21 @@ export async function createTestProduct(
     },
     body: JSON.stringify({
       name,
-      description: `E2E test product: ${name}`,
+      description: `E2E テスト商品: ${name}`,
       type,
     }),
   })
-  
+
   if (!response.ok) {
     const error = await response.text()
-    throw new Error(`Failed to create test product: ${response.status} - ${error}`)
+    throw new Error(`商品作成失敗: ${response.status} - ${error}`)
   }
-  
+
   return response.json() as Promise<ProductResponse>
 }
 
 /**
- * Create test price via Admin API
+ * 価格作成（Admin API）
  */
 export async function createTestPrice(
   apiKey: string,
@@ -185,28 +216,28 @@ export async function createTestPrice(
       interval,
     }),
   })
-  
+
   if (!response.ok) {
     const error = await response.text()
-    throw new Error(`Failed to create test price: ${response.status} - ${error}`)
+    throw new Error(`価格作成失敗: ${response.status} - ${error}`)
   }
-  
+
   return response.json() as Promise<PriceResponse>
 }
 
 /**
- * Create checkout session via API (simulates real checkout flow)
+ * チェックアウトセッション作成（Checkout API）
  */
 export async function createCheckoutSession(
   apiKey: string,
   productId: string,
   priceId: string,
-  customerEmail: string,
-  successUrl: string = 'http://localhost:3001/success',
-  cancelUrl: string = 'http://localhost:3001/cancel'
-): Promise<{ sessionId: string; url: string; purchaseIntentId: string }> {
-  const purchaseIntentId = `e2e_test_${Date.now()}`
-  
+  customerEmail: string = `e2e-${Date.now()}@test.example.com`,
+  successUrl: string = `${API_BASE_URL}/payment/success`,
+  cancelUrl: string = `${API_BASE_URL}/payment/cancel`
+): Promise<{ sessionId: string; checkoutUrl: string; purchaseIntentId: string }> {
+  const purchaseIntentId = `e2e_pi_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
   const response = await fetch(`${API_BASE_URL}/api/v1/checkout/sessions`, {
     method: 'POST',
     headers: {
@@ -222,141 +253,134 @@ export async function createCheckoutSession(
       cancel_url: cancelUrl,
     }),
   })
-  
+
   if (!response.ok) {
     const error = await response.text()
-    throw new Error(`Failed to create checkout session: ${response.status} - ${error}`)
+    throw new Error(`チェックアウトセッション作成失敗: ${response.status} - ${error}`)
   }
-  
-  const data = await response.json() as { sessionId: string; url: string }
+
+  const data = await response.json() as CheckoutSessionResponse
   return {
-    ...data,
+    sessionId: data.session_id,
+    checkoutUrl: data.checkout_url,
     purchaseIntentId,
   }
 }
 
 /**
- * Archive (soft-delete) test product via API
+ * Entitlement 検証（Entitlement API）
+ */
+export async function verifyEntitlement(
+  apiKey: string,
+  purchaseIntentId: string
+): Promise<{ ok: boolean; status: number; data: EntitlementVerifyResponse | null }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/entitlements/verify?purchase_intent_id=${purchaseIntentId}`,
+    {
+      headers: { 'X-API-Key': apiKey },
+    }
+  )
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data: response.ok ? await response.json() as EntitlementVerifyResponse : null,
+  }
+}
+
+/**
+ * 商品アーカイブ（クリーンアップ）
  */
 export async function archiveTestProduct(apiKey: string, productId: string) {
   const response = await fetch(`${API_BASE_URL}/api/v1/admin/products/${productId}`, {
     method: 'DELETE',
-    headers: {
-      'X-API-Key': apiKey,
-    },
+    headers: { 'X-API-Key': apiKey },
   })
-  
+
   if (!response.ok && response.status !== 404) {
-    console.warn(`Failed to archive product ${productId}: ${response.status}`)
+    console.warn(`商品アーカイブ失敗 ${productId}: ${response.status}`)
   }
 }
 
 /**
- * Get products list via API
+ * 商品一覧取得
  */
 export async function getProducts(apiKey: string) {
   const response = await fetch(`${API_BASE_URL}/api/v1/admin/products`, {
-    headers: {
-      'X-API-Key': apiKey,
-    },
+    headers: { 'X-API-Key': apiKey },
   })
-  
+
   if (!response.ok) {
-    throw new Error(`Failed to get products: ${response.status}`)
+    throw new Error(`商品一覧取得失敗: ${response.status}`)
   }
-  
+
   return response.json()
 }
 
 /**
- * Request magic link via Portal API
- */
-export async function requestMagicLink(apiKey: string, email: string) {
-  const response = await fetch(`${API_BASE_URL}/api/v1/portal/auth/request`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey,
-    },
-    body: JSON.stringify({ email }),
-  })
-  
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`Failed to request magic link: ${response.status} - ${error}`)
-  }
-  
-  return response.json()
-}
-
-/**
- * Verify entitlement via API
- */
-export async function verifyEntitlement(apiKey: string, purchaseIntentId: string) {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/entitlements/verify?purchase_intent_id=${purchaseIntentId}`,
-    {
-      headers: {
-        'X-API-Key': apiKey,
-      },
-    }
-  )
-  
-  return {
-    ok: response.ok,
-    status: response.status,
-    data: response.ok ? await response.json() : null,
-  }
-}
-
-/**
- * Get audit logs via API
+ * 監査ログ取得
  */
 export async function getAuditLogs(apiKey: string, params?: Record<string, string>) {
   const queryString = params ? '?' + new URLSearchParams(params).toString() : ''
-  
+
   const response = await fetch(`${API_BASE_URL}/api/v1/admin/audit-logs${queryString}`, {
-    headers: {
-      'X-API-Key': apiKey,
-    },
+    headers: { 'X-API-Key': apiKey },
   })
-  
+
   if (!response.ok) {
-    throw new Error(`Failed to get audit logs: ${response.status}`)
+    throw new Error(`監査ログ取得失敗: ${response.status}`)
   }
-  
+
   return response.json()
 }
 
 /**
- * Create coupon via API
+ * ヘルスチェック
  */
-export async function createCoupon(
-  apiKey: string,
-  code: string,
-  discountType: 'percentage' | 'fixed',
-  discountValue: number,
-  currency?: string
-) {
-  const response = await fetch(`${API_BASE_URL}/api/v1/coupons`, {
+export async function checkHealth(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`)
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 開発者登録（Onboarding API）
+ */
+export async function registerDeveloper(email: string): Promise<{
+  developer: { id: string; email: string }
+  apiKey: { key: string; prefix: string }
+}> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/onboarding/register`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey,
-    },
-    body: JSON.stringify({
-      code,
-      discount_type: discountType,
-      discount_value: discountValue,
-      currency: currency || (discountType === 'fixed' ? 'usd' : undefined),
-      max_uses: 100,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, testMode: true }),
   })
-  
+
   if (!response.ok) {
     const error = await response.text()
-    throw new Error(`Failed to create coupon: ${response.status} - ${error}`)
+    throw new Error(`開発者登録失敗: ${response.status} - ${error}`)
   }
-  
+
+  return response.json() as Promise<{
+    developer: { id: string; email: string }
+    apiKey: { key: string; prefix: string }
+  }>
+}
+
+/**
+ * 失敗 Webhook 一覧取得
+ */
+export async function getFailedWebhooks(apiKey: string) {
+  const response = await fetch(`${API_BASE_URL}/api/v1/admin/webhooks/failed`, {
+    headers: { 'X-API-Key': apiKey },
+  })
+
+  if (!response.ok) {
+    throw new Error(`失敗 Webhook 取得失敗: ${response.status}`)
+  }
+
   return response.json()
 }

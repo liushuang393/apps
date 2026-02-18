@@ -5,11 +5,8 @@ import { Products } from './pages/Products'
 import { Customers } from './pages/Customers'
 import { Webhooks } from './pages/Webhooks'
 import { AuditLogs } from './pages/AuditLogs'
-import { LegalTemplates } from './pages/LegalTemplates'
+import { Settings } from './pages/Settings'
 import { Login } from './pages/Login'
-import { PortalLogin } from './pages/portal/PortalLogin'
-import { PortalDashboard } from './pages/portal/PortalDashboard'
-import { PortalVerify } from './pages/portal/PortalVerify'
 import { useAuth } from './hooks/useAuth'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -30,22 +27,27 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * ForgePay Dashboard — 薄いレイヤー管理UI
+ *
+ * コア機能のみ:
+ * - 商品・価格管理
+ * - 顧客一覧
+ * - Webhook 監視
+ * - 監査ログ
+ * - 設定
+ *
+ * 削除済み（Stripe Dashboard / Customer Portal に委譲）:
+ * - 法的テンプレート管理
+ * - 顧客ポータル
+ * - 通貨管理
+ */
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Admin Login */}
         <Route path="/login" element={<Login />} />
-        
-        {/* Customer Portal Routes */}
-        <Route path="/customer/login" element={<PortalLogin />} />
-        <Route path="/customer/verify" element={<PortalVerify />} />
-        <Route path="/customer" element={<PortalDashboard />} />
-        
-        {/* Redirect /portal to /customer for API compatibility */}
-        <Route path="/portal/auth/verify" element={<PortalVerify />} />
-        
-        {/* Admin Dashboard Routes */}
+
         <Route
           path="/*"
           element={
@@ -57,7 +59,7 @@ function App() {
                   <Route path="/customers" element={<Customers />} />
                   <Route path="/webhooks" element={<Webhooks />} />
                   <Route path="/audit-logs" element={<AuditLogs />} />
-                  <Route path="/legal" element={<LegalTemplates />} />
+                  <Route path="/settings" element={<Settings />} />
                 </Routes>
               </Layout>
             </ProtectedRoute>

@@ -9,7 +9,7 @@ export const api = axios.create({
   },
 })
 
-// Add API key to requests
+// API キーをリクエストヘッダーに追加
 api.interceptors.request.use((config) => {
   const apiKey = localStorage.getItem('apiKey')
   if (apiKey) {
@@ -18,7 +18,7 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle errors
+// エラーハンドリング
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -30,73 +30,73 @@ api.interceptors.response.use(
   }
 )
 
-// API functions
+// ============================
+// API メソッド
+// ============================
 export const adminApi = {
-  // Products
+  // 商品
   getProducts: () => api.get('/admin/products'),
-  getProduct: (id: string) => api.get(`/admin/products/${id}`),
   createProduct: (data: CreateProductData) => api.post('/admin/products', data),
-  updateProduct: (id: string, data: UpdateProductData) => api.put(`/admin/products/${id}`, data),
   deleteProduct: (id: string) => api.delete(`/admin/products/${id}`),
 
-  // Prices
-  getPrices: () => api.get('/admin/prices'),
+  // 価格
+  getPrices: (params?: { product_id?: string }) => api.get('/admin/prices', { params }),
   createPrice: (data: CreatePriceData) => api.post('/admin/prices', data),
 
-  // Customers
+  // 顧客
   getCustomers: () => api.get('/admin/customers'),
   getCustomer: (id: string) => api.get(`/admin/customers/${id}`),
 
-  // Refunds
-  createRefund: (data: CreateRefundData) => api.post('/admin/refunds', data),
-
-  // Webhooks
+  // Webhook
   getFailedWebhooks: () => api.get('/admin/webhooks/failed'),
   retryWebhook: (id: string) => api.post(`/admin/webhooks/${id}/retry`),
-  getWebhookDetails: (id: string) => api.get(`/admin/webhooks/${id}`),
 
-  // Audit Logs
+  // 監査ログ
   getAuditLogs: (params?: AuditLogParams) => api.get('/admin/audit-logs', { params }),
 
-  // Entitlements
-  getEntitlements: () => api.get('/admin/entitlements'),
-  revokeEntitlement: (id: string) => api.post(`/admin/entitlements/${id}/revoke`),
+  // 開発者設定
+  getSettings: () => api.get('/onboarding/settings'),
+  updateSettings: (data: UpdateSettingsData) => api.put('/onboarding/settings', data),
 }
 
-// Types
+// ============================
+// 型定義（バックエンド snake_case に統一）
+// ============================
+
 export interface CreateProductData {
   name: string
   description?: string
   type: 'one_time' | 'subscription'
+  payment_methods?: string[]
 }
 
-export interface UpdateProductData {
-  name?: string
-  description?: string
-  active?: boolean
+export interface UpdateSettingsData {
+  default_success_url?: string
+  default_cancel_url?: string
+  default_locale?: string
+  default_currency?: string
+  default_payment_methods?: string[]
+  callback_url?: string
+  company_name?: string
 }
 
 export interface CreatePriceData {
-  productId: string
+  product_id: string
   amount: number
   currency: string
   interval?: 'month' | 'year'
 }
 
-export interface CreateRefundData {
-  paymentId: string
-  amount?: number
-  reason?: string
-}
-
 export interface AuditLogParams {
-  startDate?: string
-  endDate?: string
+  start_date?: string
+  end_date?: string
   action?: string
-  resourceType?: string
+  resource_type?: string
   limit?: number
   offset?: number
 }
+
+// --- エンティティ型（バックエンドのレスポンスそのまま）---
 
 export interface Product {
   id: string
@@ -104,96 +104,62 @@ export interface Product {
   description: string | null
   type: 'one_time' | 'subscription'
   active: boolean
-  stripeProductId: string
-  createdAt: string
-  updatedAt: string
+  stripe_product_id: string
+  metadata: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
 }
 
 export interface Price {
   id: string
-  productId: string
+  product_id: string
+  stripe_price_id: string
   amount: number
   currency: string
   interval: 'month' | 'year' | null
-  stripePriceId: string
   active: boolean
-  createdAt: string
+  created_at: string
 }
 
 export interface Customer {
   id: string
   email: string
   name: string | null
-  stripeCustomerId: string
-  createdAt: string
+  stripe_customer_id: string
+  metadata: Record<string, unknown> | null
+  created_at: string
 }
 
 export interface Entitlement {
   id: string
-  customerId: string
-  productId: string
+  customer_id: string
+  product_id: string
+  purchase_intent_id: string
   status: 'active' | 'suspended' | 'expired' | 'revoked'
-  expiresAt: string | null
-  createdAt: string
+  expires_at: string | null
+  revoked_reason: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface WebhookLog {
   id: string
-  stripeEventId: string
-  eventType: string
+  stripe_event_id: string
+  event_type: string
   status: 'pending' | 'processed' | 'failed' | 'dlq'
   attempts: number
-  errorMessage: string | null
-  createdAt: string
+  error_message: string | null
+  last_attempt_at: string | null
+  created_at: string
 }
 
 export interface AuditLog {
   id: string
   action: string
-  resourceType: string
-  resourceId: string
+  resource_type: string
+  resource_id: string
   changes: Record<string, unknown> | null
-  createdAt: string
-}
-
-// Currency types
-export type SupportedCurrency = 'usd' | 'cny' | 'jpy' | 'eur'
-
-export interface CurrencyInfo {
-  code: SupportedCurrency
-  symbol: string
-  name: string
-  nameChinese: string
-  decimalPlaces: number
-}
-
-export interface ExchangeRate {
-  currency: SupportedCurrency
-  rateFromUSD: number
-  lastUpdated: string
-}
-
-export interface ConvertedPrice {
-  amount: number
-  formatted: string
-}
-
-export interface MultiCurrencyPrices {
-  usd: ConvertedPrice
-  cny: ConvertedPrice
-  jpy: ConvertedPrice
-  eur: ConvertedPrice
-}
-
-// Currency API
-export const currencyApi = {
-  getCurrencies: () => api.get<{ currencies: CurrencyInfo[] }>('/currencies'),
-  getRates: () => api.get<{ baseCurrency: string; rates: ExchangeRate[] }>('/currencies/rates'),
-  getCurrency: (code: string) => api.get(`/currencies/${code}`),
-  convert: (amount: number, fromCurrency: string, toCurrency: string) =>
-    api.post('/currencies/convert', { amount, fromCurrency, toCurrency }),
-  convertAll: (amount: number) =>
-    api.post<{ prices: MultiCurrencyPrices }>('/currencies/convert-all', { amount }),
-  format: (amount: number, currency: string, locale?: string) =>
-    api.post('/currencies/format', { amount, currency, locale }),
+  ip_address: string | null
+  user_agent: string | null
+  created_at: string
 }

@@ -14,33 +14,34 @@ export function AuditLogs() {
     queryFn: () =>
       adminApi.getAuditLogs({
         action: actionFilter || undefined,
-        resourceType: resourceFilter || undefined,
+        resource_type: resourceFilter || undefined,
         limit: 100,
       }),
   })
 
-  const auditLogs: AuditLog[] = data?.data?.logs || []
+  // バックエンドは { data: [...], pagination: {...} } を返す
+  const auditLogs: AuditLog[] = data?.data?.data || []
 
   const filteredLogs = auditLogs.filter(
     (log) =>
       log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.resourceType.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.resourceId.toLowerCase().includes(searchTerm.toLowerCase())
+      log.resource_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.resource_id.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  // Get unique actions and resource types for filters
+  // フィルター用のユニーク値
   const uniqueActions = [...new Set(auditLogs.map((log) => log.action))]
-  const uniqueResources = [...new Set(auditLogs.map((log) => log.resourceType))]
+  const uniqueResources = [...new Set(auditLogs.map((log) => log.resource_type))]
 
   const handleExport = () => {
     const csv = [
       ['Timestamp', 'Action', 'Resource Type', 'Resource ID', 'Changes'].join(','),
       ...filteredLogs.map((log) =>
         [
-          new Date(log.createdAt).toISOString(),
+          new Date(log.created_at).toISOString(),
           log.action,
-          log.resourceType,
-          log.resourceId,
+          log.resource_type,
+          log.resource_id,
           JSON.stringify(log.changes || {}),
         ].join(',')
       ),
@@ -72,7 +73,7 @@ export function AuditLogs() {
         </button>
       </div>
 
-      {/* Search and Filters */}
+      {/* 検索とフィルター */}
       <div className="flex flex-col md:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -118,7 +119,7 @@ export function AuditLogs() {
         </div>
       </div>
 
-      {/* Logs Table */}
+      {/* ログテーブル */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center">
@@ -164,8 +165,8 @@ export function AuditLogs() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{log.resourceType}</p>
-                      <p className="text-xs text-gray-500 font-mono">{log.resourceId}</p>
+                      <p className="text-sm font-medium text-gray-900">{log.resource_type}</p>
+                      <p className="text-xs text-gray-500 font-mono">{log.resource_id}</p>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -179,9 +180,9 @@ export function AuditLogs() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div>
-                      <p>{new Date(log.createdAt).toLocaleDateString()}</p>
+                      <p>{new Date(log.created_at).toLocaleDateString()}</p>
                       <p className="text-xs">
-                        {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
+                        {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
                       </p>
                     </div>
                   </td>

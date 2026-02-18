@@ -46,11 +46,21 @@ jest.mock('../../../repositories/CustomerRepository', () => ({
   customerRepository: {},
 }));
 
-// Mock StripeClient
-jest.mock('../../../services/StripeClient', () => ({
-  stripeClient: {
-    createCheckoutSession: jest.fn(),
-    expireCheckoutSession: jest.fn(),
+// Mock StripeClient (used as return value from factory)
+const mockStripeInstance = {
+  createCheckoutSession: jest.fn(),
+  expireCheckoutSession: jest.fn(),
+};
+
+jest.mock('../../../services/StripeClientFactory', () => ({
+  stripeClientFactory: {
+    getClient: jest.fn(() => mockStripeInstance),
+  },
+}));
+
+jest.mock('../../../repositories/DeveloperRepository', () => ({
+  developerRepository: {
+    findById: jest.fn().mockResolvedValue(null),
   },
 }));
 
@@ -67,12 +77,11 @@ jest.mock('../../../utils/logger', () => ({
 import { checkoutSessionRepository } from '../../../repositories/CheckoutSessionRepository';
 import { productRepository } from '../../../repositories/ProductRepository';
 import { priceRepository } from '../../../repositories/PriceRepository';
-import { stripeClient } from '../../../services/StripeClient';
 
 const mockCheckoutSessionRepo = checkoutSessionRepository as jest.Mocked<typeof checkoutSessionRepository>;
 const mockProductRepo = productRepository as jest.Mocked<typeof productRepository>;
 const mockPriceRepo = priceRepository as jest.Mocked<typeof priceRepository>;
-const mockStripeClient = stripeClient as jest.Mocked<typeof stripeClient>;
+const mockStripeClient = mockStripeInstance as jest.Mocked<typeof mockStripeInstance>;
 
 describe('CheckoutService', () => {
   let service: CheckoutService;
@@ -86,6 +95,8 @@ describe('CheckoutService', () => {
     type: 'one_time',
     active: true,
     metadata: null,
+    slug: null,
+    paymentMethods: ['card'],
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -95,6 +106,8 @@ describe('CheckoutService', () => {
     id: 'prod-sub-123',
     name: 'Subscription Product',
     type: 'subscription',
+    slug: null,
+    paymentMethods: ['card'],
   };
 
   const mockPrice: Price = {
@@ -106,13 +119,6 @@ describe('CheckoutService', () => {
     interval: null,
     active: true,
     createdAt: new Date(),
-  };
-
-  const mockEurPrice: Price = {
-    ...mockPrice,
-    id: 'price-eur-123',
-    stripePriceId: 'stripe_price_eur_123',
-    currency: 'eur',
   };
 
   const mockCheckoutSession: CheckoutSession = {
@@ -302,66 +308,6 @@ describe('CheckoutService', () => {
       );
     });
 
-    it('should find alternative price when currency does not match', async () => {
-      mockProductRepo.findById.mockResolvedValue(mockProduct);
-      mockPriceRepo.findById.mockResolvedValue(mockPrice); // USD price
-      mockCheckoutSessionRepo.findByPurchaseIntentId.mockResolvedValue(null);
-      mockPriceRepo.findByProductIdAndCurrency.mockResolvedValue([mockEurPrice]);
-      mockStripeClient.createCheckoutSession.mockResolvedValue(mockStripeSession);
-      mockCheckoutSessionRepo.create.mockResolvedValue(mockCheckoutSession);
-
-      await service.createSession({
-        ...defaultCreateParams,
-        currency: 'eur',
-      });
-
-      expect(mockPriceRepo.findByProductIdAndCurrency).toHaveBeenCalledWith(
-        'prod-123',
-        'eur',
-        true,
-        mockDbClient
-      );
-
-      expect(mockStripeClient.createCheckoutSession).toHaveBeenCalledWith(
-        expect.objectContaining({
-          priceId: mockEurPrice.stripePriceId,
-        })
-      );
-    });
-
-    it('should use original price if no alternative currency price found', async () => {
-      mockProductRepo.findById.mockResolvedValue(mockProduct);
-      mockPriceRepo.findById.mockResolvedValue(mockPrice); // USD price
-      mockCheckoutSessionRepo.findByPurchaseIntentId.mockResolvedValue(null);
-      mockPriceRepo.findByProductIdAndCurrency.mockResolvedValue([]);
-      mockStripeClient.createCheckoutSession.mockResolvedValue(mockStripeSession);
-      mockCheckoutSessionRepo.create.mockResolvedValue(mockCheckoutSession);
-
-      await service.createSession({
-        ...defaultCreateParams,
-        currency: 'eur',
-      });
-
-      expect(mockStripeClient.createCheckoutSession).toHaveBeenCalledWith(
-        expect.objectContaining({
-          priceId: mockPrice.stripePriceId, // Original USD price
-        })
-      );
-    });
-
-    it('should default currency to usd if not provided', async () => {
-      mockProductRepo.findById.mockResolvedValue(mockProduct);
-      mockPriceRepo.findById.mockResolvedValue(mockPrice);
-      mockCheckoutSessionRepo.findByPurchaseIntentId.mockResolvedValue(null);
-      mockStripeClient.createCheckoutSession.mockResolvedValue(mockStripeSession);
-      mockCheckoutSessionRepo.create.mockResolvedValue(mockCheckoutSession);
-
-      await service.createSession(defaultCreateParams);
-
-      // Should not look for alternative currency since default matches price currency
-      expect(mockPriceRepo.findByProductIdAndCurrency).not.toHaveBeenCalled();
-    });
-
     it('should pass metadata to Stripe checkout session', async () => {
       mockProductRepo.findById.mockResolvedValue(mockProduct);
       mockPriceRepo.findById.mockResolvedValue(mockPrice);
@@ -378,8 +324,6 @@ describe('CheckoutService', () => {
         expect.objectContaining({
           metadata: expect.objectContaining({
             custom_field: 'custom_value',
-            requested_currency: 'usd',
-            original_price_id: 'price-123',
           }),
         })
       );
@@ -734,18 +678,20 @@ describe('CheckoutService', () => {
       };
       const customProductRepo = { findById: jest.fn() };
       const customPriceRepo = { findById: jest.fn(), findByProductIdAndCurrency: jest.fn() };
-      const customCustomerRepo = {};
-      const customStripe = {
-        createCheckoutSession: jest.fn(),
-        expireCheckoutSession: jest.fn(),
+      const customStripeFactory = {
+        getClient: jest.fn().mockReturnValue({
+          createCheckoutSession: jest.fn(),
+          expireCheckoutSession: jest.fn(),
+        }),
       };
+      const customDevRepo = { findById: jest.fn().mockResolvedValue(null) };
 
       const customService = new CheckoutService(
         customCheckoutRepo as any,
         customProductRepo as any,
         customPriceRepo as any,
-        customCustomerRepo as any,
-        customStripe as any
+        customStripeFactory as any,
+        customDevRepo as any
       );
 
       await customService.getSession('session-123');

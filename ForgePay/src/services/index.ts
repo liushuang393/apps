@@ -1,8 +1,9 @@
 /**
- * Service exports
- * 
- * Services contain business logic and orchestrate operations
- * across multiple repositories and external APIs.
+ * サービスエクスポート
+ *
+ * 薄いレイヤーとして OpenAI 固有ロジックのみを担当。
+ * 通貨・クーポン・請求書・GDPR・法的テンプレート・メトリクス・メール通知は
+ * 全て Stripe ネイティブ機能に委譲。
  */
 
 export {
@@ -15,6 +16,13 @@ export {
   CreatePriceParams,
   CreateRefundParams,
 } from './StripeClient';
+
+export {
+  StripeClientFactory,
+  stripeClientFactory,
+  encryptStripeKey,
+  decryptStripeKey,
+} from './StripeClientFactory';
 
 export {
   TokenService,
@@ -44,49 +52,6 @@ export {
 } from './WebhookProcessor';
 
 export {
-  EmailService,
-  emailService,
-  PaymentFailureNotificationData,
-  ChargebackNotificationData,
-  SubscriptionCancelledNotificationData,
-  WelcomeNotificationData,
-} from './EmailService';
-
-export {
-  TaxService,
-  taxService,
-  TaxAddress,
-  TaxLineItem,
-  TaxCalculationParams,
-  TaxCalculationResult,
-  TaxBreakdownItem,
-  VATValidationResult,
-} from './TaxService';
-
-export {
-  MagicLinkService,
-  magicLinkService,
-  MagicLinkPayload,
-  PortalSession,
-} from './MagicLinkService';
-
-export {
-  CurrencyService,
-  currencyService,
-  SupportedCurrency,
-  CurrencyConfig,
-  ExchangeRate,
-  MultiCurrencyPrice,
-  CURRENCY_CONFIGS,
-} from './CurrencyService';
-
-export {
-  LegalTemplateService,
-  legalTemplateService,
-  DEFAULT_TEMPLATES,
-} from './LegalTemplateService';
-
-export {
   DeveloperService,
   developerService,
   ApiKeyResult,
@@ -95,46 +60,6 @@ export {
 } from './DeveloperService';
 
 export {
-  InvoiceService,
-  invoiceService,
-  GenerateInvoiceParams,
-  InvoicePdfData,
-} from './InvoiceService';
-
-export {
-  FraudService,
-  fraudService,
-  FraudRiskLevel,
-  FraudCheckResult,
-  FraudEvent,
-  FraudPreventionSettings,
-} from './FraudService';
-
-export {
-  GDPRService,
-  gdprService,
-  GDPRRequest,
-  GDPRRequestType,
-  GDPRRequestStatus,
-  CustomerDataExport,
-} from './GDPRService';
-
-export {
-  MetricsService,
-  metricsService,
-  Metric,
-  MetricType,
-  Alert,
-  AlertSeverity,
-  MetricAggregation,
-  HealthCheck,
-  SystemMetrics,
-} from './MetricsService';
-
-export {
-  CouponService,
-  couponService,
-  CouponValidationResult,
-  ApplyCouponParams,
-  CalculatedDiscount,
-} from './CouponService';
+  CallbackService,
+  callbackService,
+} from './CallbackService';

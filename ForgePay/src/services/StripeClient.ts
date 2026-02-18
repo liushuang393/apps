@@ -3,6 +3,24 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 
 /**
+ * サポートする決済方法の型定義
+ */
+export type PaymentMethodType = 
+  | 'card'
+  | 'konbini'         // 日本のコンビニ決済
+  | 'customer_balance' // 銀行振込
+  | 'alipay'
+  | 'wechat_pay'
+  | 'link';           // Stripe Link（ワンクリック決済）
+
+/**
+ * サポートするロケールの型定義
+ */
+export type CheckoutLocale =
+  | 'auto' | 'ja' | 'en' | 'zh' | 'ko' | 'fr' | 'de' | 'es'
+  | 'it' | 'pt' | 'nl' | 'th' | 'vi' | 'id' | 'ms';
+
+/**
  * Stripe Checkout Session parameters
  */
 export interface CreateCheckoutSessionParams {
@@ -15,6 +33,10 @@ export interface CreateCheckoutSessionParams {
   cancelUrl: string;
   mode: 'payment' | 'subscription';
   metadata?: Record<string, string>;
+  /** 決済方法の指定（未指定の場合は Stripe のデフォルト） */
+  paymentMethodTypes?: PaymentMethodType[];
+  /** Checkout 画面のロケール */
+  locale?: CheckoutLocale;
 }
 
 /**
@@ -123,6 +145,16 @@ export class StripeClient {
         },
         expires_at: Math.floor(Date.now() / 1000) + 86400, // 24 hours
       };
+
+      // 決済方法の指定
+      if (params.paymentMethodTypes && params.paymentMethodTypes.length > 0) {
+        sessionParams.payment_method_types = params.paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[];
+      }
+
+      // ロケールの指定（Checkout 画面の表示言語）
+      if (params.locale && params.locale !== 'auto') {
+        sessionParams.locale = params.locale as Stripe.Checkout.SessionCreateParams.Locale;
+      }
 
       // Add customer or customer_creation
       if (params.customerId) {
@@ -586,155 +618,6 @@ export class StripeClient {
       logger.error('Error retrieving Stripe payment intent', {
         error,
         paymentIntentId,
-      });
-      throw this.handleStripeError(error);
-    }
-  }
-
-  // ============================================================
-  // COUPON METHODS
-  // ============================================================
-
-  /**
-   * Create a Stripe Coupon
-   * 
-   * @param params - Coupon parameters
-   * @returns Created coupon
-   */
-  async createCoupon(params: {
-    id?: string;
-    name: string;
-    percent_off?: number;
-    amount_off?: number;
-    currency?: string;
-    max_redemptions?: number;
-    redeem_by?: number;
-    metadata?: Record<string, string>;
-  }): Promise<Stripe.Coupon> {
-    try {
-      const couponParams: Stripe.CouponCreateParams = {
-        name: params.name,
-        metadata: params.metadata,
-      };
-
-      if (params.id) {
-        couponParams.id = params.id;
-      }
-
-      if (params.percent_off !== undefined) {
-        couponParams.percent_off = params.percent_off;
-      }
-
-      if (params.amount_off !== undefined) {
-        couponParams.amount_off = params.amount_off;
-        couponParams.currency = params.currency;
-      }
-
-      if (params.max_redemptions) {
-        couponParams.max_redemptions = params.max_redemptions;
-      }
-
-      if (params.redeem_by) {
-        couponParams.redeem_by = params.redeem_by;
-      }
-
-      const coupon = await this.stripe.coupons.create(couponParams);
-
-      logger.info('Stripe coupon created', {
-        couponId: coupon.id,
-        name: coupon.name,
-      });
-
-      return coupon;
-    } catch (error) {
-      logger.error('Error creating Stripe coupon', {
-        error,
-        params,
-      });
-      throw this.handleStripeError(error);
-    }
-  }
-
-  /**
-   * Update a Stripe Coupon
-   * 
-   * @param couponId - Stripe coupon ID
-   * @param params - Update parameters
-   * @returns Updated coupon
-   */
-  async updateCoupon(
-    couponId: string,
-    params: {
-      name?: string;
-      metadata?: Record<string, unknown>;
-    }
-  ): Promise<Stripe.Coupon> {
-    try {
-      const updateParams: Stripe.CouponUpdateParams = {};
-
-      if (params.name !== undefined) {
-        updateParams.name = params.name;
-      }
-
-      if (params.metadata !== undefined) {
-        updateParams.metadata = params.metadata as Record<string, string>;
-      }
-
-      const coupon = await this.stripe.coupons.update(couponId, updateParams);
-
-      logger.info('Stripe coupon updated', {
-        couponId: coupon.id,
-      });
-
-      return coupon;
-    } catch (error) {
-      logger.error('Error updating Stripe coupon', {
-        error,
-        couponId,
-        params,
-      });
-      throw this.handleStripeError(error);
-    }
-  }
-
-  /**
-   * Delete a Stripe Coupon
-   * 
-   * @param couponId - Stripe coupon ID
-   * @returns Deleted coupon
-   */
-  async deleteCoupon(couponId: string): Promise<Stripe.DeletedCoupon> {
-    try {
-      const deleted = await this.stripe.coupons.del(couponId);
-
-      logger.info('Stripe coupon deleted', {
-        couponId,
-      });
-
-      return deleted;
-    } catch (error) {
-      logger.error('Error deleting Stripe coupon', {
-        error,
-        couponId,
-      });
-      throw this.handleStripeError(error);
-    }
-  }
-
-  /**
-   * Get a Stripe Coupon
-   * 
-   * @param couponId - Stripe coupon ID
-   * @returns Coupon details
-   */
-  async getCoupon(couponId: string): Promise<Stripe.Coupon> {
-    try {
-      const coupon = await this.stripe.coupons.retrieve(couponId);
-      return coupon;
-    } catch (error) {
-      logger.error('Error retrieving Stripe coupon', {
-        error,
-        couponId,
       });
       throw this.handleStripeError(error);
     }

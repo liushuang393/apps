@@ -4,39 +4,22 @@ import {
   Package,
   Users,
   AlertTriangle,
-  TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
+  Link as LinkIcon,
+  Copy,
+  Check,
 } from 'lucide-react'
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
-
-// Mock data for chart (would come from API in real implementation)
-const revenueData = [
-  { name: 'Jan', revenue: 4000 },
-  { name: 'Feb', revenue: 3000 },
-  { name: 'Mar', revenue: 5000 },
-  { name: 'Apr', revenue: 4500 },
-  { name: 'May', revenue: 6000 },
-  { name: 'Jun', revenue: 5500 },
-]
+import { useState } from 'react'
 
 interface StatCardProps {
   title: string
   value: string | number
-  change?: number
   icon: React.ReactNode
   loading?: boolean
+  color?: string
 }
 
-function StatCard({ title, value, change, icon, loading }: StatCardProps) {
+function StatCard({ title, value, icon, loading, color = 'primary' }: StatCardProps) {
+  const bgClass = color === 'red' ? 'bg-red-50' : color === 'green' ? 'bg-green-50' : 'bg-primary-50'
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
       <div className="flex items-center justify-between">
@@ -47,25 +30,8 @@ function StatCard({ title, value, change, icon, loading }: StatCardProps) {
           ) : (
             <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
           )}
-          {change !== undefined && !loading && (
-            <div className="flex items-center mt-2">
-              {change >= 0 ? (
-                <ArrowUpRight className="h-4 w-4 text-green-500" />
-              ) : (
-                <ArrowDownRight className="h-4 w-4 text-red-500" />
-              )}
-              <span
-                className={`text-sm font-medium ${
-                  change >= 0 ? 'text-green-500' : 'text-red-500'
-                }`}
-              >
-                {Math.abs(change)}%
-              </span>
-              <span className="text-sm text-gray-500 ml-1">vs last month</span>
-            </div>
-          )}
         </div>
-        <div className="p-3 bg-primary-50 rounded-lg">{icon}</div>
+        <div className={`p-3 ${bgClass} rounded-lg`}>{icon}</div>
       </div>
     </div>
   )
@@ -87,9 +53,10 @@ export function Dashboard() {
     queryFn: () => adminApi.getFailedWebhooks(),
   })
 
-  const products: Product[] = productsData?.data?.products || []
-  const customers: Customer[] = customersData?.data?.customers || []
-  const failedWebhooks: WebhookLog[] = webhooksData?.data?.webhooks || []
+  // バックエンドの実際のレスポンス形式に合わせる
+  const products: Product[] = productsData?.data?.data || []
+  const customers: Customer[] = customersData?.data?.data || []
+  const failedWebhooks: WebhookLog[] = webhooksData?.data?.data || []
 
   const activeProducts = products.filter((p) => p.active).length
   const failedCount = failedWebhooks.length
@@ -101,19 +68,17 @@ export function Dashboard() {
         <p className="text-gray-600 mt-1">Overview of your payment platform</p>
       </div>
 
-      {/* Stats Grid */}
+      {/* 統計カード */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Total Products"
+          title="Active Products"
           value={activeProducts}
-          change={12}
           icon={<Package className="h-6 w-6 text-primary-600" />}
           loading={productsLoading}
         />
         <StatCard
           title="Total Customers"
           value={customers.length}
-          change={8}
           icon={<Users className="h-6 w-6 text-primary-600" />}
           loading={customersLoading}
         />
@@ -122,83 +87,72 @@ export function Dashboard() {
           value={failedCount}
           icon={<AlertTriangle className={`h-6 w-6 ${failedCount > 0 ? 'text-red-500' : 'text-green-500'}`} />}
           loading={webhooksLoading}
+          color={failedCount > 0 ? 'red' : 'green'}
         />
         <StatCard
-          title="Monthly Revenue"
-          value="$12,450"
-          change={15}
-          icon={<TrendingUp className="h-6 w-6 text-primary-600" />}
+          title="Payment Links"
+          value={products.filter(p => p.payment_link).length}
+          icon={<LinkIcon className="h-6 w-6 text-primary-600" />}
+          loading={productsLoading}
         />
       </div>
 
-      {/* Revenue Chart */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Revenue Trend</h2>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={revenueData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="revenue"
-                stroke="#0284c7"
-                strokeWidth={2}
-                dot={{ fill: '#0284c7' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+      {/* クイックスタートガイド（商品がない場合） */}
+      {!productsLoading && products.length === 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-blue-900 mb-3">Quick Start Guide</h2>
+          <ol className="space-y-3 text-sm text-blue-800">
+            <li className="flex items-start">
+              <span className="flex-shrink-0 w-6 h-6 bg-blue-200 text-blue-800 rounded-full flex items-center justify-center text-xs font-bold mr-3 mt-0.5">1</span>
+              <div>
+                <p className="font-medium">Configure Stripe Keys</p>
+                <p className="text-blue-600">Go to Settings and enter your Stripe API keys</p>
+              </div>
+            </li>
+            <li className="flex items-start">
+              <span className="flex-shrink-0 w-6 h-6 bg-blue-200 text-blue-800 rounded-full flex items-center justify-center text-xs font-bold mr-3 mt-0.5">2</span>
+              <div>
+                <p className="font-medium">Create a Product</p>
+                <p className="text-blue-600">Go to Products and create your first product with pricing</p>
+              </div>
+            </li>
+            <li className="flex items-start">
+              <span className="flex-shrink-0 w-6 h-6 bg-blue-200 text-blue-800 rounded-full flex items-center justify-center text-xs font-bold mr-3 mt-0.5">3</span>
+              <div>
+                <p className="font-medium">Copy Payment Link</p>
+                <p className="text-blue-600">Embed the auto-generated payment link in your app — no coding required!</p>
+              </div>
+            </li>
+          </ol>
         </div>
-      </div>
+      )}
 
-      {/* Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Products */}
+        {/* 決済リンク一覧（最重要！） */}
         <div className="bg-white rounded-xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Products</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Payment Links</h2>
           {productsLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-12 bg-gray-100 animate-pulse rounded" />
+                <div key={i} className="h-16 bg-gray-100 animate-pulse rounded-lg" />
               ))}
             </div>
-          ) : products.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">No products yet</p>
+          ) : products.filter(p => p.payment_link && p.active).length === 0 ? (
+            <p className="text-gray-500 text-center py-8">
+              Create a product to generate payment links
+            </p>
           ) : (
             <div className="space-y-3">
-              {products.slice(0, 5).map((product) => (
-                <div
-                  key={product.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium text-gray-900">{product.name}</p>
-                    <p className="text-sm text-gray-500">{product.type}</p>
-                  </div>
-                  <span
-                    className={`px-2 py-1 text-xs font-medium rounded ${
-                      product.active
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-700'
-                    }`}
-                  >
-                    {product.active ? 'Active' : 'Archived'}
-                  </span>
-                </div>
-              ))}
+              {products
+                .filter(p => p.payment_link && p.active)
+                .map((product) => (
+                  <PaymentLinkRow key={product.id} product={product} />
+                ))}
             </div>
           )}
         </div>
 
-        {/* Failed Webhooks */}
+        {/* 失敗した Webhook */}
         <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Failed Webhooks</h2>
           {webhooksLoading ? (
@@ -222,10 +176,10 @@ export function Dashboard() {
                   className="flex items-center justify-between p-3 bg-red-50 rounded-lg"
                 >
                   <div>
-                    <p className="font-medium text-gray-900">{webhook.eventType}</p>
-                    <p className="text-sm text-red-600">{webhook.errorMessage}</p>
+                    <p className="font-medium text-gray-900 text-sm">{webhook.event_type}</p>
+                    <p className="text-xs text-red-600 truncate max-w-[250px]">{webhook.error_message}</p>
                   </div>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-500 flex-shrink-0 ml-2">
                     {webhook.attempts} attempts
                   </span>
                 </div>
@@ -234,6 +188,58 @@ export function Dashboard() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * ダッシュボード用の決済リンク行（コピー機能付き）
+ */
+function PaymentLinkRow({ product }: { product: Product }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    if (!product.payment_link) return
+    try {
+      await navigator.clipboard.writeText(product.payment_link)
+    } catch {
+      const input = document.createElement('input')
+      input.value = product.payment_link
+      document.body.appendChild(input)
+      input.select()
+      document.execCommand('copy')
+      document.body.removeChild(input)
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-gray-900 text-sm">{product.name}</p>
+        <code className="text-xs text-blue-600 truncate block">{product.payment_link}</code>
+      </div>
+      <button
+        onClick={handleCopy}
+        className={`ml-3 flex-shrink-0 flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+          copied
+            ? 'bg-green-100 text-green-700'
+            : 'bg-primary-100 text-primary-700 hover:bg-primary-200'
+        }`}
+      >
+        {copied ? (
+          <>
+            <Check className="h-3 w-3 mr-1" />
+            Copied
+          </>
+        ) : (
+          <>
+            <Copy className="h-3 w-3 mr-1" />
+            Copy
+          </>
+        )}
+      </button>
     </div>
   )
 }
