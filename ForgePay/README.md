@@ -26,10 +26,15 @@ ChatGPT App ──→ ForgePay API ──→ Stripe（決済処理）
 
 ### 前提条件
 
-- Node.js >= 18、Docker
+- Node.js >= 18、Docker Desktop
 - [Stripe アカウント](https://dashboard.stripe.com/register)（無料）
+- [Stripe CLI](https://stripe.com/docs/stripe-cli)（`winget install stripe.cli`）
 
-### 1. インストール
+---
+
+### 🔰 一回のみ実行（初回セットアップ）
+
+#### 1. インストール
 
 ```bash
 git clone <repository-url>
@@ -37,7 +42,7 @@ cd ForgePay
 npm install && cd dashboard && npm install && cd ..
 ```
 
-### 2. セットアップウィザードを起動
+#### 2. セットアップウィザード
 
 ```bash
 npm run setup
@@ -48,16 +53,58 @@ npm run setup
 1. Stripe キー入力 → `.env` 自動生成（JWT シークレットも自動生成）
 2. Docker で PostgreSQL + Redis 起動
 3. DB マイグレーション実行
-4. 開発者アカウント登録 → **API キーが発行され、メールで届きます**
+4. 開発者アカウント登録 → **API キー発行**（`fpb_test_...`）
 
-### 3. ダッシュボード起動
+> API キーは一度しか表示されません。必ずコピーして保管してください。
+
+#### 3. Stripe CLI ログイン
 
 ```bash
-cd dashboard && npm run dev
-# http://localhost:3001
+stripe login
 ```
 
-取得した API キー（`fpb_test_...`）でログイン。
+#### 4. Webhook シークレット取得
+
+```bash
+stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe
+```
+
+表示された `whsec_...` を `.env` の `STRIPE_TEST_WEBHOOK_SECRET` にコピー。
+同じ Stripe アカウントであれば値は毎回同じなので、**一度だけ** `.env` に設定すれば OK。
+
+#### 5. Stripe キー接続
+
+ダッシュボード **Settings → Stripe API Keys** から接続・保存。
+
+---
+
+### ▶️ 毎回起動時
+
+```bash
+# Docker が停止している場合のみ
+npm run docker:up
+
+# ターミナル 1: バックエンド　→ http://localhost:3000/health
+npm run dev
+
+# ターミナル 2: ダッシュボード → http://localhost:3001
+cd dashboard && npm run dev
+
+# ターミナル 3: Stripe Webhook フォワード（決済テスト時）
+stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe
+```
+
+取得した API キー（`fpb_test_...`）でダッシュボードにログイン。
+
+---
+
+### 🔧 個別場合のみ
+
+| 場面 | コマンド |
+|------|---------|
+| `npm run git:sync` 後に新しいマイグレーションが追加された | `npm run migrate:up` |
+| 最新コードをリモートから取得 | `npm run git:sync` |
+| マイグレーションを巻き戻したい | `npm run migrate:down` |
 
 ---
 

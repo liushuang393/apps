@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ForgePay — 方案3: PaymentIntent API (Subscriptions)</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface2: #252836;
+            --border: #2e3347;
+            --accent: #635bff;
+            --accent-hover: #7b74ff;
+            --text: #e8eaf0;
+            --text-muted: #8b90a8;
+            --success: #30d158;
+            --error: #ff453a;
+            --warning: #ffd60a;
+            --radius: 12px;
+            --font: 'Inter', system-ui, sans-serif;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 40px;
+            width: 100%;
+            max-width: 520px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, .4);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(99, 91, 255, .15);
+            color: var(--accent);
+            border: 1px solid rgba(99, 91, 255, .3);
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: .5px;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-bottom: 28px;
+            line-height: 1.6;
+        }
+
+        /* プラン選択 */
+        .plans {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .plan {
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 12px;
+            cursor: pointer;
+            transition: border-color .2s, background .2s;
+            text-align: center;
+            position: relative;
+        }
+
+        .plan:hover {
+            border-color: var(--accent);
+        }
+
+        .plan.selected {
+            border-color: var(--accent);
+            background: rgba(99, 91, 255, .1);
+        }
+
+        .plan-name {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .plan-price {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .plan-price span {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .plan-badge {
+            position: absolute;
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--warning);
+            color: #000;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .field {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        input {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 14px;
+            color: var(--text);
+            font-size: 14px;
+            font-family: var(--font);
+            outline: none;
+            transition: border-color .2s;
+        }
+
+        input:focus {
+            border-color: var(--accent);
+        }
+
+        input::placeholder {
+            color: var(--text-muted);
+        }
+
+        #payment-element-container {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 16px;
+            min-height: 56px;
+        }
+
+        button {
+            width: 100%;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 14px;
+            font-size: 15px;
+            font-weight: 600;
+            font-family: var(--font);
+            cursor: pointer;
+            transition: background .2s, transform .1s;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+        }
+
+        button:active {
+            transform: scale(.98);
+        }
+
+        button:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            margin-top: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .btn-danger {
+            background: rgba(255, 69, 58, .15);
+            border: 1px solid rgba(255, 69, 58, .3);
+            color: var(--error);
+            margin-top: 10px;
+        }
+
+        .btn-danger:hover {
+            background: rgba(255, 69, 58, .25);
+        }
+
+        .info-box {
+            background: rgba(99, 91, 255, .08);
+            border: 1px solid rgba(99, 91, 255, .2);
+            border-radius: 8px;
+            padding: 14px;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .info-box strong {
+            color: var(--text);
+        }
+
+        .status {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status.success {
+            background: rgba(48, 209, 88, .1);
+            border: 1px solid rgba(48, 209, 88, .3);
+            color: var(--success);
+            display: block;
+        }
+
+        .status.error {
+            background: rgba(255, 69, 58, .1);
+            border: 1px solid rgba(255, 69, 58, .3);
+            color: var(--error);
+            display: block;
+        }
+
+        .status.loading {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            display: block;
+        }
+
+        /* タブ */
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab {
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: color .2s, border-color .2s;
+        }
+
+        .tab:hover {
+            color: var(--text);
+        }
+
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* サブスク管理パネル */
+        .sub-info {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .sub-info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .sub-info-row:last-child {
+            border-bottom: none;
+        }
+
+        .sub-info-label {
+            color: var(--text-muted);
+        }
+
+        .sub-info-value {
+            font-weight: 500;
+        }
+
+        .status-badge {
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .status-badge.active {
+            background: rgba(48, 209, 88, .15);
+            color: var(--success);
+        }
+
+        .status-badge.past_due {
+            background: rgba(255, 69, 58, .15);
+            color: var(--error);
+        }
+
+        .status-badge.canceled {
+            background: var(--surface);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+
+        .config-note {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .config-note code {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-family: 'Fira Code', monospace;
+            color: var(--accent);
+        }
+
+        /* ステップ */
+        #sub-step-1,
+        #sub-step-2,
+        #sub-step-3 {
+            display: none;
+        }
+
+        #sub-step-1.active,
+        #sub-step-2.active,
+        #sub-step-3.active {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="badge">🚀 方案3</div>
+        <h1>PaymentIntent API</h1>
+        <p class="subtitle">
+            完全制御のサブスクリプション管理。カード登録・プラン変更・キャンセルを
+            バックエンドで完全制御。
+        </p>
+
+        <!-- タブ -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('subscribe')">新規登録</div>
+            <div class="tab" onclick="switchTab('manage')">プラン管理</div>
+        </div>
+
+        <!-- ===== タブ: 新規登録 ===== -->
+        <div id="tab-subscribe" class="tab-content active">
+
+            <!-- ステップ1: プラン選択 -->
+            <div id="sub-step-1" class="active">
+                <div class="plans">
+                    <div class="plan" onclick="selectPlan(this, 'starter')" data-plan="starter">
+                        <div class="plan-name">スターター</div>
+                        <div class="plan-price">¥980<span>/月</span></div>
+                    </div>
+                    <div class="plan selected" onclick="selectPlan(this, 'pro')" data-plan="pro">
+                        <div class="plan-badge">人気</div>
+                        <div class="plan-name">プロ</div>
+                        <div class="plan-price">¥2,980<span>/月</span></div>
+                    </div>
+                    <div class="plan" onclick="selectPlan(this, 'business')" data-plan="business">
+                        <div class="plan-name">ビジネス</div>
+                        <div class="plan-price">¥9,800<span>/月</span></div>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="email">メールアドレス *</label>
+                    <input type="email" id="email" placeholder="you@example.com" />
+                </div>
+
+                <div class="field">
+                    <label for="productId">Product ID</label>
+                    <input type="text" id="productId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                </div>
+
+                <div class="field">
+                    <label for="priceId">Price ID</label>
+                    <input type="text" id="priceId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                </div>
+
+                <button onclick="startSetupIntent()">カードを登録する →</button>
+            </div>
+
+            <!-- ステップ2: カード登録 (SetupIntent) -->
+            <div id="sub-step-2">
+                <div class="info-box">
+                    <strong>🔒 カード登録（課金なし）:</strong>
+                    カード情報を安全に登録します。登録後に月次課金が開始されます。
+                    カード番号はサーバーを通過しません。
+                </div>
+
+                <div class="field">
+                    <label>カード情報</label>
+                    <div id="payment-element-container">
+                        <div id="payment-element"></div>
+                    </div>
+                </div>
+
+                <button id="setupBtn" onclick="confirmSetup()">カードを登録してサブスクを開始</button>
+                <button class="btn-secondary" onclick="goToStep(1)">← 戻る</button>
+            </div>
+
+            <!-- ステップ3: 完了 -->
+            <div id="sub-step-3">
+                <div class="info-box" style="border-color:rgba(48,209,88,.3);background:rgba(48,209,88,.08);">
+                    <strong style="color:var(--success)">✅ サブスクリプション開始!</strong><br />
+                    <span id="successDetail">サブスクリプションが正常に作成されました。</span>
+                </div>
+                <button onclick="goToStep(1)">新しいサブスクを作成</button>
+            </div>
+        </div>
+
+        <!-- ===== タブ: プラン管理 ===== -->
+        <div id="tab-manage" class="tab-content">
+            <div class="field">
+                <label for="manageSubId">サブスクリプション ID</label>
+                <input type="text" id="manageSubId" placeholder="sub_xxxxxxxxxxxxxxxxxxxxxxxx" />
+            </div>
+
+            <button onclick="loadSubscription()" style="margin-bottom:16px">サブスクを読み込む</button>
+
+            <div id="sub-detail" style="display:none">
+                <div class="sub-info">
+                    <div class="sub-info-row">
+                        <span class="sub-info-label">ステータス</span>
+                        <span class="sub-info-value"><span id="subStatus"
+                                class="status-badge active">active</span></span>
+                    </div>
+                    <div class="sub-info-row">
+                        <span class="sub-info-label">次回請求日</span>
+                        <span class="sub-info-value" id="subPeriodEnd">—</span>
+                    </div>
+                    <div class="sub-info-row">
+                        <span class="sub-info-label">キャンセル予約</span>
+                        <span class="sub-info-value" id="subCancelAtEnd">なし</span>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="newPriceId">新しい Price ID（プラン変更）</label>
+                    <input type="text" id="newPriceId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                </div>
+
+                <button onclick="upgradePlan()">プランを変更（日割り計算）</button>
+                <button class="btn-danger" onclick="cancelSubscription(false)">期間終了時にキャンセル</button>
+                <button class="btn-danger" onclick="cancelSubscription(true)">即座にキャンセル</button>
+            </div>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div class="config-note">
+            有効化: <code>PAYMENT_MODE=payment-intent</code> を .env に設定
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // 設定（本番環境では環境変数から注入）
+        // ============================================================
+        const CONFIG = {
+            apiBase: 'http://localhost:3000/api/v1',
+            apiKey: 'YOUR_API_KEY',
+            returnUrl: window.location.origin + '/success.html',
+        };
+
+        let stripe = null;
+        let elements = null;
+        let paymentElement = null;
+        let customerId = null;
+        let currentSubscriptionId = null;
+
+        // ============================================================
+        // ユーティリティ
+        // ============================================================
+        function showStatus(type, msg) {
+            const el = document.getElementById('status');
+            el.className = 'status ' + type;
+            el.textContent = msg;
+        }
+        function clearStatus() {
+            const el = document.getElementById('status');
+            el.className = 'status';
+        }
+
+        function switchTab(name) {
+            document.querySelectorAll('.tab').forEach((t, i) => {
+                t.classList.toggle('active', ['subscribe', 'manage'][i] === name);
+            });
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('tab-' + name).classList.add('active');
+            clearStatus();
+        }
+
+        function selectPlan(el, plan) {
+            document.querySelectorAll('.plan').forEach(p => p.classList.remove('selected'));
+            el.classList.add('selected');
+        }
+
+        function goToStep(n) {
+            [1, 2, 3].forEach(i => {
+                document.getElementById('sub-step-' + i).classList.toggle('active', i === n);
+            });
+            clearStatus();
+        }
+
+        async function apiCall(method, path, body) {
+            const res = await fetch(`${CONFIG.apiBase}${path}`, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': CONFIG.apiKey,
+                },
+                ...(body ? { body: JSON.stringify(body) } : {}),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+            return data;
+        }
+
+        // ============================================================
+        // ステップ1 → ステップ2: SetupIntent 作成
+        // ============================================================
+        async function startSetupIntent() {
+            const email = document.getElementById('email').value.trim();
+            const productId = document.getElementById('productId').value.trim();
+            const priceId = document.getElementById('priceId').value.trim();
+
+            if (!email || !productId || !priceId) {
+                showStatus('error', 'すべての項目を入力してください');
+                return;
+            }
+
+            showStatus('loading', 'カード登録を準備中...');
+
+            try {
+                const data = await apiCall('POST', '/subscriptions/setup-intent', {
+                    customer_email: email,
+                });
+
+                customerId = data.customer_id;
+                clearStatus();
+
+                // Stripe Elements を初期化（SetupIntent 用）
+                stripe = Stripe(data.publishable_key);
+                elements = stripe.elements({
+                    clientSecret: data.client_secret,
+                    appearance: {
+                        theme: 'night',
+                        variables: {
+                            colorPrimary: '#635bff',
+                            colorBackground: '#252836',
+                            colorText: '#e8eaf0',
+                            colorDanger: '#ff453a',
+                            fontFamily: 'Inter, system-ui, sans-serif',
+                            borderRadius: '8px',
+                        },
+                    },
+                });
+
+                paymentElement = elements.create('payment');
+                paymentElement.mount('#payment-element');
+
+                goToStep(2);
+            } catch (err) {
+                showStatus('error', err.message);
+            }
+        }
+
+        // ============================================================
+        // ステップ2: SetupIntent 確認 → サブスクリプション作成
+        // ============================================================
+        async function confirmSetup() {
+            if (!stripe || !elements) return;
+
+            const btn = document.getElementById('setupBtn');
+            btn.disabled = true;
+            showStatus('loading', 'カード情報を確認中...');
+
+            // SetupIntent を確認（カードを登録するだけ、課金なし）
+            const { error, setupIntent } = await stripe.confirmSetup({
+                elements,
+                confirmParams: { return_url: CONFIG.returnUrl },
+                redirect: 'if_required',
+            });
+
+            if (error) {
+                showStatus('error', error.message);
+                btn.disabled = false;
+                return;
+            }
+
+            // 登録された PaymentMethod ID でサブスクリプションを作成
+            showStatus('loading', 'サブスクリプションを作成中...');
+
+            try {
+                const email = document.getElementById('email').value.trim();
+                const productId = document.getElementById('productId').value.trim();
+                const priceId = document.getElementById('priceId').value.trim();
+                const paymentMethodId = setupIntent?.payment_method;
+
+                const data = await apiCall('POST', '/subscriptions', {
+                    product_id: productId,
+                    price_id: priceId,
+                    customer_email: email,
+                    payment_method_id: paymentMethodId,
+                    purchase_intent_id: 'demo_' + Date.now(),
+                });
+
+                currentSubscriptionId = data.subscription_id;
+
+                // client_secret がある場合は追加の確認が必要（3DS等）
+                if (data.client_secret) {
+                    const { error: confirmError } = await stripe.confirmPayment({
+                        clientSecret: data.client_secret,
+                        confirmParams: { return_url: CONFIG.returnUrl },
+                        redirect: 'if_required',
+                    });
+                    if (confirmError) {
+                        showStatus('error', confirmError.message);
+                        btn.disabled = false;
+                        return;
+                    }
+                }
+
+                const periodEnd = new Date(data.current_period_end).toLocaleDateString('ja-JP');
+                document.getElementById('successDetail').textContent =
+                    `サブスクリプション ID: ${data.subscription_id} | 次回請求: ${periodEnd}`;
+
+                clearStatus();
+                goToStep(3);
+            } catch (err) {
+                showStatus('error', err.message);
+                btn.disabled = false;
+            }
+        }
+
+        // ============================================================
+        // 管理タブ: サブスクリプション読み込み
+        // ============================================================
+        async function loadSubscription() {
+            const subId = document.getElementById('manageSubId').value.trim();
+            if (!subId) { showStatus('error', 'サブスクリプション ID を入力してください'); return; }
+
+            showStatus('loading', '読み込み中...');
+
+            try {
+                const data = await apiCall('GET', `/subscriptions/${subId}`);
+                currentSubscriptionId = subId;
+
+                const statusEl = document.getElementById('subStatus');
+                statusEl.textContent = data.status;
+                statusEl.className = 'status-badge ' + data.status;
+
+                document.getElementById('subPeriodEnd').textContent =
+                    new Date(data.current_period_end).toLocaleDateString('ja-JP');
+                document.getElementById('subCancelAtEnd').textContent =
+                    data.cancel_at_period_end ? '期間終了時にキャンセル予定' : 'なし';
+
+                document.getElementById('sub-detail').style.display = 'block';
+                clearStatus();
+            } catch (err) {
+                showStatus('error', err.message);
+            }
+        }
+
+        // ============================================================
+        // 管理タブ: プラン変更（アップグレード/ダウングレード）
+        // ============================================================
+        async function upgradePlan() {
+            const newPriceId = document.getElementById('newPriceId').value.trim();
+            if (!newPriceId) { showStatus('error', '新しい Price ID を入力してください'); return; }
+            if (!currentSubscriptionId) { showStatus('error', 'サブスクリプションを先に読み込んでください'); return; }
+
+            showStatus('loading', 'プランを変更中...');
+
+            try {
+                const data = await apiCall('PUT', `/subscriptions/${currentSubscriptionId}`, {
+                    new_price_id: newPriceId,
+                    proration_behavior: 'create_prorations',
+                });
+
+                showStatus('success', `プラン変更完了。ステータス: ${data.status}`);
+                await loadSubscription();
+            } catch (err) {
+                showStatus('error', err.message);
+            }
+        }
+
+        // ============================================================
+        // 管理タブ: キャンセル
+        // ============================================================
+        async function cancelSubscription(immediately) {
+            if (!currentSubscriptionId) { showStatus('error', 'サブスクリプションを先に読み込んでください'); return; }
+
+            const msg = immediately
+                ? '本当に即座にキャンセルしますか？'
+                : '期間終了時にキャンセルしますか？';
+            if (!confirm(msg)) return;
+
+            showStatus('loading', 'キャンセル処理中...');
+
+            try {
+                const data = await apiCall('DELETE', `/subscriptions/${currentSubscriptionId}`, {
+                    immediately,
+                });
+
+                const result = immediately
+                    ? `キャンセル完了。ステータス: ${data.status}`
+                    : `期間終了時にキャンセル予約済み。`;
+                showStatus('success', result);
+                await loadSubscription();
+            } catch (err) {
+                showStatus('error', err.message);
+            }
+        }
+    </script>
+</body>
+
+</html>

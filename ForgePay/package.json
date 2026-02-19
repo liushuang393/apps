@@ -11,8 +11,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "migrate": "node-pg-migrate",
-    "migrate:up": "node-pg-migrate up",
-    "migrate:down": "node-pg-migrate down",
+    "migrate:up": "node-pg-migrate up --no-check-order",
+    "migrate:down": "node-pg-migrate down --no-check-order",
     "test:e2e": "npx playwright test",
     "test:e2e:setup": "node scripts/setup-test-developer.js",
     "test:e2e:cleanup": "node scripts/setup-test-developer.js --clean",
@@ -21,7 +21,8 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "setup": "node scripts/setup.js",
     "docker:up": "docker-compose up -d postgres redis",
-    "docker:down": "docker-compose down"
+    "docker:down": "docker-compose down",
+    "git:sync": "cmd /c git-sync.bat"
   },
   "keywords": [
     "stripe",
@@ -46,6 +47,8 @@
     "rate-limit-redis": "^4.2.0",
     "redis": "^4.6.12",
     "stripe": "^14.10.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "zod": "^3.22.4"
@@ -61,10 +64,13 @@
     "@types/node": "^20.10.6",
     "@types/pg": "^8.10.9",
     "@types/supertest": "^6.0.3",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^9.0.7",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",
     "eslint": "^8.56.0",
+    "fast-check": "^4.5.3",
     "jest": "^29.7.0",
     "node-pg-migrate": "^6.2.2",
     "prettier": "^3.1.1",

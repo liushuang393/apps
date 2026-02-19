@@ -188,3 +188,52 @@ export type CreatePriceInput = z.infer<typeof createPriceSchema>;
 export type CreateRefundInput = z.infer<typeof createRefundSchema>;
 export type VerifyEntitlementInput = z.infer<typeof verifyEntitlementSchema>;
 export type RegisterDeveloperInput = z.infer<typeof registerDeveloperSchema>;
+
+// ============================================================
+// PaymentIntent（方案2: Stripe Elements）
+// ============================================================
+
+export const createPaymentIntentSchema = z.object({
+  product_id: uuidSchema,
+  price_id: uuidSchema,
+  purchase_intent_id: z.string().min(1).max(255).optional(),
+  customer_email: emailSchema.optional(),
+  metadata: z.record(z.string(), z.string()).optional(),
+});
+
+export const paymentIntentIdParams = z.object({ id: z.string().min(1) });
+
+// ============================================================
+// Subscription（方案3: PaymentIntent API）
+// ============================================================
+
+export const createSetupIntentSchema = z.object({
+  customer_email: emailSchema,
+  customer_name: z.string().min(1).max(255).optional(),
+});
+
+export const createSubscriptionSchema = z.object({
+  product_id: uuidSchema,
+  price_id: uuidSchema,
+  customer_email: emailSchema,
+  customer_name: z.string().min(1).max(255).optional(),
+  purchase_intent_id: z.string().min(1).max(255).optional(),
+  payment_method_id: z.string().min(1).optional(),
+  trial_period_days: z.number().int().min(1).optional(),
+  metadata: z.record(z.string(), z.string()).optional(),
+});
+
+export const updateSubscriptionSchema = z.object({
+  new_price_id: uuidSchema,
+  proration_behavior: z
+    .enum(['create_prorations', 'none', 'always_invoice'])
+    .optional()
+    .default('create_prorations'),
+});
+
+export const cancelSubscriptionSchema = z.object({
+  immediately: z.boolean().optional().default(false),
+});
+
+export const subscriptionIdParams = z.object({ id: z.string().min(1) });
+

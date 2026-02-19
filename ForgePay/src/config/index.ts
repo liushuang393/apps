@@ -2,11 +2,21 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+/**
+ * 決済方式の選択
+ * - checkout        : 方案1 — Stripe Checkout（Stripe ホスト画面）
+ * - elements        : 方案2 — Stripe Elements（自前 UI + Stripe カードコンポーネント）
+ * - payment-intent  : 方案3 — PaymentIntent API（完全制御 + サブスクリプション管理）
+ */
+export type PaymentMode = 'checkout' | 'elements' | 'payment-intent';
+
 export interface AppConfig {
   app: {
     env: string;
     port: number;
     baseUrl: string;
+    /** 有効な決済方式（PAYMENT_MODE 環境変数で切り替え） */
+    paymentMode: PaymentMode;
   };
   stripe: {
     mode: 'test' | 'live';
@@ -68,6 +78,7 @@ export const config: AppConfig = {
     env: process.env.NODE_ENV || 'development',
     port: parseInt(process.env.PORT || '3000', 10),
     baseUrl: process.env.API_BASE_URL || 'http://localhost:3000',
+    paymentMode: (process.env.PAYMENT_MODE || 'checkout') as PaymentMode,
   },
   stripe: {
     mode: (process.env.STRIPE_MODE || 'test') as 'test' | 'live',
