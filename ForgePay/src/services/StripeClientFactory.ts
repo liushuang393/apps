@@ -11,8 +11,9 @@ const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
-  // JWT_SECRET から暗号化キーを導出（32バイト = 256ビット）
-  return crypto.createHash('sha256').update(config.jwt.secret).digest();
+  // ENCRYPTION_KEY 環境変数から独立した暗号化キーを導出（32バイト = 256ビット）
+  // JWT_SECRET とは分離しており、一方が漏洩しても他方が安全に保たれる
+  return crypto.createHash('sha256').update(config.encryption.key).digest();
 }
 
 /**

@@ -2,6 +2,34 @@ import { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
+import { redisClient } from '../config/redis';
+
+// Redis キャッシュ TTL（秒）
+const AUTH_CACHE_TTL_SEC = 300; // 5分
+const AUTH_CACHE_PREFIX = 'auth:dev:';
+
+/** DB/キャッシュから取得した開発者行の型 */
+interface DeveloperRow {
+  id: string;
+  email: string;
+  test_mode: boolean;
+  stripe_account_id: string | null;
+  webhook_secret: string | null;
+  default_success_url: string | null;
+  default_cancel_url: string | null;
+  default_locale: string;
+  default_currency: string;
+  default_payment_methods: string[];
+  callback_url: string | null;
+  callback_secret: string | null;
+  company_name: string | null;
+  stripe_secret_key_enc: string | null;
+  stripe_publishable_key: string | null;
+  stripe_webhook_endpoint_secret: string | null;
+  stripe_configured: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 /**
  * Extended Request interface with developer context
@@ -50,6 +78,22 @@ function hashApiKey(apiKey: string): string {
 }
 
 /**
+ * API キーに紐づく認証キャッシュを無効化する。
+ * 設定変更後に呼び出し、次のリクエストで最新データを DB から取得させる。
+ */
+export async function invalidateAuthCache(apiKey: string): Promise<void> {
+  try {
+    const cacheKey = AUTH_CACHE_PREFIX + hashApiKey(apiKey);
+    await redisClient.del(cacheKey);
+    logger.debug('Auth cache invalidated', { keyPrefix: apiKey.substring(0, 7) + '...' });
+  } catch (err) {
+    logger.warn('Auth cache invalidation failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * API key authentication middleware
  * 
  * Validates API key from x-api-key header and attaches developer context to request.
@@ -76,39 +120,69 @@ export async function apiKeyAuth(
   }
 
   try {
-    // Hash the API key and look up the developer
+    // API キーをハッシュ化してキャッシュキーとして使用
     const apiKeyHash = hashApiKey(apiKey);
-    
-    const query = `
-      SELECT id, email, api_key_hash, test_mode, stripe_account_id, webhook_secret,
-             default_success_url, default_cancel_url, default_locale, default_currency,
-             default_payment_methods, callback_url, callback_secret, company_name,
-             stripe_secret_key_enc, stripe_publishable_key, stripe_webhook_endpoint_secret,
-             stripe_configured,
-             created_at, updated_at
-      FROM developers
-      WHERE api_key_hash = $1
-    `;
+    const cacheKey = AUTH_CACHE_PREFIX + apiKeyHash;
 
-    const result = await pool.query(query, [apiKeyHash]);
+    let developer: DeveloperRow | null = null;
 
-    if (result.rows.length === 0) {
-      logger.warn('Invalid API key attempt', {
-        keyPrefix: apiKey.substring(0, 7) + '...',
-        ip: req.ip,
+    // Redis キャッシュを確認（TTL 5分）
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        developer = JSON.parse(cached) as DeveloperRow;
+        logger.debug('API key cache hit', { keyHash: apiKeyHash.substring(0, 8) });
+      }
+    } catch (cacheErr) {
+      // Redis エラーはキャッシュミスとして扱い DB フォールバック
+      logger.warn('Redis キャッシュ読み取り失敗、DB にフォールバック', {
+        error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
       });
-
-      res.status(401).json({
-        error: {
-          code: 'unauthorized',
-          message: 'Invalid API key.',
-          type: 'authentication_error',
-        },
-      });
-      return;
     }
 
-    const developer = result.rows[0];
+    // キャッシュミスの場合は DB を照会
+    if (!developer) {
+      const query = `
+        SELECT id, email, api_key_hash, test_mode, stripe_account_id, webhook_secret,
+               default_success_url, default_cancel_url, default_locale, default_currency,
+               default_payment_methods, callback_url, callback_secret, company_name,
+               stripe_secret_key_enc, stripe_publishable_key, stripe_webhook_endpoint_secret,
+               stripe_configured,
+               created_at, updated_at
+        FROM developers
+        WHERE api_key_hash = $1
+      `;
+
+      const result = await pool.query(query, [apiKeyHash]);
+
+      if (result.rows.length === 0) {
+        logger.warn('Invalid API key attempt', {
+          keyPrefix: apiKey.substring(0, 7) + '...',
+          ip: req.ip,
+        });
+
+        res.status(401).json({
+          error: {
+            code: 'unauthorized',
+            message: 'Invalid API key.',
+            type: 'authentication_error',
+          },
+        });
+        return;
+      }
+
+      developer = result.rows[0] as DeveloperRow;
+
+      // Redis にキャッシュ保存（エラーは無視してリクエスト処理を継続）
+      try {
+        await redisClient.setEx(cacheKey, AUTH_CACHE_TTL_SEC, JSON.stringify(developer));
+        logger.debug('API key cached', { keyHash: apiKeyHash.substring(0, 8) });
+      } catch (cacheErr) {
+        logger.warn('Redis キャッシュ書き込み失敗', {
+          error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
+        });
+      }
+    }
 
     // Attach developer to request
     req.developer = {

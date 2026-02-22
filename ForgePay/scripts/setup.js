@@ -198,6 +198,7 @@ async function main() {
       cwd: ROOT,
       detached: true,
       stdio: 'ignore',
+      shell: true,
     });
     devProcess.unref();
 

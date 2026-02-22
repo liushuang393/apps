@@ -67,6 +67,10 @@ router.post(
       success_url,
       cancel_url,
       metadata,
+      // i18n オプション（省略時は開発者デフォルト設定を使用）
+      locale,
+      currency,
+      payment_methods,
     } = req.body;
 
     const result = await checkoutService.createSession({
@@ -78,6 +82,9 @@ router.post(
       successUrl: success_url,
       cancelUrl: cancel_url,
       metadata,
+      locale,
+      currency,
+      paymentMethods: payment_methods,
     });
 
     logger.info('チェックアウトセッション作成（API経由）', {

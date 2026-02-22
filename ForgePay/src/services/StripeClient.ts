@@ -624,6 +624,84 @@ export class StripeClient {
   }
 
   /**
+   * 商品登録不要のアドホック Checkout Session を作成（quickpay 用）
+   *
+   * Stripe の price_data を使い、商品・価格を事前に登録せずに
+   * 1 呼び出しで決済リンクを生成する。
+   */
+  async createAdHocCheckoutSession(params: {
+    name: string;
+    amount: number;
+    currency: string;
+    purchaseIntentId: string;
+    customerEmail?: string;
+    successUrl: string;
+    cancelUrl: string;
+    metadata?: Record<string, string>;
+    /** Checkout 画面の表示言語 */
+    locale?: CheckoutLocale;
+    /** 決済方法リスト */
+    paymentMethodTypes?: PaymentMethodType[];
+  }): Promise<CheckoutSessionResult> {
+    try {
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
+        mode: 'payment',
+        line_items: [
+          {
+            price_data: {
+              currency: params.currency,
+              product_data: {
+                name: params.name,
+              },
+              unit_amount: params.amount,
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${params.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: params.cancelUrl,
+        client_reference_id: params.purchaseIntentId,
+        customer_email: params.customerEmail,
+        customer_creation: 'always',
+        metadata: {
+          purchase_intent_id: params.purchaseIntentId,
+          ...params.metadata,
+        },
+        automatic_tax: { enabled: true },
+        expires_at: Math.floor(Date.now() / 1000) + 86400,
+      };
+
+      // ロケール設定（Checkout 画面の表示言語）
+      if (params.locale && params.locale !== 'auto') {
+        sessionParams.locale = params.locale as Stripe.Checkout.SessionCreateParams.Locale;
+      }
+
+      // 決済方法設定
+      if (params.paymentMethodTypes && params.paymentMethodTypes.length > 0) {
+        sessionParams.payment_method_types = params.paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[];
+      }
+
+      const session = await this.stripe.checkout.sessions.create(sessionParams);
+
+      logger.info('アドホック Checkout Session 作成', {
+        sessionId: session.id,
+        purchaseIntentId: params.purchaseIntentId,
+        amount: params.amount,
+        currency: params.currency,
+      });
+
+      return {
+        sessionId: session.id,
+        url: session.url!,
+        expiresAt: new Date(session.expires_at * 1000),
+      };
+    } catch (error) {
+      logger.error('アドホック Checkout Session 作成エラー', { error });
+      throw this.handleStripeError(error);
+    }
+  }
+
+  /**
    * Handle Stripe API errors
    * 
    * @param error - Error object

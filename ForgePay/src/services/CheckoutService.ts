@@ -34,6 +34,12 @@ export interface CreateSessionParams {
   successUrl: string;
   cancelUrl: string;
   metadata?: Record<string, string>;
+  /** Checkout 画面の表示言語（開発者設定のデフォルト or リクエスト個別指定）*/
+  locale?: string;
+  /** 通貨コード（ISO 4217: jpy, usd, eur 等）*/
+  currency?: string;
+  /** 決済方法リスト（card, konbini, alipay, wechat_pay 等）*/
+  paymentMethods?: string[];
 }
 
 /**
@@ -138,6 +144,9 @@ export class CheckoutService {
       // Stripe Checkout Session を作成
       const mode = product.type === 'subscription' ? 'subscription' : 'payment';
 
+      // 開発者のデフォルト設定を取得
+      const developer = await this.developerRepo.findById(params.developerId);
+
       const stripeParams: StripeCheckoutParams = {
         productId: params.productId,
         priceId: price.stripePriceId,
@@ -147,6 +156,10 @@ export class CheckoutService {
         cancelUrl: params.cancelUrl,
         mode,
         metadata: params.metadata,
+        // ロケール: リクエスト指定 → 開発者デフォルト → 'auto'
+        locale: (params.locale ?? developer?.defaultLocale ?? 'auto') as import('./StripeClient').CheckoutLocale,
+        // 決済方法: リクエスト指定 → 開発者デフォルト → undefined（Stripe デフォルト）
+        paymentMethodTypes: (params.paymentMethods ?? developer?.defaultPaymentMethods) as import('./StripeClient').PaymentMethodType[] | undefined,
       };
 
       const stripe = await this.getStripeClient(params.developerId);

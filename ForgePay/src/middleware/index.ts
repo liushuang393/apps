@@ -5,6 +5,7 @@
 export {
   apiKeyAuth,
   optionalApiKeyAuth,
+  invalidateAuthCache,
   AuthenticatedRequest,
 } from './auth';
 

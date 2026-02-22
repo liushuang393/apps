@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { developerService } from '../services/DeveloperService';
-import { AuthenticatedRequest, apiKeyAuth } from '../middleware';
+import { AuthenticatedRequest, apiKeyAuth, invalidateAuthCache } from '../middleware';
 import { encryptStripeKey, stripeClientFactory } from '../services/StripeClientFactory';
+import { config } from '../config';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -292,6 +293,12 @@ router.put('/settings', apiKeyAuth, async (req: AuthenticatedRequest, res: Respo
       return;
     }
 
+    // 認証キャッシュを無効化（次回 GET で最新データを返すため）
+    const rawApiKey = req.headers['x-api-key'] as string;
+    if (rawApiKey) {
+      await invalidateAuthCache(rawApiKey);
+    }
+
     res.json({
       message: '設定を更新しました',
       settings: {
@@ -313,10 +320,30 @@ router.put('/settings', apiKeyAuth, async (req: AuthenticatedRequest, res: Respo
 /**
  * GET /onboarding/settings
  * 開発者のデフォルト設定を取得
+ *
+ * 単一企業デプロイモデル:
+ * - 開発者固有のキーが未設定の場合、.env のグローバルキーをデフォルトとして返す
+ * - stripe_source: "developer" | "env" | "none" でキーの出所を明示
  */
 router.get('/settings', apiKeyAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const developer = req.developer!;
+
+    // .env グローバル Stripe キーの状態を取得
+    const envSecretKey = config.stripe.secretKey;
+    const envPublishableKey = config.stripe.publishableKey;
+    const envWebhookSecret = config.stripe.webhookSecret;
+    const envHasKeys = !!(envSecretKey && !envSecretKey.endsWith('...'));
+
+    // キーのソースを判定
+    const hasDevKeys = developer.stripeConfigured;
+    const stripeSource = hasDevKeys ? 'developer' : envHasKeys ? 'env' : 'none';
+
+    // 表示用のマスク済みキー（開発者キー優先、なければ .env から）
+    const maskKey = (key: string | null | undefined): string | null => {
+      if (!key || key.endsWith('...')) return null;
+      return '••••' + key.slice(-8);
+    };
 
     res.json({
       settings: {
@@ -327,8 +354,19 @@ router.get('/settings', apiKeyAuth, async (req: AuthenticatedRequest, res: Respo
         default_payment_methods: developer.defaultPaymentMethods,
         callback_url: developer.callbackUrl,
         company_name: developer.companyName,
-        stripe_configured: developer.stripeConfigured,
-        stripe_publishable_key: developer.stripePublishableKey ? '••••' + developer.stripePublishableKey.slice(-8) : null,
+        stripe_configured: hasDevKeys || envHasKeys,
+        stripe_publishable_key: maskKey(developer.stripePublishableKey) || maskKey(envPublishableKey),
+        stripe_source: stripeSource,
+        stripe_mode: config.stripe.mode,
+      },
+      env_stripe: {
+        has_secret_key: envHasKeys,
+        has_publishable_key: !!(envPublishableKey && !envPublishableKey.endsWith('...')),
+        has_webhook_secret: !!(envWebhookSecret && !envWebhookSecret.endsWith('...')),
+        secret_key_masked: maskKey(envSecretKey),
+        publishable_key_masked: maskKey(envPublishableKey),
+        webhook_secret_masked: maskKey(envWebhookSecret),
+        mode: config.stripe.mode,
       },
     });
   } catch (error) {
@@ -379,6 +417,10 @@ router.post('/stripe/keys', apiKeyAuth, async (req: AuthenticatedRequest, res: R
 
     // キャッシュをクリア（新しいキーを即座に反映）
     stripeClientFactory.invalidateCache(req.developer!.id);
+    const rawApiKey = req.headers['x-api-key'] as string;
+    if (rawApiKey) {
+      await invalidateAuthCache(rawApiKey);
+    }
 
     if (!developer) {
       res.status(404).json({ error: 'Developer not found' });

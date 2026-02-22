@@ -2,10 +2,12 @@ import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import swaggerUi from 'swagger-ui-express';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { apiRateLimiter } from './middleware';
 import apiRoutes from './routes';
+import { swaggerSpec } from './openapi/spec';
 
 /**
  * ForgePay — OpenAI External Checkout Flow 用の薄い連携レイヤー
@@ -27,9 +29,23 @@ const app: Application = express();
 app.use(helmet());
 
 // CORS 設定
+// 本番環境: ALLOWED_ORIGINS カンマ区切り (例: https://app1.com,https://app2.com)
+// 開発環境: 全オリジン許可
+const getAllowedOrigins = (): string | string[] => {
+  if (config.app.env !== 'production') {
+    return '*';
+  }
+  const envOrigins = process.env.ALLOWED_ORIGINS;
+  if (envOrigins) {
+    return envOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+  }
+  // フォールバック: 環境変数未設定時は API_BASE_URL のオリジンのみ許可
+  return [new URL(config.app.baseUrl).origin];
+};
+
 app.use(
   cors({
-    origin: config.app.env === 'production' ? [] : '*',
+    origin: getAllowedOrigins(),
     credentials: true,
   })
 );
@@ -59,6 +75,31 @@ app.use('/api/v1', apiRateLimiter);
 
 // API ルート
 app.use('/api/v1', apiRoutes);
+
+// OpenAPI Swagger UI (/docs/api)
+// Helmet の contentSecurityPolicy を無効化してSwagger UI の CDN JS/CSS を許可
+app.use(
+  '/docs/api',
+  (_req: Request, res: Response, next: NextFunction) => {
+    // Swagger UI はインラインスクリプトを使用するため CSP を緩和
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    );
+    next();
+  },
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'ForgePay API Docs',
+    customCss: '.swagger-ui .topbar { background-color: #1a1a2e; }',
+  })
+);
+
+// OpenAPI JSON スキーマの生エンドポイント（SDK 自動生成等に使用）
+app.get('/docs/api.json', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json(swaggerSpec);
+});
 
 // 決済成功ページ（フォールバック）
 app.get('/payment/success', (_req: Request, res: Response) => {

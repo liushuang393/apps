@@ -8,6 +8,10 @@ export interface AppConfig {
     port: number;
     baseUrl: string;
   };
+  encryption: {
+    /** AES-256-GCM 暗号化キー（32バイトの hex または平文）*/
+    key: string;
+  };
   stripe: {
     mode: 'test' | 'live';
     secretKey: string;
@@ -69,6 +73,9 @@ export const config: AppConfig = {
     port: parseInt(process.env.PORT || '3000', 10),
     baseUrl: process.env.API_BASE_URL || 'http://localhost:3000',
   },
+  encryption: {
+    key: process.env.ENCRYPTION_KEY || 'change-this-encryption-key-in-production',
+  },
   stripe: {
     mode: (process.env.STRIPE_MODE || 'test') as 'test' | 'live',
     ...stripeKeys,
@@ -122,6 +129,13 @@ function validateConfig(): void {
     config.jwt.secret === 'change-this-secret-in-production'
   ) {
     console.warn('⚠️  WARNING: 本番環境でデフォルトの JWT シークレットが使用されています。変更してください。');
+  }
+
+  if (
+    config.app.env === 'production' &&
+    config.encryption.key === 'change-this-encryption-key-in-production'
+  ) {
+    console.warn('⚠️  WARNING: 本番環境でデフォルトの ENCRYPTION_KEY が使用されています。変更してください。');
   }
 }
 

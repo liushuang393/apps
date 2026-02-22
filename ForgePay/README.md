@@ -1,17 +1,57 @@
 # ForgePay
 
-**OpenAI ChatGPT Apps の収益化を実現する Stripe 直接連携レイヤー。**
+**アプリの決済を一括管理する集中型決済レイヤー。**
 
-ChatGPT の [External Checkout Flow](https://platform.openai.com/docs/actions/monetization) に対応したマルチテナント決済 API。  
-Stripe の機能（決済・サブスク・税金・不正防止）をそのまま活用し、**OpenAI 固有の `purchase_intent_id` マッピングと Entitlement 管理のみ**を担う最小設計。
+Stripe の機能（決済・サブスク・税金・不正防止）をそのまま活用し、アプリは Stripe を直接触らずに決済を実現できる。
+
+---
+
+## 技術アーキテクチャ
+
+```mermaid
+flowchart TB
+  subgraph app ["あなたのアプリ（例: English Teacher）"]
+    A1["ビジネスロジック"]
+    A2["POST /api/v1/quickpay<br>purchase_intent_id だけ渡す"]
+    A3["POST /callback/forgepay<br>で通知を受信"]
+  end
+
+  subgraph forgepay ["ForgePay（ポート 3000）"]
+    F1["QuickPay API"]
+    F2["商品 / 価格管理"]
+    F3["Stripe Webhook 受信"]
+    F4["コールバック通知"]
+    F5["Entitlement 管理"]
+    DB["PostgreSQL"]
+    Cache["Redis"]
+  end
+
+  subgraph stripe ["Stripe"]
+    S1["Checkout Session"]
+    S2["Webhook"]
+  end
+
+  A2 --> F1
+  F1 --> S1
+  S2 --> F3
+  F3 --> F4
+  F4 --> A3
+  F1 --> DB
+  F3 --> DB
+  F1 --> Cache
+```
+
+### 呼び出し関係
 
 ```
-ChatGPT App ──→ ForgePay API ──→ Stripe（決済処理）
-                    │
-                    ├─ purchase_intent_id ↔ Stripe Session マッピング
-                    ├─ Webhook 受信（冪等性付き）
-                    └─ JWT unlock_token 発行・検証
+アプリ → ForgePay → Stripe     （決済セッション作成）
+Stripe → ForgePay → アプリ     （決済完了通知）
+アプリ → ForgePay              （支払い状態確認）
 ```
+
+**アプリは Stripe を直接呼ばない。** ForgePay が全ての Stripe 通信を代行する。
+
+### 技術スタック
 
 | レイヤー | 技術 |
 |---------|------|
@@ -29,7 +69,7 @@ ChatGPT App ──→ ForgePay API ──→ Stripe（決済処理）
 - Node.js >= 18、Docker
 - [Stripe アカウント](https://dashboard.stripe.com/register)（無料）
 
-### 1. インストール
+### インストール
 
 ```bash
 git clone <repository-url>
@@ -37,145 +77,126 @@ cd ForgePay
 npm install && cd dashboard && npm install && cd ..
 ```
 
-### 2. セットアップウィザードを起動
+### セットアップウィザード
 
 ```bash
 npm run setup
 ```
 
-対話形式で以下を自動実行します:
+対話形式で `.env` 生成 → Docker 起動 → DB マイグレーション → 開発者アカウント登録を自動実行。
 
-1. Stripe キー入力 → `.env` 自動生成（JWT シークレットも自動生成）
-2. Docker で PostgreSQL + Redis 起動
-3. DB マイグレーション実行
-4. 開発者アカウント登録 → **API キーが発行され、メールで届きます**
-
-### 3. ダッシュボード起動
+### 起動
 
 ```bash
+# DB + Redis（Docker）
+npm run docker:up
+
+# マイグレーション
+npm run migrate:up
+
+# バックエンド（ターミナル 1）
+npm run dev
+# → http://localhost:3000
+
+# ダッシュボード（ターミナル 2）
 cd dashboard && npm run dev
-# http://localhost:3001
+# → http://localhost:3001
 ```
-
-取得した API キー（`fpb_test_...`）でログイン。
 
 ---
 
-## Stripe の接続
+## ポート構成
 
-ダッシュボードの **Settings → Stripe API Keys** から接続できます。
-
-1. [Stripe API キーを取得](https://dashboard.stripe.com/test/apikeys)（`sk_test_...` / `pk_test_...`）
-2. Settings ページに貼り付け → **「接続テスト」で確認** → **「保存」**
-
-> Settings ページに Stripe アカウント作成からキー入力までのガイドが表示されます。
+| サービス | ポート | 説明 |
+|----------|--------|------|
+| バックエンド API | `3000` | Express サーバー |
+| ダッシュボード | `3001` | Vite 開発サーバー（`/api` → 3000 にプロキシ） |
+| PostgreSQL | `5432` | Docker |
+| Redis | `6379` | Docker |
 
 ---
 
-## API の使い方
+## .env 設定例
 
-すべてのリクエストに `X-API-Key: YOUR_API_KEY` ヘッダーが必要です（登録・キー再発行系を除く）。
+```env
+NODE_ENV=development
+PORT=3000
+API_BASE_URL=http://localhost:3000
 
-### 商品・価格の作成
+# Stripe（テスト用キー）
+STRIPE_MODE=test
+STRIPE_TEST_SECRET_KEY=sk_test_...
+STRIPE_TEST_PUBLISHABLE_KEY=pk_test_...
+STRIPE_TEST_WEBHOOK_SECRET=whsec_...
 
-```bash
-# 商品作成
-curl -X POST http://localhost:3000/api/v1/admin/products \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Premium Plan", "type": "subscription"}'
+# DB & Redis
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/forgepaybridge
+REDIS_URL=redis://localhost:6379
 
-# 価格作成
-curl -X POST http://localhost:3000/api/v1/admin/prices \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"product_id": "PRODUCT_ID", "amount": 1000, "currency": "jpy", "interval": "month"}'
+# セキュリティ
+JWT_SECRET=dev-jwt-secret-change-in-production
+ENCRYPTION_KEY=dev-encryption-key-change-in-production
 ```
 
-### 決済フロー（ChatGPT App 連携）
+---
 
-**① Checkout Session 作成**
+## QuickPay API — 3 モード
+
+アプリが決済セッションを作成する唯一のエンドポイント。
+
+### `POST /api/v1/quickpay`
+
+**ヘッダー:** `X-API-Key: YOUR_API_KEY`
+
+| モード | 必須フィールド | 説明 |
+|--------|---------------|------|
+| 商品 ID | `purchase_intent_id` + `product_id` | ダッシュボードで作成した商品を使用。価格は DB から自動解決 |
+| Price ID | `purchase_intent_id` + `price_id` | Stripe Price ID を直接指定 |
+| アドホック | `purchase_intent_id` + `name` + `amount` + `currency` | 商品未登録でもその場で決済 |
+
+`success_url` / `cancel_url` は省略可。省略時はダッシュボードのデフォルト設定を使用。
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/checkout/sessions \
+# 最小の呼び出し（user_id だけ）
+curl -X POST http://localhost:3000/api/v1/quickpay \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "product_id": "PRODUCT_ID",
-    "price_id": "PRICE_ID",
-    "purchase_intent_id": "pi_from_openai_12345",
-    "customer_email": "user@example.com",
-    "success_url": "https://your-app.com/success",
-    "cancel_url": "https://your-app.com/cancel"
-  }'
+  -d '{"purchase_intent_id": "user_123"}'
 ```
 
 ```json
 {
-  "checkout_url": "https://checkout.stripe.com/pay/cs_test_...",
-  "session_id": "sess_uuid",
-  "expires_at": "2024-01-01T01:00:00Z"
+  "session_id": "cs_test_...",
+  "checkout_url": "https://checkout.stripe.com/pay/...",
+  "expires_at": "2026-02-22T01:30:00Z"
 }
 ```
 
-ユーザーを `checkout_url` にリダイレクト → Stripe が決済処理 → Webhook で ForgePay に通知 → `unlock_token` 自動発行。
+---
 
-**② Entitlement 検証（アクセス許可）**
+## ダッシュボード設定
 
-```bash
-curl "http://localhost:3000/api/v1/entitlements/verify?unlock_token=JWT_TOKEN" \
-  -H "X-API-Key: YOUR_API_KEY"
-```
+`http://localhost:3001/settings` にログイン後：
 
-```json
-{ "valid": true, "product_id": "...", "status": "active", "expires_at": "..." }
-```
-
-### 返金
-
-```bash
-curl -X POST http://localhost:3000/api/v1/admin/refunds \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"payment_intent_id": "pi_stripe_...", "amount": 1000, "reason": "customer_request"}'
-```
+| 項目 | 説明 | 設定例 |
+|------|------|--------|
+| Stripe 決済キー | `.env` から自動読み込み。ダッシュボードからも上書き可能 | 接続済みと表示されれば OK |
+| 会社名 | Stripe 決済画面に表示される名前 | `My SaaS` |
+| 成功時 URL | 支払い完了後のリダイレクト先 | `http://localhost:3002/checkout/success` |
+| キャンセル URL | やめた時の戻り先 | `http://localhost:3002/checkout/cancel` |
+| 決済方法 | クレカ・コンビニ等。複数選択可 | `Credit Card` |
+| デフォルト言語 | Stripe チェックアウト画面の言語 | `Japanese` |
+| デフォルト通貨 | 商品価格のデフォルト通貨 | `JPY` |
+| 通知先 URL | 決済完了をアプリに通知する URL | `http://localhost:3002/callback/forgepay` |
 
 ---
 
-## API キーの管理
-
-| 状況 | 方法 |
-|------|------|
-| 初回登録 | `POST /api/v1/onboarding/register` → レスポンスとメールに届く |
-| キー紛失 | `POST /api/v1/onboarding/forgot-key` → メールで新キー発行（旧キー即無効） |
-| キー更新 | `POST /api/v1/onboarding/api-key/regenerate` → 旧キーで認証して再発行 |
+## Stripe Webhook ローカルテスト
 
 ```bash
-# 登録
-curl -X POST http://localhost:3000/api/v1/onboarding/register \
-  -H "Content-Type: application/json" \
-  -d '{"email": "your@email.com"}'
-
-# キー紛失時
-curl -X POST http://localhost:3000/api/v1/onboarding/forgot-key \
-  -H "Content-Type: application/json" \
-  -d '{"email": "your@email.com"}'
+stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe
+# 表示される whsec_... を .env の STRIPE_TEST_WEBHOOK_SECRET に設定
 ```
-
-> キー再発行時に処理中の決済セッションがある場合、安全チェック後に警告メールが届きます。
-
----
-
-## ダッシュボード
-
-| ページ | 機能 |
-|--------|------|
-| `/` | 売上・顧客・Webhook の状況 |
-| `/products` | 商品・価格の作成・編集 |
-| `/customers` | 顧客の決済状況確認 |
-| `/webhooks` | 失敗 Webhook の確認・再送 |
-| `/audit-logs` | 全操作の履歴 |
-| `/settings` | Stripe 接続・API キー管理・デフォルト設定 |
 
 ---
 
@@ -186,9 +207,10 @@ curl -X POST http://localhost:3000/api/v1/onboarding/forgot-key \
 | Method | Path | 認証 | 説明 |
 |--------|------|------|------|
 | GET | `/health` | 不要 | ヘルスチェック |
+| POST | `/api/v1/quickpay` | API Key | 簡易決済セッション作成（3 モード） |
 | POST | `/api/v1/checkout/sessions` | API Key | Checkout Session 作成 |
 | GET | `/api/v1/checkout/sessions/:id` | API Key | Session 取得 |
-| GET | `/api/v1/entitlements/verify` | API Key | unlock_token 検証 |
+| GET | `/api/v1/entitlements/verify` | API Key | 購入状態検証 |
 | POST | `/api/v1/webhooks/stripe` | 署名検証 | Stripe Webhook 受信 |
 
 ### 管理 API（`X-API-Key` 必須）
@@ -200,20 +222,31 @@ curl -X POST http://localhost:3000/api/v1/onboarding/forgot-key \
 | GET | `/api/v1/admin/customers` | 顧客一覧 |
 | POST | `/api/v1/admin/refunds` | 返金処理 |
 | GET | `/api/v1/admin/audit-logs` | 監査ログ |
-| GET | `/api/v1/admin/webhooks/failed` | 失敗 Webhook 一覧 |
 
 ### オンボーディング API
 
 | Method | Path | 認証 | 説明 |
 |--------|------|------|------|
 | POST | `/api/v1/onboarding/register` | 不要 | 開発者登録・API キー発行 |
-| POST | `/api/v1/onboarding/forgot-key` | 不要 | キー紛失時の再発行（メール送信） |
-| GET | `/api/v1/onboarding/me` | API Key | 開発者情報取得 |
-| GET | `/api/v1/onboarding/status` | API Key | オンボーディング進捗確認 |
+| POST | `/api/v1/onboarding/forgot-key` | 不要 | キー紛失時の再発行 |
+| GET | `/api/v1/onboarding/settings` | API Key | 設定取得 |
+| PUT | `/api/v1/onboarding/settings` | API Key | 設定更新 |
 | POST | `/api/v1/onboarding/stripe/keys` | API Key | Stripe キー設定 |
-| POST | `/api/v1/onboarding/stripe/verify` | API Key | Stripe キー接続テスト |
-| POST | `/api/v1/onboarding/api-key/regenerate` | API Key | API キー再発行 |
-| DELETE | `/api/v1/onboarding/account` | API Key | アカウント削除 |
+
+---
+
+## サンプルアプリ
+
+| アプリ | ディレクトリ | 説明 |
+|--------|-------------|------|
+| English Teacher | `apps/english-teacher/` | ChatGPT MCP + ForgePay 連携の英語教師サービス |
+
+---
+
+## アプリ統合ガイド
+
+**[INTEGRATION_GUIDE.md](./INTEGRATION_GUIDE.md)** に詳細な統合手順を記載。
+AI コーディングアシスタントが読めば ForgePay 連携アプリを自律的に構築できる。
 
 ---
 
@@ -221,92 +254,15 @@ curl -X POST http://localhost:3000/api/v1/onboarding/forgot-key \
 
 | コマンド | 説明 |
 |---------|------|
-| `npm run setup` | セットアップウィザード起動 |
-| `npm run dev` | バックエンド開発サーバー起動 |
+| `npm run setup` | セットアップウィザード |
+| `npm run dev` | バックエンド開発サーバー |
 | `npm run build` | TypeScript ビルド |
-| `npm run migrate:up` | DB マイグレーション実行 |
+| `npm run migrate:up` | DB マイグレーション |
 | `npm run migrate:down` | マイグレーション巻き戻し |
 | `npm run docker:up` | PostgreSQL + Redis 起動 |
-| `npm run docker:down` | Docker コンテナ停止 |
-| `npm test` | ユニットテスト実行 |
-| `npm run test:e2e` | E2E テスト実行（全自動） |
-
----
-
-## ChatGPT App 連携サンプル
-
-`examples/` フォルダに参照実装が含まれています:
-
-- `examples/openai-action-schema.yaml` — OpenAI Actions に設定する OpenAPI スキーマ
-- `examples/chatgpt-app-integration.ts` — TypeScript による checkout〜verify の実装例
-
----
-
-## 付録
-
-<details>
-<summary>セキュリティ設計</summary>
-
-| 項目 | 実装 |
-|-----|------|
-| API 認証 | SHA-256 ハッシュ済み API キー（`X-API-Key` ヘッダー） |
-| Webhook 検証 | Stripe 署名検証（`stripe-signature` ヘッダー） |
-| unlock_token | 短命 JWT（5分）+ Redis JTI 追跡（使い捨て） |
-| Stripe キー保護 | AES-256-GCM で暗号化して DB 保存 |
-| レート制限 | Redis ベースのスライディングウィンドウ |
-| CORS | 本番環境ではホワイトリスト方式 |
-
-</details>
-
-<details>
-<summary>DB テーブル構成</summary>
-
-| テーブル | 目的 |
-|---------|------|
-| `developers` | 開発者アカウント・API キー（SHA-256 ハッシュ） |
-| `products` / `prices` | 商品・価格（Stripe にマッピング） |
-| `customers` | 顧客情報（Stripe Customer にマッピング） |
-| `checkout_sessions` | `purchase_intent_id` ↔ Stripe Session マッピング |
-| `entitlements` | Entitlement 状態管理 |
-| `webhook_events` | Webhook 冪等性管理・DLQ |
-| `used_tokens` | JWT 使い捨てトークン管理 |
-| `audit_logs` | 全操作の監査ログ |
-
-</details>
-
-<details>
-<summary>トラブルシューティング</summary>
-
-**サーバーに接続できない**
-```bash
-npm run docker:up && npm run dev
-curl http://localhost:3000/health
-```
-
-**DB マイグレーションエラー**
-```bash
-npm run migrate:down && npm run migrate:up
-```
-
-**Stripe Webhook が届かない**
-```bash
-stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe
-```
-
-**メール送信を有効にする（本番環境）**
-
-`npm install nodemailer` を実行後、`.env` に以下を追加:
-```env
-EMAIL_SMTP_HOST=smtp.example.com
-EMAIL_SMTP_PORT=587
-EMAIL_SMTP_USER=user@example.com
-EMAIL_SMTP_PASS=password
-EMAIL_FROM=noreply@forgepay.io
-```
-> Gmail: `smtp.gmail.com` / ポート `587` / アプリパスワードを使用。  
-> 未設定時はコンソールにログ出力（開発環境向けフォールバック）。
-
-</details>
+| `npm run docker:down` | Docker 停止 |
+| `npm test` | ユニットテスト |
+| `npm run test:e2e` | E2E テスト |
 
 ---
 

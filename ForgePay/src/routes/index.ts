@@ -4,6 +4,7 @@ import entitlementRoutes from './entitlements';
 import webhookRoutes from './webhooks';
 import adminRoutes from './admin';
 import onboardingRoutes from './onboarding';
+import quickpayRoutes from './quickpay';
 
 const router = Router();
 
@@ -31,5 +32,7 @@ router.use('/entitlements', entitlementRoutes);
 router.use('/webhooks', webhookRoutes);
 router.use('/admin', adminRoutes);
 router.use('/onboarding', onboardingRoutes);
+// 商品登録不要の簡易決済（1 呼び出しで Stripe Checkout URL を生成）
+router.use('/quickpay', quickpayRoutes);
 
 export default router;

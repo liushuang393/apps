@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name": "EnglishTeacher",
+  "name_for_human": "AI English Teacher",
+  "description_for_human": "Your personal AI English tutor for grammar, vocabulary, writing correction, and more.",
+  "description_for_model": "An AI English tutor that helps users with grammar corrections, vocabulary, writing improvement, pronunciation guidance, and exam preparation (IELTS/TOEIC/TOEFL). Free users get 3 questions, paid users get unlimited detailed responses. Use ask_english_teacher to answer questions, get_subscription_status to check usage, and create_checkout_url when the user wants to upgrade.",
+  "entrypoint": {
+    "type": "mcp",
+    "url": "https://hazardous-vegetarian-motorcycles-skirt.trycloudflare.com/mcp"
+  },
+  "monetization": {
+    "type": "external_checkout",
+    "checkout_url": "https://hazardous-vegetarian-motorcycles-skirt.trycloudflare.com/checkout/session"
+  },
+  "contact_email": "dev@example.com",
+  "legal_info_url": "https://hazardous-vegetarian-motorcycles-skirt.trycloudflare.com/legal",
+  "privacy_policy_url": "https://hazardous-vegetarian-motorcycles-skirt.trycloudflare.com/privacy"
+}
