@@ -226,6 +226,10 @@ export class WebhookProcessor {
       case 'charge.dispute.closed':
         await this.handleDisputeClosed(event);
         break;
+      case 'payment_intent.succeeded':
+        // 方案2: PaymentIntent API 経由の決済成功時に Entitlement を付与
+        await this.handlePaymentIntentSucceeded(event);
+        break;
       default:
         logger.debug('未対応の Webhook イベント', {
           eventType: event.type,
@@ -360,6 +364,48 @@ export class WebhookProcessor {
     );
 
     if (!entitlement) {
+      // 方案3: API 経由で作成されたサブスクリプションの初回支払いの可能性
+      if ((invoice.billing_reason as string) === 'subscription_create') {
+        const stripeCustomerId = typeof invoice.customer === 'string'
+          ? invoice.customer
+          : invoice.customer?.id;
+
+        if (stripeCustomerId) {
+          const customer = await this.customerRepo.findByStripeCustomerId(stripeCustomerId);
+          if (customer) {
+            try {
+              const devStripe = await this.getStripeClientForDeveloper(customer.developerId);
+              const subscription = await devStripe.getSubscription(subscriptionId);
+              const { product_id, purchase_intent_id } = subscription.metadata;
+
+              if (product_id) {
+                const paymentId = typeof invoice.payment_intent === 'string'
+                  ? invoice.payment_intent
+                  : invoice.payment_intent?.id || `sub_${subscription.id}`;
+
+                await this.entitlementSvc.grantEntitlement({
+                  customerId: customer.id,
+                  productId: product_id,
+                  purchaseIntentId: purchase_intent_id || `sub_${subscription.id}`,
+                  paymentId,
+                  subscriptionId: subscription.id,
+                  expiresAt: new Date(subscription.current_period_end * 1000),
+                });
+
+                logger.info('APIサブスクリプション完了、Entitlement 付与', {
+                  subscriptionId,
+                  customerId: customer.id,
+                  productId: product_id,
+                });
+                return;
+              }
+            } catch (err) {
+              logger.error('Failed to grant API subscription entitlement', { error: err });
+            }
+          }
+        }
+      }
+
       logger.warn('サブスクリプションに対応する Entitlement 未検出', { subscriptionId });
       return;
     }
@@ -600,6 +646,89 @@ export class WebhookProcessor {
         status: dispute.status,
       });
     }
+  }
+
+  /**
+   * payment_intent.succeeded — 方案2: 決済成功時に Entitlement を付与
+   */
+  private async handlePaymentIntentSucceeded(event: Stripe.Event): Promise<void> {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent;
+    const { product_id, price_id, developer_id } = paymentIntent.metadata;
+
+    if (!product_id || !price_id || !developer_id) {
+      if (paymentIntent.status === 'succeeded') {
+        logger.debug('Skipping payment_intent.succeeded (missing metadata)', {
+          paymentIntentId: paymentIntent.id,
+        });
+      }
+      return;
+    }
+
+    logger.info('Processing payment_intent.succeeded', {
+      paymentIntentId: paymentIntent.id,
+      productId: product_id,
+      priceId: price_id,
+      developerId: developer_id,
+    });
+
+    let customerEmail = paymentIntent.receipt_email;
+    const stripeCustomerId = typeof paymentIntent.customer === 'string'
+      ? paymentIntent.customer
+      : paymentIntent.customer?.id;
+
+    if (!customerEmail && !stripeCustomerId) {
+      logger.warn('Skipping entitlement grant due to missing customer info', {
+        paymentIntentId: paymentIntent.id,
+      });
+      return;
+    }
+
+    // Email がない場合は Stripe から取得を試みる
+    if (stripeCustomerId && !customerEmail) {
+      try {
+        const stripe = await this.getStripeClientForDeveloper(developer_id);
+        // findOrCreateCustomer は email 必須だが、Stripe SDK で直接取得できるか？
+        // StripeClient に getCustomer はないが rawStripe がある
+        const customer = await stripe.rawStripe.customers.retrieve(stripeCustomerId);
+        if (!customer.deleted && customer.email) {
+          customerEmail = customer.email;
+        }
+      } catch (err) {
+        logger.warn('Failed to retrieve customer email from Stripe', { error: err });
+      }
+    }
+
+    if (!customerEmail) {
+      logger.error('Cannot grant entitlement: Missing customer email', {
+        paymentIntentId: paymentIntent.id,
+        stripeCustomerId,
+      });
+      return;
+    }
+
+    const email = customerEmail;
+
+    // 顧客を検索/作成
+    const { customer } = await this.customerRepo.findOrCreate({
+      developerId: developer_id,
+      stripeCustomerId: stripeCustomerId || undefined,
+      email: email,
+    });
+
+    // Entitlement を付与
+    await this.entitlementSvc.grantEntitlement({
+      customerId: customer.id,
+      productId: product_id,
+      purchaseIntentId: paymentIntent.metadata.purchase_intent_id || `pi_${paymentIntent.id}`,
+      paymentId: paymentIntent.id,
+      expiresAt: null, // 一回払いは無期限（または Price.interval に基づくロジックを追加可能）
+    });
+
+    logger.info('Entitlement granted via PaymentIntent', {
+      paymentIntentId: paymentIntent.id,
+      customerId: customer.id,
+      productId: product_id,
+    });
   }
 
   /**

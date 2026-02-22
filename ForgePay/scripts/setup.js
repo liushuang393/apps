@@ -293,6 +293,7 @@ async function createEnvFile() {
   if (fs.existsSync(ENV_EXAMPLE_PATH)) {
     envContent = fs.readFileSync(ENV_EXAMPLE_PATH, 'utf8');
     envContent = envContent
+      .replace(/^DATABASE_URL=.*$/m, `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/forgepaybridge`)
       .replace(/^STRIPE_TEST_SECRET_KEY=.*$/m, `STRIPE_TEST_SECRET_KEY=${stripeSecretKey}`)
       .replace(/^STRIPE_TEST_PUBLISHABLE_KEY=.*$/m, `STRIPE_TEST_PUBLISHABLE_KEY=${stripePublishableKey}`)
       .replace(/^STRIPE_TEST_WEBHOOK_SECRET=.*$/m, `STRIPE_TEST_WEBHOOK_SECRET=${stripeWebhookSecret}`)

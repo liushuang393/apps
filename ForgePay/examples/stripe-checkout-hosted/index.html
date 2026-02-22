@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ForgePay — 方案1: Stripe Checkout (Hosted)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #252836;
+      --border: #2e3347;
+      --accent: #635bff;
+      --accent-hover: #7b74ff;
+      --text: #e8eaf0;
+      --text-muted: #8b90a8;
+      --success: #30d158;
+      --error: #ff453a;
+      --radius: 12px;
+      --font: 'Inter', system-ui, sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.4);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(99,91,255,.15);
+      color: var(--accent);
+      border: 1px solid rgba(99,91,255,.3);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 32px; line-height: 1.6; }
+
+    .product-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .product-name { font-weight: 600; font-size: 16px; margin-bottom: 4px; }
+    .product-price { color: var(--accent); font-size: 28px; font-weight: 700; }
+    .product-price span { font-size: 14px; color: var(--text-muted); font-weight: 400; }
+
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
+
+    input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color .2s;
+    }
+    input:focus { border-color: var(--accent); }
+    input::placeholder { color: var(--text-muted); }
+
+    button {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+      margin-top: 8px;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:active { transform: scale(.98); }
+    button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    .info-box {
+      background: rgba(99,91,255,.08);
+      border: 1px solid rgba(99,91,255,.2);
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+    .info-box strong { color: var(--text); }
+
+    .flow-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .step-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .status { margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 14px; display: none; }
+    .status.success { background: rgba(48,209,88,.1); border: 1px solid rgba(48,209,88,.3); color: var(--success); display: block; }
+    .status.error { background: rgba(255,69,58,.1); border: 1px solid rgba(255,69,58,.3); color: var(--error); display: block; }
+    .status.loading { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); display: block; }
+
+    .config-note {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .config-note code {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: 'Fira Code', monospace;
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">⚡ 方案1</div>
+    <h1>Stripe Checkout</h1>
+    <p class="subtitle">
+      Stripe がホストする決済ページを使用。カード情報はサーバーを通過しない。
+      最も簡単で安全な実装方式。
+    </p>
+
+    <div class="flow-steps">
+      <div class="step"><div class="step-num">1</div>商品・価格を選択してメールを入力</div>
+      <div class="step"><div class="step-num">2</div>バックエンドが Checkout Session を作成</div>
+      <div class="step"><div class="step-num">3</div>Stripe ホスト画面へリダイレクト</div>
+      <div class="step"><div class="step-num">4</div>Webhook で Entitlement を自動付与</div>
+    </div>
+
+    <div class="product-box">
+      <div class="product-name" id="productName">プロプラン</div>
+      <div class="product-price">¥2,980<span>/月</span></div>
+    </div>
+
+    <div class="field">
+      <label for="email">メールアドレス（任意）</label>
+      <input type="email" id="email" placeholder="you@example.com" />
+    </div>
+
+    <div class="field">
+      <label for="productId">Product ID</label>
+      <input type="text" id="productId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+    </div>
+
+    <div class="field">
+      <label for="priceId">Price ID</label>
+      <input type="text" id="priceId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+    </div>
+
+    <div class="info-box">
+      <strong>セキュリティ:</strong> カード情報は Stripe が管理。
+      このサーバーはカード番号を一切受け取らない（PCI SAQ A 準拠）。
+    </div>
+
+    <button id="checkoutBtn" onclick="startCheckout()">Stripe Checkout で支払う →</button>
+
+    <div id="status" class="status"></div>
+
+    <div class="config-note">
+      有効化: <code>PAYMENT_MODE=checkout</code> を .env に設定
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // 設定（本番環境では環境変数から注入）
+    // ============================================================
+    const CONFIG = {
+      apiBase: 'http://localhost:3000/api/v1',
+      apiKey: 'YOUR_API_KEY',           // X-API-Key ヘッダー
+      successUrl: window.location.origin + '/success.html',
+      cancelUrl: window.location.href,
+    };
+
+    function showStatus(type, msg) {
+      const el = document.getElementById('status');
+      el.className = 'status ' + type;
+      el.textContent = msg;
+    }
+
+    async function startCheckout() {
+      const email = document.getElementById('email').value.trim();
+      const productId = document.getElementById('productId').value.trim();
+      const priceId = document.getElementById('priceId').value.trim();
+
+      if (!productId || !priceId) {
+        showStatus('error', 'Product ID と Price ID を入力してください');
+        return;
+      }
+
+      const btn = document.getElementById('checkoutBtn');
+      btn.disabled = true;
+      showStatus('loading', 'セッションを作成中...');
+
+      try {
+        const body = {
+          product_id: productId,
+          price_id: priceId,
+          purchase_intent_id: 'demo_' + Date.now(),
+          success_url: CONFIG.successUrl,
+          cancel_url: CONFIG.cancelUrl,
+          ...(email ? { customer_email: email } : {}),
+        };
+
+        const res = await fetch(`${CONFIG.apiBase}/checkout/sessions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': CONFIG.apiKey,
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error?.message || 'セッション作成失敗');
+        }
+
+        const data = await res.json();
+        showStatus('success', 'リダイレクト中...');
+
+        // Stripe Checkout ページへリダイレクト
+        window.location.href = data.checkout_url;
+      } catch (err) {
+        showStatus('error', err.message);
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

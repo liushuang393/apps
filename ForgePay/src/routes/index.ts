@@ -5,29 +5,33 @@ import webhookRoutes from './webhooks';
 import adminRoutes from './admin';
 import onboardingRoutes from './onboarding';
 import quickpayRoutes from './quickpay';
+import paymentIntentRoutes from './payment-intents';
+import subscriptionRoutes from './subscriptions';
 
 const router = Router();
 
 /**
- * API ルート（薄いレイヤー）
+ * API ルート
  *
- * OpenAI 固有ロジックのみ:
+ * 方案1 (Stripe Checkout):
  * - /checkout     — purchase_intent_id <-> Stripe Session マッピング
+ *
+ * 方案2 (Stripe Elements):
+ * - /payment-intents — PaymentIntent 作成・ステータス確認
+ *
+ * 方案3 (PaymentIntent API):
+ * - /subscriptions   — サブスクリプション CRUD（SetupIntent / 作成 / 更新 / キャンセル）
+ *
+ * 共通:
  * - /entitlements — Entitlement 状態管理 / Unlock Token 検証
  * - /webhooks     — Stripe Webhook 受信（冪等性付き）
  * - /admin        — 商品・価格・顧客・監査ログ管理
  * - /onboarding   — 開発者登録・APIキー管理
- *
- * 削除済み（Stripe に委譲）:
- * - /currencies   → Stripe が自動処理
- * - /coupons      → Stripe Coupon / Promotion Code
- * - /invoices     → Stripe Invoicing
- * - /legal        → 外部法的テンプレートサービス
- * - /gdpr         → 外部コンプライアンスツール
- * - /portal       → Stripe Customer Portal
  */
 
 router.use('/checkout', checkoutRoutes);
+router.use('/payment-intents', paymentIntentRoutes);
+router.use('/subscriptions', subscriptionRoutes);
 router.use('/entitlements', entitlementRoutes);
 router.use('/webhooks', webhookRoutes);
 router.use('/admin', adminRoutes);
@@ -36,3 +40,4 @@ router.use('/onboarding', onboardingRoutes);
 router.use('/quickpay', quickpayRoutes);
 
 export default router;
+

@@ -5,7 +5,7 @@ import { logger } from '../utils/logger';
 /**
  * サポートする決済方法の型定義
  */
-export type PaymentMethodType = 
+export type PaymentMethodType =
   | 'card'
   | 'konbini'         // 日本のコンビニ決済
   | 'customer_balance' // 銀行振込
@@ -102,6 +102,47 @@ export interface CreateRefundParams {
  * 
  * Requirements: 1.1, 1.4, 8.3
  */
+/**
+ * PaymentIntent 作成パラメータ（方案2: Stripe Elements 用）
+ */
+export interface CreatePaymentIntentParams {
+  amount: number;
+  currency: string;
+  customerId?: string;
+  receiptEmail?: string;
+  metadata?: Record<string, string>;
+  /** 自動決済方法（Elements では true 推奨） */
+  automaticPaymentMethods?: boolean;
+}
+
+/**
+ * SetupIntent 作成パラメータ（方案3: カード登録のみ）
+ */
+export interface CreateSetupIntentParams {
+  customerId: string;
+  metadata?: Record<string, string>;
+}
+
+/**
+ * Subscription 作成パラメータ（方案3: PaymentIntent API）
+ */
+export interface CreateSubscriptionParams {
+  customerId: string;
+  priceId: string;
+  paymentMethodId?: string;
+  trialPeriodDays?: number;
+  metadata?: Record<string, string>;
+}
+
+/**
+ * Subscription 更新パラメータ（方案3: アップグレード/ダウングレード）
+ */
+export interface UpdateSubscriptionParams {
+  newPriceId: string;
+  /** 日割り計算方法 */
+  prorationBehavior?: 'create_prorations' | 'none' | 'always_invoice';
+}
+
 export class StripeClient {
   private stripe: Stripe;
 
@@ -112,6 +153,13 @@ export class StripeClient {
       maxNetworkRetries: 3,
       timeout: 80000,
     });
+  }
+
+  /**
+   * 生の Stripe インスタンスを返す（高度な操作用）
+   */
+  get rawStripe(): Stripe {
+    return this.stripe;
   }
 
   /**
@@ -292,7 +340,7 @@ export class StripeClient {
   ): Promise<Stripe.Product> {
     try {
       const updateParams: Stripe.ProductUpdateParams = {};
-      
+
       if (params.name !== undefined) updateParams.name = params.name;
       if (params.description !== undefined) updateParams.description = params.description;
       if (params.active !== undefined) updateParams.active = params.active;
@@ -702,11 +750,157 @@ export class StripeClient {
   }
 
   /**
+   * Create a PaymentIntent（方案2: Stripe Elements 用）
+   *
+   * @param params - PaymentIntent parameters
+   * @returns Created PaymentIntent
+   */
+  async createPaymentIntent(
+    params: CreatePaymentIntentParams
+  ): Promise<Stripe.PaymentIntent> {
+    try {
+      const intentParams: Stripe.PaymentIntentCreateParams = {
+        amount: params.amount,
+        currency: params.currency.toLowerCase(),
+        metadata: params.metadata,
+        ...(params.customerId ? { customer: params.customerId } : {}),
+        ...(params.receiptEmail ? { receipt_email: params.receiptEmail } : {}),
+      };
+
+      if (params.automaticPaymentMethods !== false) {
+        intentParams.automatic_payment_methods = { enabled: true };
+      }
+
+      const paymentIntent = await this.stripe.paymentIntents.create(intentParams);
+
+      logger.info('PaymentIntent 作成', {
+        paymentIntentId: paymentIntent.id,
+        amount: paymentIntent.amount,
+        currency: paymentIntent.currency,
+      });
+
+      return paymentIntent;
+    } catch (error) {
+      logger.error('PaymentIntent 作成エラー', { error, params });
+      throw this.handleStripeError(error);
+    }
+  }
+
+  /**
+   * Create a SetupIntent（方案3: カード登録のみ、課金なし）
+   *
+   * @param params - SetupIntent parameters
+   * @returns Created SetupIntent
+   */
+  async createSetupIntent(
+    params: CreateSetupIntentParams
+  ): Promise<Stripe.SetupIntent> {
+    try {
+      const setupIntent = await this.stripe.setupIntents.create({
+        customer: params.customerId,
+        automatic_payment_methods: { enabled: true },
+        metadata: params.metadata,
+      });
+
+      logger.info('SetupIntent 作成', {
+        setupIntentId: setupIntent.id,
+        customerId: params.customerId,
+      });
+
+      return setupIntent;
+    } catch (error) {
+      logger.error('SetupIntent 作成エラー', { error, params });
+      throw this.handleStripeError(error);
+    }
+  }
+
+  /**
+   * Create a Subscription（方案3: サブスクリプション作成）
+   *
+   * @param params - Subscription parameters
+   * @returns Created Subscription
+   */
+  async createSubscription(
+    params: CreateSubscriptionParams
+  ): Promise<Stripe.Subscription> {
+    try {
+      const subParams: Stripe.SubscriptionCreateParams = {
+        customer: params.customerId,
+        items: [{ price: params.priceId }],
+        payment_behavior: 'default_incomplete',
+        payment_settings: { save_default_payment_method: 'on_subscription' },
+        expand: ['latest_invoice.payment_intent'],
+        metadata: params.metadata,
+      };
+
+      if (params.paymentMethodId) {
+        subParams.default_payment_method = params.paymentMethodId;
+      }
+
+      if (params.trialPeriodDays) {
+        subParams.trial_period_days = params.trialPeriodDays;
+      }
+
+      const subscription = await this.stripe.subscriptions.create(subParams);
+
+      logger.info('Subscription 作成', {
+        subscriptionId: subscription.id,
+        customerId: params.customerId,
+        priceId: params.priceId,
+      });
+
+      return subscription;
+    } catch (error) {
+      logger.error('Subscription 作成エラー', { error, params });
+      throw this.handleStripeError(error);
+    }
+  }
+
+  /**
+   * Update a Subscription（方案3: アップグレード/ダウングレード）
+   *
+   * @param subscriptionId - Stripe subscription ID
+   * @param params - Update parameters
+   * @returns Updated Subscription
+   */
+  async updateSubscription(
+    subscriptionId: string,
+    params: UpdateSubscriptionParams
+  ): Promise<Stripe.Subscription> {
+    try {
+      // 現在のサブスクリプションを取得してアイテムIDを確認
+      const current = await this.stripe.subscriptions.retrieve(subscriptionId);
+      const itemId = current.items.data[0]?.id;
+
+      if (!itemId) {
+        throw new Error('Subscription has no items');
+      }
+
+      const subscription = await this.stripe.subscriptions.update(subscriptionId, {
+        items: [{ id: itemId, price: params.newPriceId }],
+        proration_behavior: params.prorationBehavior || 'create_prorations',
+      });
+
+      logger.info('Subscription 更新', {
+        subscriptionId: subscription.id,
+        newPriceId: params.newPriceId,
+        prorationBehavior: params.prorationBehavior,
+      });
+
+      return subscription;
+    } catch (error) {
+      logger.error('Subscription 更新エラー', { error, subscriptionId, params });
+      throw this.handleStripeError(error);
+    }
+  }
+
+  /**
    * Handle Stripe API errors
    * 
    * @param error - Error object
    * @returns Formatted error
    */
+
   private handleStripeError(error: unknown): Error {
     if (error instanceof Stripe.errors.StripeCardError) {
       return new Error(`Card error: ${error.message}`);

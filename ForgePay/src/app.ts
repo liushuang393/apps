@@ -70,6 +70,17 @@ app.get('/health', (_req: Request, res: Response) => {
   });
 });
 
+// API ドキュメント（開発環境のみ）
+// 本番環境では /docs は 404 になり、API 構造が外部に公開されない
+if (config.app.env !== 'production') {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const swaggerUi = require('swagger-ui-express') as typeof import('swagger-ui-express');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { swaggerSpec, swaggerOptions } = require('./config/swagger') as typeof import('./config/swagger');
+  app.use('/docs', swaggerUi.serve);
+  app.get('/docs', swaggerUi.setup(swaggerSpec, swaggerOptions));
+}
+
 // レート制限を API ルートに適用
 app.use('/api/v1', apiRateLimiter);
 

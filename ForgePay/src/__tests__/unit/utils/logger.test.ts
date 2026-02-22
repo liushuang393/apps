@@ -82,7 +82,7 @@ describe('Logger Stream', () => {
 describe('Logger - Property-Based Tests', () => {
   it('should handle arbitrary string messages without throwing', () => {
     fc.assert(
-      fc.property(fc.string(), (message) => {
+      fc.property(fc.string(), (message: string) => {
         expect(() => logger.info(message)).not.toThrow();
       })
     );
@@ -90,7 +90,7 @@ describe('Logger - Property-Based Tests', () => {
 
   it('should handle arbitrary objects in metadata without throwing', () => {
     fc.assert(
-      fc.property(fc.string(), fc.object(), (message, metadata) => {
+      fc.property(fc.string(), fc.object(), (message: string, metadata: Record<string, unknown>) => {
         expect(() => logger.info(message, metadata)).not.toThrow();
       })
     );
@@ -98,13 +98,13 @@ describe('Logger - Property-Based Tests', () => {
 
   it('should handle stream write with arbitrary strings', () => {
     const httpSpy = jest.spyOn(logger, 'http').mockImplementation();
-    
+
     fc.assert(
-      fc.property(fc.string(), (message) => {
+      fc.property(fc.string(), (message: string) => {
         expect(() => stream.write(message)).not.toThrow();
       })
     );
-    
+
     httpSpy.mockRestore();
   });
 });
