@@ -420,7 +420,7 @@ if not GEMINI_API_KEY:
 
 ```python
 # backend/app/config.py
-cors_origins: list[str] = ["http://localhost:5173"]
+cors_origins: list[str] = ["http://localhost:5273"]
 
 # 本番環境では明示的に許可するオリジンのみ設定
 ```
@@ -517,7 +517,7 @@ npx playwright test
 ### 2. API ドキュメント
 
 - FastAPI自動生成（Swagger UI）
-- アクセス: `http://localhost:8000/docs`
+- アクセス: `http://localhost:8090/docs`
 
 ### 3. コードコメント
 

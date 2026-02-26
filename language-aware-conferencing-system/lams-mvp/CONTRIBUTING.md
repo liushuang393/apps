@@ -56,8 +56,8 @@ docker compose up -d --build
 docker compose exec backend alembic upgrade head
 
 # 5. 動作確認
-# フロントエンド: http://localhost:5173
-# バックエンド: http://localhost:8000/docs
+# フロントエンド: http://localhost:5273
+# バックエンド: http://localhost:8090/docs
 ```
 
 詳細は [README.md](./README.md) を参照してください。

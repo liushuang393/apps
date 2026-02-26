@@ -175,23 +175,30 @@ class Settings(BaseSettings):
 
     # ===========================================
     # CORS設定
-    # 環境変数 HOST_IP で自動設定、または CORS_ORIGINS で直接指定
+    # ポート変更は .env の FRONTEND_PORT / HOST_IP のみ変更すれば自動反映。
+    # ここにハードコードされたポート番号は存在しない。
     # ===========================================
     host_ip: str = "localhost"
-    cors_origins: list[str] = ["http://localhost:5173"]
+    # 環境変数 FRONTEND_PORT を自動読み込み（ポート変更時は .env のみ変更）
+    frontend_port: int = 5273
+    # 追加許可オリジン（省略可。HOST_IP + frontend_port は get_cors_origins() で自動生成）
+    cors_origins: list[str] = []
 
     def get_cors_origins(self) -> list[str]:
         """
-        CORS許可オリジンを取得
-        HOST_IP から自動生成、または cors_origins を使用
+        CORS許可オリジンを動的生成
+
+        HOST_IP と frontend_port（環境変数 FRONTEND_PORT）から自動生成するため、
+        ポート変更は .env の FRONTEND_PORT を書き換えるだけで反映される。
+        cors_origins フィールドに追加オリジンを指定することも可能。
         """
         origins = set(self.cors_origins)
-        # HOST_IP が設定されていれば追加
+        # HOST_IP が設定されていればLAN向けオリジンを追加
         if self.host_ip and self.host_ip != "localhost":
-            origins.add(f"http://{self.host_ip}:5173")
-        # localhost系は常に含める
-        origins.add("http://localhost:5173")
-        origins.add("http://127.0.0.1:5173")
+            origins.add(f"http://{self.host_ip}:{self.frontend_port}")
+        # localhost系は常に含める（ポート番号は FRONTEND_PORT から取得）
+        origins.add(f"http://localhost:{self.frontend_port}")
+        origins.add(f"http://127.0.0.1:{self.frontend_port}")
         return list(origins)
 
     # ===========================================

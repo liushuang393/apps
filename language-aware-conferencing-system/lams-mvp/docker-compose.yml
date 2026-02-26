@@ -39,7 +39,7 @@ services:
       # 認証
       - JWT_SECRET=${JWT_SECRET:-lams-jwt-secret-change-in-production}
       # AIプロバイダー設定
-      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - AI_PROVIDER=${AI_PROVIDER:-gpt4o_transcribe}
       # Gemini設定
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_BASE_URL=${GEMINI_BASE_URL:-}
@@ -50,8 +50,11 @@ services:
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL:-gpt-realtime-2025-08-28}
       # CORS用ホストIP（前後端で共有）
       - HOST_IP=${HOST_IP:-localhost}
+      # フロントエンドポート（CORS許可オリジン自動生成用。.envのFRONTEND_PORTから注入）
+      - FRONTEND_PORT=${FRONTEND_PORT:-5273}
     ports:
-      - "8000:8000"
+      # ホスト側ポートは .env の BACKEND_PORT で変更可。コンテナ内部は8000固定
+      - "${BACKEND_PORT:-8090}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,6 +63,7 @@ services:
     volumes:
       - ./backend/app:/app/app:ro
       - ./secrets.json:/app/secrets.json:ro
+    # コンテナ内部ポートは8000固定（外部ポートはdocker-compose.ymlのportsで変換）
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   frontend:
@@ -68,13 +72,15 @@ services:
       dockerfile: Dockerfile
       target: development
     environment:
-      # 局域网访问只需设置 HOST_IP（IP地址）
-      # 示例: HOST_IP=192.168.210.2 docker-compose up -d --build frontend backend
-      - VITE_API_URL=http://${HOST_IP:-localhost}:8000
-      - VITE_WS_URL=ws://${HOST_IP:-localhost}:8000
+      # LAN公開: .envのHOST_IPを設定するだけで自動反映
+      # BACKEND_PORTも.envで変更すればVITE_API_URL/WS_URLに自動反映
+      - VITE_API_URL=http://${HOST_IP:-localhost}:${BACKEND_PORT:-8090}
+      - VITE_WS_URL=ws://${HOST_IP:-localhost}:${BACKEND_PORT:-8090}
+      # コンテナ内部ポートは5173固定（外部ポートはdocker-compose.ymlのportsで変換）
       - VITE_PORT=5173
     ports:
-      - "5173:5173"
+      # ホスト側ポートは .env の FRONTEND_PORT で変更可。コンテナ内部は5173固定
+      - "${FRONTEND_PORT:-5273}:5173"
     volumes:
       - ./frontend/src:/app/src:ro
       - ./frontend/index.html:/app/index.html:ro
