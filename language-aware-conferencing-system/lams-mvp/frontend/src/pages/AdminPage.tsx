@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { adminApi, type AdminUser, type SystemStats } from '../api/client';
+import { adminApi, ApiError, type AdminUser, type SystemStats } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
@@ -41,18 +41,19 @@ export function AdminPage() {
       setUsers(usersData);
       setStats(statsData);
     } catch (err) {
-      if (err instanceof Error) {
-        if (err.message.includes('401')) {
-          logout();
-          navigate('/login');
-          return;
-        }
-        if (err.message.includes('403')) {
-          setError('管理者権限が必要です');
-          return;
-        }
-        setError(err.message);
+      // 認証エラー（トークン期限切れ等）: ログアウトしてログイン画面へ
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        navigate('/login');
+        return;
       }
+      // 権限エラー: 管理者専用ページのため適切なメッセージを表示
+      if (err instanceof ApiError && err.status === 403) {
+        setError('管理者権限が必要です');
+        return;
+      }
+      // その他のエラー: 汎用メッセージを表示（内部エラー詳細は露出しない）
+      setError('データ読み込みに失敗しました');
     } finally {
       setLoading(false);
     }

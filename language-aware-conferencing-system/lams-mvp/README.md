@@ -759,10 +759,10 @@ WSLで実行：
 
 ```bash
 # WindowsのLAN IPを指定して起動
-HOST_IP=192.168.166.95 docker compose up -d --build frontend backend
+HOST_IP=192.168.164.38 docker compose up -d --build frontend backend
 
 # または全サービス起動
-HOST_IP=192.168.210.2 docker compose up -d --build
+HOST_IP=192.168.164.38 docker compose up -d --build
 ```
 
 ### アクセス方法

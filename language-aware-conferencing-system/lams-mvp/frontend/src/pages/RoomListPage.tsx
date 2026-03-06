@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { roomApi } from '../api/client';
+import { roomApi, ApiError } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { Room, SupportedLanguage, AudioMode } from '../types';
 
@@ -83,14 +83,14 @@ export function RoomListPage() {
       const res = await roomApi.list();
       setRooms(res.rooms || []); // 空配列の場合も正常に処理
     } catch (err) {
-      // 認証エラーの場合はログインページへ
-      if (err instanceof Error && err.message.includes('401')) {
+      // 認証エラー（トークン期限切れ等）: ログアウトしてログイン画面へ
+      if (err instanceof ApiError && err.status === 401) {
         logout();
         navigate('/login');
         return;
       }
-      // 404エラー(会議室が存在しない)の場合は空配列を設定してエラー表示しない
-      if (err instanceof Error && err.message.includes('404')) {
+      // 404エラー（会議室が存在しない）: 空配列を設定してエラー表示しない
+      if (err instanceof ApiError && err.status === 404) {
         setRooms([]);
         return;
       }

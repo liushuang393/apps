@@ -62,8 +62,12 @@ function convertUser(u: UserApiResponse): User {
   };
 }
 
-/** APIエラー */
-class ApiError extends Error {
+/**
+ * APIエラー
+ * status: HTTPステータスコード（401/403/404等）
+ * message: バックエンドからの詳細メッセージ
+ */
+export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
     this.name = 'ApiError';

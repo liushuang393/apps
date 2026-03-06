@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { roomApi, type SubtitleRecord, type TranscriptData } from '../api/client';
+import { roomApi, ApiError, type SubtitleRecord, type TranscriptData } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
@@ -34,7 +34,8 @@ export function TranscriptPage() {
       const data = await roomApi.getTranscript(roomId, selectedLang || undefined);
       setTranscript(data);
     } catch (err) {
-      if (err instanceof Error && err.message.includes('401')) {
+      // 認証エラー（トークン期限切れ等）: ログアウトしてログイン画面へ
+      if (err instanceof ApiError && err.status === 401) {
         logout();
         navigate('/login');
         return;
