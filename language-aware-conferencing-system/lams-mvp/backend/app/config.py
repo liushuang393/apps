@@ -131,8 +131,9 @@ class Settings(BaseSettings):
     openai_transcribe_model: str = "gpt-4o-transcribe"
 
     # GPT-Realtime S2S 設定（音声直接翻訳、WebSocket API）
-    # 最新モデル: gpt-realtime, gpt-realtime-mini, gpt-4o-realtime-preview-2025-06-03
-    openai_realtime_model: str = "gpt-realtime"
+    # 最新モデル: gpt-realtime-1.5（推奨）, gpt-realtime, gpt-realtime-mini
+    # gpt-realtime-1.5: +7%命令追従、+10%英数字精度、多言語対応向上
+    openai_realtime_model: str = "gpt-realtime-1.5"
 
     # テキスト翻訳用モデル
     openai_translate_model: str = "gpt-4o-mini"
