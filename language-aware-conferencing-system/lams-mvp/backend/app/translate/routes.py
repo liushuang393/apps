@@ -17,10 +17,14 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
+from app.ai_pipeline.providers.correction import (
+    CorrectionRequest,
+    get_correction_provider,
+)
 from app.auth.dependencies import get_current_user
 from app.config import settings
 from app.db.models import User
-from app.translate import subtitle_cache
+from app.translate import glossary, subtitle_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -257,6 +261,12 @@ async def _call_openai_translate(
             context_str += f'{i}. "{item["src"]}" → "{item["tgt"]}"\n'
         context_str += "\n"
 
+    # ★用語集ヒントを追加（指定訳の強制／翻訳禁止語の保持）
+    # 取得失敗時は空文字へフォールバックし、既存翻訳を壊さない
+    glossary_hint = await glossary.build_hint_for_text(
+        text, source_language, target_language
+    )
+
     try:
         # ★★★ 強化された翻訳プロンプト（AI乱話防止）★★★
         response = await client.chat.completions.create(
@@ -278,6 +288,8 @@ async def _call_openai_translate(
                         "- Keep technical terms and proper nouns intact\n"
                         f"{lang_specific_hints}"
                         "- Maintain consistency with previous translations\n"
+                        "- Strictly follow the glossary below when present\n"
+                        f"{glossary_hint}"
                         f"{context_str}\n"
                         "FORBIDDEN: Any response that is not a direct translation."
                     ),
@@ -295,6 +307,16 @@ async def _call_openai_translate(
             logger.warning(f"[Translate] 翻訳結果が空: {text[:30]}...")
             return "[翻訳失敗]"
 
+        # ★LLM 補正（任意・既定OFF）。失敗時は暫定訳を維持し既存挙動を壊さない
+        translated = await _maybe_correct_translation(
+            text,
+            translated,
+            source_language,
+            target_language,
+            glossary_hint,
+            context_str,
+        )
+
         logger.info(f"[Translate] 翻訳完了: '{text[:20]}...' -> '{translated[:20]}...'")
         return translated
 
@@ -304,6 +326,41 @@ async def _call_openai_translate(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"翻訳エラー: {e!s}",
         )
+
+
+async def _maybe_correct_translation(
+    source_text: str,
+    translated_text: str,
+    source_language: str,
+    target_language: str,
+    glossary_hint: str,
+    context_str: str,
+) -> str:
+    """
+    LLM 補正を任意適用する（改善.md 11章）。
+
+    settings.llm_correction_provider が "off"（既定）の場合は get_correction_provider
+    が None を返すため、補正は一切行われず暫定訳をそのまま返す（後方互換）。
+    補正中に例外が発生しても暫定訳へフォールバックし、翻訳フローを止めない。
+    """
+    provider = get_correction_provider()
+    if provider is None:
+        return translated_text
+    try:
+        result = await provider.correct_translation(
+            CorrectionRequest(
+                source_text=source_text,
+                translated_text=translated_text,
+                source_language=source_language,
+                target_language=target_language,
+                glossary_hint=glossary_hint,
+                context=context_str,
+            )
+        )
+        return result.corrected_text or translated_text
+    except Exception as e:
+        logger.warning(f"[Translate] LLM補正をスキップし暫定訳を使用: {e}")
+        return translated_text
 
 
 async def translate_text_simple(

@@ -7,7 +7,17 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -218,3 +228,170 @@ class SystemConfig(Base):
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
     updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class GlossaryTerm(Base):
+    """
+    用語集（Glossary）モデル
+
+    目的:
+        Mode B（ASR→MT+用語集→字幕）の精度の核。企業ごとの固有名詞・専門用語・
+        翻訳禁止語を登録し、翻訳パイプラインで指定訳を強制する。
+    注意点:
+        - provider / transport 非依存（翻訳エンジンの種類に関わらず適用）。
+        - tenant_id は将来のマルチテナント拡張用。None はグローバル共通用語を表す。
+        - do_not_translate が True の場合 target_term は未使用（原語を保持）。
+    """
+
+    __tablename__ = "glossary_term"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+
+    # マルチテナント拡張用（None=グローバル共通）
+    tenant_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+
+    # 言語ペア（ja/en/zh/vi 等。region 付き ja-JP も許容し基底言語で照合）
+    source_language: Mapped[str] = mapped_column(String(10))
+    target_language: Mapped[str] = mapped_column(String(10))
+
+    # 用語本体
+    source_term: Mapped[str] = mapped_column(String(255), index=True)
+    target_term: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # 用語種別（business / person / product 等。分析・運用向けの分類）
+    term_type: Mapped[str] = mapped_column(String(30), default="general")
+
+    # 適用優先度（大きいほど優先）
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+
+    # 翻訳禁止語フラグ（True の場合は原語を保持）
+    do_not_translate: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # 有効/無効（無効化しても履歴は残す）
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __table_args__ = (
+        # 言語ペア＋有効フラグでの絞り込みを高速化（翻訳時のホットパス）
+        Index(
+            "ix_glossary_lookup",
+            "source_language",
+            "target_language",
+            "enabled",
+        ),
+    )
+
+
+class TranscriptSegment(Base):
+    """
+    文字起こしセグメント（改善.md 13.3 transcript_segment）。
+
+    目的:
+        Mode B（ASR→MT+用語集→字幕）の正式記録基盤。ASR の発話単位を
+        provider / confidence / is_final / 時刻オフセット付きで保存し、議事録・
+        検索・要約の一次ソースとする。
+    注意点:
+        - 既存 Subtitle（翻訳をJSONで保持する軽量字幕）とは別表で additive 追加。
+          Subtitle を壊さず、richer なメタデータが必要な Mode B 用途を担う。
+        - 翻訳は TranslationSegment に正規化して 1:N で保持する。
+    """
+
+    __tablename__ = "transcript_segment"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), index=True)
+    # 会議回（meeting）。spec の meeting_id 相当を既存 MeetingSession に対応付ける
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("meeting_sessions.id"), index=True, nullable=True
+    )
+    speaker_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+
+    source_language: Mapped[str] = mapped_column(String(10))
+
+    # 発話の時刻オフセット（ミリ秒。ストリーミング ASR の区間情報）
+    start_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    text: Mapped[str] = mapped_column(Text)
+
+    # ASR 信頼度（0.0-1.0）。低信頼度は字幕で注意表示に使う
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # partial / final の区別（partial は後続 final で上書きされ得る）
+    is_final: Mapped[bool] = mapped_column(Boolean, default=True)
+    # ASR プロバイダー（google, deepgram, gpt4o_transcribe 等）
+    provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+
+    # リレーション
+    room: Mapped["Room"] = relationship()
+    session: Mapped["MeetingSession | None"] = relationship()
+    speaker: Mapped["User"] = relationship()
+    translations: Mapped[list["TranslationSegment"]] = relationship(
+        back_populates="transcript", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        # 会議回ごとの時系列読み出しを高速化（議事録・transcript 取得のホットパス）
+        Index("ix_transcript_session_time", "session_id", "created_at"),
+    )
+
+
+class TranslationSegment(Base):
+    """
+    翻訳セグメント（改善.md 13.4 translation_segment）。
+
+    目的:
+        TranscriptSegment 1件に対する各 target_language の翻訳結果を、MT provider /
+        LLM 補正 provider / 用語集バージョン / 品質スコア付きで正規化保存する。
+    注意点:
+        - transcript_segment_id に対し target_language ごとに 1行（再翻訳は追加行）。
+        - glossary_version は適用した用語集の版を記録し、再現性・監査に用いる。
+    """
+
+    __tablename__ = "translation_segment"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    transcript_segment_id: Mapped[str] = mapped_column(
+        ForeignKey("transcript_segment.id"), index=True
+    )
+
+    source_language: Mapped[str] = mapped_column(String(10))
+    target_language: Mapped[str] = mapped_column(String(10))
+
+    translated_text: Mapped[str] = mapped_column(Text)
+
+    # MT プロバイダー（google, openai 等）
+    provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # 翻訳後補正に用いた LLM（gemini, gpt 等。未補正は None）
+    llm_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # 適用した用語集の版（監査・再現用）
+    glossary_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # 翻訳品質スコア（0.0-1.0。評価・並び替え用）
+    quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    # リレーション
+    transcript: Mapped["TranscriptSegment"] = relationship(
+        back_populates="translations"
+    )
+
+    __table_args__ = (
+        # セグメント＋対象言語での絞り込みを高速化
+        Index(
+            "ix_translation_lookup",
+            "transcript_segment_id",
+            "target_language",
+        ),
+    )

@@ -21,6 +21,12 @@ from app.ai_pipeline.providers.base import (
     APIKeyError,
     TranslationResult,
 )
+from app.ai_pipeline.providers.correction import (
+    CorrectionRequest,
+    CorrectionResult,
+    LLMCorrectionProvider,
+    get_correction_provider,
+)
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -29,8 +35,12 @@ __all__ = [
     "AIProvider",
     "APIKeyError",
     "LANGUAGE_NAMES",
+    "CorrectionRequest",
+    "CorrectionResult",
+    "LLMCorrectionProvider",
     "TranslationResult",
     "get_ai_provider",
+    "get_correction_provider",
 ]
 
 
@@ -78,9 +88,34 @@ def get_ai_provider() -> AIProvider:
         )
         return DeepgramProvider()
 
+    elif provider == "google":
+        # Mode B（Chirp 3 ASR + Cloud Translation）。認証/ライブラリ未整備時は
+        # 起動エラーにせず既存 provider（gpt4o_transcribe）へフォールバックする。
+        from app.ai_pipeline.providers.google import (
+            GoogleProvider,
+            google_runtime_available,
+        )
+
+        if not google_runtime_available():
+            from app.ai_pipeline.providers.gpt4o_transcribe import (
+                GPT4oTranscribeProvider,
+            )
+
+            logger.warning(
+                "[AI Provider] google 指定だが Google Cloud 認証/ライブラリ未整備の"
+                "ため gpt4o_transcribe へフォールバックします"
+            )
+            return GPT4oTranscribeProvider()
+
+        logger.info(
+            f"[AI Provider] Google Chirp 3 を使用 "
+            f"(model={settings.google_speech_model})"
+        )
+        return GoogleProvider()
+
     else:
         # 未知のプロバイダー
-        valid_providers = ["gpt4o_transcribe", "gpt_realtime", "deepgram"]
+        valid_providers = ["gpt4o_transcribe", "gpt_realtime", "deepgram", "google"]
         raise ValueError(
             f"不明なAIプロバイダー: {provider}. 有効な値: {', '.join(valid_providers)}"
         )

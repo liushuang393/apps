@@ -93,6 +93,29 @@ update_env_if_set "AI_PROVIDER"
 update_env_if_set "HOST_IP"
 echo ""
 
+# ===========================================
+# APIキー未設定ガード
+# AI_PROVIDER に必要なキーが無ければ起動を停止する（.env記入/export忘れ防止）
+# ===========================================
+PROVIDER="${AI_PROVIDER:-gpt4o_transcribe}"
+case "$PROVIDER" in
+    deepgram)
+        if [ -z "${DEEPGRAM_API_KEY:-}" ]; then
+            echo -e "${RED}[ERROR] AI_PROVIDER=deepgram ですが DEEPGRAM_API_KEY が未設定です。${NC}"
+            echo -e "${YELLOW}  対処: .env に記入するか 'export DEEPGRAM_API_KEY=...' してください。${NC}"
+            exit 1
+        fi
+        ;;
+    *)
+        # gpt4o_transcribe / gpt_realtime は OpenAI キーが必須
+        if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo -e "${RED}[ERROR] AI_PROVIDER=${PROVIDER} ですが OPENAI_API_KEY が未設定です。${NC}"
+            echo -e "${YELLOW}  対処: .env に記入するか 'export OPENAI_API_KEY=sk-...' してください。${NC}"
+            exit 1
+        fi
+        ;;
+esac
+
 MODE="${1:-local}"
 
 case "$MODE" in

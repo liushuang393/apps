@@ -1,999 +1,338 @@
-
 # LAMS - 言語感知型会議システム
 
-<p align="center">
-  <strong>Language-Aware Meeting System</strong><br>
-  社内多言語コミュニケーションを革新する会議システム
-</p>
+**Language-Aware Meeting System** — 社内多言語会議の認知負荷を軽減するリアルタイム音声翻訳・字幕システム。
 
----
+参加者は「原声」か「翻訳音声」を自由に選択でき、聴いている音声と同じ言語の字幕が表示される。翻訳ツールではなく「言語の壁を意識させない会議体験」を目的とする。
 
-## 🎯 概要
-
-LAMSは**翻訳ツールではありません**。社内の多言語会議における認知負荷を軽減し、言語の壁を意識させないコミュニケーション体験を提供するシステムです。
-
-### ✨ 主な特長
+## 概要
 
 | 特長 | 説明 |
 |------|------|
-| **ユーザー主導の体験** | 各参加者が「原声」か「翻訳音声」を自由に選択 |
-| **認知負荷ゼロ設計** | デフォルトは原声モード。翻訳による違和感なし |
-| **字幕と音声の一致** | 聴いている音声と同じ言語の字幕のみ表示 |
-| **低遅延目標** | 1200ms以下を目標（設定値: `max_latency_ms=1200`）。警告通知・自動フォールバックは今後拡張予定 |
-| **プライバシー重視** | 社内利用に特化、外部流出リスクを最小化 |
-| **自動会議記録** | 全発言を自動的に記録、多言語でエクスポート可能 |
-| **管理者機能** | ユーザー管理、システム統計、RBAC権限制御 |
+| ユーザー主導 | 各参加者が「原声 / 翻訳音声」を自由に選択 |
+| 認知負荷ゼロ | デフォルトは原声モード |
+| 字幕と音声の一致 | 聴いている音声と同じ言語の字幕のみ表示 |
+| 低遅延目標 | 1200ms以下（`max_latency_ms=1200`） |
+| プライバシー重視 | 社内利用前提 |
+| 自動会議記録 | 全発言を記録し言語別エクスポート可能 |
+| 管理者機能 | ユーザー管理・統計・RBAC（admin/moderator/user） |
 
-### 🌍 対応言語
+**対応言語**: 日本語(ja) / 英語(en) / 中国語(zh) / ベトナム語(vi)
 
-- 🇯🇵 日本語 (ja)
-- 🇺🇸 英語 (en)
-- 🇨🇳 中国語 (zh)
-- 🇻🇳 ベトナム語 (vi)
+**AIプロバイダー**:
 
----
-
-## 📋 機能一覧
-
-### コア機能
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    会議室機能                            │
-├─────────────────────────────────────────────────────────┤
-│ ✅ 会議室の作成・参加・退出                              │
-│ ✅ WebSocket ベースの音声通信（MVP: WAV音声セグメント,WebRTC音声将来予定）  │
-│ ✅ 参加者一覧表示                                        │
-│ ✅ アクティブスピーカー検出                              │
-└─────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────┐
-│                  個人設定機能                            │
-├─────────────────────────────────────────────────────────┤
-│ ✅ 音声モード切替（原声 / 翻訳）                         │
-│ ✅ 字幕表示ON/OFF                                        │
-│ ✅ 翻訳先言語の選択                                      │
-│ ✅ 設定のリアルタイム反映                                │
-└─────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────┐
-│                会議ポリシー機能                          │
-├─────────────────────────────────────────────────────────┤
-│ ✅ 許可言語の制限                                        │
-│ ✅ デフォルト音声モードの設定                            │
-│ ✅ モード切替の許可/禁止                                 │
-└─────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────┐
-│                  会議記録機能                            │
-├─────────────────────────────────────────────────────────┤
-│ ✅ 全発言の自動記録                                      │
-│ ✅ 多言語翻訳テキスト保存                                │
-│ ✅ 言語別エクスポート（テキスト形式）                    │
-│ ✅ 発言者・タイムスタンプ記録                            │
-└─────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────┐
-│                  管理者機能                              │
-├─────────────────────────────────────────────────────────┤
-│ ✅ ユーザー一覧・詳細表示                                │
-│ ✅ ユーザーロール管理（admin/moderator/user）            │
-│ ✅ アカウント有効/無効化                                 │
-│ ✅ システム統計ダッシュボード                            │
-└─────────────────────────────────────────────────────────┘
-```
-
-### AI処理機能
-
-| 機能 | 説明 |
-|------|------|
-| 音声認識 (ASR) | リアルタイム音声→テキスト変換 |
-| テキスト翻訳 | 4言語間の高精度翻訳 |
-| 音声合成 (TTS) | 翻訳テキスト→音声変換（オプション） |
-| QoS監視 | 遅延・ジッター監視と自動品質調整 |
+| プロバイダー | 特徴 | 用途 |
+|---|---|---|
+| `gpt4o_transcribe` | GPT-4o-transcribe ASR(300-500ms) + 翻訳 + TTS | 推奨（デフォルト） |
+| `gpt_realtime` | GPT-Realtime S2S(200-400ms, 音声直接翻訳) | 最低遅延 |
+| `deepgram` | Deepgram Nova-3 ASR(<300ms) + 翻訳 + TTS | 高精度ASR |
 
 ---
 
-## 🚀 使用手順
+## アーキテクチャ設計（本番想定）
 
-### 1. ユーザー登録・ログイン
+> 本章は設計仕様書 [`改善.md`](./改善.md)（全20章）を LAMS 実装へマッピングした本番アーキテクチャである。
+> 通信は **WebRTC に統一**、翻訳は **2系統（OpenAI / Google）**、LLM は **2種（GPT / Gemini）** に限定する。
 
-```
-1. アプリにアクセス
-2. メールアドレス、表示名、母語を入力して登録
-3. ログイン後、会議室一覧画面へ
-```
+### 0. 絶対原則：2つの大主線を混ぜない
 
-### 2. 会議への参加
+本システムは以下 **2本の独立した主線（パイプライン）** で構成する。両者はコードパスを共有せず、
+**フォークは Gateway での音声複製のみ**、**収束は Output Manager と DB（provider/mode タグ付け）のみ**とする。
 
-```
-1. 会議室一覧から参加したい会議を選択
-2. または「新規作成」で会議室を作成
-3. 自動的に音声接続が開始
-```
+| 主線 | 方式 | 遅延 | 精度 | 定制能力 | 適合シーン |
+|---|---|---:|---:|---:|---|
+| **主線1（Mode A）** | End-to-End Speech-to-Speech（OpenAI Realtime） | 最低/較低 | 中高 | 較弱 | 実時同伝・軽会議 |
+| **主線2（Mode B）** | ASR → MT + 術語庫 → 字幕（Google Chirp3 + Cloud Translation） | 較低 | 高 | 強 | **MVP 首選**・高精度・正式記録 |
 
-### 3. 個人設定の変更
+- **主線1** は Google ASR / 術語庫 / Cloud Translation を**一切経由しない**。出力は翻訳音声 + transcript delta。
+- **主線2** は翻訳音声を生成しない（字幕・議事録特化）。出力は字幕 + transcript log + 議事録。
+- **Phase 3 ハイブリッド**は「同一マイク音声を Gateway で複製し両主線へ流す」だけで、**パイプライン同士は結合しない**
+  （聞く=OpenAI、読む/残す=Google）。
 
-```
-┌─────────────────────────────────┐
-│ 🎧 音声設定                     │
-│ ┌───────────┬───────────┐      │
-│ │  原声     │  翻訳     │      │
-│ └───────────┴───────────┘      │
-│                                 │
-│ 📝 字幕: [ON] / OFF             │
-│                                 │
-│ 🌐 翻訳先: [日本語 ▼]           │
-└─────────────────────────────────┘
+```text
+                      ┌─ 主線1: OpenAI Realtime S2S ─→ 翻訳音声 + transcript delta
+Mic ─WebRTC→ Gateway ─┤  (Mode Router が選択のみ)
+                      └─ 主線2: Chirp3 → 正規化 → 術語庫 → Cloud Translation → LLM補正 → 字幕/議事録
 ```
 
-**設定の効果:**
+### 1. 全体構成
 
-| 設定 | 聴こえる音声 | 表示される字幕 |
-|------|-------------|---------------|
-| 原声 + 字幕ON | 話者の原音声 | 話者の言語の字幕 |
-| 翻訳 + 字幕ON | 翻訳された音声 | 翻訳された字幕 |
-| 原声 + 字幕OFF | 話者の原音声 | なし |
-| 翻訳 + 字幕OFF | 翻訳された音声 | なし |
-
----
-
-## 🔧 開発者向けドキュメント
-
-### 📖 開発規則
-
-**重要**: コードを書く前に必ず [DEVELOPMENT_RULES.md](./DEVELOPMENT_RULES.md) を確認してください。
-
-- コーディング規約
-- 静的解析・品質管理
-- Git運用規則
-- セキュリティ規則
-- テスト規則
-
-### システムアーキテクチャ
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                        クライアント層                          │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │  React + TypeScript + Zustand                            │ │
-│  │  ・PreferencePanel: 個人設定UI                           │ │
-│  │  ・SubtitleDisplay: 字幕表示                             │ │
-│  │  ・useWebSocket: リアルタイム通信                        │ │
-│  └──────────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────────┘
-                              │
-                              │ WebSocket / REST API
-                              ▼
-┌────────────────────────────────────────────────────────────────┐
-│                        APIゲートウェイ                         │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │  Nginx (リバースプロキシ)                                │ │
-│  │  ・静的ファイル配信                                      │ │
-│  │  ・WebSocket プロキシ                                    │ │
-│  │  ・ロードバランシング                                    │ │
-│  └──────────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────┐
-│                      アプリケーション層                        │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │  FastAPI (Python 非同期フレームワーク)                   │ │
-│  │  ┌────────────┬────────────┬────────────┬─────────────┐ │ │
-│  │  │   Auth     │   Rooms    │ WebSocket  │ AI Pipeline │ │ │
-│  │  │  認証処理   │  会議室管理 │ リアルタイム│  翻訳処理   │ │ │
-│  │  └────────────┴────────────┴────────────┴─────────────┘ │ │
-│  └──────────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-┌──────────────────┐ ┌──────────────┐ ┌──────────────────────┐
-│    PostgreSQL    │ │    Redis     │ │    AI Provider       │
-│  ・ユーザー情報   │ │ ・セッション  │ │ ・GPT-4o-transcribe  │
-│  ・会議室情報     │ │ ・参加者状態  │ │ ・GPT-Realtime       │
-│  ・永続化データ   │ │ ・翻訳キャッシュ│ │ ・Deepgram Nova-3    │
-└──────────────────┘ └──────────────┘ └──────────────────────┘
+```text
+Client (WebRTC)
+  │  Audio Track(uplink) / Remote Audio Track(downlink) / DataChannel(字幕・制御)
+  ▼
+Realtime Gateway（音声複製の唯一のフォーク点）
+  ▼
+Session Orchestrator ─→ Mode Router ─→ Provider Registry
+  ├── 主線1: OpenAIRealtimeS2SProcessor
+  └── 主線2: GoogleAsrMtSubtitleProcessor
+  ▼
+Output Manager（翻訳音声 / 原文字幕 / 翻訳字幕 / transcript / 議事録）
 ```
 
-### 技術スタック詳細
+### 2. クライアント通信方式（WebRTC 統一）
 
-#### フロントエンド
+WebSocket・WebTransport・独自RTCは**正式設計対象外**。ただし WebRTC DataChannel は WebRTC の一部として利用する。
 
-| 技術 | 役割 | 選定理由 |
-|------|------|----------|
-| **React 18** | UIフレームワーク | コンポーネント指向、豊富なエコシステム |
-| **TypeScript** | 型安全性 | 静的型付けによるバグ防止、IDE支援 |
-| **Zustand** | 状態管理 | 軽量、シンプルAPI、React 18対応 |
-| **Vite** | ビルドツール | 高速HMR、ESM native |
-| **React Router** | ルーティング | SPA標準、宣言的ルート定義 |
+| トラック種別 | 用途 |
+|---|---|
+| Audio Track | ユーザー音声 uplink |
+| Remote Audio Track | 翻訳音声 downlink（主線1のみ） |
+| DataChannel | 原文/翻訳字幕・partial/final transcript・mode change・provider status・error/fallback |
+| SRTP / DTLS | 暗号化通信 |
+| ICE / TURN | NAT 越え |
+| Jitter Buffer | 音声再生安定化 |
 
-#### バックエンド
+#### 2.1 メディア・トポロジー（主線ごとに分離）
 
-| 技術 | 役割 | 選定理由 |
-|------|------|----------|
-| **FastAPI** | Webフレームワーク | 非同期対応、自動APIドキュメント、型ヒント |
-| **SQLAlchemy 2.0** | ORM | 非同期対応、型安全、マイグレーション |
-| **Pydantic** | バリデーション | 高速、型ベース、Settings管理 |
-| **python-jose** | JWT認証 | 標準的なトークン認証 |
-| **asyncio** | 非同期処理 | I/O待機時間の最適化 |
+- **主線1（Mode A / OpenAI S2S）**: ブラウザが**ephemeral key で OpenAI Realtime へ直接 WebRTC**接続するのが最低遅延。
+  サーバーは ephemeral token 発行のみを担い、transcript delta を DataChannel 経由でログへミラーする。
+- **主線2（Mode B / Google）**: 音声はサーバー側 ASR に届ける必要があるため、**SFU + サーバー側エージェント**構成。
+  エージェントが各話者トラックを購読 → Opus を PCM へデコード → Chirp3 ストリーミング ASR へ投入する。
 
-#### インフラストラクチャ
+#### 2.2 SFU 選定
 
-| 技術 | 役割 | 選定理由 |
-|------|------|----------|
-| **PostgreSQL** | メインDB | 信頼性、JSON対応、スケーラビリティ |
-| **Redis** | キャッシュ/状態管理 | 低遅延、Pub/Sub対応、セッション管理 |
-| **Nginx** | リバースプロキシ | WebSocket対応、高性能、設定柔軟性 |
-| **Docker** | コンテナ化 | 環境統一、デプロイ容易性 |
+| 選択肢 | 位置づけ | 理由 |
+|---|---|---|
+| **LiveKit（推奨・本番）** | Realtime Gateway / SFU | OSS(Apache-2.0)・自前ホスト/Cloud両対応・Python Agent SDK で server-side 参加が容易・TURN同梱 |
+| **aiortc（移行ブリッジ）** | FastAPI 内 WebRTC peer | 新インフラ不要で既存 backend に同居でき、WS→WebRTC の段階移行に使える。大規模 fan-out には不向き |
 
-#### AIプロバイダー
+> 本番（上線・販売）は **LiveKit SFU** を基盤とし、Phase 2 の検証は **aiortc ブリッジ**で先行する。
 
-| プロバイダー | 特徴 | ユースケース |
-|-------------|------|-------------|
-| **gpt4o_transcribe** | GPT-4o-transcribe (ASR 300-500ms) + GPT-4o-mini翻訳 + TTS | 推奨（デフォルト） |
-| **gpt_realtime** | GPT-Realtime S2S (音声直接翻訳 200-400ms) | 最低遅延が必要な場合 |
-| **deepgram** | Deepgram Nova-3 (ASR <300ms) + GPT-4o-mini翻訳 + TTS | 高精度ASRが必要な場合 |
+#### 2.3 シグナリング・NAT 越え
 
----
+- LiveKit: サーバーが room/identity スコープの access token を発行（既存 JWT と対応付け）、ICE/SDP は LiveKit SDK が処理。
+- OpenAI 直結: サーバーが ephemeral session token を発行し、クライアントが SDP offer/answer を OpenAI と交換。
+- TURN: 本番は **coturn**（または LiveKit 同梱 TURN）+ TLS。STUN はパブリック/自前を併用。
 
-### ローカル環境構築
+#### 2.4 DataChannel イベント ↔ 既存 WS メッセージ対応（移行表）
 
-#### 必要要件
+| DataChannel イベント | 既存 WS メッセージ（`websocket/handler.py`） | 移行方針 |
+|---|---|---|
+| `subtitle` / `subtitle_interim` | 同名（実装済み） | ペイロード互換で DataChannel へ載せ替え |
+| `mode_change` / `provider_status` | （新規） | Mode Router 導入時に追加 |
+| `error` / `fallback` | `error` / `qos_warning` | 名称統一して移行 |
+| 翻訳音声（binary） | WS binary（WAV） | WebRTC Remote Audio Track へ置換 |
 
-```bash
-# 必須
-- Docker & Docker Compose
-- Node.js 20+
-- Python 3.10+
+#### 2.5 既存 WebSocket からの移行戦略（非破壊）
 
-# オプション（ローカル開発用）
-- PostgreSQL 16+
-- Redis 7+
+1. **並存期間**を設ける：WebRTC 経路を追加しつつ、既存 WS 経路を残す（feature flag）。
+2. 制御/字幕（DataChannel）→ 音声トラック の順で段階移行。
+3. 全機能が WebRTC で安定後、WS をレガシーとして縮退。
+
+### 3. モード / Provider 切替
+
+- **Mode Router**：`if` 文の羅列を避け、Session Orchestrator 配下で主線を選択する単一責務。
+- **切替単位は3つに限定**：会議単位 / ユーザー単位（翻訳音声 ON/OFF）/ 言語ペア単位（`language_routes`）。
+- **Provider Registry**：OpenAI系（Realtime + GPT）と Google系（Chirp3 + Cloud Translation + Gemini）の2系統のみ。
+
+### 4. Provider Interface ↔ 既存 `AIProvider` 抽象の対応
+
+`改善.md` 8.3 の4インターフェースを、既存 `app/ai_pipeline/providers/base.py::AIProvider` と整合させる。
+
+| 改善.md Interface | 既存抽象との関係 | 実装方針 |
+|---|---|---|
+| `SpeechToSpeechProvider` | `gpt_realtime` を昇格 | 主線1。WebRTC トラック授受へ拡張 |
+| `ASRProvider` | `AIProvider.transcribe_*` を分離 | 主線2。Chirp3 ストリーミング実装を追加 |
+| `TranslationProvider` | 新規（術語庫連携） | 主線2。Cloud Translation + Glossary/Adaptive |
+| `LLMCorrectionProvider` | 新規 | 補正・議事録。GPT優先 / Gemini fallback |
+
+### 5. 術語庫（Glossary）・精度向上
+
+精度競争力はモデルではなく**企業ごとの用語資産**で決まる（主線2の中核）。適用順序：
+
+```text
+ASR transcript → 人名/会社名補正 → 数字/日付/金額正規化 → 用語候補抽出
+→ Cloud Translation glossary/adaptive → LLM による最終表記統一
 ```
 
-#### 環境変数設定
+`glossary_term`（tenant 単位・source/target・priority・`do_not_translate`・enabled）を新設し、CRUD API と
+翻訳パイプラインの pre/post 処理として統合する。
 
-```bash
-# .env ファイルを作成
-cp .env.example .env
+### 6. LLM 補正
 
-# 必須項目を編集
-DATABASE_URL=postgresql://lams:lams_secret_2024@localhost:5432/lams
-REDIS_URL=redis://localhost:6379/0
-JWT_SECRET=your-secret-key-change-in-production
-
-# AIプロバイダー設定（gpt4o_transcribe, gpt_realtime, deepgram）
-AI_PROVIDER=gpt4o_transcribe
-OPENAI_API_KEY=your-openai-api-key
-# DEEPGRAM_API_KEY=your-deepgram-api-key  # deepgramプロバイダー使用時
-```
-
-####起動方式１ Docker での起動（推奨）
-
-```bash
-# プロジェクトディレクトリに移動
-cd lams-mvp
-
-# コンテナをビルド・起動
-docker compose up --build
-
-
-# バックグラウンド実行
-docker compose up -d --build
-# 局域网访问
-
-# ローカル起動の場合（WSL直接）
-./start-with-keys.sh
-
-# Docker起動の場合
-./start-with-keys.sh docker
-
-# Docker再ビルド起動
-# DB更新の場合
-cd backend
-docker compose exec backend alembic upgrade head
-# 局域网访问
-HOST_IP=192.168.166.95 ./start-with-keys.sh "docker build"
-# プロバイダー選択: gpt4o_transcribe / gpt_realtime / deepgram
-AI_PROVIDER=gpt_realtime HOST_IP=192.168.210.6 ./start-with-keys.sh "docker"
-# HOST_IP=192.168.210.6 docker compose up -d --build frontend backend
-# HOST_IP=192.168.210.7 docker compose up -d --build --force-recreate
-# ログ確認
-docker compose logs -f backend
-```
-
-#### ローカル開発環境
-
-前提：Condaのインストールが必要です。
-
-```bash
-# 1. Conda環境を作成（初回のみ）
-conda create -n aienv python=3.10 -y
-conda activate aienv
-
-# 2. PostgreSQL と Redis を起動
-cd lams-mvp
-docker compose up -d postgres redis
-docker compose ps  # 起動確認
-
-# 3. バックエンド起動
-cd backend
-pip install .  # Python依存ライブラリをインストール
-uvicorn app.main:app --reload --port 8090
-
-# 4. フロントエンド（別ターミナル）
-cd lams-mvp/frontend
-npm install
-npm run dev
-または
-npm run dev -- --host 0.0.0.0
-```
-
-### アクセスURL
-
-| サービス | URL | 説明 |
-|---------|-----|------|
-| フロントエンド | http://localhost:5273 開発サーバー |
-| バックエンドAPI | http://localhost:8090 | FastAPI |
-| API ドキュメント | http://localhost:8090/docs | Swagger UI |
-| 本番（Docker） | http://localhost | Nginx経由 |
-
----
-
-### 📦 データベースマイグレーション
-
-本プロジェクトは **Alembic** を使用してDBスキーマを管理しています。
-
-#### マイグレーション適用
-
-```bash
-# 開発環境（Docker内で実行）
-docker compose exec backend alembic upgrade head
-
-# 本番環境（環境変数でDB接続先を指定）
-DATABASE_URL=postgresql://user:pass@host:5432/dbname alembic upgrade head
-```
-
-#### マイグレーション作成（モデル変更後）
-
-```bash
-# モデル（backend/app/db/models.py）を変更後
-docker compose exec backend alembic revision --autogenerate -m "変更内容の説明"
-
-# 生成されたファイルを確認・編集
-# backend/alembic/versions/xxxx_変更内容の説明.py
-```
-
-#### ロールバック
-
-```bash
-# 1つ前のバージョンに戻す
-docker compose exec backend alembic downgrade -1
-
-# 特定バージョンに戻す
-docker compose exec backend alembic downgrade <revision_id>
-```
-
-#### 状態確認
-
-```bash
-# 現在のバージョン確認
-docker compose exec backend alembic current
-
-# マイグレーション履歴
-docker compose exec backend alembic history
-```
-
----
-スクリプトを作成し、全ての静的解析エラーを修正しました。
-
-### 📁 作成したファイル
-ファイル	用途
-scripts/check.sh	統合チェックスクリプト
-
-📊 チェック項目
-カテゴリ	ツール	内容
-Backend	ruff check	Lint（E/W/F/I/B/C4等）
-ruff format	フォーマット（Black互換）
-py_compile	Python構文チェック
-Frontend	ESLint	Lint + React Hooks ルール
-tsc --noEmit	TypeScript型チェック
-
-🎯 使い方
-cd lams-mvp
-
-# 全チェック（エラー表示のみ）
-./scripts/check.sh
-
-# 全チェック + 自動修正
-./scripts/check.sh --fix
-
-# フォーマットのみ
-./scripts/check.sh --format
-
-# バックエンドのみ
-./scripts/check.sh --backend
-
-# フロントエンドのみ
-./scripts/check.sh --frontend
-
-# ヘルプ
-./scripts/check.sh --help
-
-### ディレクトリ構成
-
-```
-lams-mvp/
-├── backend/
-│   ├── app/
-│   │   ├── admin/          # 管理者モジュール
-│   │   │   └── routes.py        # 管理者APIエンドポイント
-│   │   ├── auth/           # 認証モジュール
-│   │   │   ├── dependencies.py  # FastAPI依存性注入
-│   │   │   ├── jwt_handler.py   # JWTトークン処理
-│   │   │   └── routes.py        # 認証APIエンドポイント
-│   │   ├── db/             # データベース
-│   │   │   ├── database.py      # DB接続管理
-│   │   │   └── models.py        # SQLAlchemyモデル(User, Room, Subtitle)
-│   │   ├── rooms/          # 会議室管理
-│   │   │   ├── manager.py       # Redis状態管理
-│   │   │   └── routes.py        # 会議室・会議記録APIエンドポイント
-│   │   ├── ai_pipeline/    # AI処理
-│   │   │   ├── pipeline.py      # メイン処理パイプライン
-│   │   │   ├── providers.py     # プロバイダー取得ユーティリティ
-│   │   │   ├── qos.py           # 品質監視コントローラー
-│   │   │   └── providers/       # AIプロバイダー実装
-│   │   │       ├── base.py          # 基底クラス・共通定義
-│   │   │       ├── gpt4o_transcribe.py  # GPT-4o-transcribe
-│   │   │       ├── gpt_realtime.py      # GPT-Realtime S2S
-│   │   │       └── deepgram.py          # Deepgram Nova-3
-│   │   ├── audio/          # 音声処理
-│   │   │   └── vad.py           # 音声アクティビティ検出
-│   │   ├── translate/      # 翻訳処理
-│   │   │   ├── routes.py        # 翻訳APIエンドポイント
-│   │   │   └── subtitle_cache.py # 字幕キャッシュ
-│   │   ├── websocket/      # リアルタイム通信
-│   │   │   └── handler.py       # WebSocketハンドラー
-│   │   ├── config.py       # 設定管理
-│   │   └── main.py         # アプリケーションエントリ
-│   ├── alembic/            # DBマイグレーション
-│   ├── Dockerfile
-│   └── pyproject.toml
-├── frontend/
-│   ├── src/
-│   │   ├── api/            # APIクライアント
-│   │   ├── components/     # UIコンポーネント
-│   │   ├── constants/      # 定数定義（言語設定等）
-│   │   ├── hooks/          # カスタムフック（4ファイル）
-│   │   ├── i18n/           # 多言語対応
-│   │   ├── pages/          # ページコンポーネント（10ファイル）
-│   │   ├── store/          # Zustand状態管理
-│   │   ├── types/          # TypeScript型定義
-│   │   └── styles/         # CSS
-│   ├── Dockerfile
-│   └── package.json
-├── nginx/
-│   └── nginx.conf          # リバースプロキシ設定
-├── docker-compose.yml
-└── README.md
-```
-
----
-
-### 処理フロー詳細
-
-#### 翻訳アーキテクチャ（クライアント側翻訳）
-
-**★ 設計思想 ★**
-- 原声モード = 普通の会議と同じ（翻訳ゼロ、最小遅延）
-- 翻訳モード = 母語で聞き、母語の字幕を見る
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        サーバー側                            │
-│  ┌─────────┐    ┌─────────┐    ┌─────────────────────────┐ │
-│  │ 音声VAD │ -> │   ASR   │ -> │  原文＋言語をブロード   │ │
-│  │ 分割    │    │ 識別    │    │  キャスト（全員に1回）  │ │
-│  └─────────┘    └─────────┘    └─────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-        ┌─────────┐     ┌─────────┐     ┌─────────┐
-        │クライアントA │     │クライアントB │     │クライアントC │
-        │原声モード    │     │翻訳→中国語  │     │翻訳→英語    │
-        │   ↓        │     │   ↓        │     │   ↓        │
-        │翻訳なし    │     │POST /api/  │     │POST /api/  │
-        │原文表示    │     │translate   │     │translate   │
-        └─────────┘     └─────────┘     └─────────┘
-```
-
-**★ 翻訳ロジック ★**
-
-| モード | 音声 | 字幕 | 説明 |
-|------|------|------|------|
-| **原声モード** | 原声 | 原文そのまま | 翻訳ゼロ、普通の会議と同じ |
-| **翻訳モード** | S2S翻訳 | 必要なら翻訳 | source_lang ≠ target_lang のみ翻訳 |
-
-**★ メリット ★**
-- サーバー翻訳負荷ゼロ（字幕はクライアント側で翻訳）
-- 言語数制限なし（100人100言語も対応可能）
-- 各クライアントが必要な分だけ翻訳
-- 翻訳キャッシュ（サーバー側Redis + クライアント側メモリ）
-
-#### 音声配信フロー
-
-```
-話者A（日本語で発言）
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    サーバー処理                              │
-│  1. 音声データ受信                                          │
-│  2. ASR: 音声 → テキスト（日本語）                          │
-│  3. 字幕ブロードキャスト: { original_text, source_language } │
-│  4. 参加者ごとに音声を配信                                  │
-│     ┌──────────────────────────────────────────────────┐   │
-│     │ 参加者B: audio_mode=original                      │   │
-│     │ → 原声を送信（字幕翻訳はクライアント側で判断）    │   │
-│     ├──────────────────────────────────────────────────┤   │
-│     │ 参加者C: audio_mode=translated, target=en        │   │
-│     │ → S2S翻訳音声を送信                              │   │
-│     ├──────────────────────────────────────────────────┤   │
-│     │ 参加者D: audio_mode=original, subtitle=off       │   │
-│     │ → 原声のみ送信                                   │   │
-│     └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-#### QoS劣化時のフォールバック（設計 / TODO）
-
-**注意**: 現状、会議中の `qos_warning` 通知や自動モード切替（字幕フォールバック）は未実装です。
-`backend/app/ai_pipeline/qos.py` と遅延上限の設定値（`max_latency_ms=1200`）は存在しますが、
-UI表示・自動フォールバックは今後拡張予定です。
-
-```
-通常時（遅延 < 1200ms）
-┌─────────────────────┐
-│  翻訳音声 + 字幕     │
-└─────────────────────┘
-
-軽度劣化（1200ms < 遅延 < 1800ms）
-┌─────────────────────┐
-│  翻訳音声 + 字幕     │
-│  ⚠️ 遅延警告表示    │
-└─────────────────────┘
-
-中度劣化（1800ms < 遅延 < 2400ms）
-┌─────────────────────┐
-│  原声 + 翻訳字幕     │  ← 音声を原声にフォールバック
-│  ⚠️ 字幕モード通知   │
-└─────────────────────┘
-
-重度劣化（遅延 > 2400ms）
-┌─────────────────────┐
-│  原声 + 翻訳字幕     │
-│  🔴 品質低下警告    │
-└─────────────────────┘
-```
-
----
-
-### API エンドポイント一覧
-
-#### 認証 API
-
-| メソッド | パス | 説明 |
-|---------|------|------|
-| POST | `/api/auth/register` | ユーザー登録 |
-| POST | `/api/auth/login` | ログイン |
-| GET | `/api/auth/me` | 現在のユーザー取得 |
-
-#### 会議室 API
-
-| メソッド | パス | 説明 |
-|---------|------|------|
-| GET | `/api/rooms` | 会議室一覧 |
-| POST | `/api/rooms` | 会議室作成 |
-| GET | `/api/rooms/{id}` | 会議室詳細 |
-| GET | `/api/rooms/{id}/transcript` | 会議記録取得 |
-
-#### 管理者 API（要admin権限）
-
-| メソッド | パス | 説明 |
-|---------|------|------|
-| GET | `/api/admin/users` | ユーザー一覧 |
-| GET | `/api/admin/users/{id}` | ユーザー詳細 |
-| PATCH | `/api/admin/users/{id}` | ユーザー更新 |
-| GET | `/api/admin/stats` | システム統計 |
-| GET | `/api/admin/settings/languages` | 言語設定取得 |
-| PUT | `/api/admin/settings/languages` | 言語設定更新 |
-
-#### 翻訳 API（クライアント側翻訳用）
-
-| メソッド | パス | 説明 |
-|---------|------|------|
-| POST | `/api/translate` | テキスト翻訳（キャッシュ付き） |
-
-**リクエスト/レスポンス例:**
+LLM は翻訳の主役ではなく**補正・整形・会議理解**に使う（表記統一/文脈補正/敬語/数字保持/議事録/ToDo抽出）。
 
 ```json
-// リクエスト
-{
-  "text": "こんにちは",
-  "source_language": "ja",
-  "target_language": "zh"
-}
-
-// レスポンス
-{
-  "original_text": "こんにちは",
-  "translated_text": "你好",
-  "source_language": "ja",
-  "target_language": "zh",
-  "cached": false
-}
+{ "realtime_correction": "openai_gpt", "google_cloud_native_mode": "gemini",
+  "meeting_summary": "openai_gpt", "fallback": "gemini" }
 ```
 
-#### WebSocket
+補正プロンプト原則：数字/日付/金額/固有名詞を変更しない・術語庫の指定訳を必ず使う・意味を追加しない・
+推測補完しすぎない・target_language のみ出力。
 
-| パス | 説明 |
-|------|------|
-| `/ws/room/{room_id}?token={jwt}` | 会議室接続 |
+### 7. データ設計 ↔ 既存モデル
 
-**WebSocket メッセージタイプ:**
+| 改善.md テーブル | 既存モデル（`app/db/models.py`） | 方針 |
+|---|---|---|
+| `meeting` | `Room` + `MeetingSession` | 既存流用（`default_mode` 等を拡張） |
+| `participant` | Redis（`rooms/manager.py`）+ 一部DB | 永続化が必要な項目のみDB化 |
+| `transcript_segment` | `Subtitle.original_*` | provider/confidence/is_final を追加 or 新表 |
+| `translation_segment` | `Subtitle.translations(JSON)` | provider/llm_provider/glossary_version/quality_score を分離 |
+| `glossary_term` | **新規** | 多テナント術語庫 |
 
-```typescript
-// クライアント → サーバー
-{ type: "preference_change", audio_mode: "translated", subtitle_enabled: true }
-{ type: "speaking_start" }
-{ type: "speaking_end" }
+> 既存 `Subtitle` データは非破壊。Alembic migration で追加し、後方互換を維持する。
 
-// サーバー → クライアント
-{ type: "room_state", participants: [...], policy: {...} }
-{ type: "user_joined", user_id: "...", display_name: "..." }
-{ type: "user_left", user_id: "..." }
-{ type: "subtitle", speaker_id: "...", original_text: "...", source_language: "ja" }
-{ type: "qos_warning", level: "moderate", message: "..." }
-```
+### 8. 主要 API（追加・拡張）
+
+| メソッド・パス | 用途 |
+|---|---|
+| `POST /api/meetings` | 会議作成（source/target languages, `default_mode`, `enable_openai_s2s`） |
+| `PATCH /api/meetings/{id}/mode` | モード切替（主線の選択） |
+| `PATCH /api/meetings/{id}/participants/{pid}/voice-translation` | ユーザー単位の翻訳音声 ON/OFF |
+| `POST /api/glossaries/terms` | 術語登録（要admin） |
+| `WS /ws/room/{id}`（現行）→ WebRTC（移行後） | リアルタイム接続 |
+
+### 9. 品質ゲート（最低基準）
+
+| 指標 | 目標 |
+|---|---:|
+| 用語命中率 | 95% 以上 |
+| 数字・日付保持 | 98% 以上 |
+| 翻訳字幕 P95 遅延（主線2） | 4 秒以内 |
+| 音声翻訳 P95 遅延（主線1） | 5 秒以内 |
+| 重大誤訳 | 0 件 |
+| 会後議事録可用率 | 95% 以上 |
+
+### 10. 障害時 Fallback（主線間の縮退）
+
+| 障害 | 対応 |
+|---|---|
+| OpenAI Realtime 障害 | 主線2（Google 字幕）へ切替 |
+| Google ASR 障害 | 主線1の transcript を暫定利用 |
+| Google Translation 障害 | GPT で翻訳 |
+| GPT 障害 / Gemini 障害 | 相互 fallback |
+| 翻訳音声障害 / 字幕障害 | 片方を継続 |
+| WebRTC 切断 | 再接続、失敗時は一時離脱扱い |
+
+### 11. セキュリティ
+
+- 通信は SRTP/DTLS（WebRTC）で暗号化。シグナリングは TLS。
+- ルーム参加は JWT 由来の短命トークン（LiveKit access / OpenAI ephemeral）でスコープ制限。
+- API キー・認証情報は環境変数のみ（コード・ログ・URL・引数に出さない）。多テナント分離を術語庫/データに徹底。
+
+### 12. 実装ロードマップと現状ギャップ
+
+| Phase | 内容 | 現状ギャップ |
+|---|---|---|
+| **Phase 1（MVP・主線2優先）** | Chirp3 ASR → Cloud Translation + 術語庫 → 字幕 → 議事録 | 術語庫・Google系provider・議事録APIが未実装 |
+| **Phase 2（主線1追加）** | OpenAI Realtime S2S + ユーザー翻訳音声 ON/OFF + Mode Router | `gpt_realtime` を昇格、Mode Router 新設 |
+| **Phase 3（ハイブリッド）** | 同一音声を両主線へ複製（聞く=OpenAI / 読む=Google） | WebRTC SFU(LiveKit) 本番化 |
+
+> **通信レイヤー**：現状は WebSocket（`websocket/handler.py` + `useWebSocket.ts`）。
+> 本設計では WebRTC へ統一する（2.5 の並存移行）。これは破壊的変更のため、Phase 2/3 で段階導入する。
 
 ---
 
-## 🌐 LAN内公開設定（Windows + WSL + Docker環境）
+## クイックスタート
 
-WSL2 + Docker環境で開発サーバーを社内LANに公開する方法です。
+### 前提
+- Docker & Docker Compose
+- ローカル開発時のみ: Node.js 20+ / Python 3.10+
 
-### ネットワーク構成図
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  社内LAN（例: 192.168.210.0/24）                                 │
-│                                                                   │
-│  ┌─────────────────┐      ┌─────────────────────────────────┐   │
-│  │ 他のPC          │      │ 開発PC（Windows）                │   │
-│  │ 192.168.210.x   │ ──── │ 192.168.210.2                    │   │
-│  │                 │      │   │                              │   │
-│  │ ブラウザで      │      │   │ ポート転送                   │   │
-│  │ アクセス        │      │   ▼                              │   │
-│  └─────────────────┘      │ ┌─────────────────────────────┐ │   │
-│                           │ │ WSL2（172.19.x.x）           │ │   │
-│                           │ │   │                          │ │   │
-│                           │ │   ▼                          │ │   │
-│                           │ │ ┌─────────────────────────┐ │ │   │
-│                           │ │ │ Docker Containers       │ │ │   │
-│                           │ │ │ ├─ frontend:5273        │ │ │   │
-│                           │ │ │ ├─ backend:8090         │ │ │   │
-│                           │ │ │ ├─ postgres:5432        │ │ │   │
-│                           │ │ │ └─ redis:6379           │ │ │   │
-│                           │ │ └─────────────────────────┘ │ │   │
-│                           │ └─────────────────────────────┘ │   │
-│                           └─────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### IPアドレスの種類
-
-| 種類 | 例 | 用途 |
-|------|-----|------|
-| **Windows LAN IP** | `192.168.210.2` | 社内の他PCからアクセスする際に使用 |
-| **WSL内部IP** | `172.19.197.130` | Windows↔WSL間の通信（外部からはアクセス不可） |
-| **Docker内部IP** | `172.19.0.x` | コンテナ間通信のみ |
-
-### セットアップ手順
-
-#### 1. WindowsのLAN IPアドレスを確認
-
-Windows PowerShellで実行：
-
-```powershell
-ipconfig
-```
-
-「イーサネット アダプター」または「Wi-Fi」の `IPv4 アドレス`（例：`192.168.210.2`）を確認します。
-
-#### 2. WSLのIPアドレスを確認
-
-Windows PowerShellまたはWSLで実行：
+### 1. 環境変数の準備（`.env`）
 
 ```bash
-wsl hostname -I
+cd lams-mvp
+cp .env.example .env
 ```
 
-WSLのIPアドレス（例：`172.19.197.130`）を確認します。
-
-#### 3. ポート転送の設定（初回のみ）
-
-**Windows PowerShell（管理者権限）** で実行：
-
-```powershell
-# WSLのIPを取得
-$wslIp = (wsl hostname -I).Trim().Split(' ')[0]
-Write-Host "WSL IP: $wslIp"
-
-# フロントエンド（5273）のポート転送
-netsh interface portproxy add v4tov4 listenport=5273 listenaddress=0.0.0.0 connectport=5273 connectaddress=$wslIp
-
-# バックエンド（8090）のポート転送
-netsh interface portproxy add v4tov4 listenport=8090 listenaddress=0.0.0.0 connectport=8090 connectaddress=$wslIp
-
-# 設定確認
-netsh interface portproxy show all
-```
-
-#### 4. Windowsファイアウォールの設定（初回のみ）
-
-**Windows PowerShell（管理者権限）** で実行：
-
-```powershell
-New-NetFirewallRule -DisplayName "LAMS Frontend 5273" -Direction Inbound -LocalPort 5273 -Protocol TCP -Action Allow
-New-NetFirewallRule -DisplayName "LAMS Backend 8090" -Direction Inbound -LocalPort 8090 -Protocol TCP -Action Allow
-```
-
-#### 5. Docker Composeの起動
-
-**重要**: `HOST_IP` には **WindowsのLAN IP**（社内からアクセスするIP）を指定します。
-
-WSLで実行：
+`.env` を編集する（**APIキーはここに記入する。`secrets.json` は廃止済み**）:
 
 ```bash
-# WindowsのLAN IPを指定して起動
-HOST_IP=192.168.164.38 docker compose up -d --build frontend backend
-
-# または全サービス起動
-HOST_IP=192.168.164.38 docker compose up -d --build
+AI_PROVIDER=gpt_realtime              # gpt4o_transcribe / gpt_realtime / deepgram
+OPENAI_API_KEY=sk-xxxxxxxx            # gpt_* プロバイダーは必須
+# DEEPGRAM_API_KEY=...                # deepgram 使用時のみ
+HOST_IP=192.168.x.x                   # LAN公開時のみ。ローカルのみなら localhost
+BACKEND_PORT=8090                     # 既定 8090
+FRONTEND_PORT=5273                    # 既定 5273
 ```
 
-### アクセス方法
+> **設定の優先順位**: 環境変数 > `.env`。`.env` は `.gitignore` 済みでコミットされない。
+> 本番ではクラウドの環境変数 / Docker secrets を使用し、キーをディスクに置かないこと。
 
-| アクセス元 | フロントエンド | バックエンドAPI |
-|-----------|---------------|----------------|
-| 開発PC（localhost） | http://localhost:5273 | http://localhost:8090 |
-| 社内の他PC | http://192.168.210.2:5273 | http://192.168.210.2:8090 |
+### 2. 起動
+
+```bash
+# Docker（推奨。frontend + backend + postgres + redis を一括起動）
+./start-with-keys.sh docker
+# 初回 / 依存更新時はビルド付き
+./start-with-keys.sh "docker build"
+
+# ローカル（backend のみ。DB/Redis は別途: docker compose up -d postgres redis）
+./start-with-keys.sh
+```
+
+`start-with-keys.sh` は APIキーを `.env` に書き戻さず、現在シェルの環境変数を優先する。
+`AI_PROVIDER` に必要なキーが無い場合は起動前に停止する（記入忘れ防止ガード）。
+
+キーをシェルから渡す場合:
+
+```bash
+export OPENAI_API_KEY=sk-xxx
+./start-with-keys.sh docker
+```
+
+### 3. アクセスURL
+
+| サービス | URL |
+|---|---|
+| フロントエンド | http://localhost:5273 |
+| バックエンドAPI | http://localhost:8090 |
+| API ドキュメント | http://localhost:8090/docs |
 
 ---
 
-### 🔧 トラブルシューティング
-
-#### 問題1: 社内の他PCからアクセスできない
-
-**確認手順:**
-
-```powershell
-# 1. ポート転送が設定されているか確認
-netsh interface portproxy show all
-
-# 2. WSLのIPが変わっていないか確認
-wsl hostname -I
-
-# 3. ファイアウォールルールが有効か確認
-Get-NetFirewallRule -DisplayName "LAMS*" | Select-Object DisplayName, Enabled
-```
-
-**解決方法:**
-
-```powershell
-# ポート転送をリセット
-netsh interface portproxy reset
-
-# 新しいWSL IPで再設定
-$wslIp = (wsl hostname -I).Trim().Split(' ')[0]
-netsh interface portproxy add v4tov4 listenport=5273 listenaddress=0.0.0.0 connectport=5273 connectaddress=$wslIp
-netsh interface portproxy add v4tov4 listenport=8090 listenaddress=0.0.0.0 connectport=8090 connectaddress=$wslIp
-```
-
-#### 問題2: ログインはできるがWebSocket接続が切断される
-
-**原因**: フロントエンドの環境変数（`VITE_API_URL`, `VITE_WS_URL`）が正しく設定されていない
-
-**確認手順:**
+## 開発コマンド
 
 ```bash
-# フロントエンドの環境変数を確認
-docker logs lams-mvp-frontend-1 2>&1 | grep "Vite Config"
+# 静的解析（コミット前必須）
+./scripts/check.sh            # 全チェック
+./scripts/check.sh --fix      # 自動修正付き
+./scripts/check.sh --backend  # / --frontend
 
-# 期待される出力:
-# [Vite Config] API URL: http://192.168.210.2:8090
-# [Vite Config] WS URL: ws://192.168.210.2:8090
+# テスト
+cd backend && pytest
+
+# DBマイグレーション（Alembic）
+docker compose exec backend alembic upgrade head                       # 適用
+docker compose exec backend alembic revision --autogenerate -m "説明"  # 作成
+docker compose exec backend alembic downgrade -1                       # ロールバック
 ```
 
-**解決方法:**
+詳細なコーディング規約・品質管理は [DEVELOPMENT_RULES.md](./DEVELOPMENT_RULES.md) を参照。
 
-```bash
-# HOST_IPを指定してフロントエンドを再起動
-HOST_IP=192.168.210.26 docker compose up -d --build frontend
-```
+---
 
-#### 問題3: APIリクエストが 5273 ポートに送られる
+## LAN内公開（Windows + WSL2 + Docker）
 
-**原因**: `VITE_API_URL` が設定されていないため、相対パス `/api` が使用されている
+社内の他PCから開発サーバーへアクセスする手順。`HOST_IP` には **WindowsのLAN IP** を指定する。
 
-**確認方法**: ブラウザの開発者ツール(F12) → Network → APIリクエストのURLを確認
+| IPの種類 | 例 | 用途 |
+|---|---|---|
+| Windows LAN IP | `192.168.x.x` | 他PCからのアクセス（`HOST_IP` に指定） |
+| WSL内部IP | `172.x.x.x` | Windows↔WSL間（外部からは不可） |
 
-**解決方法**: 上記「問題2」と同じ
-
-#### 問題4: マイクが使用できない（音声デバイスエラー）
-
-**原因**: ブラウザのセキュリティ制限。`getUserMedia` APIはHTTPSまたはlocalhostでのみ動作します。
-
-**解決方法（Chrome）:**
-
-1. アドレスバーに入力:
-   ```
-   chrome://flags/#unsafely-treat-insecure-origin-as-secure
-   ```
-
-2. 「Insecure origins treated as secure」に以下を追加:
-   ```
-   http://192.168.210.2:5273
-   ```
-
-3. 右側のドロップダウンで「Enabled」を選択
-
-4. 画面下部の「Relaunch」をクリックしてChromeを再起動
-
-5. `http://192.168.210.2:5273` に再アクセス
-
-**注意**: 会議に参加する全員が自分のブラウザでこの設定を行う必要があります。
-
-**解決方法（Edge）:**
-
-1. アドレスバーに入力:
-   ```
-   edge://flags/#unsafely-treat-insecure-origin-as-secure
-   ```
-
-2. 以降はChromeと同じ手順
-
-#### 問題5: WSL再起動後にアクセスできなくなった
-
-**原因**: WSLのIPアドレスは再起動で変わることがあります
-
-**解決方法:**
+**手順**（Windows PowerShell は管理者権限で実行）:
 
 ```powershell
-# 添加 WSL 防火墙规则
-New-NetFirewallRule -DisplayName "WSL Vite 5273" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5273
+# 1. IP確認
+ipconfig                 # Windows LAN IP（IPv4 アドレス）
+wsl hostname -I          # WSL IP
 
-# Windows PowerShell（管理者権限）で実行
-
-# 1. 現在のWSL IPを確認
+# 2. ポート転送（WSL IP が変わったら都度再設定）
 $wslIp = (wsl hostname -I).Trim().Split(' ')[0]
-Write-Host "新しいWSL IP: $wslIp"
-
-# 2. ポート転送をリセットして再設定
 netsh interface portproxy reset
 netsh interface portproxy add v4tov4 listenport=5273 listenaddress=0.0.0.0 connectport=5273 connectaddress=$wslIp
 netsh interface portproxy add v4tov4 listenport=8090 listenaddress=0.0.0.0 connectport=8090 connectaddress=$wslIp
 
-# 3. 設定確認
-netsh interface portproxy show all
+# 3. ファイアウォール許可（初回のみ）
+New-NetFirewallRule -DisplayName "LAMS 5273" -Direction Inbound -LocalPort 5273 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "LAMS 8090" -Direction Inbound -LocalPort 8090 -Protocol TCP -Action Allow
 ```
-
-その後、WSLでDockerを再起動:
 
 ```bash
-HOST_IP=192.168.210.26 docker compose up -d --build frontend backend
+# 4. WSL側で HOST_IP を指定して起動
+HOST_IP=192.168.x.x ./start-with-keys.sh "docker build"
 ```
-删除规则
---------------
-# 删除刚才的规则
-netsh interface portproxy delete v4tov4 listenport=5273 listenaddress=192.168.210.26
-netsh interface portproxy delete v4tov4 listenport=8090 listenaddress=192.168.210.26
 
-# 用 2.0.0.1 重新添加
-netsh interface portproxy add v4tov4 listenport=5273 listenaddress=192.168.210.26 connectport=5273 connectaddress=2.0.0.1
-netsh interface portproxy add v4tov4 listenport=8090 listenaddress=192.168.210.26 connectport=8090 connectaddress=2.0.0.1
-
-# 确认
-netsh interface portproxy show all
-
-# 重启服务
-Restart-Service iphlpsvc
-
-# 测试
-curl http://192.168.210.26:5273 -UseBasicParsing
----
-
-## 🙏 謝辞
-
-本プロジェクトは以下のオープンソースプロジェクトを使用しています。
-
-### バックエンド
-
-| ライブラリ | ライセンス | 用途 |
-|-----------|-----------|------|
-| [FastAPI](https://fastapi.tiangolo.com/) | MIT | Webフレームワーク |
-| [SQLAlchemy](https://www.sqlalchemy.org/) | MIT | ORM |
-| [Pydantic](https://docs.pydantic.dev/) | MIT | データバリデーション |
-| [python-jose](https://github.com/mpdavis/python-jose) | MIT | JWT処理 |
-| [redis-py](https://github.com/redis/redis-py) | MIT | Redisクライアント |
-| [asyncpg](https://github.com/MagicStack/asyncpg) | Apache 2.0 | PostgreSQL非同期ドライバ |
-| [uvicorn](https://www.uvicorn.org/) | BSD | ASGIサーバー |
-
-### フロントエンド
-
-| ライブラリ | ライセンス | 用途 |
-|-----------|-----------|------|
-| [React](https://react.dev/) | MIT | UIフレームワーク |
-| [Zustand](https://github.com/pmndrs/zustand) | MIT | 状態管理 |
-| [React Router](https://reactrouter.com/) | MIT | ルーティング |
-| [Vite](https://vitejs.dev/) | MIT | ビルドツール |
-| [TypeScript](https://www.typescriptlang.org/) | Apache 2.0 | 型システム |
-
-### インフラ
-
-| ソフトウェア | ライセンス | 用途 |
-|-------------|-----------|------|
-| [PostgreSQL](https://www.postgresql.org/) | PostgreSQL License | データベース |
-| [Redis](https://redis.io/) | BSD | キャッシュ・状態管理 |
-| [Nginx](https://nginx.org/) | BSD | リバースプロキシ |
-| [Docker](https://www.docker.com/) | Apache 2.0 | コンテナ化 |
-
-### AI サービス
-
-| サービス | 提供元 | 用途 |
-|---------|--------|------|
-| [Gemini API](https://ai.google.dev/) | Google | 音声認識・翻訳・音声合成 |
-| [OpenAI API](https://openai.com/) | OpenAI | Whisper ASR・GPT翻訳 |
-
----
-
-## 📄 ライセンス
-
-MIT License
-
----
-
-## 📞 サポート
-
-問題やご質問がございましたら、Issue を作成してください。
-
----
-
-## 🤝 貢献
-
-プロジェクトへの貢献を歓迎します!
-
-- [貢献ガイドライン](./CONTRIBUTING.md)
-- [開発規則](./DEVELOPMENT_RULES.md)
-- [変更履歴](./CHANGELOG.md)
-
----
-
-## 📚 関連ドキュメント
-
-| ドキュメント | 説明 |
-|------------|------|
-| [README.md](./README.md) | プロジェクト概要・セットアップ手順 |
-| [DEVELOPMENT_RULES.md](./DEVELOPMENT_RULES.md) | コーディング規約・品質管理 |
-| [CONTRIBUTING.md](./CONTRIBUTING.md) | 貢献ガイドライン |
-| [CHANGELOG.md](./CHANGELOG.md) | 変更履歴 |
-
----
-
-<p align="center">
-  <sub>Built with ❤️ for better cross-language communication</sub>
-</p>
-
+他PCのブラウザから `http://192.168.x.x:5273` でアクセスできる。

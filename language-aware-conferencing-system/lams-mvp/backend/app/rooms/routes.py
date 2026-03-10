@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_pipeline.providers.minutes import MinutesRequest, get_minutes_provider
 from app.auth.dependencies import get_current_user
 from app.db.database import get_db
 from app.db.models import Room, Subtitle, User
@@ -252,4 +253,96 @@ async def get_room_transcript(
         room_name=room.name,
         subtitles=subtitle_responses,
         total=len(subtitle_responses),
+    )
+
+
+class MinutesResponse(BaseModel):
+    """議事録レスポンス（要約・決定事項・ToDo）"""
+
+    room_id: str
+    room_name: str
+    output_language: str
+    summary: str
+    decisions: list[str]
+    action_items: list[str]
+    provider: str
+    segment_count: int  # 議事録生成に用いた発言数
+
+
+def _build_transcript_text(subtitles: list[Subtitle], users_map: dict[str, str]) -> str:
+    """字幕列を「話者名: 原文」行へ整形し議事録 LLM 入力用に結合する"""
+    lines = [
+        f"{users_map.get(s.speaker_id, '不明')}: {s.original_text}"
+        for s in subtitles
+        if s.original_text and s.original_text.strip()
+    ]
+    return "\n".join(lines)
+
+
+@router.get("/{room_id}/minutes", response_model=MinutesResponse)
+async def get_room_minutes(
+    room_id: str,
+    lang: str = "ja",  # 議事録の出力言語
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MinutesResponse:
+    """
+    会議記録から議事録（要約・決定事項・ToDo）をオンデマンド生成する。
+    - LLM(GPT優先/Gemini fallback)で生成。未設定時は 503。
+    - 私有会議は作成者のみアクセス可能。
+    """
+    result = await db.execute(select(Room).where(Room.id == room_id))
+    room = result.scalar_one_or_none()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="会議室が見つかりません"
+        )
+    if room.is_private and room.creator_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この会議室にはアクセスできません",
+        )
+
+    provider = get_minutes_provider()
+    if provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="議事録生成は現在無効です（LLM 未設定）",
+        )
+
+    # 字幕を時系列順に取得し話者名でマッピングする
+    result = await db.execute(
+        select(Subtitle)
+        .where(Subtitle.room_id == room_id)
+        .order_by(Subtitle.timestamp.asc())
+    )
+    subtitles = list(result.scalars().all())
+    user_ids = list({s.speaker_id for s in subtitles})
+    if user_ids:
+        result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users_map = {u.id: u.display_name for u in result.scalars().all()}
+    else:
+        users_map = {}
+
+    transcript_text = _build_transcript_text(subtitles, users_map)
+    req = MinutesRequest(
+        transcript=transcript_text, output_language=lang, meeting_title=room.name
+    )
+    try:
+        minutes = await provider.generate_minutes(req)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="議事録の生成に失敗しました",
+        ) from e
+
+    return MinutesResponse(
+        room_id=room.id,
+        room_name=room.name,
+        output_language=lang,
+        summary=minutes.summary,
+        decisions=minutes.decisions,
+        action_items=minutes.action_items,
+        provider=minutes.provider,
+        segment_count=len(subtitles),
     )

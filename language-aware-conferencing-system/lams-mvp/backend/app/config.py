@@ -2,15 +2,12 @@
 LAMS 設定モジュール
 アプリケーション全体の設定を管理する
 
-API Key優先順位: 環境変数 > .env > secrets.json
+API Key優先順位: 環境変数 > .env
 すべての設定は環境変数から読み込み、ハードコードは禁止。
 """
 
-import json
 import logging
-import os
 from functools import lru_cache
-from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings
@@ -18,76 +15,11 @@ from pydantic_settings import BaseSettings
 logger = logging.getLogger(__name__)
 
 
-def _load_secrets_json() -> dict:
-    """
-    secrets.json からシークレット情報を読み込む
-
-    検索パス:
-    1. 環境変数 SECRETS_JSON_PATH で指定されたパス
-    2. カレントディレクトリの secrets.json
-    3. backend/ ディレクトリの secrets.json
-    4. プロジェクトルートの secrets.json
-
-    Returns:
-        dict: シークレット情報（見つからない場合は空辞書）
-    """
-    # 検索パスのリスト
-    search_paths = [
-        os.environ.get("SECRETS_JSON_PATH"),
-        Path.cwd() / "secrets.json",
-        Path(__file__).parent.parent.parent / "secrets.json",  # backend/
-        Path(__file__).parent.parent.parent.parent / "secrets.json",  # project root
-    ]
-
-    for path in search_paths:
-        if path is None:
-            continue
-        path = Path(path)
-        if path.exists() and path.is_file():
-            try:
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-                    logger.info("secrets.json を読み込みました: %s", path)
-                    return data
-            except (json.JSONDecodeError, OSError) as e:
-                logger.warning("secrets.json 読み込みエラー (%s): %s", path, e)
-
-    return {}
-
-
-# secrets.json を先に読み込む（Settings初期化前に必要）
-_secrets = _load_secrets_json()
-
-
-def _get_secret(key: str, default: str | None = None) -> str | None:
-    """
-    シークレット値を取得（優先順位: 環境変数 > .env > secrets.json）
-
-    Args:
-        key: シークレットのキー名
-        default: デフォルト値
-
-    Returns:
-        シークレット値（見つからない場合はデフォルト値）
-    """
-    # 環境変数が最優先（.envも含む、pydantic-settingsが処理）
-    env_value = os.environ.get(key.upper())
-    if env_value:
-        return env_value
-
-    # secrets.json から取得
-    secrets_value = _secrets.get(key) or _secrets.get(key.lower())
-    if secrets_value:
-        return secrets_value
-
-    return default
-
-
 class Settings(BaseSettings):
     """
     アプリケーション設定クラス
 
-    API Key優先順位: 環境変数 > .env > secrets.json
+    API Key優先順位: 環境変数 > .env
     デフォルト値は開発環境用。本番環境では必ず環境変数で上書きすること。
     """
 
@@ -115,8 +47,10 @@ class Settings(BaseSettings):
     # ===========================================
     # AIプロバイダー設定
     # ===========================================
-    # プロバイダー選択: gpt4o_transcribe, gpt_realtime, deepgram
-    ai_provider: Literal["gpt4o_transcribe", "gpt_realtime", "deepgram"] = (
+    # プロバイダー選択: gpt4o_transcribe, gpt_realtime, deepgram, google
+    #   google = Mode B（Chirp 3 ASR + Cloud Translation）。認証/ライブラリ未整備時は
+    #            起動エラーにせず gpt4o_transcribe へ自動フォールバックする。
+    ai_provider: Literal["gpt4o_transcribe", "gpt_realtime", "deepgram", "google"] = (
         "gpt4o_transcribe"
     )
 
@@ -137,6 +71,9 @@ class Settings(BaseSettings):
 
     # テキスト翻訳用モデル
     openai_translate_model: str = "gpt-4o-mini"
+
+    # 議事録・要約生成用モデル（Phase 1-T5。長文要約のため translate と分離）
+    openai_minutes_model: str = "gpt-4o-mini"
 
     # TTS用モデルと音声
     openai_tts_model: str = "tts-1"
@@ -167,6 +104,35 @@ class Settings(BaseSettings):
     gemini_base_url: str | None = None
     gemini_model: str = "models/gemini-2.5-flash-native-audio-preview-12-2025"
     gemini_text_model: str = "models/gemini-2.5-flash"
+
+    # -------------------------------------------
+    # LLM 補正設定（改善.md 11章 / Mode B・fallback 用）
+    # -------------------------------------------
+    # 翻訳結果の校正（表記統一・文脈補正・数字保持）に使う LLM プロバイダー。
+    #   - off   : 補正を行わない（既定。既存翻訳フローへ非介入）
+    #   - gemini: Gemini で校正（GEMINI_API_KEY 必須。未設定時は自動で無効化）
+    llm_correction_provider: Literal["off", "gemini"] = "off"
+
+    # 議事録・要約（Phase 1-T5）生成に使う LLM プロバイダー選択ポリシー。
+    #   - auto  : GPT 優先（OPENAI_API_KEY あれば GPT、無ければ Gemini へ fallback）
+    #   - gpt   : GPT 固定（OPENAI_API_KEY 必須）
+    #   - gemini: Gemini 固定（GEMINI_API_KEY 必須）
+    #   - off   : 議事録生成を無効化（API は 503 を返す）
+    llm_minutes_provider: Literal["auto", "gpt", "gemini", "off"] = "auto"
+
+    # -------------------------------------------
+    # Google Cloud 設定（改善.md Mode B：Chirp 3 ASR + Cloud Translation）
+    # -------------------------------------------
+    # 認証は GOOGLE_APPLICATION_CREDENTIALS（サービスアカウント JSON パス）または
+    # ADC を使用。GOOGLE_PROJECT_ID 未設定時は google プロバイダーは無効扱い。
+    google_project_id: str | None = None
+    # Chirp 3 は Speech-to-Text V2 の地域エンドポイントが必要（既定: us-central1）
+    google_speech_location: str = "us-central1"
+    google_speech_model: str = "chirp_3"
+    # Cloud Translation v3 のロケーション（用語集利用時は global 以外が必要な場合あり）
+    google_translate_location: str = "global"
+    # サーバー側用語集リソース ID（任意。adaptive/glossary 連携用）
+    google_glossary_id: str | None = None
 
     # ===========================================
     # QoS設定（認知負荷軽減のため）
@@ -218,28 +184,13 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = "ignore"
 
-    def __init__(self, **kwargs):
-        """
-        設定初期化
-
-        secrets.json からの値を環境変数が未設定の場合に適用
-        """
-        super().__init__(**kwargs)
-        # secrets.json からAPIキーを補完（環境変数/.envより低優先度）
-        if not self.openai_api_key:
-            self.openai_api_key = _get_secret("OPENAI_API_KEY")
-        if not self.deepgram_api_key:
-            self.deepgram_api_key = _get_secret("DEEPGRAM_API_KEY")
-        if not self.gemini_api_key:
-            self.gemini_api_key = _get_secret("GEMINI_API_KEY")
-
 
 @lru_cache
 def get_settings() -> Settings:
     """
     設定インスタンスを取得（キャッシュ済み）
 
-    API Key優先順位: 環境変数 > .env > secrets.json
+    API Key優先順位: 環境変数 > .env
 
     Returns:
         Settings: アプリケーション設定
