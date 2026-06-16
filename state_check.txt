@@ -1,0 +1,27 @@
+﻿===STATUS===
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	deleted:    gitcfg_check.txt
+	deleted:    gitcfg_check2.txt
+	deleted:    tmp_out.txt
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	commit_result.txt
+	state_check.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+===LOG===
+c2c25ed feat: Add configuration files for Git credentials and provider settings
+3f810fb feat: Add installation script for GitNexus with Node.js and npm checks
+3d5bdf3 feat(lams): upgrade to gpt-realtime-1.5
+9d48253 feat(lams): upgrade to gpt-realtime-1.5 for improved voice performance
+790ffa1 feat: Implement token validation and error handling in authentication flow
+f12f00d Refactor configuration files and scripts for improved readability and functionality
+d18322b Merge branch 'main' of https://github.com/liushuang393/apps
+a552574 feat: Enhance ForgePay configuration and add quickpay functionality
+===REMOTE_DIFF===
