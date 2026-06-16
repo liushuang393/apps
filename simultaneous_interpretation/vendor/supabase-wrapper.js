@@ -1,20 +1,20 @@
 /**
  * Supabase Client Wrapper for Chrome Extension
- * 
+ *
  * 目的:
  *   Chrome Extension環境でSupabaseクライアントを使用可能にする
- * 
+ *
  * 注意:
  *   - Manifest V3では外部CDNスクリプトの読み込みが禁止されている
  *   - このファイルはローカルにバンドルされたSupabaseクライアントのラッパー
  */
 
-(function(global) {
+(function (global) {
     'use strict';
-    
+
     /**
      * Supabaseクライアントを作成
-     * 
+     *
      * @param {string} supabaseUrl - Supabase プロジェクトURL
      * @param {string} supabaseKey - Supabase 匿名キー
      * @param {Object} options - オプション設定
@@ -27,7 +27,7 @@
                 /**
                  * Googleでサインイン
                  */
-                signInWithOAuth: async function(provider) {
+                signInWithOAuth: async function (provider) {
                     // ✅ Supabase OAuth 正しいフロー
                     // Chrome拡張機能では、OAuth リダイレクトを直接開く
                     const redirectTo =
@@ -54,7 +54,10 @@
                     console.info('[Supabase] Provider:', provider.provider);
                     console.info('[Supabase] Redirect To:', redirectTo);
                     console.info('[Supabase] Auth URL:', authUrl);
-                    console.info('[Supabase] Chrome環境:', typeof chrome !== 'undefined' && chrome.tabs ? 'YES' : 'NO');
+                    console.info(
+                        '[Supabase] Chrome環境:',
+                        typeof chrome !== 'undefined' && chrome.tabs ? 'YES' : 'NO'
+                    );
                     console.info('[Supabase] =====================================');
 
                     // Chrome拡張機能では新しいタブでOAuthを開く
@@ -67,13 +70,13 @@
                         return { data: { url: authUrl }, error: null };
                     }
                 },
-                
+
                 /**
                  * 現在のセッションを取得
                  *
                  * Chrome拡張機能では、chrome.storage からセッション情報を取得
                  */
-                getSession: async function() {
+                getSession: async function () {
                     try {
                         // ✅ Chrome拡張機能: ローカルストレージからセッションを取得
                         if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -110,7 +113,7 @@
                  *
                  * OAuth リダイレクト後に呼び出される
                  */
-                setSession: async function(tokens) {
+                setSession: async function (tokens) {
                     try {
                         const session = {
                             access_token: tokens.access_token,
@@ -140,7 +143,7 @@
                 /**
                  * サインアウト
                  */
-                signOut: async function() {
+                signOut: async function () {
                     try {
                         // ✅ Chrome拡張機能: chrome.storage から削除
                         if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -158,81 +161,169 @@
                         console.error('[Supabase] signOut エラー:', error);
                         return { error };
                     }
+                },
+
+                /**
+                 * 匿名サインイン（ログイン画面なし）
+                 *
+                 * Supabase が署名付き JWT を発行する。サーバ側はこの JWT を検証して
+                 * user.id を信頼できる purchase_intent_id として使う（なりすまし不可）。
+                 * ※ Supabase プロジェクトで Anonymous Sign-ins を有効化しておくこと。
+                 */
+                signInAnonymously: async function () {
+                    try {
+                        const response = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', apikey: supabaseKey },
+                            body: JSON.stringify({ data: {} })
+                        });
+                        const data = await response.json();
+                        if (!response.ok || !data.access_token) {
+                            return { data: { session: null }, error: data };
+                        }
+                        await client.auth.setSession(data);
+                        return { data: { session: data }, error: null };
+                    } catch (error) {
+                        console.error('[Supabase] signInAnonymously エラー:', error);
+                        return { data: { session: null }, error };
+                    }
+                },
+
+                /**
+                 * リフレッシュトークンでアクセストークンを更新（user.id は不変）
+                 */
+                refreshSession: async function (refreshToken) {
+                    try {
+                        const response = await fetch(
+                            `${supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
+                            {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    apikey: supabaseKey
+                                },
+                                body: JSON.stringify({ refresh_token: refreshToken })
+                            }
+                        );
+                        const data = await response.json();
+                        if (!response.ok || !data.access_token) {
+                            return { data: { session: null }, error: data };
+                        }
+                        await client.auth.setSession(data);
+                        return { data: { session: data }, error: null };
+                    } catch (error) {
+                        console.error('[Supabase] refreshSession エラー:', error);
+                        return { data: { session: null }, error };
+                    }
+                },
+
+                /**
+                 * 有効なアクセストークンを返す。
+                 * 1) 既存セッションが有効ならそれ
+                 * 2) 期限切れだが refresh_token があれば更新
+                 * 3) セッションが無ければ匿名サインイン
+                 * いずれも取得できなければ null。
+                 *
+                 * @returns {Promise<string|null>}
+                 */
+                getValidAccessToken: async function () {
+                    const { data } = await client.auth.getSession();
+                    const session = data.session;
+                    const now = Date.now();
+
+                    if (
+                        session &&
+                        session.access_token &&
+                        session.expires_at &&
+                        session.expires_at - now > 60 * 1000
+                    ) {
+                        return session.access_token;
+                    }
+
+                    if (session && session.refresh_token) {
+                        const r = await client.auth.refreshSession(session.refresh_token);
+                        if (r.data.session && r.data.session.access_token) {
+                            return r.data.session.access_token;
+                        }
+                    }
+
+                    const a = await client.auth.signInAnonymously();
+                    return a.data.session ? a.data.session.access_token : null;
                 }
             },
-            
+
             /**
              * テーブルからデータを取得
              */
-            from: function(table) {
+            from: function (table) {
                 return {
-                    select: function(columns = '*') {
+                    select: function (columns = '*') {
                         return {
-                            eq: async function(column, value) {
+                            eq: async function (column, value) {
                                 const response = await fetch(
                                     `${supabaseUrl}/rest/v1/${table}?${column}=eq.${value}&select=${columns}`,
                                     {
                                         headers: {
-                                            'apikey': supabaseKey,
-                                            'Authorization': `Bearer ${supabaseKey}`
+                                            apikey: supabaseKey,
+                                            Authorization: `Bearer ${supabaseKey}`
                                         }
                                     }
                                 );
-                                
+
                                 const data = await response.json();
                                 return { data, error: null };
                             },
-                            
-                            single: async function() {
+
+                            single: async function () {
                                 const response = await fetch(
                                     `${supabaseUrl}/rest/v1/${table}?select=${columns}&limit=1`,
                                     {
                                         headers: {
-                                            'apikey': supabaseKey,
-                                            'Authorization': `Bearer ${supabaseKey}`
+                                            apikey: supabaseKey,
+                                            Authorization: `Bearer ${supabaseKey}`
                                         }
                                     }
                                 );
-                                
+
                                 const data = await response.json();
                                 return { data: data[0] || null, error: null };
                             }
                         };
                     },
-                    
-                    insert: async function(values) {
+
+                    insert: async function (values) {
                         const response = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'apikey': supabaseKey,
-                                'Authorization': `Bearer ${supabaseKey}`,
-                                'Prefer': 'return=representation'
+                                apikey: supabaseKey,
+                                Authorization: `Bearer ${supabaseKey}`,
+                                Prefer: 'return=representation'
                             },
                             body: JSON.stringify(values)
                         });
-                        
+
                         const data = await response.json();
                         return { data, error: null };
                     },
-                    
-                    update: async function(values) {
+
+                    update: async function (values) {
                         return {
-                            eq: async function(column, value) {
+                            eq: async function (column, value) {
                                 const response = await fetch(
                                     `${supabaseUrl}/rest/v1/${table}?${column}=eq.${value}`,
                                     {
                                         method: 'PATCH',
                                         headers: {
                                             'Content-Type': 'application/json',
-                                            'apikey': supabaseKey,
-                                            'Authorization': `Bearer ${supabaseKey}`,
-                                            'Prefer': 'return=representation'
+                                            apikey: supabaseKey,
+                                            Authorization: `Bearer ${supabaseKey}`,
+                                            Prefer: 'return=representation'
                                         },
                                         body: JSON.stringify(values)
                                     }
                                 );
-                                
+
                                 const data = await response.json();
                                 return { data, error: null };
                             }
@@ -241,13 +332,13 @@
                 };
             }
         };
-        
+
         return client;
     }
-    
+
     // グローバルに公開
     const supabase = { createClient };
-    
+
     if (typeof window !== 'undefined') {
         window.supabase = supabase;
     }
@@ -257,6 +348,4 @@
     if (typeof globalThis !== 'undefined') {
         globalThis.supabase = supabase;
     }
-    
 })(typeof self !== 'undefined' ? self : this);
-

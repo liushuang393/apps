@@ -1,117 +1,201 @@
 /**
- * Vercel Serverless Function: Stripe Checkout セッションを作成
+ * Vercel Serverless Function: 決済セッションを作成（ForgePay QuickPay 経由）
  *
- * 目的: サブスクリプション登録のための Stripe Checkout セッションを作成
+ * 公式手順書 `docs/ForgePay決済システムの他システム実装指南.md` に準拠。
+ *   - 認証は ForgePay の X-API-Key（サーバ環境変数）のみ。
+ *   - purchase_intent_id はアプリ側で発行する一意 ID（クライアントが生成・保持する UUID）。
+ *     ※ ForgePay は Supabase トークンを読まない。アプリ独自の身分認証は不要。
+ *   - 重複課金防止: 既に有効な権限があれば新規セッションを作らず 409。
+ *
  * エンドポイント: POST /api/create-checkout-session
+ * リクエスト: { purchase_intent_id: string, plan?: "subscription"|"onetime",
+ *               productId?, priceId?, customerEmail?, successUrl?, cancelUrl? }
+ * レスポンス（201）: { checkout_url, session_id, expires_at, sessionId }
+ *
+ * 環境変数: FORGEPAY_API_URL, FORGEPAY_API_KEY,
+ *   FORGEPAY_SUBSCRIPTION_PRODUCT_ID, FORGEPAY_ONETIME_PRODUCT_ID,
+ *   FORGEPAY_ONETIME_AMOUNT, FORGEPAY_CURRENCY, APP_PUBLIC_URL
  */
 
-const Stripe = require('stripe');
-const { createClient } = require('@supabase/supabase-js');
+'use strict';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const { createPayment, verifyEntitlement, ForgePayError } = require('./_forgepay');
 
-module.exports = async function handler(req, res) {
-  // CORS ヘッダーを設定
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
-
-  // OPTIONS リクエストの処理
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  // POST リクエストのみ許可
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  try {
-    // リクエストボディからパラメータを取得
-    const { token, userId, successUrl, cancelUrl } = req.body;
-
-    let userEmail = null;
-    let userIdToUse = null;
-
-    // モード1: Supabase認証（トークンあり）
-    if (token) {
-      console.log('[Auth] Supabase認証モード');
-
-      // Supabase でトークンを検証
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-      if (authError || !user) {
-        return res.status(401).json({ error: 'Unauthorized: Invalid token' });
-      }
-
-      userEmail = user.email;
-      userIdToUse = user.id;
-      console.log(`[Auth] Supabase user authenticated: ${user.id}`);
-    }
-    // モード2: Chrome拡張機能モード（トークンなし）
-    else if (userId) {
-      console.log('[Auth] Chrome拡張機能モード（認証なし）');
-      userIdToUse = userId;
-      // Chrome拡張機能の場合、メールアドレスは不要（後で入力可能）
-      console.log(`[Auth] Extension user ID: ${userId}`);
-    }
-    // どちらのパラメータもない場合はエラー
-    else {
-      return res.status(400).json({
-        error: 'Bad Request: Either token or userId must be provided'
-      });
-    }
-
-    // Stripe Checkout セッションを作成
-    const sessionConfig = {
-      payment_method_types: ['card'],
-      mode: 'subscription',
-      line_items: [
-        {
-          price: process.env.STRIPE_PRICE_ID,
-          quantity: 1,
-        },
-      ],
-      metadata: {
-        userId: userIdToUse,
-      },
-      subscription_data: {
-        trial_period_days: 7, // 7日間無料トライアル
-        metadata: {
-          userId: userIdToUse,
-        },
-      },
-      success_url: successUrl || `${req.headers.origin || 'chrome-extension://YOUR_EXTENSION_ID'}/success.html?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl || `${req.headers.origin || 'chrome-extension://YOUR_EXTENSION_ID'}/subscription.html`,
-    };
-
-    // メールアドレスがある場合のみ設定
-    if (userEmail) {
-      sessionConfig.customer_email = userEmail;
-    }
-
-    const session = await stripe.checkout.sessions.create(sessionConfig);
-
-    console.log(`[Stripe] Checkout session created for user ${userIdToUse}: ${session.id}`);
-
-    return res.status(200).json({
-      sessionId: session.id,
-    });
-  } catch (error) {
-    console.error('[Error] Failed to create checkout session:', error);
-    return res.status(500).json({
-      error: 'Internal server error',
-      message: error.message,
-    });
-  }
+/**
+ * CORS ヘッダーを設定する。
+ * @param {import('http').ServerResponse} res
+ */
+function setCors(res) {
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Accept');
 }
 
+/**
+ * プランとリクエストから ForgePay createPayment 用パラメータを組み立てる。
+ *
+ * @param {{purchaseIntentId:string, plan:string, productId?:string, priceId?:string, customerEmail?:string, successUrl?:string, cancelUrl?:string}} input
+ * @returns {object} createPayment 引数
+ * @throws {ForgePayError} 商品/価格の解決ができない場合（設定不足）
+ */
+function buildPaymentParams(input) {
+    const params = {
+        purchaseIntentId: input.purchaseIntentId,
+        metadata: { plan: input.plan, source: 'voicetranslate' }
+    };
+
+    if (input.customerEmail != null) {
+        params.customerEmail = input.customerEmail;
+    }
+
+    // success/cancel: リクエスト > 環境変数 > ForgePay ダッシュボード既定（未指定）
+    const appUrl = process.env.APP_PUBLIC_URL;
+    const successUrl =
+        input.successUrl || (appUrl ? `${appUrl.replace(/\/+$/, '')}/success.html` : undefined);
+    const cancelUrl =
+        input.cancelUrl || (appUrl ? `${appUrl.replace(/\/+$/, '')}/subscription.html` : undefined);
+    if (successUrl != null) {
+        params.successUrl = successUrl;
+    }
+    if (cancelUrl != null) {
+        params.cancelUrl = cancelUrl;
+    }
+
+    // 商品の解決優先順位: productId > priceId > プラン別の環境変数 > アドホック
+    if (input.productId != null) {
+        params.productId = input.productId;
+        return params;
+    }
+    if (input.priceId != null) {
+        params.priceId = input.priceId;
+        return params;
+    }
+
+    if (input.plan === 'subscription') {
+        const productId = process.env.FORGEPAY_SUBSCRIPTION_PRODUCT_ID;
+        if (productId == null || productId === '') {
+            throw new ForgePayError(
+                'サブスクリプション商品が未設定です（FORGEPAY_SUBSCRIPTION_PRODUCT_ID）',
+                500,
+                'product_not_configured'
+            );
+        }
+        params.productId = productId;
+        return params;
+    }
+
+    // plan === 'onetime'
+    const onetimeProductId = process.env.FORGEPAY_ONETIME_PRODUCT_ID;
+    if (onetimeProductId != null && onetimeProductId !== '') {
+        params.productId = onetimeProductId;
+        return params;
+    }
+
+    // 商品未設定ならアドホック（金額直接指定）にフォールバック
+    const amount = Number(process.env.FORGEPAY_ONETIME_AMOUNT);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        throw new ForgePayError(
+            '一回払いの商品/金額が未設定です（FORGEPAY_ONETIME_PRODUCT_ID か FORGEPAY_ONETIME_AMOUNT）',
+            500,
+            'product_not_configured'
+        );
+    }
+    params.name = 'VoiceTranslate Pro（買い切り）';
+    params.amount = amount;
+    params.currency = (process.env.FORGEPAY_CURRENCY || 'jpy').toLowerCase();
+    return params;
+}
+
+/**
+ * @param {import('http').IncomingMessage & {method?:string, body?:any}} req
+ * @param {import('http').ServerResponse} res
+ */
+module.exports = async function handler(req, res) {
+    setCors(res);
+
+    if (req.method === 'OPTIONS') {
+        res.statusCode = 200;
+        res.end();
+        return;
+    }
+
+    if (req.method !== 'POST') {
+        res.statusCode = 405;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+    }
+
+    /** @type {(status:number, payload:object)=>void} */
+    const json = (status, payload) => {
+        res.statusCode = status;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(payload));
+    };
+
+    try {
+        const body = req.body || {};
+        const plan = body.plan === 'onetime' ? 'onetime' : 'subscription';
+        // purchase_intent_id はアプリ側で発行した一意 ID（クライアント生成・保持の UUID）
+        const purchaseIntentId = body.purchase_intent_id || body.userId;
+
+        if (typeof purchaseIntentId !== 'string' || purchaseIntentId === '') {
+            json(400, {
+                error: 'invalid_request',
+                message: 'purchase_intent_id は必須です'
+            });
+            return;
+        }
+
+        // ── 重複課金防止 ─────────────────────────────────────────
+        const current = await verifyEntitlement(purchaseIntentId);
+        if (current.active) {
+            json(409, {
+                error: 'already_active',
+                message: '既に有効なサブスクリプション/購入があります',
+                isActive: true,
+                status: current.status,
+                expiresAt: current.expiresAt
+            });
+            return;
+        }
+
+        const params = buildPaymentParams({
+            purchaseIntentId,
+            plan,
+            productId: body.productId,
+            priceId: body.priceId,
+            customerEmail: body.customerEmail,
+            successUrl: body.successUrl,
+            cancelUrl: body.cancelUrl
+        });
+
+        const result = await createPayment(params);
+
+        json(201, {
+            checkout_url: result.checkoutUrl,
+            session_id: result.sessionId,
+            sessionId: result.sessionId, // 後方互換
+            expires_at: result.expiresAt
+        });
+    } catch (error) {
+        if (error instanceof ForgePayError) {
+            // 設定不足（こちら側の問題）は 500。上流の 4xx はそのまま。それ以外は 502。
+            let status;
+            if (error.code === 'product_not_configured') {
+                status = 500;
+            } else if (error.status >= 400 && error.status < 500) {
+                status = error.status;
+            } else {
+                status = 502;
+            }
+            json(status, { error: error.code || 'forgepay_error', message: error.message });
+            return;
+        }
+        json(500, {
+            error: 'internal_error',
+            message: error instanceof Error ? error.message : String(error)
+        });
+    }
+};

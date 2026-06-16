@@ -246,10 +246,12 @@
         </div>
 
         <button class="btn btn-primary" id="subscribeBtn">
-            サブスクリプションを開始
+            サブスクリプションを開始（月額）
         </button>
 
-
+        <button class="btn btn-secondary" id="buyOnceBtn">
+            1回だけ購入（買い切り）
+        </button>
 
         <div class="info-section">
             <h3>💰 料金について</h3>
@@ -287,9 +289,7 @@
         </div>
     </div>
 
-    <!-- ローカルベンダーライブラリ（Manifest V3対応） -->
-    <script src="vendor/stripe-wrapper.js"></script>
-
+    <!-- 決済は ForgePay 経由（Stripe.js / Supabase 不要。purchase_intent_id 方式） -->
     <!-- サブスクリプションロジック -->
     <script src="subscription.js"></script>
 </body>

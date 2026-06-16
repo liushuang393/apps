@@ -1,172 +1,95 @@
 /**
- * VoiceTranslate Pro - サブスクリプションページスクリプト
+ * VoiceTranslate Pro - サブスクリプション/買い切りページスクリプト
  *
- * 目的:
- *   Googleログイン → Stripe Checkout → サブスクリプション開始
- *
- * フロー:
- *   1. Googleでログイン（Supabase Auth）
- *   2. Stripe Checkoutセッションを作成（Vercel API）
- *   3. Stripeの支払いページにリダイレクト
+ * 公式手順書 `docs/ForgePay決済システムの他システム実装指南.md` に準拠。
+ *   - 決済は ForgePay 経由。クライアントは Stripe も Supabase も触らない。
+ *   - purchase_intent_id はアプリ側で発行する一意 ID（端末で生成・保持する UUID）。
+ *   - こちらのバックエンド（create-checkout-session）へ依頼し checkout_url へ遷移。
  */
-
-// Stripe クライアント（遅延初期化）
-let stripe = null;
-
-/**
- * Stripe クライアントを取得（遅延初期化）
- */
-function getStripeClient() {
-    if (!stripe) {
-        if (
-            !globalThis.CONFIG ||
-            !globalThis.CONFIG.stripe ||
-            !globalThis.CONFIG.stripe.publishableKey
-        ) {
-            throw new Error('Stripe設定が見つかりません');
-        }
-        if (typeof globalThis.Stripe !== 'function') {
-            throw new TypeError('Stripe wrapper が読み込まれていません');
-        }
-        stripe = globalThis.Stripe(globalThis.CONFIG.stripe.publishableKey);
-        console.info('[Stripe] クライアント初期化完了');
-    }
-    return stripe;
-}
 
 /**
  * ローディング表示の切り替え
+ * @param {boolean} show
  */
 function showLoading(show) {
-    const loadingOverlay = document.getElementById('loadingOverlay');
+    const loadingOverlay = document.getElementById('loading');
     if (loadingOverlay) {
-        loadingOverlay.style.display = show ? 'flex' : 'none';
+        loadingOverlay.classList.toggle('active', show);
     }
 }
 
 /**
- * サブスクリプション開始処理
+ * 安定した purchase_intent_id を取得する。
+ * 初回に UUID を生成して保存し、以降は同じ ID を使う（後から購入状態を照会できる）。
  *
- * Chrome拡張機能では、認証なしで直接Stripe Checkoutに進む
- * APIエラー時は無料モードとして処理
+ * @returns {Promise<string>} purchase_intent_id
  */
-async function startSubscription() {
+async function getPurchaseIntentId() {
+    const { forgepayPurchaseIntentId } = await chrome.storage.local.get([
+        'forgepayPurchaseIntentId'
+    ]);
+    if (forgepayPurchaseIntentId != null && forgepayPurchaseIntentId !== '') {
+        return forgepayPurchaseIntentId;
+    }
+    const id =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+            ? `vt_${crypto.randomUUID()}`
+            : `vt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    await chrome.storage.local.set({ forgepayPurchaseIntentId: id });
+    return id;
+}
+
+/**
+ * 決済を開始する。
+ *
+ * @param {"subscription"|"onetime"} plan - 課金プラン
+ */
+async function startPayment(plan) {
     try {
         showLoading(true);
-        console.info('[Subscription] サブスクリプション開始');
+        console.info('[Payment] 開始:', plan);
 
-        // Chrome拡張機能のIDを使用
-        const extensionId = chrome.runtime.id;
-        const userId = `ext_${extensionId}_${Date.now()}`;
+        const purchaseIntentId = await getPurchaseIntentId();
+        const apiUrl =
+            globalThis.CONFIG.api.baseUrl + globalThis.CONFIG.api.endpoints.createCheckoutSession;
 
-        console.info('[Subscription] User ID:', userId);
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ purchase_intent_id: purchaseIntentId, plan })
+        });
 
-        // Stripe Checkoutセッションを作成
-        const sessionId = await createCheckoutSession(userId);
+        const data = await response.json().catch(() => ({}));
 
-        console.info('[Subscription] Session ID:', sessionId);
-
-        // Stripeチェックアウトページにリダイレクト
-        const stripeClient = getStripeClient();
-        const result = await stripeClient.redirectToCheckout({ sessionId });
-
-        if (result.error) {
-            throw new Error(result.error.message);
+        // 既に有効な権限がある → 重複課金を避けて成功ページへ
+        if (response.status === 409) {
+            console.info('[Payment] 既に有効な購入があります');
+            globalThis.location.href = 'success.html';
+            return;
         }
-    } catch (error) {
-        console.warn('[Subscription] API利用不可、無料モードで続行:', error);
 
-        // ローディングを非表示
+        if (!response.ok) {
+            throw new Error(`API Error ${response.status}: ${data.message || ''}`);
+        }
+
+        if (!data.checkout_url) {
+            throw new Error('checkout_url が返されませんでした');
+        }
+
+        // ForgePay 由来の Stripe Checkout へ遷移
+        globalThis.location.href = data.checkout_url;
+    } catch (error) {
+        console.warn('[Payment] 決済 API 利用不可、無料モードで続行:', error);
         showLoading(false);
 
-        // 無料モードとして保存
         await chrome.storage.local.set({
             subscriptionStatus: 'free',
             subscriptionExpiry: null,
             lastChecked: new Date().toISOString()
         });
-
-        // 成功ページにリダイレクト（無料モード）
         globalThis.location.href = 'success.html?mode=free';
     } finally {
-        // 念のため、ローディングを非表示
         showLoading(false);
-    }
-}
-
-/**
- * Stripe Checkoutセッションを作成
- *
- * @param {string} userId - ユーザーID
- * @returns {Promise<string>} Stripe Checkout Session ID
- */
-async function createCheckoutSession(userId) {
-    try {
-        console.info('[Checkout] セッション作成開始');
-
-        // Vercel APIを呼び出してStripe Checkoutセッションを作成
-        const apiUrl =
-            globalThis.CONFIG.api.baseUrl + globalThis.CONFIG.api.endpoints.createCheckoutSession;
-
-        console.info('[Checkout] API URL:', apiUrl);
-
-        const requestBody = {
-            userId: userId,
-            successUrl: chrome.runtime.getURL('subscription-success.html'),
-            cancelUrl: chrome.runtime.getURL('subscription.html')
-        };
-
-        console.info('[Checkout] Request:', requestBody);
-
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        console.info('[Checkout] Response status:', response.status);
-        console.info(
-            '[Checkout] Response headers:',
-            Object.fromEntries(response.headers.entries())
-        );
-
-        if (!response.ok) {
-            let errorText = '';
-            try {
-                errorText = await response.text();
-            } catch (readError) {
-                console.error('[Checkout] レスポンス読み取りエラー:', readError);
-                errorText = 'レスポンスの読み取りに失敗';
-            }
-            console.error('[Checkout] Error response:', errorText);
-            throw new Error(`API Error: ${response.status} - ${errorText}`);
-        }
-
-        // レスポンスボディを取得
-        const responseText = await response.text();
-        console.info('[Checkout] Response text:', responseText);
-
-        // JSONパース
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (parseError) {
-            console.error('[Checkout] JSON parse error:', parseError);
-            throw new Error(`JSONパースエラー: ${responseText.substring(0, 100)}`);
-        }
-
-        console.info('[Checkout] Response data:', data);
-
-        if (!data.sessionId) {
-            throw new Error('Session ID が返されませんでした');
-        }
-
-        return data.sessionId;
-    } catch (error) {
-        console.error('[Checkout] エラー:', error);
-        throw error;
     }
 }
 
@@ -174,18 +97,15 @@ async function createCheckoutSession(userId) {
  * ページ読み込み時の初期化
  */
 globalThis.addEventListener('load', () => {
-    console.info('[Init] ========== ページ読み込み開始 ==========');
-    console.info('[Init] CONFIG:', globalThis.CONFIG);
-    console.info('[Init] Stripe wrapper:', typeof globalThis.Stripe);
-
-    // イベントリスナーを設定
     const subscribeBtn = document.getElementById('subscribeBtn');
     if (subscribeBtn) {
-        subscribeBtn.addEventListener('click', startSubscription);
-        console.info('[Init] Subscribe button イベント登録完了');
-    } else {
-        console.error('[Init] Subscribe button が見つかりません');
+        subscribeBtn.addEventListener('click', () => startPayment('subscription'));
     }
 
-    console.info('[Init] ========== 初期化完了 ==========');
+    const buyOnceBtn = document.getElementById('buyOnceBtn');
+    if (buyOnceBtn) {
+        buyOnceBtn.addEventListener('click', () => startPayment('onetime'));
+    }
+
+    console.info('[Init] サブスクリプションページ初期化完了');
 });
