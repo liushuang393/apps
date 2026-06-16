@@ -142,6 +142,15 @@ pytest tests/test_ai_providers.py -k "test_name_substring"
 - Do not hardcode API keys or secrets.
 - Before committing: `./scripts/check.sh` must pass.
 
+### `.env` Handling (重要 / memory)
+- The user manages `.env` manually. Do NOT modify `.env` or `.env.example`
+  without explicit per-change confirmation — propose the diff and wait for OK.
+- Never write real secret values into any tracked file (`.env.example`, configs,
+  code). `.env.example` holds placeholder keys only.
+- When new settings are added in `config.py`, list the corresponding
+  `.env`/`.env.example` keys to the user rather than editing those files
+  unilaterally.
+
 ## Cursor / Copilot Rules
 - No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md`
   were found in this repository.

@@ -60,6 +60,14 @@ def get_ai_provider() -> AIProvider:
         APIKeyError: 必要なAPIキーが未設定の場合
         ValueError: 不明なプロバイダーが指定された場合
     """
+    # ステージ別スロット（ASR/MT/TTS）がいずれか指定されていれば Composite を使う。
+    # 3スロットとも "auto"（既定）なら従来の一体型 provider をそのまま使う（後方互換）。
+    from app.ai_pipeline.registry import build_composite_provider, composite_enabled
+
+    if composite_enabled():
+        logger.info("[AI Provider] ステージ別スロット指定により Composite を使用")
+        return build_composite_provider()
+
     provider = settings.ai_provider
 
     if provider == "gpt4o_transcribe":

@@ -271,6 +271,19 @@ class GoogleProvider(AIProvider):
             )
         return await self._translate_via_openai(text, source_language, target_language)
 
+    async def translate_text(
+        self, text: str, source_language: str, target_language: str
+    ) -> str:
+        """
+        テキストのみ翻訳する公開 API（MT ステージ用）。
+
+        Cloud Translation を試行し失敗時は OpenAI へフォールバックする内部処理を
+        そのまま利用する。Composite 構成で MT ステージとして再利用するための窓口。
+        """
+        if not text or not text.strip():
+            return ""
+        return await self._translate_text(text, source_language, target_language)
+
     async def translate_audio(
         self, audio_data: bytes, source_language: str, target_language: str
     ) -> TranslationResult:
