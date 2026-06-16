@@ -1385,7 +1385,9 @@
 
     <!-- SimpleQueue - 简化的队列管理（MQ方式） -->
     <!-- VoiceTranslate Pro JavaScript (ResponseQueue included) -->
-    <!-- ユーティリティモジュール（最初に読み込む） -->
+    <!-- プラットフォーム差分アダプタ（最初に読み込む。他モジュールが依存） -->
+    <script src="voicetranslate-platform-adapter.js"></script>
+    <!-- ユーティリティモジュール -->
     <script src="voicetranslate-utils.js"></script>
     <!-- ✅ 双路径异步处理架构模块 -->
     <script src="voicetranslate-audio-queue.js"></script>

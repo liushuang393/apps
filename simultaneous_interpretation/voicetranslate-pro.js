@@ -83,13 +83,12 @@ class VoiceTranslateApp {
         this.targetSentenceCount = 2; // 目標句子数（2-3句）
         this.maxBufferDuration = 10000; // 最大缓冲时长（10秒 - 防止无限等待）
 
+        // ✅ プラットフォーム差分アダプタ（Electron/拡張/ブラウザの個別部分を隔離）
+        this.platform = VoiceTranslatePlatform.getPlatform();
+
         // ✅ P1-2: 会話コンテキスト管理（Electron環境のみ）
         // ブラウザ・拡張機能では使用しない
-        this.conversationEnabled =
-            this.isElectron() &&
-            typeof globalThis.window !== 'undefined' &&
-            typeof globalThis.window.electronAPI !== 'undefined' &&
-            typeof globalThis.window.electronAPI.conversation !== 'undefined';
+        this.conversationEnabled = this.platform.supportsConversation;
 
         if (this.conversationEnabled) {
             console.info('[Conversation] 会話管理機能が有効です（Electron環境）');
@@ -404,9 +403,7 @@ class VoiceTranslateApp {
 
                 // ✅ 修正: ブラウザ環境では自動的に音声ソースを検出
                 // Electron環境ではユーザーが手動で「会議アプリを検出」ボタンをクリックする
-                const isElectron =
-                    typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-                if (!isElectron) {
+                if (!this.platform.isElectron) {
                     console.info('[Audio Source] ブラウザ環境: 音声ソースを自動検出');
                     await this.detectAudioSources();
                 }
@@ -576,25 +573,13 @@ class VoiceTranslateApp {
         });
     }
 
-    // ストレージ操作（拡張機能対応）
+    // ストレージ操作（拡張機能対応）→ プラットフォームアダプタへ委譲
     saveToStorage(key, value) {
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.set({ [key]: value });
-        } else {
-            localStorage.setItem(key, value);
-        }
+        this.platform.saveToStorage(key, value);
     }
 
     async getFromStorage(key) {
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            return new Promise((resolve) => {
-                chrome.storage.local.get([key], (result) => {
-                    resolve(result[key]);
-                });
-            });
-        } else {
-            return localStorage.getItem(key);
-        }
+        return this.platform.getFromStorage(key);
     }
 
     initVisualizer() {
@@ -741,10 +726,18 @@ class VoiceTranslateApp {
                     'info'
                 );
             } else {
-                this.notify('音声出力設定', `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`, 'info');
+                this.notify(
+                    '音声出力設定',
+                    `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`,
+                    'info'
+                );
             }
         } else {
-            this.notify('音声出力設定', `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`, 'info');
+            this.notify(
+                '音声出力設定',
+                `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`,
+                'info'
+            );
         }
 
         if (this.state.isConnected) {
@@ -828,10 +821,7 @@ class VoiceTranslateApp {
      *   app2で録音開始時に、ブラウザ版の録音を自動停止
      */
     initCrossInstanceSync() {
-        // Electron環境かどうかを判定
-        const isElectron = typeof globalThis !== 'undefined' && !!globalThis.electronAPI;
-
-        if (isElectron) {
+        if (this.platform.isElectron) {
             console.info('[Sync] Electronアプリとして起動 - ブラウザ版を制御します');
         } else {
             console.info('[Sync] ブラウザ版として起動 - Electronアプリからの制御を監視します');
@@ -901,17 +891,14 @@ class VoiceTranslateApp {
     }
 
     async loadApiKeyFromEnv() {
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-
-        if (!isElectron) {
+        if (!this.platform.isElectron) {
             console.info('[App] ブラウザ環境: 環境変数からAPIキーを読み込めません');
             return;
         }
 
         try {
             console.info('[App] Electron環境: 環境変数からAPIキーを取得中...');
-            const envApiKey = await globalThis.window.electronAPI.getEnvApiKey();
+            const envApiKey = await this.platform.getEnvApiKey();
 
             if (envApiKey) {
                 this.state.apiKey = envApiKey;
@@ -934,7 +921,7 @@ class VoiceTranslateApp {
 
             // 環境変数から設定を読み込む
             console.info('[App] Electron環境: 環境変数から設定を取得中...');
-            const envConfig = await globalThis.window.electronAPI.getEnvConfig();
+            const envConfig = await this.platform.getEnvConfig();
 
             if (envConfig) {
                 // CONFIGを上書き（2種類のモデル設定）
@@ -954,34 +941,30 @@ class VoiceTranslateApp {
     }
 
     setupElectronWebSocketHandlers() {
-        if (!globalThis.window.electronAPI) {
+        if (!this.platform.isElectron) {
             return;
         }
 
         console.info('[Electron WS] IPCハンドラーを設定中...');
 
-        // 接続成功
-        globalThis.window.electronAPI.on('realtime-ws-open', () => {
-            console.info('[Electron WS] 接続成功イベント受信');
-            this.handleWSOpen();
-        });
-
-        // メッセージ受信
-        globalThis.window.electronAPI.on('realtime-ws-message', (message) => {
-            console.info('[Electron WS] メッセージ受信イベント');
-            this.handleWSMessage({ data: message });
-        });
-
-        // エラー
-        globalThis.window.electronAPI.on('realtime-ws-error', (error) => {
-            console.error('[Electron WS] エラーイベント:', error);
-            this.handleWSError(error);
-        });
-
-        // 接続終了
-        globalThis.window.electronAPI.on('realtime-ws-close', (data) => {
-            console.info('[Electron WS] 接続終了イベント:', data);
-            this.handleWSClose(data);
+        // Realtime WebSocket イベントをアダプタ経由で購読
+        this.platform.subscribeRealtimeEvents({
+            onOpen: () => {
+                console.info('[Electron WS] 接続成功イベント受信');
+                this.handleWSOpen();
+            },
+            onMessage: (message) => {
+                console.info('[Electron WS] メッセージ受信イベント');
+                this.handleWSMessage({ data: message });
+            },
+            onError: (error) => {
+                console.error('[Electron WS] エラーイベント:', error);
+                this.handleWSError(error);
+            },
+            onClose: (data) => {
+                console.info('[Electron WS] 接続終了イベント:', data);
+                this.handleWSClose(data);
+            }
         });
 
         console.info('[Electron WS] IPCハンドラー設定完了');
@@ -1008,14 +991,10 @@ class VoiceTranslateApp {
             };
             console.info('[Connect] 接続開始:', debugInfo);
 
-            // Electron環境チェック
-            const isElectron =
-                typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-
             // ✅ Electron環境: 会話セッション開始
-            if (isElectron && globalThis.window.electronAPI.conversation) {
+            if (this.platform.conversation) {
                 try {
-                    const sessionId = await globalThis.window.electronAPI.conversation.startSession(
+                    const sessionId = await this.platform.conversation.startSession(
                         this.state.sourceLang || 'auto',
                         this.state.targetLang || 'ja'
                     );
@@ -1027,7 +1006,7 @@ class VoiceTranslateApp {
                 }
             }
 
-            if (isElectron) {
+            if (this.platform.isElectron) {
                 // Electronの場合、mainプロセス経由で接続（Authorizationヘッダー付き）
                 console.info('[Connect] Electron環境: mainプロセス経由で接続します');
 
@@ -1035,7 +1014,7 @@ class VoiceTranslateApp {
                 this.setupElectronWebSocketHandlers();
 
                 // WebSocket接続を要求
-                const result = await globalThis.window.electronAPI.realtimeWebSocketConnect({
+                const result = await this.platform.connectRealtime({
                     url: CONFIG.API.REALTIME_URL,
                     apiKey: this.state.apiKey,
                     model: CONFIG.API.REALTIME_MODEL
@@ -1089,13 +1068,10 @@ class VoiceTranslateApp {
     }
 
     async disconnect() {
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-
         // ✅ Electron環境: 会話セッション終了
-        if (isElectron && globalThis.window.electronAPI.conversation && this.state.currentSessionId) {
+        if (this.platform.conversation && this.state.currentSessionId) {
             try {
-                await globalThis.window.electronAPI.conversation.endSession();
+                await this.platform.conversation.endSession();
                 console.info('[Conversation] セッション終了:', this.state.currentSessionId);
                 this.state.currentSessionId = null;
             } catch (error) {
@@ -1103,9 +1079,9 @@ class VoiceTranslateApp {
             }
         }
 
-        if (isElectron) {
+        if (this.platform.isElectron) {
             // Electron環境
-            await globalThis.window.electronAPI.realtimeWebSocketClose();
+            await this.platform.closeRealtime();
         } else if (this.state.ws) {
             // ブラウザ環境
             this.state.ws.close();
@@ -1221,9 +1197,9 @@ class VoiceTranslateApp {
         // ✅ VAD感度に応じてthresholdを調整
         // threshold値が小さいほど敏感（小さい音でも検出）
         const thresholdMap = {
-            low: 0.7,    // 低感度：大きい音のみ検出
+            low: 0.7, // 低感度：大きい音のみ検出
             medium: 0.5, // 中感度：標準的な音声を検出
-            high: 0.3    // 高感度：小さい音も検出
+            high: 0.3 // 高感度：小さい音も検出
         };
 
         const threshold = thresholdMap[vadSensitivity] || 0.5;
@@ -1285,7 +1261,8 @@ class VoiceTranslateApp {
         const targetNative = Utils.getNativeLanguageName(targetLang);
 
         // ✅ 中文の場合は明確に「简体中文」を指定
-        const targetLanguageSpec = targetLang === 'zh' ? 'Simplified Chinese (简体中文)' : targetName;
+        const targetLanguageSpec =
+            targetLang === 'zh' ? 'Simplified Chinese (简体中文)' : targetName;
 
         // 最適化された指示（OpenAI Realtime Prompting Guide ベストプラクティス）
         // ✅ 強化: 翻訳専用モード、対話禁止を明確化
@@ -1442,14 +1419,9 @@ Even if you have translated many sentences, your role has NOT changed:
     }
 
     async sendMessage(message) {
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-
-        if (isElectron) {
-            // Electron環境
-            const result = await globalThis.window.electronAPI.realtimeWebSocketSend(
-                JSON.stringify(message)
-            );
+        if (this.platform.isElectron) {
+            // Electron環境（mainプロセス経由IPC）
+            const result = await this.platform.sendRealtime(message);
             if (!result.success) {
                 console.error('[Send Message] Electron送信エラー:', result.message);
             }
@@ -1628,10 +1600,7 @@ Even if you have translated many sentences, your role has NOT changed:
      *   true: 続行可能、false: 中止
      */
     async handleElectronBrowserSync() {
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-
-        if (isElectron) {
+        if (this.platform.isElectron) {
             console.info('[Sync] Electronアプリで録音開始 - ブラウザ版に停止を通知します');
             localStorage.setItem('app2_recording', 'true');
             return true;
@@ -2325,10 +2294,7 @@ Even if you have translated many sentences, your role has NOT changed:
                 console.error('[Recording] 音声トラック待機タイムアウト');
 
                 // ブラウザ拡張機能かElectronかを判定
-                const isElectron =
-                    typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-
-                if (isElectron) {
+                if (this.platform.isElectron) {
                     throw new Error(
                         '音声トラックが検出されませんでした。\n' +
                             '会議アプリで音声が再生されているか確認してください。'
@@ -2467,7 +2433,9 @@ Even if you have translated many sentences, your role has NOT changed:
             this.state.workletNode.connect(this.state.inputGainNode);
             this.state.inputGainNode.connect(this.state.audioContext.destination);
 
-            console.info('[Recording] AudioWorklet を使用して音声処理を開始しました（入力音声出力: OFF）');
+            console.info(
+                '[Recording] AudioWorklet を使用して音声処理を開始しました（入力音声出力: OFF）'
+            );
         } catch (error) {
             const errorMessage = this.extractErrorMessage(error);
             console.warn(
@@ -2537,7 +2505,9 @@ Even if you have translated many sentences, your role has NOT changed:
             this.state.processor.connect(this.state.inputGainNode);
             this.state.inputGainNode.connect(this.state.audioContext.destination);
 
-            console.info('[Recording] ScriptProcessorNode を使用して音声処理を開始しました（入力音声出力: OFF）');
+            console.info(
+                '[Recording] ScriptProcessorNode を使用して音声処理を開始しました（入力音声出力: OFF）'
+            );
         }
 
         // ✅ UI更新と通知（isRecording は既に true に設定済み）
@@ -2566,16 +2536,14 @@ Even if you have translated many sentences, your role has NOT changed:
     async detectAudioSources() {
         console.info('[Audio Source] 音声ソースを検出中...');
 
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
         const systemAudioSource = document.getElementById('systemAudioSource');
 
-        if (isElectron) {
+        if (this.platform.isElectron) {
             // Electron環境: 会議アプリを自動検出
             try {
                 this.notify('検出中', '音声ソースを検出しています...', 'info');
 
-                const sources = await globalThis.window.electronAPI.detectMeetingApps();
+                const sources = await this.platform.detectMeetingApps();
                 console.info('[Audio Source] ========== 検出されたソース ==========');
                 console.info('[Audio Source] ソース数:', sources.length);
 
@@ -2705,9 +2673,7 @@ Even if you have translated many sentences, your role has NOT changed:
         // this.clearPlaybackQueueIfAny(); // ← 削除
 
         // Electronアプリの場合、ブラウザ版への録音停止通知をクリア
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-        if (isElectron) {
+        if (this.platform.isElectron) {
             console.info('[Sync] Electronアプリで録音停止 - ブラウザ版への通知をクリアします');
             localStorage.removeItem('app2_recording');
         }
@@ -2907,8 +2873,9 @@ Even if you have translated many sentences, your role has NOT changed:
         // 出力専用AudioContextが存在しない場合は作成
         // 入力処理と分離することで、出力音声の優先度を確保
         if (!this.state.outputAudioContext) {
-            this.state.outputAudioContext = new (globalThis.AudioContext ||
-                globalThis.webkitAudioContext)({
+            this.state.outputAudioContext = new (
+                globalThis.AudioContext || globalThis.webkitAudioContext
+            )({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
             console.info('[Audio] 出力専用AudioContextを作成しました');
@@ -3035,10 +3002,17 @@ Even if you have translated many sentences, your role has NOT changed:
         const clearedChunks = this.playbackQueue.length;
 
         if (clearedChunks > 0 || this.currentAudioSource) {
-            console.warn('[🔊 Playback Queue] ========== 新しい翻訳開始 - 古い音声をクリア ==========');
+            console.warn(
+                '[🔊 Playback Queue] ========== 新しい翻訳開始 - 古い音声をクリア =========='
+            );
             console.warn('[🔊 Playback Queue] クリアされた音声チャンク数:', clearedChunks);
-            console.warn('[🔊 Playback Queue] 現在再生中の音声:', this.currentAudioSource ? '停止します' : 'なし');
-            console.warn('[🔊 Playback Queue] ================================================================');
+            console.warn(
+                '[🔊 Playback Queue] 現在再生中の音声:',
+                this.currentAudioSource ? '停止します' : 'なし'
+            );
+            console.warn(
+                '[🔊 Playback Queue] ================================================================'
+            );
         }
 
         // ✅ キューをクリア
@@ -3261,10 +3235,7 @@ Even if you have translated many sentences, your role has NOT changed:
      * @returns {boolean} Electron環境の場合true
      */
     isElectron() {
-        return (
-            typeof globalThis.window !== 'undefined' &&
-            typeof globalThis.window.electronAPI !== 'undefined'
-        );
+        return this.platform.isElectron;
     }
 
     updateVADSensitivity(level) {
@@ -3630,13 +3601,10 @@ VoiceTranslateApp.prototype.showHistory = async function () {
         return;
     }
 
-    // Electron環境チェック
-    const isElectron =
-        typeof globalThis.window !== 'undefined' &&
-        globalThis.window.electronAPI &&
-        globalThis.window.electronAPI.conversation;
+    // 会話履歴(SQLite)はElectronのみ対応
+    const platform = VoiceTranslatePlatform.getPlatform();
 
-    if (!isElectron) {
+    if (!platform.conversation) {
         // ブラウザ環境: 情報メッセージを表示
         modalBody.innerHTML = `
             <div class="empty-state">
@@ -3657,7 +3625,7 @@ VoiceTranslateApp.prototype.showHistory = async function () {
         modalBody.innerHTML = '<div style="text-align: center; padding: 40px;">読み込み中...</div>';
         modal.classList.add('active');
 
-        const sessions = await globalThis.window.electronAPI.conversation.getAllSessions(50);
+        const sessions = await platform.conversation.getAllSessions(50);
 
         if (!sessions || sessions.length === 0) {
             modalBody.innerHTML = `
@@ -3699,9 +3667,10 @@ VoiceTranslateApp.prototype.renderSessionList = function (sessions) {
         .map((session) => {
             // ✅ キャメルケースとスネークケースの両方に対応
             const startTime = new Date(session.startTime || session.start_time);
-            const endTime = session.endTime || session.end_time
-                ? new Date(session.endTime || session.end_time)
-                : null;
+            const endTime =
+                session.endTime || session.end_time
+                    ? new Date(session.endTime || session.end_time)
+                    : null;
             const turnCount = session.turnCount || session.turn_count || 0;
             const sourceLanguage = session.sourceLanguage || session.source_language || 'auto';
             const targetLanguage = session.targetLanguage || session.target_language || 'ja';
@@ -3762,7 +3731,8 @@ VoiceTranslateApp.prototype.showSessionDetails = async function (sessionId) {
     try {
         modalBody.innerHTML = '<div style="text-align: center; padding: 40px;">読み込み中...</div>';
 
-        const turns = await globalThis.window.electronAPI.conversation.getSessionTurns(sessionId);
+        const turns =
+            await VoiceTranslatePlatform.getPlatform().conversation.getSessionTurns(sessionId);
 
         if (!turns || turns.length === 0) {
             modalBody.innerHTML = `

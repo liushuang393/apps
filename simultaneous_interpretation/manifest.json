@@ -48,6 +48,13 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "voicetranslate-platform-adapter.js",
+        "voicetranslate-utils.js",
+        "voicetranslate-audio-queue.js",
+        "voicetranslate-path-processors.js",
+        "voicetranslate-audio-capture-strategy.js",
+        "voicetranslate-websocket-mixin.js",
+        "voicetranslate-ui-mixin.js",
         "voicetranslate-pro.js",
         "teams-realtime-translator.html",
         "subscription.html",

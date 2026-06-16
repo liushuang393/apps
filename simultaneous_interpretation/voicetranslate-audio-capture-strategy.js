@@ -289,10 +289,7 @@ class AudioCaptureStrategyFactory {
         }
 
         // システム音声の場合
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-
-        if (isElectron) {
+        if (VoiceTranslatePlatform.getPlatform().isElectron) {
             // Electron環境
             return new ElectronAudioCaptureStrategy({
                 ...config,

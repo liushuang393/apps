@@ -24,14 +24,9 @@ const WebSocketMixin = {
      *   message: 送信するメッセージオブジェクト
      */
     async sendMessage(message) {
-        const isElectron =
-            typeof globalThis.window !== 'undefined' && globalThis.window.electronAPI;
-
-        if (isElectron) {
-            // Electron環境
-            const result = await globalThis.window.electronAPI.realtimeWebSocketSend(
-                JSON.stringify(message)
-            );
+        if (this.platform.isElectron) {
+            // Electron環境（mainプロセス経由IPC）
+            const result = await this.platform.sendRealtime(message);
             if (!result.success) {
                 console.error('[Send Message] Electron送信エラー:', result.message);
             }
@@ -619,9 +614,10 @@ const WebSocketMixin = {
             currentText: this.currentTranscriptBuffer.substring(0, 50) + '...',
             sentenceCount: this.sentenceCount,
             targetCount: this.targetSentenceCount,
-            bufferDuration: this.isBufferingAudio && this.audioBufferStartTime
-                ? (Date.now() - this.audioBufferStartTime) + 'ms'
-                : 'N/A'
+            bufferDuration:
+                this.isBufferingAudio && this.audioBufferStartTime
+                    ? Date.now() - this.audioBufferStartTime + 'ms'
+                    : 'N/A'
         });
 
         // ✅ 检查是否应该提交音频
@@ -646,8 +642,11 @@ const WebSocketMixin = {
 
         if (shouldCommitBySentenceCount || shouldCommitByDuration) {
             console.warn('[Transcript Buffer] ========== 音声提交触发 ==========');
-            console.warn('[Transcript Buffer] 触发原因:',
-                shouldCommitBySentenceCount ? `句子数達成（${this.sentenceCount}句）` : `時長超過（${bufferDuration}ms）`
+            console.warn(
+                '[Transcript Buffer] 触发原因:',
+                shouldCommitBySentenceCount
+                    ? `句子数達成（${this.sentenceCount}句）`
+                    : `時長超過（${bufferDuration}ms）`
             );
             console.warn('[Transcript Buffer] 累積文本:', this.currentTranscriptBuffer);
             console.warn('[Transcript Buffer] =============================================');
@@ -1077,8 +1076,9 @@ const WebSocketMixin = {
         // 出力専用AudioContextが存在しない場合は作成
         // 入力処理と分離することで、出力音声の優先度を確保
         if (!this.state.outputAudioContext) {
-            this.state.outputAudioContext = new (globalThis.AudioContext ||
-                globalThis.webkitAudioContext)({
+            this.state.outputAudioContext = new (
+                globalThis.AudioContext || globalThis.webkitAudioContext
+            )({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
             console.info('[Audio] 出力専用AudioContextを作成しました');

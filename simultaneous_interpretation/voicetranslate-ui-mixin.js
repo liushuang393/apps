@@ -277,13 +277,8 @@ const UIMixin = {
             return;
         }
 
-        // Electron環境チェック
-        const isElectron =
-            typeof globalThis.window !== 'undefined' &&
-            globalThis.window.electronAPI &&
-            globalThis.window.electronAPI.conversation;
-
-        if (!isElectron) {
+        // 会話保存(SQLite)はElectronのみ対応
+        if (!this.platform.conversation) {
             return;
         }
 
@@ -301,7 +296,7 @@ const UIMixin = {
             const language = this.state.sourceLang || 'auto';
 
             // ターン追加
-            await globalThis.window.electronAPI.conversation.addTurn({
+            await this.platform.conversation.addTurn({
                 role: role,
                 content: text,
                 language: language,

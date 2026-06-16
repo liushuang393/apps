@@ -85,7 +85,11 @@
     "files": [
       "dist/**/*",
       "teams-realtime-translator.html",
-      "voicetranslate-pro.js",
+      "voicetranslate-*.js",
+      "audio-processor-worklet.js",
+      "echo-canceller-worklet.js",
+      "config.js",
+      "vendor/**/*",
       "icons/**/*",
       "package.json"
     ],
