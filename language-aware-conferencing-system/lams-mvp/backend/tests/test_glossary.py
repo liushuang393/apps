@@ -11,6 +11,7 @@ from app.translate.glossary import (
     GlossaryMatch,
     build_prompt_hint,
     match_terms,
+    measure_glossary_hits,
 )
 
 
@@ -119,3 +120,41 @@ def test_build_hint_do_not_translate() -> None:
     )
     assert '"LAMS"' in hint
     assert "do NOT translate" in hint
+
+
+def test_measure_hits_empty_returns_zero() -> None:
+    """命中用語が無ければ (0, 0)（命中率計測の分母なし）"""
+    assert measure_glossary_hits([], "any text") == (0, 0)
+
+
+def test_measure_hits_target_term_present() -> None:
+    """指定訳が訳文に出現すれば命中"""
+    matches = [GlossaryMatch("承認", "审批", do_not_translate=False, priority=100)]
+    assert measure_glossary_hits(matches, "请进行审批操作") == (1, 1)
+
+
+def test_measure_hits_target_term_absent() -> None:
+    """指定訳が訳文に無ければ非命中"""
+    matches = [GlossaryMatch("承認", "审批", do_not_translate=False, priority=100)]
+    assert measure_glossary_hits(matches, "请进行确认操作") == (0, 1)
+
+
+def test_measure_hits_do_not_translate_preserved() -> None:
+    """翻訳禁止語は source_term が訳文に保持されていれば命中"""
+    matches = [GlossaryMatch("LAMS", None, do_not_translate=True, priority=100)]
+    assert measure_glossary_hits(matches, "LAMS は便利です") == (1, 1)
+
+
+def test_measure_hits_case_insensitive() -> None:
+    """訳文の照合は大小文字を無視する"""
+    matches = [GlossaryMatch("api", "API", do_not_translate=False, priority=100)]
+    assert measure_glossary_hits(matches, "call the api endpoint") == (1, 1)
+
+
+def test_measure_hits_partial_ratio() -> None:
+    """複数候補のうち反映分のみ命中（命中率の分子/分母）"""
+    matches = [
+        GlossaryMatch("承認", "审批", do_not_translate=False, priority=100),
+        GlossaryMatch("部長", "部长", do_not_translate=False, priority=100),
+    ]
+    assert measure_glossary_hits(matches, "审批を依頼") == (1, 2)

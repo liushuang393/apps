@@ -36,10 +36,14 @@ dependencies = [
     # Validation
     "pydantic[email]==2.10.3",
     "pydantic-settings==2.7.0",
-    # WebSocket
+    # WebSocket クライアント（OpenAI Realtime provider が S2S 接続に使用）
     "websockets==14.1",
-    # Audio Processing
-    "webrtcvad==2.0.10",
+    # Audio Processing（PCM 変換ユーティリティ用。発話切り出しは自前の energy VAD）
+    "numpy==2.4.6",
+    # WebRTC / LiveKit（Phase 3 C1: 単一トランスポート）
+    # livekit-api = トークン発行 / Room API、livekit = rtc（音声 track / data channel）
+    "livekit-api==1.1.0",
+    "livekit==1.1.10",
 ]
 
 [project.optional-dependencies]

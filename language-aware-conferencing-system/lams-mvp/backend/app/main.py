@@ -14,10 +14,10 @@ from app.admin.routes import router as admin_router
 from app.auth.routes import router as auth_router
 from app.config import settings
 from app.db.database import init_db
+from app.meetings.routes import router as meetings_router
 from app.rooms.routes import router as rooms_router
 from app.translate.glossary_routes import router as glossary_router
 from app.translate.routes import router as translate_router
-from app.websocket.handler import router as ws_router
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,8 @@ def _validate_api_keys() -> None:
             "[FATAL] OPENAI_API_KEY が設定されていません！\n"
             "音声認識(ASR)、翻訳、音声合成(TTS)が動作しません。\n"
             "環境変数（推奨）または .env に OPENAI_API_KEY を設定してください。\n"
-            + "=" * 60
+            + "="
+            * 60
         )
     else:
         # APIキーの形式チェック（sk-で始まるか）
@@ -70,6 +71,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     # データベース初期化
     await init_db()
     yield
+    # 終了時: 常駐 Agent worker を停止（autostart 有効時のみ実体を持つ）
+    from app.webrtc.supervisor import agent_supervisor
+
+    await agent_supervisor.stop_all()
 
 
 app = FastAPI(
@@ -91,10 +96,10 @@ app.add_middleware(
 # ルーター登録
 app.include_router(auth_router, prefix="/api/auth", tags=["認証"])
 app.include_router(rooms_router, prefix="/api/rooms", tags=["会議室"])
+app.include_router(meetings_router, prefix="/api/meetings", tags=["会議モード"])
 app.include_router(admin_router, prefix="/api/admin", tags=["管理者"])
 app.include_router(translate_router, prefix="/api/translate", tags=["翻訳"])
 app.include_router(glossary_router, prefix="/api/glossaries", tags=["用語集"])
-app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
 
 
 @app.get("/health")

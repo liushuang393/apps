@@ -215,6 +215,22 @@ function convertSubtitle(s: SubtitleApiResponse): SubtitleRecord {
   };
 }
 
+/** LiveKit 参加トークン（camelCase） */
+export interface JoinToken {
+  serverUrl: string;
+  token: string;
+  roomId: string;
+  identity: string;
+}
+
+/** バックエンドの LiveKit トークン応答型（snake_case） */
+interface JoinTokenApiResponse {
+  server_url: string;
+  token: string;
+  room_id: string;
+  identity: string;
+}
+
 /** 会議室API */
 export const roomApi = {
   /** 一覧取得 */
@@ -253,6 +269,19 @@ export const roomApi = {
       }),
     });
     return convertRoom(res);
+  },
+
+  /** LiveKit 参加トークン発行（POST /rooms/{id}/token） */
+  getJoinToken: async (roomId: string): Promise<JoinToken> => {
+    const res = await apiFetch<JoinTokenApiResponse>(`/rooms/${roomId}/token`, {
+      method: 'POST',
+    });
+    return {
+      serverUrl: res.server_url,
+      token: res.token,
+      roomId: res.room_id,
+      identity: res.identity,
+    };
   },
 
   /** 会議記録取得 */

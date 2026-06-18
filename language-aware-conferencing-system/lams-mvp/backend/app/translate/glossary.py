@@ -120,6 +120,35 @@ def build_prompt_hint(matches: list[GlossaryMatch]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def measure_glossary_hits(
+    matches: list[GlossaryMatch], translated_text: str
+) -> tuple[int, int]:
+    """
+    命中用語が訳文に正しく反映されたかを計測する（純粋関数・命中率フック）
+
+    判定:
+        - do_not_translate / target_term 無し: source_term が訳文に保持されていれば命中。
+        - それ以外: target_term が訳文に出現していれば命中。
+        - 大小文字は無視。candidate（命中用語）が無ければ (0, 0) を返す。
+    戻り値:
+        (hits, total)。total は命中用語数、hits は訳文反映に成功した数。
+    """
+    total = len(matches)
+    if total == 0:
+        return (0, 0)
+    text_lower = (translated_text or "").lower()
+    hits = 0
+    for m in matches:
+        expected = (
+            m.source_term
+            if (m.do_not_translate or not m.target_term)
+            else m.target_term
+        )
+        if expected and expected.lower() in text_lower:
+            hits += 1
+    return (hits, total)
+
+
 # ============================================================
 # DB ローダ + インメモリ TTL キャッシュ
 # ============================================================

@@ -209,7 +209,7 @@ async def get_all_translations(subtitle_id: str) -> dict[str, str]:
 
         values = await r.mget(keys)
         result = {}
-        for key, value in zip(keys, values):
+        for key, value in zip(keys, values, strict=True):
             if value:
                 # キーから言語を抽出: subtitle_trans:{id}:{lang}
                 lang = key.split(":")[-1]

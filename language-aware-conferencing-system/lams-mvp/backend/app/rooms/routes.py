@@ -4,17 +4,22 @@ LAMS 会議室APIルート
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_pipeline.providers.minutes import MinutesRequest, get_minutes_provider
 from app.auth.dependencies import get_current_user
+from app.config import settings
 from app.db.database import get_db
-from app.db.models import Room, Subtitle, User
+from app.db.models import MeetingMode, Room, Subtitle, User
 from app.rooms.manager import room_manager
+from app.webrtc.supervisor import agent_supervisor
+from app.webrtc.token import LiveKitNotConfiguredError, create_join_token
 
 router = APIRouter()
+
+_VALID_MODES = {m.value for m in MeetingMode}
 
 
 class RoomCreate(BaseModel):
@@ -26,6 +31,17 @@ class RoomCreate(BaseModel):
     default_audio_mode: str = "original"  # デフォルトは原声
     allow_mode_switch: bool = True
     is_private: bool = False  # 私有会議（他ユーザーの一覧に非表示）
+    # 会議の既定モード（a/b/hybrid）。新規セッションの初期 mode となる（Phase 3）。
+    default_mode: str = MeetingMode.HYBRID.value
+    enable_openai_s2s: bool = True  # 聞く主線（S2S 翻訳音声）の会議レベル許可
+    language_routes: dict = {}  # 言語ペア単位の主線/プロバイダー上書き
+
+    @field_validator("default_mode")
+    @classmethod
+    def _check_mode(cls, v: str) -> str:
+        if v not in _VALID_MODES:
+            raise ValueError(f"default_mode は {sorted(_VALID_MODES)} のいずれかです")
+        return v
 
 
 class RoomResponse(BaseModel):
@@ -41,6 +57,10 @@ class RoomResponse(BaseModel):
     is_private: bool  # 私有/公開状態
     is_active: bool
     participant_count: int = 0
+    # 会議モード設定（Phase 3 ハイブリッド 2 主線）
+    default_mode: str = MeetingMode.HYBRID.value
+    enable_openai_s2s: bool = True
+    language_routes: dict = {}
 
     class Config:
         from_attributes = True
@@ -61,6 +81,9 @@ async def create_room(
         default_audio_mode=data.default_audio_mode,
         allow_mode_switch=data.allow_mode_switch,
         is_private=data.is_private,
+        default_mode=data.default_mode,
+        enable_openai_s2s=data.enable_openai_s2s,
+        language_routes=data.language_routes,
     )
     db.add(room)
     await db.commit()
@@ -79,6 +102,9 @@ async def create_room(
         allow_mode_switch=room.allow_mode_switch,
         is_private=room.is_private,
         is_active=room.is_active,
+        default_mode=room.default_mode,
+        enable_openai_s2s=room.enable_openai_s2s,
+        language_routes=room.language_routes or {},
     )
 
 
@@ -116,6 +142,9 @@ async def list_rooms(
                 is_private=room.is_private,
                 is_active=room.is_active,
                 participant_count=len(participants),
+                default_mode=room.default_mode,
+                enable_openai_s2s=room.enable_openai_s2s,
+                language_routes=room.language_routes or {},
             )
         )
 
@@ -160,6 +189,66 @@ async def get_room(
         is_private=room.is_private,
         is_active=room.is_active,
         participant_count=len(participants),
+        default_mode=room.default_mode,
+        enable_openai_s2s=room.enable_openai_s2s,
+        language_routes=room.language_routes or {},
+    )
+
+
+class JoinTokenResponse(BaseModel):
+    """LiveKit 参加トークンレスポンス（フロントの livekit-client が接続に使用）"""
+
+    server_url: str  # 接続先 LiveKit URL（公開 URL 優先）
+    token: str  # 署名済み JWT
+    room_id: str  # 参加対象 room（= LiveKit room 名）
+    identity: str  # 参加者 identity（= user.id）
+
+
+@router.post("/{room_id}/token", response_model=JoinTokenResponse)
+async def issue_livekit_token(
+    room_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> JoinTokenResponse:
+    """
+    会議室参加用の LiveKit トークンを発行する（Phase 3 C1：単一トランスポート）。
+    - 私有会議は作成者のみアクセス可能（get_room と同一ポリシー）。
+    - LiveKit 鍵未設定時は 503（起動は阻害しない設計）。
+    """
+    result = await db.execute(select(Room).where(Room.id == room_id))
+    room = result.scalar_one_or_none()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="会議室が見つかりません"
+        )
+    if room.is_private and room.creator_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この会議室にはアクセスできません",
+        )
+
+    try:
+        token = create_join_token(
+            room_id=room.id,
+            identity=user.id,
+            display_name=user.display_name,
+            agent_name=settings.livekit_agent_name,
+        )
+    except LiveKitNotConfiguredError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="WebRTC（LiveKit）は現在無効です（鍵未設定）",
+        ) from e
+
+    # 音声フォーク Gateway（Agent worker）を対象 room に常駐させる（冪等・非同期）。
+    # autostart 無効時は no-op。トークン発行は Agent 起動の成否に依存しない。
+    agent_supervisor.ensure_running(room.id)
+
+    return JoinTokenResponse(
+        server_url=settings.get_livekit_ws_url(),
+        token=token,
+        room_id=room.id,
+        identity=user.id,
     )
 
 
@@ -208,6 +297,13 @@ async def get_room_transcript(
             status_code=status.HTTP_404_NOT_FOUND, detail="会議室が見つかりません"
         )
 
+    # 私有会議は作成者以外アクセス不可（get_room / minutes と同一ポリシー）
+    if room.is_private and room.creator_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この会議室にはアクセスできません",
+        )
+
     # 字幕を取得（時系列順）
     result = await db.execute(
         select(Subtitle)
@@ -217,7 +313,7 @@ async def get_room_transcript(
     subtitles = result.scalars().all()
 
     # ユーザー情報を取得してマッピング
-    user_ids = list(set(s.speaker_id for s in subtitles))
+    user_ids = list({s.speaker_id for s in subtitles})
     if user_ids:
         result = await db.execute(select(User).where(User.id.in_(user_ids)))
         users_list = result.scalars().all()

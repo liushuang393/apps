@@ -437,7 +437,7 @@ async def get_subtitle_translation(
     subtitle_id: str,
     target_lang: str,
     wait: bool = Query(default=True, description="翻訳中の場合に待機するか"),
-    user: User = Depends(get_current_user),
+    _user: User = Depends(get_current_user),
 ) -> SubtitleTranslationResponse:
     """
     字幕IDで翻訳を取得

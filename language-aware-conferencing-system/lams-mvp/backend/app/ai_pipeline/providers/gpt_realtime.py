@@ -146,7 +146,9 @@ class GPTRealtimeProvider(AIProvider):
 
                 # セッション設定（transcriptionモード）
                 # 注意: session.type は存在しないパラメータ
-                lang_for_transcribe = language if language not in ("zh", "multi") else None
+                lang_for_transcribe = (
+                    language if language not in ("zh", "multi") else None
+                )
                 transcription_config: dict = {"model": settings.openai_transcribe_model}
                 if lang_for_transcribe:
                     transcription_config["language"] = lang_for_transcribe

@@ -1,0 +1,34 @@
+# ============================================================
+# LiveKit Server 設定（Phase 3 C1-6：自前ホスト SFU / Gateway）
+# ============================================================
+# 設計方針:
+#   - API キー/シークレットは秘密情報のため本ファイルには書かず、
+#     docker-compose の LIVEKIT_KEYS 環境変数（.env 由来）で注入する。
+#   - 本ファイルには非秘密のポート/RTC/TURN 設定のみを置く。
+#   - LAN 公開時は use_external_ip と node_ip（--node-ip 引数）で調整する。
+# 注意点（不明点）:
+#   - 厳格な NAT 環境では別途 coturn（docker-compose の coturn サービス）の
+#     リレーが必要。緩い NAT/LAN では本設定の UDP ポート範囲で直結する。
+
+# シグナリング（WS/HTTP）ポート。フロント/Agent はここへ接続する。
+port: 7880
+
+rtc:
+  # WebRTC over TCP のフォールバックポート（UDP 不通時に使用）。
+  tcp_port: 7881
+  # メディア用 UDP ポート範囲（直結 ICE 候補。compose で同範囲を公開する）。
+  port_range_start: 50000
+  port_range_end: 50019
+  # LAN/単一ホスト開発では外部 IP 自動検出を無効化（誤検出回避）。
+  # クラウド/グローバル公開時は true にするか --node-ip を指定する。
+  use_external_ip: false
+
+# LiveKit 同梱 TURN は無効化し、NAT 越えは standalone coturn に委譲する
+# （README §セキュリティ: 本番は coturn + TLS）。
+turn:
+  enabled: false
+
+# ロギング（コンテナ標準出力へ）。
+logging:
+  level: info
+  json: false

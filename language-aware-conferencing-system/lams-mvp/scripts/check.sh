@@ -126,7 +126,7 @@ if [ "$CHECK_BACKEND" = true ]; then
     fi
 
     echo -e "${BLUE}▶ Python 構文チェック中...${NC}"
-    if python3 -m py_compile app/config.py app/ai_pipeline/providers.py app/ai_pipeline/pipeline.py app/websocket/handler.py 2>&1; then
+    if python3 -m py_compile app/config.py app/ai_pipeline/providers/__init__.py app/ai_pipeline/pipeline.py app/main.py 2>&1; then
         echo -e "${GREEN}✅ Python 構文 OK${NC}"
     else
         echo -e "${RED}❌ Python 構文エラー${NC}"

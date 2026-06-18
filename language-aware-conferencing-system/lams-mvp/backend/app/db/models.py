@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    true,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -46,6 +47,25 @@ class UserRole(str, Enum):
     ADMIN = "admin"  # 管理者：全権限
     MODERATOR = "moderator"  # モデレーター：会議室管理
     USER = "user"  # 一般ユーザー：基本機能のみ
+
+
+class MeetingMode(str, Enum):
+    """
+    会議モード定義（README §0 / Phase 3 ハイブリッド設計）
+
+    目的:
+        「聞く主線（S2S 翻訳音声）」と「読む主線（ASR+MT 字幕/記録）」のどちらを
+        駆動するかを会議/セッション単位で表現する。2 主線は混ぜず、Gateway での
+        音声複製のみで分岐する（絶対原則）。
+    値:
+        - A      : 聞く主線のみ（OpenAI/Gemini S2S → 翻訳音声）。字幕は付随的。
+        - B      : 読む主線のみ（Google ASR + MT + 用語集 → 字幕/議事録）。
+        - HYBRID : 両主線を同時駆動（同一発話を複製し、聞く=S2S／読む=字幕）。
+    """
+
+    A = "a"  # 聞く主線のみ（S2S 音声翻訳）
+    B = "b"  # 読む主線のみ（ASR+MT 字幕）
+    HYBRID = "hybrid"  # 同時 2 主線
 
 
 class User(Base):
@@ -139,6 +159,14 @@ class MeetingSession(Base):
     # セッション状態
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # アクティブな会議モード（a / b / hybrid）。Room.default_mode を初期値とし、
+    # 進行中に PATCH /api/meetings/{id}/mode で切替可能（Phase 3 Mode Router の入力）。
+    mode: Mapped[str] = mapped_column(
+        String(10),
+        default=MeetingMode.HYBRID.value,
+        server_default=MeetingMode.HYBRID.value,
+    )
+
     # リレーション
     room: Mapped["Room"] = relationship()
     subtitles: Mapped[list["Subtitle"]] = relationship(back_populates="session")
@@ -200,6 +228,26 @@ class Room(Base):
         default="original",  # original または translated
     )
     allow_mode_switch: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # ===========================================
+    # Phase 3 会議モード設定（README §0 / ハイブリッド 2 主線）
+    # transport 非依存。新規セッション開始時の既定モードと主線ルーティングを保持。
+    # ===========================================
+    # 会議の既定モード（a / b / hybrid）。新規 MeetingSession.mode の初期値。
+    default_mode: Mapped[str] = mapped_column(
+        String(10),
+        default=MeetingMode.HYBRID.value,
+        server_default=MeetingMode.HYBRID.value,
+    )
+    # 聞く主線（OpenAI/Gemini S2S 翻訳音声）を会議レベルで許可するか。
+    # False の場合 hybrid でも読む主線（字幕）のみに縮退する。
+    enable_openai_s2s: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true()
+    )
+    # 言語ペア単位の主線/プロバイダー上書き（Mode Router 入力）。
+    # 例: {"ja->en": {"mode": "b"}, "en->ja": {"s2s_provider": "gemini_live"}}
+    # 空辞書なら会議既定（default_mode / enable_openai_s2s）に従う。
+    language_routes: Mapped[dict] = mapped_column(JSON, default=dict)
 
     # 私有/公開設定（私有会議は作成者以外一覧に表示されない）
     is_private: Mapped[bool] = mapped_column(Boolean, default=False)

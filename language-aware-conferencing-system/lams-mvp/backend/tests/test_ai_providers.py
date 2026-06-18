@@ -9,6 +9,7 @@ Gemini API と OpenAI Realtime API の接続確認用テスト。
     または
     docker exec lams-mvp-backend-1 python tests/test_ai_providers.py
 """
+
 import asyncio
 import os
 import sys
@@ -105,7 +106,9 @@ async def test_openai_api() -> bool:
         # シンプルな Chat Completions テスト
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": "Say 'Hello, LAMS!' in one short sentence."}],
+            messages=[
+                {"role": "user", "content": "Say 'Hello, LAMS!' in one short sentence."}
+            ],
             max_tokens=50,
         )
 
@@ -324,13 +327,10 @@ def test_transcribe_with_detection() -> None:
         _live_msg(turn_complete=True),
     ]
     provider = GeminiLiveProvider(client=_FakeGeminiClient(messages))
-    text, lang = asyncio.run(
-        provider.transcribe_with_detection(MIN_VALID_AUDIO, "ja")
-    )
+    text, lang = asyncio.run(provider.transcribe_with_detection(MIN_VALID_AUDIO, "ja"))
     assert text == "テスト発話です"
     assert lang == "ja"
 
 
 if __name__ == "__main__":
     sys.exit(asyncio.run(main()))
-

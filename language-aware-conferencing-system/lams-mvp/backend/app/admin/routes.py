@@ -68,7 +68,7 @@ class SystemStatsResponse(BaseModel):
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
-    admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserResponse]:
     """
@@ -94,7 +94,7 @@ async def list_users(
 @router.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: str,
-    admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """
@@ -188,7 +188,7 @@ async def update_user(
 
 @router.get("/stats", response_model=SystemStatsResponse)
 async def get_system_stats(
-    admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> SystemStatsResponse:
     """
@@ -273,7 +273,7 @@ ALL_LANGUAGE_OPTIONS: list[LanguageOption] = [
 
 @router.get("/settings/languages", response_model=LanguageSettingsResponse)
 async def get_language_settings(
-    user: User = Depends(get_current_user),
+    _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> LanguageSettingsResponse:
     """

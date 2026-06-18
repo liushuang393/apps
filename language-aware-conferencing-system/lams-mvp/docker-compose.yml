@@ -28,6 +28,46 @@ services:
       timeout: 5s
       retries: 5
 
+  # ===========================================
+  # LiveKit Server（Phase 3 C1：WebRTC SFU / Gateway）
+  # ===========================================
+  # WS を廃止し WebRTC/LiveKit へ一本化。フロント/Agent はここへ接続する。
+  # API キーは LIVEKIT_KEYS（.env 由来）で注入し、非秘密設定は livekit.yaml に置く。
+  livekit:
+    image: livekit/livekit-server:v1.8
+    command: --config /etc/livekit.yaml
+    environment:
+      # "APIキー: シークレット" 形式（livekit.yaml には秘密を書かない）
+      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret_change_in_production}"
+    ports:
+      - "${LIVEKIT_PORT:-7880}:7880"          # シグナリング（WS/HTTP）
+      - "${LIVEKIT_RTC_TCP_PORT:-7881}:7881"  # WebRTC over TCP フォールバック
+      - "50000-50019:50000-50019/udp"         # メディア UDP（livekit.yaml と一致）
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    restart: unless-stopped
+
+  # ===========================================
+  # coturn（STUN / TURN：NAT 越えリレー）
+  # ===========================================
+  # README §セキュリティ: 本番の NAT 越えは coturn が担当。LAN/緩い NAT では
+  # LiveKit の直結 UDP で足りるが、厳格 NAT 向けにリレーを提供する。
+  coturn:
+    image: coturn/coturn:4.6
+    command: >
+      -n --log-file=stdout --simple-log
+      --listening-port=3478
+      --realm=lams --fingerprint
+      --use-auth-secret
+      --static-auth-secret=${LIVEKIT_API_SECRET:-devsecret_change_in_production}
+      --min-port=50020 --max-port=50039
+      --no-tls --no-dtls
+    ports:
+      - "${TURN_PORT:-3478}:3478"
+      - "${TURN_PORT:-3478}:3478/udp"
+      - "50020-50039:50020-50039/udp"         # TURN リレー UDP 範囲
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -50,6 +90,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL:-gpt-realtime-2025-08-28}
+      # LiveKit / WebRTC 設定（Phase 3 C1：単一トランスポート）
+      # LIVEKIT_URL: サーバ→LiveKit の内部接続先（同一ネットワーク内のサービス名）
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      # LIVEKIT_WS_URL: フロントへ返す公開 URL（HOST_IP 経由で到達可能なもの）
+      - LIVEKIT_WS_URL=${LIVEKIT_WS_URL:-ws://${HOST_IP:-localhost}:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecret_change_in_production}
+      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-}
+      # トークン発行時にバックエンド内で Agent worker を自動起動するか（既定 false）
+      - LIVEKIT_AGENT_AUTOSTART=${LIVEKIT_AGENT_AUTOSTART:-false}
       # CORS用ホストIP（前後端で共有）
       - HOST_IP=${HOST_IP:-localhost}
       # フロントエンドポート（CORS許可オリジン自動生成用。.envのFRONTEND_PORTから注入）

@@ -8,12 +8,144 @@ LAMS QoSコントローラー
 - 超過時は字幕フォールバックで対応
 """
 
+import math
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 
 from app.config import settings
+
+# === Phase 3 ハイブリッド 2 主線の品質ゲート目標（README §9） ===
+# 主線1（音声翻訳/聞く）と主線2（翻訳字幕/読む）で P95 遅延の上限が異なる。
+HEARING_P95_TARGET_MS = 5000.0  # 主線1: 音声翻訳 P95 ≤ 5 秒
+READING_P95_TARGET_MS = 4000.0  # 主線2: 翻訳字幕 P95 ≤ 4 秒
+GLOSSARY_HIT_RATE_TARGET = 0.95  # 用語命中率 ≥ 95%
+_QOS_WINDOW = 200  # P95 算出に用いる直近サンプル数（主線ごと）
+_DEFAULT_P95 = 95.0  # 既定パーセンタイル
+
+# 主線名 → P95 目標（ms）。orchestrator のフォーク名と一致させる。
+_MAINLINE_TARGETS_MS: dict[str, float] = {
+    "hearing": HEARING_P95_TARGET_MS,
+    "reading": READING_P95_TARGET_MS,
+}
+
+
+def percentile(values: list[float], pct: float = _DEFAULT_P95) -> float | None:
+    """サンプル列の pct パーセンタイル（nearest-rank 法）。空なら None。"""
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = math.ceil((pct / 100.0) * len(ordered))
+    index = min(max(rank, 1), len(ordered)) - 1
+    return ordered[index]
+
+
+@dataclass
+class HybridQoSSnapshot:
+    """ハイブリッド QoS のスナップショット（観測・ダッシュボード用）。"""
+
+    hearing_p95_ms: float | None
+    reading_p95_ms: float | None
+    glossary_hit_rate: float | None
+    hearing_samples: int
+    reading_samples: int
+
+
+class HybridQoSMonitor:
+    """
+    ハイブリッド 2 主線の QoS 計測（README §9）。
+
+    目的:
+        主線ごとに P95 遅延、全体で用語命中率を集計し、§9 目標の逸脱を検知して
+        `qos_warning` ペイロードを生成する純ロジック。transport / DB 非依存。
+    入力:
+        record_latency(mainline, ms) / record_glossary(hits, total)。
+    出力:
+        evaluate_latency / evaluate_glossary が逸脱時に warning dict を返す。
+    注意点:
+        - 直近 window 件の固定長窓で P95 を算出（メモリ上限を保証）。
+        - 単一イベントループ内での逐次記録を前提（ロック不要）。
+    """
+
+    def __init__(
+        self,
+        window: int = _QOS_WINDOW,
+        targets_ms: dict[str, float] | None = None,
+        glossary_target: float = GLOSSARY_HIT_RATE_TARGET,
+        percentile_pct: float = _DEFAULT_P95,
+    ) -> None:
+        self._targets_ms = dict(
+            _MAINLINE_TARGETS_MS if targets_ms is None else targets_ms
+        )
+        self._glossary_target = glossary_target
+        self._pct = percentile_pct
+        self._latency: dict[str, deque[float]] = {
+            name: deque(maxlen=window) for name in self._targets_ms
+        }
+        self._glossary_hits = 0
+        self._glossary_total = 0
+
+    def record_latency(self, mainline: str, latency_ms: float) -> None:
+        """主線の 1 サンプル遅延（ms）を記録する（未知主線・負値は無視）。"""
+        if mainline not in self._latency or latency_ms < 0:
+            return
+        self._latency[mainline].append(float(latency_ms))
+
+    def record_glossary(self, hits: int, total: int) -> None:
+        """用語の命中数/候補数を累積する（total<=0 は無視）。"""
+        if total <= 0:
+            return
+        self._glossary_hits += max(0, min(hits, total))
+        self._glossary_total += total
+
+    def p95(self, mainline: str) -> float | None:
+        """指定主線の P95 遅延（ms）。サンプルが無ければ None。"""
+        return percentile(list(self._latency.get(mainline, ())), self._pct)
+
+    def glossary_hit_rate(self) -> float | None:
+        """用語命中率（0.0-1.0）。計測無しなら None。"""
+        if self._glossary_total <= 0:
+            return None
+        return self._glossary_hits / self._glossary_total
+
+    def evaluate_latency(self, mainline: str) -> dict | None:
+        """P95 が §9 目標を超過していれば qos_warning を返す（正常時 None）。"""
+        target = self._targets_ms.get(mainline)
+        value = self.p95(mainline)
+        if target is None or value is None or value <= target:
+            return None
+        return {
+            "type": "qos_warning",
+            "metric": "latency_p95",
+            "mainline": mainline,
+            "value_ms": round(value, 1),
+            "target_ms": target,
+        }
+
+    def evaluate_glossary(self) -> dict | None:
+        """用語命中率が目標を下回れば qos_warning を返す（正常/未計測時 None）。"""
+        rate = self.glossary_hit_rate()
+        if rate is None or rate >= self._glossary_target:
+            return None
+        return {
+            "type": "qos_warning",
+            "metric": "glossary_hit_rate",
+            "value": round(rate, 4),
+            "target": self._glossary_target,
+        }
+
+    def snapshot(self) -> HybridQoSSnapshot:
+        """現在の主線別 P95 と用語命中率のスナップショットを返す。"""
+        return HybridQoSSnapshot(
+            hearing_p95_ms=self.p95("hearing"),
+            reading_p95_ms=self.p95("reading"),
+            glossary_hit_rate=self.glossary_hit_rate(),
+            hearing_samples=len(self._latency.get("hearing", ())),
+            reading_samples=len(self._latency.get("reading", ())),
+        )
 
 
 class DegradationLevel(Enum):

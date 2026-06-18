@@ -202,7 +202,8 @@ async def request_password_reset(
     # 既存の未使用トークンを無効化
     existing_tokens = await db.execute(
         select(PasswordResetToken).where(
-            PasswordResetToken.user_id == user.id, PasswordResetToken.used == False
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used.is_(False),
         )
     )
     for old_token in existing_tokens.scalars():

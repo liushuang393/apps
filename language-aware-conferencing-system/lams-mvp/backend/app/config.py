@@ -222,6 +222,35 @@ class Settings(BaseSettings):
     # サーバー側用語集リソース ID（任意。adaptive/glossary 連携用）
     google_glossary_id: str | None = None
 
+    # -------------------------------------------
+    # LiveKit / WebRTC 設定（Phase 3 C1：単一トランスポート）
+    # -------------------------------------------
+    # WS を廃止し WebRTC/LiveKit へ一本化する。バックエンドは（1）参加トークン発行と
+    # （2）LiveKit Agent（音声フォーク Gateway）でのみ LiveKit と通信する。
+    #   - livekit_url       : サーバ→LiveKit の接続先（ws://livekit:7880 等）。
+    #   - livekit_ws_url    : フロントへ返す公開 URL（未設定時は livekit_url を流用）。
+    #   - livekit_api_key   : API キー（トークン署名・Room API 用）。
+    #   - livekit_api_secret: API シークレット（トークン署名用）。
+    #   - livekit_agent_name: Agent dispatch 名（任意。明示 dispatch 時のみ使用）。
+    #   - livekit_agent_autostart: トークン発行時にバックエンド内で Agent を
+    #       自動起動するか（True で in-process worker を room 毎に常駐させる）。
+    #       既定 False（外部 worker 運用やテスト時の副作用回避のため）。
+    # いずれかが未設定なら token API は 503 を返す（起動は阻害しない）。
+    livekit_url: str = "ws://localhost:7880"
+    livekit_ws_url: str | None = None
+    livekit_api_key: str | None = None
+    livekit_api_secret: str | None = None
+    livekit_agent_name: str | None = None
+    livekit_agent_autostart: bool = False
+
+    def get_livekit_ws_url(self) -> str:
+        """フロントへ返す LiveKit 接続 URL（公開 URL 優先、無ければ内部 URL）。"""
+        return self.livekit_ws_url or self.livekit_url
+
+    def livekit_enabled(self) -> bool:
+        """トークン発行に必要な鍵が揃っているか（未設定なら token API を 503 に）。"""
+        return bool(self.livekit_api_key and self.livekit_api_secret)
+
     # ===========================================
     # QoS設定（認知負荷軽減のため）
     # ===========================================

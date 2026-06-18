@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useWebSocket, initializeAudioContext } from '../hooks/useWebSocket';
+import { useLiveKit } from '../hooks/useLiveKit';
 import { useAudioDevices } from '../hooks/useAudioDevices';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useRoomStore } from '../store/roomStore';
@@ -16,7 +16,7 @@ export function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const { connectionStatus, roomName, policy } = useRoomStore();
-  const { sendPreferenceChange, disconnect, wsRef } = useWebSocket(roomId || null);
+  const { sendPreferenceChange, disconnect, roomRef } = useLiveKit(roomId || null);
 
   // 音声デバイス管理
   const {
@@ -29,7 +29,7 @@ export function RoomPage() {
     error: deviceError,
   } = useAudioDevices();
 
-  // 音声キャプチャ（wsRefを渡して音声送信を有効化）
+  // 音声キャプチャ（roomRef を渡して mic track を LiveKit へ publish）
   const {
     isMicOn,
     toggleMic,
@@ -40,16 +40,11 @@ export function RoomPage() {
   } = useAudioCapture({
     deviceId: selectedMicId,
     enabled: false, // 手動でON/OFFする
-    wsRef,  // WebSocket経由で音声データを送信
+    roomRef, // LiveKit Room 経由で mic track を publish
   });
 
   // メインエリア波形Canvas
   const mainWaveformRef = useRef<HTMLCanvasElement>(null);
-
-  // ★改善: 入室時にAudioContextを初期化（音声再生遅延を最小化）
-  useEffect(() => {
-    initializeAudioContext();
-  }, []);
 
   // メインエリア波形描画
   useEffect(() => {
