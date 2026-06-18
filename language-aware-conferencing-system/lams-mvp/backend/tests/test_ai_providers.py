@@ -12,6 +12,16 @@ Gemini API と OpenAI Realtime API の接続確認用テスト。
 import asyncio
 import os
 import sys
+from types import SimpleNamespace
+
+from app.ai_pipeline.providers.base import TranslationResult
+from app.ai_pipeline.providers.gemini_live import (
+    GeminiLiveProvider,
+    normalize_lang,
+    parse_live_messages,
+    pcm16_to_wav,
+    to_gemini_target,
+)
 
 # テスト結果の色付け出力
 GREEN = "\033[92m"
@@ -137,6 +147,188 @@ async def main() -> int:
     print(f"合格: {passed}/{total}")
 
     return 0 if all(results) else 1
+
+
+# ============================================================
+# Gemini Live S2S プロバイダー 単体テスト
+# 方針:
+#   - google-genai SDK・ネットワーク・認証に非依存。純粋ロジックを中心に検証する。
+#   - pytest-asyncio 非導入のため、非同期メソッドは asyncio.run で実行する。
+#   - client を注入し、aio.live.connect セッションをスタブ化する。
+# ============================================================
+MIN_VALID_AUDIO = b"\x00" * (44 + 8000)
+
+
+def _live_msg(
+    input_text: str | None = None,
+    input_lang: str | None = None,
+    output_text: str | None = None,
+    audio: bytes | None = None,
+    turn_complete: bool = False,
+) -> SimpleNamespace:
+    """LiveServerMessage 風スタブ（server_content の各フィールドを再現）"""
+    it = None
+    if input_text is not None or input_lang is not None:
+        it = SimpleNamespace(text=input_text, language_code=input_lang)
+    ot = SimpleNamespace(text=output_text) if output_text is not None else None
+    mt = None
+    if audio is not None:
+        part = SimpleNamespace(inline_data=SimpleNamespace(data=audio))
+        mt = SimpleNamespace(parts=[part])
+    sc = SimpleNamespace(
+        input_transcription=it,
+        output_transcription=ot,
+        model_turn=mt,
+        turn_complete=turn_complete,
+    )
+    return SimpleNamespace(server_content=sc)
+
+
+class _FakeLiveSession:
+    """aio.live.connect が返すセッションのスタブ"""
+
+    def __init__(self, messages: list) -> None:
+        self._messages = messages
+        self.sent: list = []
+
+    async def send_realtime_input(self, **kwargs: object) -> None:
+        self.sent.append(kwargs)
+
+    async def receive(self):
+        for msg in self._messages:
+            yield msg
+
+
+class _FakeConnect:
+    """async context manager を満たす connect() 戻り値スタブ"""
+
+    def __init__(self, session: _FakeLiveSession) -> None:
+        self._session = session
+
+    async def __aenter__(self) -> _FakeLiveSession:
+        return self._session
+
+    async def __aexit__(self, *_exc: object) -> bool:
+        return False
+
+
+class _FakeGeminiClient:
+    """client.aio.live.connect(model, config) をスタブ化したクライアント"""
+
+    def __init__(self, messages: list) -> None:
+        session = _FakeLiveSession(messages)
+        self.session = session
+        connect = SimpleNamespace(
+            connect=lambda model, config: _FakeConnect(session)  # noqa: ARG005
+        )
+        self.aio = SimpleNamespace(live=connect)
+
+
+# ------------------------------------------------------------
+# 言語コード変換（BCP-47）
+# ------------------------------------------------------------
+def test_to_gemini_target_known_and_passthrough() -> None:
+    assert to_gemini_target("ja") == "ja"
+    assert to_gemini_target("zh") == "zh"
+    # 未知コードはそのまま返す
+    assert to_gemini_target("multi") == "multi"
+
+
+def test_normalize_lang() -> None:
+    assert normalize_lang("ja-JP") == "ja"
+    assert normalize_lang("EN-US") == "en"
+    assert normalize_lang("") == ""
+
+
+# ------------------------------------------------------------
+# WAV ヘッダー付与（純粋関数）
+# ------------------------------------------------------------
+def test_pcm16_to_wav_header() -> None:
+    pcm = b"\x01\x02" * 100
+    wav = pcm16_to_wav(pcm)
+    assert wav[:4] == b"RIFF"
+    assert wav[8:12] == b"WAVE"
+    # data チャンクは PCM 本体を保持する
+    assert wav[44:] == pcm
+    # 24kHz サンプルレートが little-endian で埋め込まれている
+    assert int.from_bytes(wav[24:28], "little") == 24000
+
+
+# ------------------------------------------------------------
+# メッセージ解析（純粋関数）
+# ------------------------------------------------------------
+def test_parse_live_messages_collects_all_fields() -> None:
+    messages = [
+        _live_msg(input_text="おはよう", input_lang="ja-JP"),
+        _live_msg(output_text="Good "),
+        _live_msg(output_text="morning", audio=b"\xaa\xbb"),
+        _live_msg(turn_complete=True),
+    ]
+    result = parse_live_messages(messages)
+    assert result.original == "おはよう"
+    assert result.translated == "Good morning"
+    assert result.detected_language == "ja-JP"
+    assert result.audio == b"\xaa\xbb"
+
+
+def test_parse_live_messages_empty() -> None:
+    result = parse_live_messages(None)
+    assert result.original == ""
+    assert result.translated == ""
+    assert result.audio == b""
+
+
+# ------------------------------------------------------------
+# translate_audio / transcribe_with_detection（client 注入でスタブ化）
+# ------------------------------------------------------------
+def test_translate_audio_s2s() -> None:
+    messages = [
+        _live_msg(input_text="おはよう", input_lang="ja-JP"),
+        _live_msg(output_text="Good morning", audio=b"\x10\x20" * 50),
+        _live_msg(turn_complete=True),
+    ]
+    provider = GeminiLiveProvider(client=_FakeGeminiClient(messages))
+    result = asyncio.run(provider.translate_audio(MIN_VALID_AUDIO, "ja", "en"))
+    assert isinstance(result, TranslationResult)
+    assert result.original_text == "おはよう"
+    assert result.translated_text == "Good morning"
+    # 翻訳音声は WAV 化されて返る
+    assert result.audio_data is not None
+    assert result.audio_data[:4] == b"RIFF"
+    # audio_stream_end が送信されている
+    assert any("audio_stream_end" in s for s in provider._client.session.sent)
+
+
+def test_translate_audio_short_skipped() -> None:
+    provider = GeminiLiveProvider(client=_FakeGeminiClient([]))
+    result = asyncio.run(provider.translate_audio(b"\x00" * 10, "ja", "en"))
+    assert result.translated_text == ""
+    assert result.audio_data is None
+
+
+def test_translate_audio_same_language_transcribes() -> None:
+    messages = [
+        _live_msg(input_text="こんにちは", input_lang="ja-JP"),
+        _live_msg(turn_complete=True),
+    ]
+    provider = GeminiLiveProvider(client=_FakeGeminiClient(messages))
+    result = asyncio.run(provider.translate_audio(MIN_VALID_AUDIO, "ja", "ja"))
+    assert result.original_text == "こんにちは"
+    assert result.translated_text == "こんにちは"
+    assert result.audio_data is None
+
+
+def test_transcribe_with_detection() -> None:
+    messages = [
+        _live_msg(input_text="テスト発話です", input_lang="ja-JP"),
+        _live_msg(turn_complete=True),
+    ]
+    provider = GeminiLiveProvider(client=_FakeGeminiClient(messages))
+    text, lang = asyncio.run(
+        provider.transcribe_with_detection(MIN_VALID_AUDIO, "ja")
+    )
+    assert text == "テスト発話です"
+    assert lang == "ja"
 
 
 if __name__ == "__main__":

@@ -28,9 +28,11 @@ dependencies = [
     "python-jose[cryptography]==3.3.0",
     "bcrypt>=4.0.0",
     # AI Providers
-    "google-genai==1.0.0",
+    # 2.8.0+ は Gemini Live 翻訳（TranslationConfig / translation_config）対応に必須
+    "google-genai==2.8.0",
     "openai==2.12.0",
-    "httpx==0.27.2",  # Deepgram API用
+    # 0.28.1+ は google-genai 2.8.0 の要求（httpx>=0.28.1,<1.0.0）に必須。Deepgram でも使用。
+    "httpx==0.28.1",
     # Validation
     "pydantic[email]==2.10.3",
     "pydantic-settings==2.7.0",

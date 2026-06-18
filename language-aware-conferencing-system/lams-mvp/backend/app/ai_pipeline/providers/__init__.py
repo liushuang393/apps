@@ -5,6 +5,7 @@ AIプロバイダーパッケージ
 - gpt4o_transcribe: GPT-4o-transcribe (ASR 300-500ms) + GPT-4o-mini翻訳 + TTS
 - gpt_realtime: GPT-Realtime S2S (音声直接翻訳 200-400ms)
 - deepgram: Deepgram Nova-3 (ASR <300ms) + GPT-4o-mini翻訳 + TTS
+- gemini_live: Gemini Live S2S (音声直接翻訳 + 原文/翻訳字幕同時取得)
 
 設定は .env ファイルで管理:
 - AI_PROVIDER: プロバイダー選択
@@ -96,6 +97,30 @@ def get_ai_provider() -> AIProvider:
         )
         return DeepgramProvider()
 
+    elif provider == "gemini_live":
+        # Gemini Live S2S（音声直接翻訳）。GEMINI_API_KEY/ライブラリ未整備時は
+        # 起動エラーにせず既存 provider（gpt4o_transcribe）へフォールバックする。
+        from app.ai_pipeline.providers.gemini_live import (
+            GeminiLiveProvider,
+            gemini_live_runtime_available,
+        )
+
+        if not gemini_live_runtime_available():
+            from app.ai_pipeline.providers.gpt4o_transcribe import (
+                GPT4oTranscribeProvider,
+            )
+
+            logger.warning(
+                "[AI Provider] gemini_live 指定だが GEMINI_API_KEY/ライブラリ未整備の"
+                "ため gpt4o_transcribe へフォールバックします"
+            )
+            return GPT4oTranscribeProvider()
+
+        logger.info(
+            f"[AI Provider] Gemini Live S2S を使用 (model={settings.gemini_live_model})"
+        )
+        return GeminiLiveProvider()
+
     elif provider == "google":
         # Mode B（Chirp 3 ASR + Cloud Translation）。認証/ライブラリ未整備時は
         # 起動エラーにせず既存 provider（gpt4o_transcribe）へフォールバックする。
@@ -123,7 +148,13 @@ def get_ai_provider() -> AIProvider:
 
     else:
         # 未知のプロバイダー
-        valid_providers = ["gpt4o_transcribe", "gpt_realtime", "deepgram", "google"]
+        valid_providers = [
+            "gpt4o_transcribe",
+            "gpt_realtime",
+            "deepgram",
+            "google",
+            "gemini_live",
+        ]
         raise ValueError(
             f"不明なAIプロバイダー: {provider}. 有効な値: {', '.join(valid_providers)}"
         )

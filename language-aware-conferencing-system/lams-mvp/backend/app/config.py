@@ -115,12 +115,14 @@ class Settings(BaseSettings):
     # ===========================================
     # AIプロバイダー設定
     # ===========================================
-    # プロバイダー選択: gpt4o_transcribe, gpt_realtime, deepgram, google
+    # プロバイダー選択: gpt4o_transcribe, gpt_realtime, deepgram, google, gemini_live
     #   google = Mode B（Chirp 3 ASR + Cloud Translation）。認証/ライブラリ未整備時は
     #            起動エラーにせず gpt4o_transcribe へ自動フォールバックする。
-    ai_provider: Literal["gpt4o_transcribe", "gpt_realtime", "deepgram", "google"] = (
-        "gpt4o_transcribe"
-    )
+    #   gemini_live = Gemini Live API による S2S 翻訳（音声直接翻訳）。GEMINI_API_KEY
+    #            未設定時は起動エラーにせず gpt4o_transcribe へ自動フォールバックする。
+    ai_provider: Literal[
+        "gpt4o_transcribe", "gpt_realtime", "deepgram", "google", "gemini_live"
+    ] = "gpt4o_transcribe"
 
     # -------------------------------------------
     # ステージ別プロバイダースロット（Phase 2-T5.5 / 集中管理）
@@ -186,6 +188,10 @@ class Settings(BaseSettings):
     gemini_base_url: str | None = None
     gemini_model: str = "models/gemini-2.5-flash-native-audio-preview-12-2025"
     gemini_text_model: str = "models/gemini-2.5-flash"
+
+    # Gemini Live API S2S 翻訳モデル（ai_provider="gemini_live" 時に使用）
+    # 音声入力（16kHz PCM）→ 翻訳音声（24kHz PCM）+ 翻訳/原文字幕を同時取得。
+    gemini_live_model: str = "models/gemini-3.5-live-translate-preview"
 
     # -------------------------------------------
     # LLM 補正設定（改善.md 11章 / Mode B・fallback 用）
