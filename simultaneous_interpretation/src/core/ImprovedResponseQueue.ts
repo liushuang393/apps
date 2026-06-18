@@ -26,8 +26,8 @@ import { defaultLogger } from '../utils/Logger';
  * レスポンスリクエスト
  */
 export interface ResponseRequest {
-    /** モダリティ（'text', 'audio'） */
-    modalities: string[];
+    /** 出力モダリティ（GA: ['audio'] または ['text']） */
+    output_modalities: string[];
 
     /** 指示文 */
     instructions: string;

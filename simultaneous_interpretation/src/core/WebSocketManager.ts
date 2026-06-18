@@ -168,11 +168,8 @@ export class WebSocketManager {
         console.info('[WebSocketManager] WebSocket URL:', wsUrl);
 
         // sec-websocket-protocol ヘッダーで認証
-        const protocols = [
-            'realtime',
-            `openai-insecure-api-key.${this.apiKey}`,
-            'openai-beta.realtime-v1'
-        ];
+        // GA: 'openai-beta.realtime-v1' サブプロトコルは削除
+        const protocols = ['realtime', `openai-insecure-api-key.${this.apiKey}`];
 
         this.ws = new WebSocket(wsUrl, protocols);
 
@@ -278,30 +275,39 @@ export class WebSocketManager {
      * セッション作成
      */
     createSession(config: SessionConfig): void {
-        const modalities = config.audioOutputEnabled ? ['text', 'audio'] : ['text'];
+        // GA: output_modalities は ['audio'] または ['text']
+        const outputModalities = config.audioOutputEnabled ? ['audio'] : ['text'];
+        // GA: 音声フォーマットはオブジェクト形式（PCM16 = audio/pcm）
+        const audioFormat = { type: 'audio/pcm', rate: CONFIG.AUDIO.SAMPLE_RATE };
 
         const session = {
             type: 'session.update',
             session: {
+                type: 'realtime',
                 model: CONFIG.API.REALTIME_MODEL,
-                modalities: modalities,
+                output_modalities: outputModalities,
                 instructions: config.instructions,
-                voice: config.voiceType,
-                input_audio_format: CONFIG.AUDIO.FORMAT,
-                output_audio_format: CONFIG.AUDIO.FORMAT,
-                input_audio_transcription: {
-                    model: 'whisper-1'
+                audio: {
+                    input: {
+                        format: audioFormat,
+                        transcription: {
+                            model: 'whisper-1'
+                        },
+                        turn_detection: config.vadEnabled
+                            ? {
+                                  type: 'server_vad',
+                                  threshold: 0.5,
+                                  prefix_padding_ms: 300,
+                                  silence_duration_ms: 1200
+                              }
+                            : null
+                    },
+                    output: {
+                        format: audioFormat,
+                        voice: config.voiceType
+                    }
                 },
-                turn_detection: config.vadEnabled
-                    ? {
-                          type: 'server_vad',
-                          threshold: 0.5,
-                          prefix_padding_ms: 300,
-                          silence_duration_ms: 1200
-                      }
-                    : null,
-                temperature: 0.8,
-                max_response_output_tokens: 4096
+                max_output_tokens: 4096
             }
         };
 
@@ -321,8 +327,11 @@ export class WebSocketManager {
             session: {}
         };
 
+        // GA: voice / turn_detection は audio.output / audio.input の下にネスト
+        const audio: { input?: Record<string, unknown>; output?: Record<string, unknown> } = {};
+
         if (config.voiceType !== undefined) {
-            sessionUpdate.session['voice'] = config.voiceType;
+            audio.output = { voice: config.voiceType };
         }
 
         if (config.instructions !== undefined) {
@@ -330,14 +339,20 @@ export class WebSocketManager {
         }
 
         if (config.vadEnabled !== undefined) {
-            sessionUpdate.session['turn_detection'] = config.vadEnabled
-                ? {
-                      type: 'server_vad',
-                      threshold: 0.5,
-                      prefix_padding_ms: 300,
-                      silence_duration_ms: 1200
-                  }
-                : null;
+            audio.input = {
+                turn_detection: config.vadEnabled
+                    ? {
+                          type: 'server_vad',
+                          threshold: 0.5,
+                          prefix_padding_ms: 300,
+                          silence_duration_ms: 1200
+                      }
+                    : null
+            };
+        }
+
+        if (audio.input !== undefined || audio.output !== undefined) {
+            sessionUpdate.session['audio'] = audio;
         }
 
         console.info('[WebSocketManager] セッション更新:', sessionUpdate);
@@ -396,28 +411,30 @@ export class WebSocketManager {
                     }
                     break;
                 }
-                case 'response.audio_transcript.delta': {
+                // GA: response.audio_transcript.* → response.output_audio_transcript.*
+                case 'response.output_audio_transcript.delta': {
                     const delta = message['delta'];
                     if (typeof delta === 'string') {
                         this.messageHandlers.onAudioTranscriptDelta?.(delta);
                     }
                     break;
                 }
-                case 'response.audio_transcript.done': {
+                case 'response.output_audio_transcript.done': {
                     const transcript = message['transcript'];
                     if (typeof transcript === 'string') {
                         this.messageHandlers.onAudioTranscriptDone?.(transcript);
                     }
                     break;
                 }
-                case 'response.audio.delta': {
+                // GA: response.audio.* → response.output_audio.*
+                case 'response.output_audio.delta': {
                     const delta = message['delta'];
                     if (typeof delta === 'string') {
                         this.messageHandlers.onAudioDelta?.(delta);
                     }
                     break;
                 }
-                case 'response.audio.done':
+                case 'response.output_audio.done':
                     this.messageHandlers.onAudioDone?.();
                     break;
                 case 'response.created': {

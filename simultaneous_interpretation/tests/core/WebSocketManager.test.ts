@@ -274,10 +274,10 @@ describe('WebSocketManager', () => {
             expect(mockHandlers.onSessionUpdated).toHaveBeenCalledWith({ id: 'test-session' });
         });
 
-        it('should handle response.audio.delta event', () => {
+        it('should handle response.output_audio.delta event', () => {
             const ws = (manager as any).ws as MockWebSocket;
             ws.simulateMessage({
-                type: 'response.audio.delta',
+                type: 'response.output_audio.delta',
                 delta: 'base64-audio-data'
             });
 

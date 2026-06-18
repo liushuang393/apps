@@ -129,7 +129,7 @@ export class VoiceTranslateCoreIntegrationExample {
     private async createResponse(): Promise<void> {
         try {
             const request: ResponseRequest = {
-                modalities: this.getModalities(),
+                output_modalities: this.getModalities(),
                 instructions: this.getInstructions()
             };
 
@@ -279,8 +279,8 @@ export class VoiceTranslateCoreIntegrationExample {
      * ヘルパーメソッド
      */
     private getModalities(): string[] {
-        // 既存のロジック
-        return ['text', 'audio'];
+        // GA: output_modalities は ['audio'] または ['text']
+        return ['audio'];
     }
 
     private getInstructions(): string {

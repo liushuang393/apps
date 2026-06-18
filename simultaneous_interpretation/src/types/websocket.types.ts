@@ -43,40 +43,65 @@ export interface WebSocketConfig {
 }
 
 /**
- * セッション設定
+ * 音声フォーマット（GA: audio/pcm + サンプルレート）
+ */
+export interface AudioFormatConfig {
+    /** フォーマット種別（例: 'audio/pcm'） */
+    type: string;
+
+    /** サンプルレート（Hz） */
+    rate?: number;
+}
+
+/**
+ * 音声設定（GA: audio.input / audio.output）
+ */
+export interface AudioConfig {
+    /** 入力音声設定 */
+    input?: {
+        /** 入力音声フォーマット */
+        format?: AudioFormatConfig;
+
+        /** 入力音声転写設定 */
+        transcription?: {
+            model: string;
+        };
+
+        /** ターン検出設定 */
+        turn_detection?: TurnDetectionConfig | null;
+    };
+
+    /** 出力音声設定 */
+    output?: {
+        /** 出力音声フォーマット */
+        format?: AudioFormatConfig;
+
+        /** 音声タイプ */
+        voice?: string;
+    };
+}
+
+/**
+ * セッション設定（GA Realtime API 形式）
  */
 export interface SessionConfig {
-    /** モデル名 */
-    model: string;
+    /** セッションタイプ（GA: 'realtime'） */
+    type?: 'realtime';
 
-    /** モダリティ（テキスト、音声など） */
-    modalities?: string[];
+    /** モデル名 */
+    model?: string;
+
+    /** 出力モダリティ（GA: ['audio'] または ['text']） */
+    output_modalities?: string[];
 
     /** システムプロンプト */
     instructions?: string;
 
-    /** 音声タイプ */
-    voice?: string;
+    /** 音声設定（GA: input/output をネスト） */
+    audio?: AudioConfig;
 
-    /** 入力音声フォーマット */
-    input_audio_format?: string;
-
-    /** 出力音声フォーマット */
-    output_audio_format?: string;
-
-    /** 入力音声転写設定 */
-    input_audio_transcription?: {
-        model: string;
-    };
-
-    /** ターン検出設定 */
-    turn_detection?: TurnDetectionConfig;
-
-    /** 温度パラメータ */
-    temperature?: number;
-
-    /** 最大レスポンストークン数 */
-    max_response_output_tokens?: number;
+    /** 最大出力トークン数（GA: max_output_tokens） */
+    max_output_tokens?: number;
 }
 
 /**
@@ -139,17 +164,10 @@ export interface SessionCreatedMessage extends BaseMessage {
         id: string;
         object: string;
         model: string;
-        modalities: string[];
+        output_modalities: string[];
         instructions: string;
-        voice: string;
-        input_audio_format: string;
-        output_audio_format: string;
-        input_audio_transcription: {
-            model: string;
-        };
-        turn_detection: TurnDetectionConfig;
-        temperature: number;
-        max_response_output_tokens: number;
+        audio: AudioConfig;
+        max_output_tokens: number;
     };
 }
 

@@ -200,26 +200,34 @@ export class WebSocketManager {
      * @private
      */
     private _sendAuthenticationMessage(): void {
+        // GA Realtime API 形式（audio.input/output をネスト、output_modalities を使用）
+        const audioFormat = { type: 'audio/pcm', rate: 24000 };
         const authMessage: SessionUpdateMessage = {
             type: MessageType.SESSION_UPDATE,
             session: {
+                type: 'realtime',
                 model: this.config.model,
-                modalities: ['text', 'audio'],
+                output_modalities: ['audio'],
                 instructions: 'You are a helpful assistant for real-time translation.',
-                voice: 'alloy',
-                input_audio_format: 'pcm16',
-                output_audio_format: 'pcm16',
-                input_audio_transcription: {
-                    model: 'whisper-1'
+                audio: {
+                    input: {
+                        format: audioFormat,
+                        transcription: {
+                            model: 'whisper-1'
+                        },
+                        turn_detection: {
+                            type: 'server_vad',
+                            threshold: 0.5,
+                            prefix_padding_ms: 300,
+                            silence_duration_ms: 500
+                        }
+                    },
+                    output: {
+                        format: audioFormat,
+                        voice: 'alloy'
+                    }
                 },
-                turn_detection: {
-                    type: 'server_vad',
-                    threshold: 0.5,
-                    prefix_padding_ms: 300,
-                    silence_duration_ms: 500
-                },
-                temperature: 0.8,
-                max_response_output_tokens: 4096
+                max_output_tokens: 4096
             }
         };
 

@@ -1,0 +1,24 @@
+# 改行コードをLFに統一する
+#
+# 目的:
+#   Prettier 設定（endOfLine: 'lf'）と整合させ、Windows チェックアウト時に
+#   core.autocrlf=true が CRLF を混入させて lint / format:check が失敗する
+#   問題を防止する。
+
+# テキストは自動判定し、チェックアウト時もLFを維持
+* text=auto eol=lf
+
+# バイナリは変換しない
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.db binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.mp3 binary
+*.wav binary

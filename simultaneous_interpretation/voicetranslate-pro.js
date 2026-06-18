@@ -241,6 +241,9 @@ class VoiceTranslateApp {
         // this.elements.sourceLang = document.getElementById('sourceLang');
         this.elements.targetLang = document.getElementById('targetLang');
         this.elements.voiceType = document.getElementById('voiceType');
+        // モデル設定
+        this.elements.realtimeModel = document.getElementById('realtimeModel');
+        this.elements.chatModel = document.getElementById('chatModel');
         this.elements.sourceLangDisplay = document.getElementById('sourceLangDisplay');
         this.elements.targetLangDisplay = document.getElementById('targetLangDisplay');
 
@@ -386,6 +389,26 @@ class VoiceTranslateApp {
             if (this.state.isConnected) {
                 this.updateSession();
             }
+        });
+
+        // Realtimeモデル変更（次回接続時に反映）
+        this.elements.realtimeModel.addEventListener('change', (e) => {
+            CONFIG.API.REALTIME_MODEL = e.target.value;
+            this.saveToStorage('realtime_model', e.target.value);
+
+            if (this.state.isConnected) {
+                this.notify(
+                    'モデル変更',
+                    'Realtimeモデルは次回「接続」時に反映されます',
+                    'info'
+                );
+            }
+        });
+
+        // Chatモデル変更（即時反映）
+        this.elements.chatModel.addEventListener('change', (e) => {
+            CONFIG.API.CHAT_MODEL = e.target.value;
+            this.saveToStorage('chat_model', e.target.value);
         });
 
         // 音声ソース選択
@@ -753,6 +776,8 @@ class VoiceTranslateApp {
             // sourceLang: await this.getFromStorage('source_lang'),
             targetLang: await this.getFromStorage('target_lang'),
             voiceType: await this.getFromStorage('voice_type'),
+            realtimeModel: await this.getFromStorage('realtime_model'),
+            chatModel: await this.getFromStorage('chat_model'),
             vadSensitivity: await this.getFromStorage('vad_sensitivity'),
             outputVolume: await this.getFromStorage('output_volume')
         };
@@ -778,6 +803,17 @@ class VoiceTranslateApp {
             this.elements.voiceType.value = settings.voiceType;
             this.state.voiceType = settings.voiceType;
         }
+
+        // モデル設定（UI保存値を環境変数より優先、未保存なら現在のCONFIG値を表示）
+        if (settings.realtimeModel) {
+            CONFIG.API.REALTIME_MODEL = settings.realtimeModel;
+        }
+        this.elements.realtimeModel.value = CONFIG.API.REALTIME_MODEL;
+
+        if (settings.chatModel) {
+            CONFIG.API.CHAT_MODEL = settings.chatModel;
+        }
+        this.elements.chatModel.value = CONFIG.API.CHAT_MODEL;
 
         if (settings.vadSensitivity) {
             this.elements.vadSensitivity.value = settings.vadSensitivity;
@@ -1034,11 +1070,8 @@ class VoiceTranslateApp {
             console.info('[Connect] WebSocket URL:', wsUrl);
 
             // ブラウザ環境では、sec-websocket-protocolヘッダーを使用してAPIキーを送信
-            const protocols = [
-                'realtime',
-                `openai-insecure-api-key.${this.state.apiKey}`,
-                'openai-beta.realtime-v1'
-            ];
+            // GA: 'openai-beta.realtime-v1' サブプロトコルは削除
+            const protocols = ['realtime', `openai-insecure-api-key.${this.state.apiKey}`];
 
             this.state.ws = new WebSocket(wsUrl, protocols);
 
@@ -1129,37 +1162,49 @@ class VoiceTranslateApp {
     createSession() {
         // 音声出力が有効かどうかをチェック
         const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
-        const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
+        // GA: output_modalities は ['audio'] または ['text'] のいずれか
+        // （'audio' を指定すると音声出力＋文字起こしの両方が得られる）
+        const outputModalities = audioOutputEnabled ? ['audio'] : ['text'];
 
         console.info('[🔊 Session] 音声出力設定:', {
             audioOutputEnabled: audioOutputEnabled,
-            modalities: modalities,
+            outputModalities: outputModalities,
             buttonElement: this.elements.audioOutputEnabled,
             hasActiveClass: this.elements.audioOutputEnabled.classList.contains('active')
         });
 
+        // GA: 音声フォーマットはオブジェクト形式（PCM16 = audio/pcm）
+        const audioFormat = { type: 'audio/pcm', rate: CONFIG.AUDIO.SAMPLE_RATE };
+
         const session = {
             type: 'session.update',
             session: {
+                // GA Realtime セッションタイプ
+                type: 'realtime',
                 // Realtime APIモデル（音声→音声翻訳、音声認識）
                 model: CONFIG.API.REALTIME_MODEL,
-                modalities: modalities,
+                output_modalities: outputModalities,
                 instructions: this.getInstructions(),
-                voice: this.state.voiceType,
-                input_audio_format: CONFIG.AUDIO.FORMAT,
-                output_audio_format: CONFIG.AUDIO.FORMAT,
-                input_audio_transcription: {
-                    // 音声認識モデル（入力音声 → 入力テキスト）
-                    // gpt-realtime-2025-08-28 では whisper-1 を使用
-                    model: 'whisper-1'
-                    // language を指定しない → 自動言語検出を有効化
-                    // 多人数・多言語環境で正確な言語検出を実現
+                audio: {
+                    input: {
+                        format: audioFormat,
+                        transcription: {
+                            // 音声認識モデル（入力音声 → 入力テキスト）
+                            // gpt-realtime-2025-08-28 では whisper-1 を使用
+                            model: 'whisper-1'
+                            // language を指定しない → 自動言語検出を有効化
+                            // 多人数・多言語環境で正確な言語検出を実現
+                        },
+                        turn_detection: this.elements.vadEnabled.classList.contains('active')
+                            ? this.getTurnDetectionConfig()
+                            : null
+                    },
+                    output: {
+                        format: audioFormat,
+                        voice: this.state.voiceType
+                    }
                 },
-                turn_detection: this.elements.vadEnabled.classList.contains('active')
-                    ? this.getTurnDetectionConfig()
-                    : null,
-                temperature: 0.8, // 0.8: 自然な表現とバランス（gpt-realtime-2025-08-28 推奨）
-                max_response_output_tokens: 4096 // 4096: 長い会話にも対応
+                max_output_tokens: 4096 // 4096: 長い会話にも対応
             }
         };
 
@@ -1171,8 +1216,8 @@ class VoiceTranslateApp {
         console.info(
             '[Session] 音声出力:',
             audioOutputEnabled ? 'ON' : 'OFF',
-            '- modalities:',
-            modalities
+            '- output_modalities:',
+            outputModalities
         );
         this.sendMessage(session);
         console.info('[Session] セッション作成メッセージを送信しました');
@@ -1239,12 +1284,17 @@ class VoiceTranslateApp {
             return;
         }
 
+        // GA: turn_detection は audio.input の下にネスト
         const updateEvent = {
             type: 'session.update',
             session: {
-                turn_detection: this.elements.vadEnabled.classList.contains('active')
-                    ? this.getTurnDetectionConfig()
-                    : null
+                audio: {
+                    input: {
+                        turn_detection: this.elements.vadEnabled.classList.contains('active')
+                            ? this.getTurnDetectionConfig()
+                            : null
+                    }
+                }
             }
         };
 
@@ -2741,17 +2791,18 @@ Even if you have translated many sentences, your role has NOT changed:
         this.sendMessage({ type: 'input_audio_buffer.commit' });
 
         const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
-        const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
+        // GA: output_modalities は ['audio'] または ['text']
+        const outputModalities = audioOutputEnabled ? ['audio'] : ['text'];
 
         console.info('[Recording] レスポンス生成を要求（Server VAD無効）:', {
-            modalities: modalities,
+            outputModalities: outputModalities,
             audioOutputEnabled: audioOutputEnabled,
             queueStatus: this.responseQueue.getStatus()
         });
 
         try {
             await this.responseQueue.enqueue({
-                modalities: modalities,
+                output_modalities: outputModalities,
                 instructions: this.getInstructions()
             });
             console.info('[Recording] レスポンスリクエストをキューに追加しました');
@@ -3267,21 +3318,22 @@ Even if you have translated many sentences, your role has NOT changed:
 
         // 音声出力が有効かどうかをチェック
         const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
-        const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
+        // GA: output_modalities は ['audio'] または ['text']
+        const outputModalities = audioOutputEnabled ? ['audio'] : ['text'];
 
         // 録音中の場合は、音声設定を変更できない
-        // instructionsとmodalitiesのみを更新
+        // instructionsとoutput_modalitiesのみを更新
         const session = {
             type: 'session.update',
             session: {
                 instructions: this.getInstructions(),
-                modalities: modalities
+                output_modalities: outputModalities
             }
         };
 
-        // 録音中でない場合のみ、翻訳音色も更新
+        // 録音中でない場合のみ、翻訳音色も更新（GA: audio.output.voice）
         if (!this.state.isRecording) {
-            session.session.voice = this.state.voiceType;
+            session.session.audio = { output: { voice: this.state.voiceType } };
         }
 
         this.sendMessage(session);
@@ -3289,7 +3341,7 @@ Even if you have translated many sentences, your role has NOT changed:
             isRecording: this.state.isRecording,
             voiceIncluded: !this.state.isRecording,
             audioOutputEnabled: audioOutputEnabled,
-            modalities: modalities
+            outputModalities: outputModalities
         });
     }
 

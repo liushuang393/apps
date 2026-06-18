@@ -30,24 +30,35 @@ export interface LanguageInfo {
 /**
  * セッション設定
  */
+export interface RealtimeAudioFormat {
+    type: string;
+    rate?: number;
+}
+
 export interface RealtimeSessionConfig {
+    type: 'realtime';
     model: string;
-    modalities: ('text' | 'audio')[];
+    output_modalities: ('text' | 'audio')[];
     instructions: string;
-    voice: string;
-    input_audio_format: string;
-    output_audio_format: string;
-    input_audio_transcription?: {
-        model: string;
+    audio: {
+        input?: {
+            format?: RealtimeAudioFormat;
+            transcription?: {
+                model: string;
+            };
+            turn_detection?: {
+                type: string;
+                threshold?: number;
+                prefix_padding_ms?: number;
+                silence_duration_ms?: number;
+            } | null;
+        };
+        output?: {
+            format?: RealtimeAudioFormat;
+            voice?: string;
+        };
     };
-    turn_detection?: {
-        type: string;
-        threshold?: number;
-        prefix_padding_ms?: number;
-        silence_duration_ms?: number;
-    };
-    temperature?: number;
-    max_response_output_tokens?: number;
+    max_output_tokens?: number;
 }
 
 /**
@@ -285,12 +296,18 @@ You (${targetLanguage.name}): "I'll report on the project progress. Currently, p
             pacing = 'normal'
         } = options;
 
+        // GA: 音声フォーマットはオブジェクト形式（PCM16 = audio/pcm）
+        const audioFormat: RealtimeAudioFormat = { type: 'audio/pcm', rate: 24000 };
+
         const config: RealtimeSessionConfig = {
+            // GA Realtime セッションタイプ
+            type: 'realtime',
+
             // 最新モデル
             model: this.RECOMMENDED_MODEL,
 
-            // モダリティ: 音声出力の有無
-            modalities: enableAudioOutput ? ['text', 'audio'] : ['text'],
+            // 出力モダリティ: 音声出力の有無（GA: ['audio'] または ['text']）
+            output_modalities: enableAudioOutput ? ['audio'] : ['text'],
 
             // 最適化されたプロンプト
             instructions: this.generateOptimizedPrompt(sourceLanguage, targetLanguage, {
@@ -299,28 +316,27 @@ You (${targetLanguage.name}): "I'll report on the project progress. Currently, p
                 preserveEmotion: true
             }),
 
-            // 音声タイプ
-            voice: voice,
-
-            // 音声フォーマット: PCM16 (最高の互換性)
-            input_audio_format: 'pcm16',
-            output_audio_format: 'pcm16',
-
-            // 入力音声の転写設定
-            input_audio_transcription: {
-                model: 'whisper-1'
+            // 音声設定（GA: input/output をネスト）
+            audio: {
+                input: {
+                    format: audioFormat,
+                    transcription: {
+                        model: 'whisper-1'
+                    }
+                },
+                output: {
+                    format: audioFormat,
+                    voice: voice
+                }
             },
 
-            // 温度設定: 0.8 (自然な表現とバランス)
-            temperature: 0.8,
-
-            // 最大出力トークン数
-            max_response_output_tokens: 4096
+            // 最大出力トークン数（GA: max_output_tokens）
+            max_output_tokens: 4096
         };
 
-        // Server VAD 設定
-        if (enableServerVAD) {
-            config.turn_detection = {
+        // Server VAD 設定（GA: audio.input.turn_detection）
+        if (enableServerVAD && config.audio.input) {
+            config.audio.input.turn_detection = {
                 type: 'server_vad',
                 threshold: 0.5,
                 prefix_padding_ms: 300,

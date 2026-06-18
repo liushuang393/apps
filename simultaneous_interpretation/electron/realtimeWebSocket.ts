@@ -59,10 +59,10 @@ export function initializeRealtimeWebSocket(): void {
             console.info('[Realtime WS] 接続URL:', wsUrl);
 
             // Authorizationヘッダー付きでWebSocket作成
+            // GA: 'OpenAI-Beta: realtime=v1' ヘッダーは削除
             activeWebSocket = new WebSocket(wsUrl, {
                 headers: {
-                    Authorization: `Bearer ${config.apiKey}`,
-                    'OpenAI-Beta': 'realtime=v1'
+                    Authorization: `Bearer ${config.apiKey}`
                 }
             });
 

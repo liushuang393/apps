@@ -46,7 +46,7 @@ describe('ImprovedResponseQueue', () => {
 
     describe('enqueue()', () => {
         const createRequest = (): ResponseRequest => ({
-            modalities: ['text', 'audio'],
+            output_modalities: ['audio'],
             instructions: 'Test instruction'
         });
 
@@ -92,7 +92,7 @@ describe('ImprovedResponseQueue', () => {
                 expect.objectContaining({
                     type: 'response.create',
                     response: expect.objectContaining({
-                        modalities: ['text', 'audio']
+                        output_modalities: ['audio']
                     })
                 })
             );
@@ -120,7 +120,7 @@ describe('ImprovedResponseQueue', () => {
 
     describe('並行制御', () => {
         const createRequest = (): ResponseRequest => ({
-            modalities: ['text'],
+            output_modalities: ['text'],
             instructions: 'Test'
         });
 
@@ -176,7 +176,7 @@ describe('ImprovedResponseQueue', () => {
         it('should clear timeout timer', async () => {
             jest.useFakeTimers();
             const request: ResponseRequest = {
-                modalities: ['text'],
+                output_modalities: ['text'],
                 instructions: 'Test'
             };
 
@@ -210,11 +210,11 @@ describe('ImprovedResponseQueue', () => {
         it('should trigger processing of next request', async () => {
             jest.useFakeTimers();
             const request1: ResponseRequest = {
-                modalities: ['text'],
+                output_modalities: ['text'],
                 instructions: 'Test 1'
             };
             const request2: ResponseRequest = {
-                modalities: ['text'],
+                output_modalities: ['text'],
                 instructions: 'Test 2'
             };
 
@@ -257,7 +257,7 @@ describe('ImprovedResponseQueue', () => {
         it('should continue processing after error', async () => {
             jest.useFakeTimers();
             const request: ResponseRequest = {
-                modalities: ['text'],
+                output_modalities: ['text'],
                 instructions: 'Test'
             };
 
@@ -306,7 +306,7 @@ describe('ImprovedResponseQueue', () => {
             queue.setSendFunction(mockSendFunction);
 
             const request: ResponseRequest = {
-                modalities: ['text'],
+                output_modalities: ['text'],
                 instructions: 'Test'
             };
 
@@ -339,11 +339,11 @@ describe('ImprovedResponseQueue', () => {
     describe('clear()', () => {
         it('should clear pending queue', () => {
             const request1: ResponseRequest = {
-                modalities: ['text'],
+                output_modalities: ['text'],
                 instructions: 'Test 1'
             };
             const request2: ResponseRequest = {
-                modalities: ['text'],
+                output_modalities: ['text'],
                 instructions: 'Test 2'
             };
 
@@ -358,7 +358,7 @@ describe('ImprovedResponseQueue', () => {
 
         it('should reject pending requests', async () => {
             const request: ResponseRequest = {
-                modalities: ['text'],
+                output_modalities: ['text'],
                 instructions: 'Test'
             };
 

@@ -58,17 +58,9 @@ const CONFIG = {
 /**
  * グローバルに公開
  *
- * Service Worker環境とブラウザ環境の両方に対応
- * - Service Worker: self.CONFIG
- * - Browser: window.CONFIG
- * - 共通: globalThis.CONFIG
+ * globalThis は Service Worker・ブラウザ・Node のいずれの環境でも同一の
+ * グローバルオブジェクトを指すため、これ1つで全環境に対応できる。
  */
-if (typeof self !== 'undefined') {
-    self.CONFIG = CONFIG;
-}
-if (typeof window !== 'undefined') {
-    window.CONFIG = CONFIG;
-}
 if (typeof globalThis !== 'undefined') {
     globalThis.CONFIG = CONFIG;
 }

@@ -241,9 +241,9 @@ export abstract class WebSocketAdapter implements IWebSocketAdapter {
             throw new Error('WebSocket adapter not initialized');
         }
 
+        // GA: 'OpenAI-Beta: realtime=v1' ヘッダーは削除
         const headers: Record<string, string> = {
             Authorization: `Bearer ${this.config.apiKey}`,
-            'OpenAI-Beta': 'realtime=v1',
             ...this.config.headers
         };
 

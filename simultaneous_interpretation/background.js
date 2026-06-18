@@ -134,7 +134,7 @@ chrome.action.onClicked.addListener(async () => {
             : 'subscription.html';               // サブスクリプション無効 → 購読画面
 
         // 新しいウィンドウを作成
-        const window = await chrome.windows.create({
+        const popupWindow = await chrome.windows.create({
             url: pageUrl,
             type: 'popup',
             width: 450,
@@ -142,7 +142,7 @@ chrome.action.onClicked.addListener(async () => {
             focused: true
         });
 
-        translatorWindowId = window.id;
+        translatorWindowId = popupWindow.id;
     } catch (error) {
         console.error('ウィンドウ作成エラー:', error);
     }

@@ -88,16 +88,18 @@ const WebSocketMixin = {
             case 'conversation.item.input_audio_transcription.completed':
                 this.handleTranscriptionCompleted(message);
                 break;
-            case 'response.audio_transcript.delta':
+            // GA: response.audio_transcript.* → response.output_audio_transcript.*
+            case 'response.output_audio_transcript.delta':
                 this.handleAudioTranscriptDelta(message);
                 break;
-            case 'response.audio_transcript.done':
+            case 'response.output_audio_transcript.done':
                 this.handleAudioTranscriptDone();
                 break;
-            case 'response.audio.delta':
+            // GA: response.audio.* → response.output_audio.*
+            case 'response.output_audio.delta':
                 this.handleAudioDelta(message);
                 break;
-            case 'response.audio.done':
+            case 'response.output_audio.done':
                 this.handleAudioDone();
                 break;
             case 'response.created':
@@ -518,17 +520,18 @@ const WebSocketMixin = {
         // 理由: ResponseQueue が自動的に並発制御を行うため不要
 
         const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
-        const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
+        // GA: output_modalities は ['audio'] または ['text']
+        const outputModalities = audioOutputEnabled ? ['audio'] : ['text'];
 
         console.info('[🔊 Response Create] 要求:', {
-            modalities: modalities,
+            outputModalities: outputModalities,
             audioOutputEnabled: audioOutputEnabled,
             queueStatus: queueStatus
         });
 
         this.responseQueue
             .enqueue({
-                modalities: modalities,
+                output_modalities: outputModalities,
                 instructions: this.getInstructions()
             })
             .then(() => {

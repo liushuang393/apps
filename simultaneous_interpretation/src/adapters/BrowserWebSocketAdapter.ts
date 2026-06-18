@@ -245,7 +245,7 @@ export class BrowserWebSocketAdapter extends WebSocketAdapter implements IBrowse
         // 仕様:
         //   - 'realtime': ベースプロトコル
         //   - `openai-insecure-api-key.{API_KEY}`: ブラウザからの暫定的な認証手段
-        //   - 'openai-beta.realtime-v1': Realtime API のベータバージョン指定
-        return ['realtime', `openai-insecure-api-key.${apiKey}`, 'openai-beta.realtime-v1'];
+        //   - GA: 'openai-beta.realtime-v1' サブプロトコルは削除
+        return ['realtime', `openai-insecure-api-key.${apiKey}`];
     }
 }

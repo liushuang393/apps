@@ -116,59 +116,55 @@ export interface WebSocketMessage {
  * レスポンス作成リクエスト
  */
 export interface ResponseCreateRequest {
-    /** モダリティ */
-    modalities?: string[];
+    /** 出力モダリティ（GA: ['audio'] または ['text']） */
+    output_modalities?: string[];
     /** 指示 */
     instructions?: string;
-    /** 音声 */
-    voice?: VoiceType;
-    /** 出力音声フォーマット */
-    output_audio_format?: string;
     /** ツール */
     tools?: unknown[];
     /** ツール選択 */
     tool_choice?: string;
-    /** 温度 */
-    temperature?: number;
-    /** 最大出力トークン */
+    /** 最大出力トークン（GA: max_output_tokens） */
     max_output_tokens?: number | 'inf';
 }
 
 /**
- * セッション更新リクエスト
+ * セッション更新リクエスト（GA Realtime API 形式）
  */
 export interface SessionUpdateRequest {
     /** セッション設定 */
     session?: {
-        /** モダリティ */
-        modalities?: string[];
+        /** セッションタイプ（GA: 'realtime'） */
+        type?: 'realtime';
+        /** 出力モダリティ（GA: ['audio'] または ['text']） */
+        output_modalities?: string[];
         /** 指示 */
         instructions?: string;
-        /** 音声 */
-        voice?: VoiceType;
-        /** 入力音声フォーマット */
-        input_audio_format?: string;
-        /** 出力音声フォーマット */
-        output_audio_format?: string;
-        /** 入力音声転写 */
-        input_audio_transcription?: {
-            model?: string;
+        /** 音声設定（GA: input/output をネスト） */
+        audio?: {
+            input?: {
+                format?: { type: string; rate?: number };
+                transcription?: {
+                    model?: string;
+                };
+                turn_detection?: {
+                    type?: string;
+                    threshold?: number;
+                    prefix_padding_ms?: number;
+                    silence_duration_ms?: number;
+                } | null;
+            };
+            output?: {
+                format?: { type: string; rate?: number };
+                voice?: VoiceType;
+            };
         };
-        /** ターンディテクション */
-        turn_detection?: {
-            type?: string;
-            threshold?: number;
-            prefix_padding_ms?: number;
-            silence_duration_ms?: number;
-        } | null;
         /** ツール */
         tools?: unknown[];
         /** ツール選択 */
         tool_choice?: string;
-        /** 温度 */
-        temperature?: number;
-        /** 最大出力トークン */
-        max_response_output_tokens?: number | 'inf';
+        /** 最大出力トークン（GA: max_output_tokens） */
+        max_output_tokens?: number | 'inf';
     };
 }
 
