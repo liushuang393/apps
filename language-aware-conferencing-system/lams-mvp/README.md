@@ -18,13 +18,19 @@
 
 **対応言語**: 日本語(ja) / 英語(en) / 中国語(zh) / ベトナム語(vi)
 
-**AIプロバイダー**:
+**AIプロバイダー**（`AI_PROVIDER` で選択。モデル名は `backend/app/config.py` の既定値）:
 
-| プロバイダー | 特徴 | 用途 |
+| プロバイダー | パイプライン / モデル | 用途 |
 |---|---|---|
-| `gpt4o_transcribe` | GPT-4o-transcribe ASR(300-500ms) + 翻訳 + TTS | 推奨（デフォルト） |
-| `gpt_realtime` | GPT-Realtime S2S(200-400ms, 音声直接翻訳) | 最低遅延 |
-| `deepgram` | Deepgram Nova-3 ASR(<300ms) + 翻訳 + TTS | 高精度ASR |
+| `gpt4o_transcribe` | GPT-4o-transcribe ASR + GPT-4o-mini 翻訳 + tts-1 | 推奨（デフォルト） |
+| `gpt_realtime` | GPT-Realtime S2S（gpt-realtime-1.5, 音声直接翻訳） | 最低遅延 |
+| `deepgram` | Deepgram Nova-3 ASR + GPT-4o-mini 翻訳 + tts-1 | 高精度ASR |
+| `google` | Google Chirp 3 ASR + Cloud Translation v3（Mode B） | 高精度・正式記録 |
+| `gemini_live` | Gemini Live S2S（gemini-3.5-live-translate-preview） | S2S 代替 |
+
+> `google` / `gemini_live` はキー・認証未整備時、起動を止めず `gpt4o_transcribe` へ自動フォールバックする。
+> ASR / MT / TTS は `ASR_PROVIDER` / `MT_PROVIDER` / `TTS_PROVIDER` で独立に差し替え可能（Composite。既定 `auto`）。
+> 補正・議事録用 LLM はテキスト系モデル（GPT: gpt-4o-mini / Gemini: gemini-2.5-flash）を使用する。
 
 ---
 
@@ -40,8 +46,8 @@
 
 | 主線 | 方式 | 遅延 | 精度 | 定制能力 | 適合シーン |
 |---|---|---:|---:|---:|---|
-| **主線1（Mode A）** | End-to-End Speech-to-Speech（OpenAI Realtime） | 最低/較低 | 中高 | 較弱 | 実時同伝・軽会議 |
-| **主線2（Mode B）** | ASR → MT + 術語庫 → 字幕（Google Chirp3 + Cloud Translation） | 較低 | 高 | 強 | **MVP 首選**・高精度・正式記録 |
+| **主線1（Mode A）** | End-to-End Speech-to-Speech（OpenAI Realtime / Gemini Live） | 最低/較低 | 中高 | 較弱 | 実時同伝・軽会議 |
+| **主線2（Mode B）** | ASR → MT + 術語庫 → 字幕（Google Chirp 3 + Cloud Translation） | 較低 | 高 | 強 | **MVP 首選**・高精度・正式記録 |
 
 - **主線1** は Google ASR / 術語庫 / Cloud Translation を**一切経由しない**。出力は翻訳音声 + transcript delta。
 - **主線2** は翻訳音声を生成しない（字幕・議事録特化）。出力は字幕 + transcript log + 議事録。
@@ -51,7 +57,7 @@
 ```text
                       ┌─ 主線1: OpenAI Realtime S2S ─→ 翻訳音声 + transcript delta
 Mic ─WebRTC→ Gateway ─┤  (Mode Router が選択のみ)
-                      └─ 主線2: Chirp3 → 正規化 → 術語庫 → Cloud Translation → LLM補正 → 字幕/議事録
+                      └─ 主線2: Chirp 3 → 正規化 → 術語庫 → Cloud Translation → LLM補正 → 字幕/議事録
 ```
 
 ### 1. 全体構成
@@ -87,7 +93,7 @@ WebSocket・WebTransport・独自RTCは**正式設計対象外**。ただし Web
 - **主線1（Mode A / OpenAI S2S）**: ブラウザが**ephemeral key で OpenAI Realtime へ直接 WebRTC**接続するのが最低遅延。
   サーバーは ephemeral token 発行のみを担い、transcript delta を DataChannel 経由でログへミラーする。
 - **主線2（Mode B / Google）**: 音声はサーバー側 ASR に届ける必要があるため、**SFU + サーバー側エージェント**構成。
-  エージェントが各話者トラックを購読 → Opus を PCM へデコード → Chirp3 ストリーミング ASR へ投入する。
+  エージェントが各話者トラックを購読 → Opus を PCM へデコード → Chirp 3 ストリーミング ASR へ投入する。
 
 #### 2.2 SFU 選定
 
@@ -104,37 +110,38 @@ WebSocket・WebTransport・独自RTCは**正式設計対象外**。ただし Web
 - OpenAI 直結: サーバーが ephemeral session token を発行し、クライアントが SDP offer/answer を OpenAI と交換。
 - TURN: 本番は **coturn**（または LiveKit 同梱 TURN）+ TLS。STUN はパブリック/自前を併用。
 
-#### 2.4 DataChannel イベント ↔ 既存 WS メッセージ対応（移行表）
+#### 2.4 LiveKit イベント ↔ クライアント配信（実装済み）
 
-| DataChannel イベント | 既存 WS メッセージ（`websocket/handler.py`） | 移行方針 |
+WebSocket は廃止済み。字幕・制御は LiveKit のデータ配信、翻訳音声は Remote Audio Track で送る。
+
+| イベント / トラック | 配信経路（`webrtc/sink.py` ほか） | 内容 |
 |---|---|---|
-| `subtitle` / `subtitle_interim` | 同名（実装済み） | ペイロード互換で DataChannel へ載せ替え |
-| `mode_change` / `provider_status` | （新規） | Mode Router 導入時に追加 |
-| `error` / `fallback` | `error` / `qos_warning` | 名称統一して移行 |
-| 翻訳音声（binary） | WS binary（WAV） | WebRTC Remote Audio Track へ置換 |
+| `subtitle` / `subtitle_interim` | LiveKit data（`deliver_subtitle`） | 原文/翻訳字幕・partial/final |
+| `qos_warning` | LiveKit data（`deliver_event`） | §9 QoS 目標逸脱通知 |
+| 翻訳音声（PCM） | Remote Audio Track（`publisher.py`） | 聞く主線の翻訳音声 24kHz |
 
-#### 2.5 既存 WebSocket からの移行戦略（非破壊）
+#### 2.5 WebSocket → WebRTC 移行（完了済み）
 
-1. **並存期間**を設ける：WebRTC 経路を追加しつつ、既存 WS 経路を残す（feature flag）。
-2. 制御/字幕（DataChannel）→ 音声トラック の順で段階移行。
-3. 全機能が WebRTC で安定後、WS をレガシーとして縮退。
+WS（`websocket/handler.py` / `useWebSocket.ts`）は削除済みで、トランスポートは LiveKit へ一本化済み。
+フロントは `useLiveKit.ts`、バックエンドは参加トークン発行 + LiveKit Agent（`webrtc/`）で構成する。
 
 ### 3. モード / Provider 切替
 
 - **Mode Router**：`if` 文の羅列を避け、Session Orchestrator 配下で主線を選択する単一責務。
 - **切替単位は3つに限定**：会議単位 / ユーザー単位（翻訳音声 ON/OFF）/ 言語ペア単位（`language_routes`）。
-- **Provider Registry**：OpenAI系（Realtime + GPT）と Google系（Chirp3 + Cloud Translation + Gemini）の2系統のみ。
+- **Provider Registry**（`registry.py`）：ASR（GPT-4o / Deepgram Nova-3 / Chirp 3）・MT（OpenAI / Cloud Translation）・
+  TTS（OpenAI / none）をステージ単位のカタログで集中管理し、`*_PROVIDER` env で差し替える。S2S は OpenAI Realtime / Gemini Live。
 
 ### 4. Provider Interface ↔ 既存 `AIProvider` 抽象の対応
 
 `改善.md` 8.3 の4インターフェースを、既存 `app/ai_pipeline/providers/base.py::AIProvider` と整合させる。
 
-| 改善.md Interface | 既存抽象との関係 | 実装方針 |
+| 改善.md Interface | 既存抽象との関係 | 実装状況 |
 |---|---|---|
-| `SpeechToSpeechProvider` | `gpt_realtime` を昇格 | 主線1。WebRTC トラック授受へ拡張 |
-| `ASRProvider` | `AIProvider.transcribe_*` を分離 | 主線2。Chirp3 ストリーミング実装を追加 |
-| `TranslationProvider` | 新規（術語庫連携） | 主線2。Cloud Translation + Glossary/Adaptive |
-| `LLMCorrectionProvider` | 新規 | 補正・議事録。GPT優先 / Gemini fallback |
+| `SpeechToSpeechProvider` | `gpt_realtime` / `gemini_live` | 実装済み（主線1。OpenAI Realtime + Gemini Live） |
+| `ASRProvider` | `AIProvider.transcribe_*` を分離 | 実装済み（`stages.py` でステージ化。Chirp 3 / Deepgram / GPT-4o） |
+| `TranslationProvider` | Composite MT ステージ | 実装済み（`OpenAIMTStage` / `GoogleMTStage` + 術語庫連携） |
+| `LLMCorrectionProvider` | `correction.py` / `minutes.py` | 実装済み（補正=Gemini / 議事録=GPT優先・Gemini fallback） |
 
 ### 5. 術語庫（Glossary）・精度向上
 
@@ -151,10 +158,11 @@ ASR transcript → 人名/会社名補正 → 数字/日付/金額正規化 → 
 ### 6. LLM 補正
 
 LLM は翻訳の主役ではなく**補正・整形・会議理解**に使う（表記統一/文脈補正/敬語/数字保持/議事録/ToDo抽出）。
+`config.py` で次の2スロットを制御する（モデルは GPT=`gpt-4o-mini` / Gemini=`gemini-2.5-flash`）:
 
-```json
-{ "realtime_correction": "openai_gpt", "google_cloud_native_mode": "gemini",
-  "meeting_summary": "openai_gpt", "fallback": "gemini" }
+```bash
+LLM_CORRECTION_PROVIDER=off       # off（既定・非介入） / gemini（翻訳校正）
+LLM_MINUTES_PROVIDER=auto         # auto（GPT優先・Gemini fallback） / gpt / gemini / off
 ```
 
 補正プロンプト原則：数字/日付/金額/固有名詞を変更しない・術語庫の指定訳を必ず使う・意味を追加しない・
@@ -179,8 +187,10 @@ LLM は翻訳の主役ではなく**補正・整形・会議理解**に使う（
 | `POST /api/meetings` | 会議作成（source/target languages, `default_mode`, `enable_openai_s2s`） |
 | `PATCH /api/meetings/{id}/mode` | モード切替（主線の選択） |
 | `PATCH /api/meetings/{id}/participants/{pid}/voice-translation` | ユーザー単位の翻訳音声 ON/OFF |
-| `POST /api/glossaries/terms` | 術語登録（要admin） |
-| `WS /ws/room/{id}`（現行）→ WebRTC（移行後） | リアルタイム接続 |
+| `POST /api/rooms/{id}/token` | LiveKit 参加トークン発行（WebRTC 接続用） |
+| `GET /api/rooms/{id}/transcript` | 会議記録（言語別）取得 |
+| `GET /api/rooms/{id}/minutes` | 議事録（要約・決定事項・ToDo）生成 |
+| `POST/GET/PATCH/DELETE /api/glossaries/terms` | 術語庫 CRUD（要admin） |
 
 ### 9. 品質ゲート（最低基準）
 
@@ -212,14 +222,16 @@ LLM は翻訳の主役ではなく**補正・整形・会議理解**に使う（
 
 ### 12. 実装ロードマップと現状ギャップ
 
-| Phase | 内容 | 現状ギャップ |
+| Phase | 内容 | 現状 |
 |---|---|---|
-| **Phase 1（MVP・主線2優先）** | Chirp3 ASR → Cloud Translation + 術語庫 → 字幕 → 議事録 | 術語庫・Google系provider・議事録APIが未実装 |
-| **Phase 2（主線1追加）** | OpenAI Realtime S2S + ユーザー翻訳音声 ON/OFF + Mode Router | `gpt_realtime` を昇格、Mode Router 新設 |
-| **Phase 3（ハイブリッド）** | 同一音声を両主線へ複製（聞く=OpenAI / 読む=Google） | WebRTC SFU(LiveKit) 本番化 |
+| **Phase 1（MVP・主線2優先）** | Chirp 3 ASR → Cloud Translation + 術語庫 → 字幕 → 議事録 | 実装済み（`google` provider・`glossary` CRUD・議事録 API） |
+| **Phase 2（主線1追加）** | OpenAI Realtime S2S + ユーザー翻訳音声 ON/OFF + Mode Router | 実装済み（`gpt_realtime` / `gemini_live`・`mode_router.py`） |
+| **Phase 3（ハイブリッド）** | 同一音声を両主線へ複製（聞く=S2S / 読む=ASR+MT） | 実装済み（`orchestrator.py` + WebRTC SFU(LiveKit) Agent） |
 
-> **通信レイヤー**：現状は WebSocket（`websocket/handler.py` + `useWebSocket.ts`）。
-> 本設計では WebRTC へ統一する（2.5 の並存移行）。これは破壊的変更のため、Phase 2/3 で段階導入する。
+> **通信レイヤー**：WebSocket は廃止済みで、WebRTC（LiveKit）へ一本化済み。
+> バックエンドは（1）参加トークン発行（`POST /api/rooms/{id}/token`）と
+> （2）LiveKit Agent（`webrtc/agent.py` 音声フォーク Gateway）でのみ LiveKit と通信する。
+> フロントは `useLiveKit.ts` で接続する（旧 `websocket/handler.py` / `useWebSocket.ts` は削除済み）。
 
 ---
 
@@ -239,9 +251,13 @@ cp .env.example .env
 `.env` を編集する（**APIキーはここに記入する。`secrets.json` は廃止済み**）:
 
 ```bash
-AI_PROVIDER=gpt_realtime              # gpt4o_transcribe / gpt_realtime / deepgram
-OPENAI_API_KEY=sk-xxxxxxxx            # gpt_* プロバイダーは必須
+AI_PROVIDER=gpt_realtime              # gpt4o_transcribe / gpt_realtime / deepgram / google / gemini_live
+OPENAI_API_KEY=sk-xxxxxxxx            # gpt_* / Composite の MT・TTS で必須
 # DEEPGRAM_API_KEY=...                # deepgram 使用時のみ
+# GEMINI_API_KEY=...                  # gemini_live / LLM補正・議事録(Gemini) 使用時
+# GOOGLE_PROJECT_ID=...               # google プロバイダー(Chirp 3 + Cloud Translation)使用時
+# ASR_PROVIDER / MT_PROVIDER / TTS_PROVIDER  # ステージ別差し替え（既定 auto）
+# LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET  # WebRTC(LiveKit)接続に必須
 HOST_IP=192.168.x.x                   # LAN公開時のみ。ローカルのみなら localhost
 BACKEND_PORT=8090                     # 既定 8090
 FRONTEND_PORT=5273                    # 既定 5273
