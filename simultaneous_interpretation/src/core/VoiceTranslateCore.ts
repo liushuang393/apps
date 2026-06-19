@@ -33,6 +33,10 @@ interface DOMElements {
     sourceLangDisplay: HTMLElement | null;
     targetLangDisplay: HTMLElement | null;
 
+    // モデル設定
+    realtimeModel: HTMLSelectElement | null;
+    chatModel: HTMLSelectElement | null;
+
     // 詳細設定
     vadEnabled: HTMLElement | null;
     noiseReduction: HTMLElement | null;
@@ -224,6 +228,10 @@ export class VoiceTranslateCore {
         this.elements.voiceType = document.getElementById('voiceType') as HTMLSelectElement;
         this.elements.sourceLangDisplay = document.getElementById('sourceLangDisplay');
         this.elements.targetLangDisplay = document.getElementById('targetLangDisplay');
+
+        // モデル設定
+        this.elements.realtimeModel = document.getElementById('realtimeModel') as HTMLSelectElement;
+        this.elements.chatModel = document.getElementById('chatModel') as HTMLSelectElement;
 
         // 詳細設定
         this.elements.vadEnabled = document.getElementById('vadEnabled');
