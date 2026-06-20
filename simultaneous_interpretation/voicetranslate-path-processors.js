@@ -790,7 +790,9 @@ class VoicePathProcessor {
         // 创建 response.create 请求
         const audioOutputEnabled =
             this.app.elements?.audioOutputEnabled?.classList.contains('active') ?? true;
-        const modalities = audioOutputEnabled ? ['text', 'audio'] : ['text'];
+        // GA: output_modalities は ['audio'] または ['text'] のいずれか
+        //（'audio' を指定すると音声出力＋文字起こしの両方が得られる）
+        const modalities = audioOutputEnabled ? ['audio'] : ['text'];
 
         console.info('[Path2] Voice-to-Voice 翻訳開始:', {
             segmentId: segment.id,
@@ -829,7 +831,7 @@ class VoicePathProcessor {
 
                     // ✅ 翻訳テキストデルタ受信（段階的にテキストを蓄積）
                     // ✅ 重要: responseId をチェックして、このセグメント専用のメッセージのみ処理
-                    if (message.type === 'response.audio_transcript.delta') {
+                    if (message.type === 'response.output_audio_transcript.delta') {
                         // ✅ デバッグ: すべての delta を記録
                         console.info('[Path2] Delta 受信（全て）:', {
                             segmentId: segment.id,
@@ -853,7 +855,7 @@ class VoicePathProcessor {
 
                     // ✅ 翻訳テキスト受信完了
                     if (
-                        message.type === 'response.audio_transcript.done' &&
+                        message.type === 'response.output_audio_transcript.done' &&
                         message.response_id === responseId
                     ) {
                         console.info('[Path2] 翻訳テキスト受信完了:', {
@@ -867,7 +869,7 @@ class VoicePathProcessor {
                     // 翻訳音声受信完了
                     // ✅ 重要: responseId をチェックして、このセグメント専用のメッセージのみ処理
                     if (
-                        message.type === 'response.audio.done' &&
+                        message.type === 'response.output_audio.done' &&
                         message.response_id === responseId
                     ) {
                         audioData = 'queued'; // 実際の音声データは再生キューにある
@@ -927,7 +929,8 @@ class VoicePathProcessor {
             const request = {
                 type: 'response.create',
                 response: {
-                    modalities: modalities,
+                    // GA: response.create も output_modalities を使用（旧: modalities）
+                    output_modalities: modalities,
                     instructions: this.app.getInstructions()
                 }
             };
