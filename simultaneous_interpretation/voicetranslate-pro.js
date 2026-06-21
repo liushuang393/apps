@@ -746,8 +746,27 @@ class VoiceTranslateApp {
         const mode = isActive ? '音声翻訳（高速・高品質）' : 'テキスト翻訳（入力と一対一対応）';
         console.info('[Translation Mode] 翻訳モード:', mode);
 
+        // ✅ バグ修正（無音対策）: 音声翻訳ONなのに「翻訳音声を出力」がOFFだと
+        //    output_modalities=['text'] となり音声が一切出ない不正状態になる。
+        //    handleAudioOutputToggle の逆方向ガード（OFF→音声翻訳もOFF）と対になる補正。
+        if (isActive) {
+            const audioOutputEnabled = this.elements.audioOutputEnabled;
+            if (audioOutputEnabled && !audioOutputEnabled.classList.contains('active')) {
+                audioOutputEnabled.classList.add('active');
+                this.saveToStorage('audioOutputEnabled', 'true');
+                console.info(
+                    '[Translation Mode] 音声翻訳ONのため「翻訳音声を出力」も自動的にONにしました'
+                );
+            }
+        }
+
         // パスプロセッサのモードを同期
         this.updateProcessorModes();
+
+        // ✅ 接続中ならサーバ側 output_modalities も即時同期（不一致での無音を防ぐ）
+        if (this.state.isConnected) {
+            this.updateSession();
+        }
 
         this.notify('翻訳モード変更', `翻訳モードを${mode}に変更しました`, 'info');
     }

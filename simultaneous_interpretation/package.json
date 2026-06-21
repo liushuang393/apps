@@ -3,9 +3,6 @@
   "version": "2.0.0",
   "description": "同時通訳 (Simultaneous Interpretation) - AI駆動のリアルタイム音声翻訳システム",
   "main": "dist/electron/main.js",
-  "directories": {
-    "test": "tests"
-  },
   "scripts": {
     "clean": "rimraf dist coverage",
     "dev": "concurrently \"npm run build -- --watch\" \"wait-on dist/electron/main.js && cross-env NODE_ENV=development electron .\"",
