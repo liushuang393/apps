@@ -228,6 +228,14 @@ class VoiceTranslateApp {
         await this.checkMicrophonePermission();
 
         console.info('[App] VoiceTranslate Pro v3.0 初期化完了');
+
+        // パスプロセッサの初期モードを同期
+        try {
+            this.updateProcessorModes();
+        } catch (e) {
+            console.warn('[App] 初期プロセッサモードの同期に失敗しました:', e);
+        }
+
         this.notify('システム準備完了', 'VoiceTranslate Proが起動しました', 'success');
     }
 
@@ -492,8 +500,8 @@ class VoiceTranslateApp {
                         this.notify(
                             '音声トラックなし',
                             '【重要】音声をキャプチャするには「タブ」を選択してください。\n\n' +
-                                '画面全体やウィンドウを選択した場合、音声は含まれません。\n' +
-                                'または、音声ソースを「マイク」に変更してください。',
+                            '画面全体やウィンドウを選択した場合、音声は含まれません。\n' +
+                            'または、音声ソースを「マイク」に変更してください。',
                             'warning'
                         );
                     }
@@ -700,10 +708,10 @@ class VoiceTranslateApp {
         const isActive = element.classList.contains('active');
         const mode = isActive ? '音声翻訳（高速・高品質）' : 'テキスト翻訳（入力と一対一対応）';
         console.info('[Translation Mode] 翻訳モード:', mode);
-        
+
         // パスプロセッサのモードを同期
         this.updateProcessorModes();
-        
+
         this.notify('翻訳モード変更', `翻訳モードを${mode}に変更しました`, 'info');
     }
 
@@ -792,7 +800,7 @@ class VoiceTranslateApp {
             // Path1: 音声認識のみ（字幕表示用）
             this.textPathProcessor.setMode(1);
             // Path2: 音声翻訳実行
-            this.voicePathProcessor.mode = 1; 
+            this.voicePathProcessor.mode = 1;
         } else {
             // ✅ テキスト翻訳モード（Path1 優先）
             // Path1: 音声認識 + テキスト翻訳
@@ -805,15 +813,6 @@ class VoiceTranslateApp {
             path1Mode: this.textPathProcessor.mode,
             path2Mode: this.voicePathProcessor.mode
         });
-    }
-                `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`,
-                'info'
-            );
-        }
-
-        if (this.state.isConnected) {
-            this.updateSession();
-        }
     }
 
     async loadSettings() {
@@ -2267,8 +2266,8 @@ Even if you have translated many sentences, your role has NOT changed:
                 reject(
                     new Error(
                         'Chrome内部ページ（chrome://）では音声キャプチャできません。\n' +
-                            '通常のウェブページ（YouTube、Google Meetなど）で使用するか、\n' +
-                            '音声ソースを「マイク」または「画面/ウィンドウを選択」に変更してください。'
+                        '通常のウェブページ（YouTube、Google Meetなど）で使用するか、\n' +
+                        '音声ソースを「マイク」または「画面/ウィンドウを選択」に変更してください。'
                     )
                 );
             } else {
@@ -2336,10 +2335,10 @@ Even if you have translated many sentences, your role has NOT changed:
                     reject(
                         new Error(
                             'Chrome内部ページでは音声キャプチャできません。\n\n' +
-                                '解決方法:\n' +
-                                '1. 通常のウェブページ（YouTube、Google Meetなど）を開く\n' +
-                                '2. 音声ソースを「マイク」に変更する\n' +
-                                '3. 音声ソースを「画面/ウィンドウを選択」に変更する'
+                            '解決方法:\n' +
+                            '1. 通常のウェブページ（YouTube、Google Meetなど）を開く\n' +
+                            '2. 音声ソースを「マイク」に変更する\n' +
+                            '3. 音声ソースを「画面/ウィンドウを選択」に変更する'
                         )
                     );
                     return;
@@ -2395,16 +2394,16 @@ Even if you have translated many sentences, your role has NOT changed:
                 if (this.platform.isElectron) {
                     throw new Error(
                         '音声トラックが検出されませんでした。\n' +
-                            '会議アプリで音声が再生されているか確認してください。'
+                        '会議アプリで音声が再生されているか確認してください。'
                     );
                 } else {
                     throw new Error(
                         '音声トラックが検出されませんでした。\n\n' +
-                            '【重要】getDisplayMedia() で音声をキャプチャするには:\n' +
-                            '1. 「タブ」を選択してください（画面/ウィンドウでは音声が含まれません）\n' +
-                            '2. または、音声ソースを「マイク」に変更してください\n\n' +
-                            '詳細: Chromeの仕様により、画面全体やウィンドウを選択した場合、\n' +
-                            '音声トラックは含まれません。タブを選択すると音声が含まれます。'
+                        '【重要】getDisplayMedia() で音声をキャプチャするには:\n' +
+                        '1. 「タブ」を選択してください（画面/ウィンドウでは音声が含まれません）\n' +
+                        '2. または、音声ソースを「マイク」に変更してください\n\n' +
+                        '詳細: Chromeの仕様により、画面全体やウィンドウを選択した場合、\n' +
+                        '音声トラックは含まれません。タブを選択すると音声が含まれます。'
                     );
                 }
             }

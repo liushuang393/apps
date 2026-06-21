@@ -1,11 +1,12 @@
 ﻿<!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="OpenAI Realtime APIを使用した高精度リアルタイム音声翻訳システム">
     <title>VoiceTranslate Pro - リアルタイム音声翻訳</title>
-    
+
     <style>
         :root {
             --primary: #2563eb;
@@ -23,13 +24,13 @@
             --border: #475569;
             --shadow: rgba(0, 0, 0, 0.5);
         }
-        
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
             background: linear-gradient(135deg, var(--dark) 0%, var(--dark-secondary) 100%);
@@ -37,7 +38,7 @@
             min-height: 100vh;
             overflow-x: hidden;
         }
-        
+
         /* ブラウザ拡張ポップアップ用サイズ設定 */
         @media (max-width: 700px) {
             body {
@@ -46,13 +47,13 @@
                 max-width: 600px;
             }
         }
-        
+
         .app-container {
             max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
         }
-        
+
         /* ヘッダー */
         .header {
             background: rgba(30, 41, 59, 0.8);
@@ -65,13 +66,13 @@
             justify-content: space-between;
             align-items: center;
         }
-        
+
         .header-title {
             display: flex;
             align-items: center;
             gap: 16px;
         }
-        
+
         .logo {
             width: 48px;
             height: 48px;
@@ -82,13 +83,13 @@
             justify-content: center;
             font-size: 24px;
         }
-        
+
         .app-title {
             font-size: 24px;
             font-weight: 700;
             color: var(--text-primary);
         }
-        
+
         .app-version {
             font-size: 12px;
             color: var(--text-secondary);
@@ -97,7 +98,7 @@
             border-radius: 20px;
             margin-left: 12px;
         }
-        
+
         .status-badge {
             display: flex;
             align-items: center;
@@ -106,37 +107,54 @@
             background: var(--dark-tertiary);
             border-radius: 8px;
         }
-        
+
         .status-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
             background: var(--text-secondary);
         }
-        
-        .status-dot.online { background: var(--success); animation: pulse 2s infinite; }
-        .status-dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
-        .status-dot.error { background: var(--danger); }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+        .status-dot.online {
+            background: var(--success);
+            animation: pulse 2s infinite;
         }
-        
+
+        .status-dot.connecting {
+            background: var(--warning);
+            animation: pulse 1s infinite;
+        }
+
+        .status-dot.error {
+            background: var(--danger);
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
         /* メインレイアウト */
         .main-layout {
             display: grid;
             grid-template-columns: 350px 1fr;
             gap: 24px;
         }
-        
+
         /* サイドバー */
         .sidebar {
             display: flex;
             flex-direction: column;
             gap: 20px;
         }
-        
+
         .card {
             background: rgba(30, 41, 59, 0.8);
             backdrop-filter: blur(10px);
@@ -144,7 +162,7 @@
             padding: 20px;
             border: 1px solid var(--border);
         }
-        
+
         .card-title {
             font-size: 16px;
             font-weight: 600;
@@ -160,9 +178,12 @@
             cursor: pointer;
             user-select: none;
             transition: color 0.2s ease;
-            pointer-events: auto; /* ✅ 追加: クリックイベントを確実に受け取る */
-            position: relative; /* ✅ 追加: z-indexを有効にする */
-            z-index: 1; /* ✅ 追加: 他の要素より前面に配置 */
+            pointer-events: auto;
+            /* ✅ 追加: クリックイベントを確実に受け取る */
+            position: relative;
+            /* ✅ 追加: z-indexを有効にする */
+            z-index: 1;
+            /* ✅ 追加: 他の要素より前面に配置 */
         }
 
         .collapsible-header:hover {
@@ -174,8 +195,10 @@
             font-size: 12px;
             transition: transform 0.3s ease;
             display: inline-block;
-            margin-right: 4px; /* ✅ 追加: アイコンとテキストの間隔 */
-            pointer-events: none; /* ✅ 追加: アイコン自体はクリックイベントを受け取らない */
+            margin-right: 4px;
+            /* ✅ 追加: アイコンとテキストの間隔 */
+            pointer-events: none;
+            /* ✅ 追加: アイコン自体はクリックイベントを受け取らない */
         }
 
         .collapsible-header:not(.collapsed) .collapse-icon {
@@ -194,11 +217,11 @@
             max-height: 0;
             opacity: 0;
         }
-        
+
         .form-group {
             margin-bottom: 16px;
         }
-        
+
         .form-label {
             display: block;
             font-size: 13px;
@@ -206,7 +229,7 @@
             margin-bottom: 8px;
             font-weight: 500;
         }
-        
+
         .form-input {
             width: 100%;
             padding: 10px 14px;
@@ -217,18 +240,18 @@
             font-size: 14px;
             transition: all 0.2s;
         }
-        
+
         .form-input:focus {
             outline: none;
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
-        
+
         .form-input:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
-        
+
         select.form-input {
             cursor: pointer;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M10.293 3.293L6 7.586 1.707 3.293A1 1 0 00.293 4.707l5 5a1 1 0 001.414 0l5-5a1 1 0 10-1.414-1.414z'/%3E%3C/svg%3E");
@@ -237,7 +260,7 @@
             padding-right: 36px;
             appearance: none;
         }
-        
+
         /* ボタン */
         .btn {
             padding: 10px 20px;
@@ -254,88 +277,96 @@
             text-transform: none;
             width: 100%;
         }
-        
+
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
-        
+
         .btn-primary {
             background: var(--primary);
             color: white;
         }
-        
+
         .btn-primary:hover:not(:disabled) {
             background: var(--primary-dark);
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
         }
-        
+
         .btn-success {
             background: var(--success);
             color: white;
         }
-        
+
         .btn-success:hover:not(:disabled) {
             background: #059669;
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
-        
+
         .btn-danger {
             background: var(--danger);
             color: white;
         }
-        
+
         .btn-danger:hover:not(:disabled) {
             background: #dc2626;
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
         }
-        
+
         .btn-group {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 12px;
         }
-        
+
         /* メインコンテンツ */
         .main-content {
             display: flex;
             flex-direction: column;
             gap: 20px;
         }
-        
+
         /* 統計パネル */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 16px;
         }
-        
+
         .stat-card {
             background: rgba(30, 41, 59, 0.6);
             border-radius: 12px;
             padding: 16px;
             border: 1px solid var(--border);
         }
-        
+
         .stat-label {
             font-size: 12px;
             color: var(--text-secondary);
             margin-bottom: 4px;
         }
-        
+
         .stat-value {
             font-size: 20px;
             font-weight: 700;
             color: var(--text-primary);
         }
-        
-        .stat-value.success { color: var(--success); }
-        .stat-value.warning { color: var(--warning); }
-        .stat-value.info { color: var(--primary-light); }
-        
+
+        .stat-value.success {
+            color: var(--success);
+        }
+
+        .stat-value.warning {
+            color: var(--warning);
+        }
+
+        .stat-value.info {
+            color: var(--primary-light);
+        }
+
         /* 音声ビジュアライザー */
         .visualizer-container {
             background: rgba(15, 23, 42, 0.6);
@@ -349,14 +380,14 @@
             position: relative;
             overflow: hidden;
         }
-        
+
         .visualizer-bars {
             display: flex;
             align-items: center;
             gap: 4px;
             height: 100%;
         }
-        
+
         .vis-bar {
             width: 4px;
             background: linear-gradient(to top, var(--primary), var(--primary-light));
@@ -364,11 +395,11 @@
             transition: all 0.15s ease;
             height: 20%;
         }
-        
+
         .vis-bar.active {
             background: linear-gradient(to top, var(--success), #34d399);
         }
-        
+
         /* トランスクリプト */
         .transcript-container {
             display: grid;
@@ -376,7 +407,7 @@
             gap: 15px;
             height: 400px;
         }
-        
+
         .transcript-box {
             background: rgba(30, 41, 59, 0.8);
             border-radius: 12px;
@@ -384,7 +415,7 @@
             display: flex;
             flex-direction: column;
         }
-        
+
         .transcript-header {
             padding: 16px;
             border-bottom: 1px solid var(--border);
@@ -448,7 +479,7 @@
         .clear-all-btn:active {
             transform: translateY(0);
         }
-        
+
         .transcript-content {
             flex: 1;
             padding: 16px;
@@ -456,21 +487,21 @@
             font-size: 14px;
             line-height: 1.6;
         }
-        
+
         .transcript-content::-webkit-scrollbar {
             width: 6px;
         }
-        
+
         .transcript-content::-webkit-scrollbar-track {
             background: var(--dark);
             border-radius: 3px;
         }
-        
+
         .transcript-content::-webkit-scrollbar-thumb {
             background: var(--border);
             border-radius: 3px;
         }
-        
+
         .transcript-message {
             margin-bottom: 12px;
             padding: 12px;
@@ -483,29 +514,36 @@
             overflow-wrap: break-word;
             max-width: 100%;
         }
-        
+
         .transcript-message.translation {
             border-left-color: var(--success);
         }
-        
+
         .transcript-time {
             font-size: 11px;
             color: var(--text-secondary);
             margin-bottom: 4px;
         }
-        
+
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateX(-10px); }
-            to { opacity: 1; transform: translateX(0); }
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
         }
-        
+
         /* 設定パネル */
         .settings-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 16px;
         }
-        
+
         .toggle-group {
             display: flex;
             align-items: center;
@@ -514,12 +552,12 @@
             background: var(--dark);
             border-radius: 8px;
         }
-        
+
         .toggle-label {
             font-size: 13px;
             color: var(--text-primary);
         }
-        
+
         .toggle-switch {
             position: relative;
             width: 44px;
@@ -529,11 +567,11 @@
             cursor: pointer;
             transition: background 0.2s;
         }
-        
+
         .toggle-switch.active {
             background: var(--primary);
         }
-        
+
         .toggle-switch::after {
             content: '';
             position: absolute;
@@ -545,7 +583,7 @@
             left: 2px;
             transition: transform 0.2s;
         }
-        
+
         .toggle-switch.active::after {
             transform: translateX(20px);
         }
@@ -574,40 +612,40 @@
             transition: transform 0.3s ease;
             z-index: 1000;
         }
-        
+
         .notification.show {
             transform: translateX(0);
         }
-        
+
         .notification.success {
             border-left: 4px solid var(--success);
         }
-        
+
         .notification.error {
             border-left: 4px solid var(--danger);
         }
-        
+
         .notification.warning {
             border-left: 4px solid var(--warning);
         }
-        
+
         .notification-title {
             font-size: 14px;
             font-weight: 600;
             margin-bottom: 4px;
         }
-        
+
         .notification-message {
             font-size: 13px;
             color: var(--text-secondary);
         }
-        
+
         /* レスポンシブ */
         @media (max-width: 1024px) {
             .main-layout {
                 grid-template-columns: 1fr;
             }
-            
+
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
@@ -621,217 +659,218 @@
                 margin-bottom: 15px;
             }
         }
-        
+
         @media (max-width: 640px) {
             .app-container {
                 padding: 12px;
             }
-            
+
             .header {
                 flex-direction: column;
                 gap: 12px;
             }
-            
+
             .stats-grid {
                 grid-template-columns: 1fr;
             }
-            
+
             .btn-group {
                 grid-template-columns: 1fr;
             }
-            
+
             .settings-grid {
                 grid-template-columns: 1fr;
             }
         }
-        
+
         /* ブラウザ拡張ポップアップ用スタイル（400-600px幅） */
         @media (max-width: 700px) {
             body {
                 min-height: auto;
                 overflow-y: auto;
             }
-            
+
             .app-container {
                 max-width: 100%;
                 padding: 16px;
             }
-            
+
             .header {
                 padding: 16px;
                 margin-bottom: 16px;
                 flex-direction: row;
                 justify-content: space-between;
             }
-            
+
             .logo {
                 width: 36px;
                 height: 36px;
                 font-size: 20px;
             }
-            
+
             .app-title {
                 font-size: 18px;
             }
-            
+
             .app-version {
-                display: none; /* ポップアップでは非表示 */
+                display: none;
+                /* ポップアップでは非表示 */
             }
-            
+
             .status-badge {
                 padding: 6px 12px;
                 font-size: 12px;
             }
-            
+
             .main-layout {
                 grid-template-columns: 1fr;
                 gap: 16px;
             }
-            
+
             .sidebar {
                 gap: 16px;
             }
-            
+
             .card {
                 padding: 16px;
                 border-radius: 12px;
             }
-            
+
             .card-title {
                 font-size: 14px;
                 margin-bottom: 12px;
             }
-            
+
             .form-group {
                 margin-bottom: 12px;
             }
-            
+
             .form-label {
                 font-size: 12px;
                 margin-bottom: 6px;
             }
-            
+
             .form-input {
                 padding: 8px 12px;
                 font-size: 13px;
             }
-            
+
             .btn {
                 padding: 8px 16px;
                 font-size: 13px;
             }
-            
+
             .btn-group {
                 gap: 8px;
             }
-            
+
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
                 gap: 12px;
             }
-            
+
             .stat-card {
                 padding: 12px;
             }
-            
+
             .stat-label {
                 font-size: 11px;
             }
-            
+
             .stat-value {
                 font-size: 20px;
             }
-            
+
             .visualizer-container {
                 height: 60px;
                 border-radius: 8px;
                 padding: 8px;
             }
-            
+
             .transcript-container {
                 gap: 12px;
             }
-            
+
             .transcript-box {
                 border-radius: 8px;
                 padding: 12px;
             }
-            
+
             .transcript-header {
                 margin-bottom: 8px;
                 font-size: 12px;
             }
-            
+
             .transcript-content {
                 min-height: 120px;
                 max-height: 180px;
                 font-size: 13px;
             }
-            
+
             .settings-grid {
                 grid-template-columns: 1fr;
                 gap: 8px;
             }
-            
+
             .toggle-group {
                 padding: 10px;
             }
-            
+
             .toggle-label {
                 font-size: 12px;
             }
-            
+
             .empty-icon {
                 font-size: 32px;
                 margin-bottom: 8px;
             }
-            
+
             .empty-text {
                 font-size: 12px;
             }
         }
-        
+
         /* 超コンパクト表示（ブラウザ拡張最小幅400px） */
         @media (max-width: 450px) {
             .app-container {
                 padding: 12px;
             }
-            
+
             .header {
                 padding: 12px;
             }
-            
+
             .header-title {
                 gap: 8px;
             }
-            
+
             .app-title {
                 font-size: 16px;
             }
-            
+
             .card {
                 padding: 12px;
             }
-            
+
             .stats-grid {
                 grid-template-columns: 1fr;
                 gap: 8px;
             }
-            
+
             .stat-card {
                 padding: 10px;
             }
-            
+
             .transcript-content {
                 min-height: 100px;
                 max-height: 150px;
             }
-            
+
             .visualizer-container {
                 height: 50px;
             }
         }
-        
+
         /* ローディングスピナー */
         .spinner {
             display: inline-block;
@@ -842,11 +881,13 @@
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
-        
+
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
-        
+
         /* プログレスバー */
         .progress-bar {
             height: 3px;
@@ -855,19 +896,19 @@
             overflow: hidden;
             margin-top: 8px;
         }
-        
+
         .progress-fill {
             height: 100%;
             background: linear-gradient(90deg, var(--primary), var(--primary-light));
             width: 0%;
             transition: width 0.3s ease;
         }
-        
+
         /* ツールチップ */
         .tooltip {
             position: relative;
         }
-        
+
         .tooltip:hover::after {
             content: attr(data-tooltip);
             position: absolute;
@@ -884,20 +925,20 @@
             box-shadow: 0 4px 12px var(--shadow);
             z-index: 1000;
         }
-        
+
         /* 空状態 */
         .empty-state {
             text-align: center;
             padding: 40px;
             color: var(--text-secondary);
         }
-        
+
         .empty-icon {
             font-size: 48px;
             margin-bottom: 16px;
             opacity: 0.5;
         }
-        
+
         .empty-text {
             font-size: 14px;
         }
@@ -1083,6 +1124,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="app-container">
         <!-- ヘッダー -->
@@ -1099,7 +1141,7 @@
                 <span id="connectionText">オフライン</span>
             </div>
         </header>
-        
+
         <!-- メインレイアウト -->
         <div class="main-layout">
             <!-- サイドバー -->
@@ -1121,7 +1163,7 @@
                         <span id="validateBtnText">APIキー検証</span>
                     </button>
                 </div>
-                
+
                 <!-- 言語設定 -->
                 <div class="card">
                     <h2 class="card-title collapsible-header" id="languageSettingsHeader">
@@ -1130,64 +1172,68 @@
                         <span>言語設定</span>
                     </h2>
                     <div class="collapsible-content" id="languageSettingsContent">
-                    <!-- ✅ 修正: 自動言語検出 -->
-                    <div class="form-group">
-                        <label class="form-label" for="detectedLanguageInput">📥 入力言語（自動検出）</label>
-                        <input type="hidden" id="detectedLanguageInput" name="detectedLanguage" value="auto">
-                        <div class="form-input" style="background: var(--input-bg); padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-                            <span id="detectedLanguageDisplay" style="font-weight: bold; color: var(--primary);">🔄 自動検出中...</span>
-                            <span id="detectedLanguageCode" style="font-size: 12px; color: var(--text-secondary);">auto</span>
+                        <!-- ✅ 修正: 自動言語検出 -->
+                        <div class="form-group">
+                            <label class="form-label" for="detectedLanguageInput">📥 入力言語（自動検出）</label>
+                            <input type="hidden" id="detectedLanguageInput" name="detectedLanguage" value="auto">
+                            <div class="form-input"
+                                style="background: var(--input-bg); padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+                                <span id="detectedLanguageDisplay" style="font-weight: bold; color: var(--primary);">🔄
+                                    自動検出中...</span>
+                                <span id="detectedLanguageCode"
+                                    style="font-size: 12px; color: var(--text-secondary);">auto</span>
+                            </div>
+                            <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
+                                💡 音声内容から自動的に言語が判定されます。手動設定は不要です。
+                            </small>
                         </div>
-                        <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
-                            💡 音声内容から自動的に言語が判定されます。手動設定は不要です。
-                        </small>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="targetLang">📤 出力言語（翻訳先）</label>
-                        <select id="targetLang" class="form-input">
-                            <option value="ja" selected>日本語</option>
-                            <option value="en">English（英語）</option>
-                            <option value="zh">简体中文（中国語簡体字）</option>
-                            <option value="vi">Tiếng Việt（ベトナム語）</option>
-                        </select>
-                        <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
-                            💡 対応言語: 英語、日本語、簡体中文、ベトナム語の4言語のみ
-                        </small>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="voiceType">🔊 翻訳音色</label>
-                        <select id="voiceType" class="form-input">
-                            <option value="alloy">Alloy（標準）</option>
-                            <option value="echo">Echo（男性的）</option>
-                            <option value="fable">Fable（温かい）</option>
-                            <option value="onyx">Onyx（深い）</option>
-                            <option value="nova">Nova（明るい）</option>
-                            <option value="shimmer">Shimmer（女性的）</option>
-                            <option value="marin">Marin（新・自然）</option>
-                            <option value="cedar">Cedar（新・プロフェッショナル）</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="realtimeModel">🧠 Realtimeモデル（音声→音声）</label>
-                        <select id="realtimeModel" class="form-input">
-                            <option value="gpt-realtime-2025-08-28" selected>gpt-realtime-2025-08-28（最新・推奨）</option>
-                            <option value="gpt-realtime-translate">gpt-realtime-translate</option>
-                            <option value="gpt-4o-realtime-preview-2024-12-17">gpt-4o-realtime-preview-2024-12-17</option>
-                        </select>
-                        <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
-                            💡 変更は次回「接続」時に反映されます（セッション再作成が必要）
-                        </small>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="chatModel">💬 Chatモデル（テキスト翻訳・言語検出）</label>
-                        <select id="chatModel" class="form-input">
-                            <option value="gpt-5-2025-08-07" selected>gpt-5-2025-08-07</option>
-                            <option value="gpt-4o">gpt-4o</option>
-                        </select>
-                        <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
-                            💡 変更は即時反映されます
-                        </small>
-                    </div>
+                        <div class="form-group">
+                            <label class="form-label" for="targetLang">📤 出力言語（翻訳先）</label>
+                            <select id="targetLang" class="form-input">
+                                <option value="ja" selected>日本語</option>
+                                <option value="en">English（英語）</option>
+                                <option value="zh">简体中文（中国語簡体字）</option>
+                                <option value="vi">Tiếng Việt（ベトナム語）</option>
+                            </select>
+                            <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
+                                💡 対応言語: 英語、日本語、簡体中文、ベトナム語の4言語のみ
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="voiceType">🔊 翻訳音色</label>
+                            <select id="voiceType" class="form-input">
+                                <option value="alloy">Alloy（標準）</option>
+                                <option value="echo">Echo（男性的）</option>
+                                <option value="fable">Fable（温かい）</option>
+                                <option value="onyx">Onyx（深い）</option>
+                                <option value="nova">Nova（明るい）</option>
+                                <option value="shimmer">Shimmer（女性的）</option>
+                                <option value="marin">Marin（新・自然）</option>
+                                <option value="cedar">Cedar（新・プロフェッショナル）</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="realtimeModel">🧠 Realtimeモデル（音声→音声）</label>
+                            <select id="realtimeModel" class="form-input">
+                                <option value="gpt-realtime-2025-08-28" selected>gpt-realtime-2025-08-28（最新・推奨）</option>
+                                <option value="gpt-realtime-translate">gpt-realtime-translate</option>
+                                <option value="gpt-realtime-2">gpt-realtime-2</option>
+                            </select>
+                            <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
+                                💡 変更は次回「接続」時に反映されます（セッション再作成が必要）
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="chatModel">💬 Chatモデル（テキスト翻訳・言語検出）</label>
+                            <select id="chatModel" class="form-input">
+                                <option value="gpt-5-2025-08-07" selected>gpt-5-2025-08-07（最新）</option>
+                                <option value="gpt-5.5">gpt-5.5</option>
+                                <option value="gpt-4o">gpt-4o</option>
+                            </select>
+                            <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
+                                💡 変更は即時反映されます
+                            </small>
+                        </div>
                     </div>
                 </div>
 
@@ -1200,51 +1246,52 @@
                     </h2>
                     <div class="collapsible-content collapsed" id="advancedSettingsContent">
                         <div class="settings-grid">
-                        <div class="toggle-group">
-                            <span class="toggle-label">自動音声検出</span>
-                            <div class="toggle-switch active" id="vadEnabled"></div>
+                            <div class="toggle-group">
+                                <span class="toggle-label">自動音声検出</span>
+                                <div class="toggle-switch active" id="vadEnabled"></div>
+                            </div>
+                            <div class="toggle-group">
+                                <span class="toggle-label">リアルタイム音声翻訳</span>
+                                <div class="toggle-switch active" id="translationModeAudio"
+                                    title="ON: 音声翻訳（高速・高品質）&#10;OFF: テキスト翻訳（入力と一対一対応）"></div>
+                            </div>
+                            <div class="toggle-group dev-only">
+                                <span class="toggle-label">ノイズ除去</span>
+                                <div class="toggle-switch" id="noiseReduction"></div>
+                            </div>
+                            <div class="toggle-group dev-only">
+                                <span class="toggle-label">エコー除去</span>
+                                <div class="toggle-switch" id="echoCancellation"></div>
+                            </div>
+                            <div class="toggle-group dev-only">
+                                <span class="toggle-label">自動ゲイン</span>
+                                <div class="toggle-switch" id="autoGainControl"></div>
+                            </div>
+                            <div class="toggle-group">
+                                <span class="toggle-label">入力音声を表示</span>
+                                <div class="toggle-switch active" id="showInputTranscript"></div>
+                            </div>
+                            <div class="toggle-group">
+                                <span class="toggle-label">翻訳結果を表示</span>
+                                <div class="toggle-switch active" id="showOutputTranscript"></div>
+                            </div>
+                            <div class="toggle-group">
+                                <span class="toggle-label">翻訳音声を出力</span>
+                                <div class="toggle-switch active" id="audioOutputEnabled"></div>
+                            </div>
                         </div>
-                        <div class="toggle-group">
-                            <span class="toggle-label">リアルタイム音声翻訳</span>
-                            <div class="toggle-switch active" id="translationModeAudio" title="ON: 音声翻訳（高速・高品質）&#10;OFF: テキスト翻訳（入力と一対一対応）"></div>
-                        </div>
-                        <div class="toggle-group dev-only">
-                            <span class="toggle-label">ノイズ除去</span>
-                            <div class="toggle-switch" id="noiseReduction"></div>
-                        </div>
-                        <div class="toggle-group dev-only">
-                            <span class="toggle-label">エコー除去</span>
-                            <div class="toggle-switch" id="echoCancellation"></div>
-                        </div>
-                        <div class="toggle-group dev-only">
-                            <span class="toggle-label">自動ゲイン</span>
-                            <div class="toggle-switch" id="autoGainControl"></div>
-                        </div>
-                        <div class="toggle-group">
-                            <span class="toggle-label">入力音声を表示</span>
-                            <div class="toggle-switch active" id="showInputTranscript"></div>
-                        </div>
-                        <div class="toggle-group">
-                            <span class="toggle-label">翻訳結果を表示</span>
-                            <div class="toggle-switch active" id="showOutputTranscript"></div>
-                        </div>
-                        <div class="toggle-group">
-                            <span class="toggle-label">翻訳音声を出力</span>
-                            <div class="toggle-switch active" id="audioOutputEnabled"></div>
-                        </div>
-                    </div>
 
-                    <div class="form-group" style="margin-top: 16px;">
-                        <label class="form-label" for="vadSensitivity">VAD感度</label>
-                        <select id="vadSensitivity" class="form-input">
-                            <option value="low">低（騒音環境）</option>
-                            <option value="medium" selected>中（標準）</option>
-                            <option value="high">高（静音環境）</option>
-                        </select>
-                    </div>
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label class="form-label" for="vadSensitivity">VAD感度</label>
+                            <select id="vadSensitivity" class="form-input">
+                                <option value="low">低（騒音環境）</option>
+                                <option value="medium" selected>中（標準）</option>
+                                <option value="high">高（静音環境）</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
-                
+
                 <!-- コントロール -->
                 <div class="card">
                     <h2 class="card-title">
@@ -1280,7 +1327,8 @@
                             <span>🖥️</span>
                             <span>キャプチャ対象</span>
                         </label>
-                        <button id="detectSourcesBtn" class="btn btn-secondary" style="width: 100%; margin-bottom: 8px;">
+                        <button id="detectSourcesBtn" class="btn btn-secondary"
+                            style="width: 100%; margin-bottom: 8px;">
                             <span>🔍</span>
                             <span>会議アプリを検出</span>
                         </button>
@@ -1309,7 +1357,7 @@
                     </div>
                 </div>
             </aside>
-            
+
             <!-- メインコンテンツ -->
             <main class="main-content">
                 <!-- 統計情報 -->
@@ -1331,14 +1379,14 @@
                         <div class="stat-value info" id="accuracy">--%</div>
                     </div>
                 </div>
-                
+
                 <!-- ビジュアライザー -->
                 <div class="visualizer-container">
                     <div class="visualizer-bars" id="visualizer">
                         <!-- 動的に生成 -->
                     </div>
                 </div>
-                
+
                 <!-- トランスクリプト -->
                 <div class="transcript-container">
                     <!-- 1. 入力音声 -->
@@ -1381,7 +1429,7 @@
             </main>
         </div>
     </div>
-    
+
     <!-- 通知コンテナ -->
     <div class="notification" id="notification">
         <div class="notification-title" id="notificationTitle"></div>
@@ -1424,4 +1472,5 @@
     <!-- ✅ 折りたたみ機能は voicetranslate-pro.js に移動しました（CSPエラー対策） -->
 
 </body>
+
 </html>

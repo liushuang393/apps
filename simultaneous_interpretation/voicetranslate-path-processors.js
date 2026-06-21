@@ -703,6 +703,15 @@ class VoicePathProcessor {
                 samples: segment.audioData ? segment.audioData.length : 0
             });
 
+            // ✅ モード 0 の場合はスキップ
+            if (this.mode === 0) {
+                console.info('[Path2] モード 0 (無効) のためスキップ:', segment.id);
+                this.audioQueue.markPathComplete(segment.id, 'path2', {
+                    skipped: true
+                });
+                return;
+            }
+
             this.isProcessing = true;
 
             // ✅ パス1の音声送信完了待機
@@ -745,8 +754,10 @@ class VoicePathProcessor {
 
             // ✅ 音声再生（非同期 - await しない）
             // 理由: 音声再生を待つと、次のセグメントの処理が遅延してしまう
-            // 音声再生キューが順番に処理することで、音声の連続性を保証する
-            this.playAudio(result.audio);
+            // ⚠️ 修正: result.audio が 'received' の場合は既にメイン mixin で再生済みのためスキップ
+            if (result.audio && result.audio !== 'received') {
+                this.playAudio(result.audio);
+            }
 
             // モード1の場合、テキストも表示
             if (this.mode === 1 && result.text !== null && result.text.trim() !== '') {
@@ -872,8 +883,11 @@ class VoicePathProcessor {
                         message.type === 'response.output_audio.done' &&
                         message.response_id === responseId
                     ) {
-                        audioData = 'queued'; // 実際の音声データは再生キューにある
-                        console.info('[Path2] 翻訳音声受信完了:', {
+                        // ✅ 修正: audioData = 'queued' を削除
+                        // 理由: 実際の音声データは WebSocketMixin.handleAudioDelta によって既に playbackQueue に追加されている
+                        //       ここで 'queued' という文字列を入れると playbackQueue が汚染されエラーの原因になる
+                        audioData = 'received';
+                        console.info('[Path2] 翻訳音声受信完了 (処理はメイン mixin 側で実行済み):', {
                             segmentId: segment.id,
                             responseId: responseId
                         });
