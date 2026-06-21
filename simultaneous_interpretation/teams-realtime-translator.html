@@ -1281,6 +1281,15 @@
                             </div>
                         </div>
 
+                        <!-- 翻訳音声の出力先デバイス。原声を物理スピーカーに出さない構成
+                             （会議アプリ→仮想サウンドカード→本アプリで翻訳→物理スピーカー）用。 -->
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label class="form-label" for="outputDeviceSelect">🔈 翻訳音声の出力先（原声分離は物理スピーカーを選択）</label>
+                            <select id="outputDeviceSelect" class="form-input">
+                                <option value="">既定のデバイス</option>
+                            </select>
+                        </div>
+
                         <div class="form-group" style="margin-top: 16px;">
                             <label class="form-label" for="vadSensitivity">VAD感度</label>
                             <select id="vadSensitivity" class="form-input">
@@ -1298,7 +1307,9 @@
                         <span>🎮</span>
                         <span>コントロール</span>
                     </h2>
-                    <div class="btn-group">
+                    <!-- 「接続/切断」は廃止。「開始」で自動接続、「停止」で切断する。
+                         （要素は内部処理の互換のため残すが、画面には表示しない） -->
+                    <div class="btn-group" style="display: none;">
                         <button id="connectBtn" class="btn btn-primary">
                             <span>🔌</span>
                             <span>接続</span>
@@ -1338,7 +1349,7 @@
                     </div>
 
                     <div class="btn-group" style="margin-top: 12px;">
-                        <button id="startBtn" class="btn btn-success" disabled>
+                        <button id="startBtn" class="btn btn-success">
                             <span>🎤</span>
                             <span>開始</span>
                         </button>

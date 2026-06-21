@@ -56,6 +56,21 @@ module.exports = async function handler(req, res) {
     };
 
     try {
+        // 開発用バイパス（多層防御）:
+        //   NODE_ENV !== 'production' かつ FORGEPAY_DEV_BYPASS_SECRET が設定済みで、
+        //   リクエストヘッダ x-dev-bypass がその値と一致する場合のみ、ForgePay 照会を
+        //   省略して有効扱いを返す。本番（production）では完全に無効。
+        const bypassSecret = process.env.FORGEPAY_DEV_BYPASS_SECRET;
+        if (
+            process.env.NODE_ENV !== 'production' &&
+            typeof bypassSecret === 'string' &&
+            bypassSecret !== '' &&
+            req.headers['x-dev-bypass'] === bypassSecret
+        ) {
+            json(200, { isActive: true, status: 'active', expiresAt: null, productId: null });
+            return;
+        }
+
         const body = req.body || {};
         const unlockToken = body.unlock_token;
         const purchaseIntentId = body.purchase_intent_id || body.userId;

@@ -42,7 +42,12 @@ class VoiceTranslateApp {
             systemAudioSourceId: null, // システム音声のソースID
             isNewResponse: true, // 新しい応答かどうかのフラグ
             outputVolume: 1, // 出力音量（1 = 通常、クリッピング防止のため2から変更）
-            isPlayingAudio: false // 音声再生中フラグ（ループバック防止用）
+            isPlayingAudio: false, // 音声再生中フラグ（ループバック防止用）
+            // ✅ 開始/停止のユーザー意図フラグ（自動接続・自動再接続の制御に使用）
+            userWantsActive: false, // 「開始」で true、「停止」で false
+            isUnloading: false, // ページ/アプリ終了中フラグ（終了時は再接続しない）
+            reconnectAttempt: 0, // 自動再接続のリトライ回数（指数バックオフ用）
+            outputDeviceId: '' // 翻訳音声の出力先デバイスID（''=既定。原声分離用に物理デバイスを選択）
         };
 
         this.vad = null;
@@ -269,6 +274,7 @@ class VoiceTranslateApp {
         this.elements.showInputTranscript = document.getElementById('showInputTranscript');
         this.elements.showOutputTranscript = document.getElementById('showOutputTranscript');
         this.elements.audioOutputEnabled = document.getElementById('audioOutputEnabled');
+        this.elements.outputDeviceSelect = document.getElementById('outputDeviceSelect');
 
         // コントロール
         this.elements.connectBtn = document.getElementById('connectBtn');
@@ -448,6 +454,23 @@ class VoiceTranslateApp {
             const currentVadLevel = this.elements.vadSensitivity.value;
             this.updateVADSensitivity(currentVadLevel);
             console.info('[VAD] 音声ソース変更に伴いVAD設定を再適用:', currentVadLevel);
+
+            // ✅ #1 録音中にソースを変更した場合は、新ソースでキャプチャを取り直す（即時切替）。
+            //    マイク↔システムで取得APIもサーバVADのsilence_durationも異なるため、再起動が必要。
+            if (this.state.isRecording) {
+                console.info('[Audio Source] 録音中のソース変更 → キャプチャを再起動します');
+                try {
+                    await this.stopRecording();
+                    await this.updateSessionConfig(); // 新ソース用のserver VADへ更新
+                    await this.startRecording();
+                } catch (err) {
+                    console.error('[Audio Source] ソース再起動エラー:', err);
+                    this.notify('音声ソース', 'ソース切替に失敗しました。停止→開始で再試行してください。', 'error');
+                }
+            } else if (this.state.isConnected) {
+                // 接続中（待機）なら server VAD 設定のみ更新
+                await this.updateSessionConfig();
+            }
         });
 
         // 会議アプリ検出ボタン
@@ -556,10 +579,21 @@ class VoiceTranslateApp {
         });
 
         // コントロールボタン
-        this.elements.connectBtn.addEventListener('click', () => this.connect());
-        this.elements.disconnectBtn.addEventListener('click', () => this.disconnect());
-        this.elements.startBtn.addEventListener('click', () => this.startRecording());
-        this.elements.stopBtn.addEventListener('click', () => this.stopRecording());
+        // 「接続/切断」ボタンは廃止（画面上は非表示）。「開始」で自動接続、「停止」で切断する。
+        this.elements.connectBtn.addEventListener('click', () => this.start());
+        this.elements.disconnectBtn.addEventListener('click', () => this.stop());
+        this.elements.startBtn.addEventListener('click', () => this.start());
+        this.elements.stopBtn.addEventListener('click', () => this.stop());
+
+        // 翻訳音声の出力先デバイス選択（原声分離: 翻訳だけを物理スピーカーへ）
+        if (this.elements.outputDeviceSelect) {
+            this.elements.outputDeviceSelect.addEventListener('change', async (e) => {
+                this.state.outputDeviceId = e.target.value;
+                this.saveToStorage('output_device_id', e.target.value);
+                await this.applyOutputSink();
+            });
+            this.populateOutputDevices();
+        }
 
         // トランスクリプトクリアボタン
         this.elements.clearInputBtn.addEventListener('click', () => {
@@ -596,8 +630,11 @@ class VoiceTranslateApp {
             });
         }
 
-        // ページ離脱時
+        // ページ離脱時（ブラウザ/拡張/アプリを閉じたときのみ切断。自動再接続はしない）
         globalThis.addEventListener('beforeunload', () => {
+            this.state.isUnloading = true;
+            this.state.userWantsActive = false;
+            clearTimeout(this.timers.reconnect);
             if (this.state.isConnected) {
                 this.disconnect();
             }
@@ -1053,6 +1090,119 @@ class VoiceTranslateApp {
         console.info('[Electron WS] IPCハンドラー設定完了');
     }
 
+    /**
+     * 「開始」: 未接続なら自動接続し、接続済みなら録音（翻訳）を開始する。
+     * ユーザー意図フラグを立てるため、以降の異常切断時は自動再接続する。
+     * 接続成功後の録音開始は handleWSOpen() が担う（接続→翻訳を1アクションに）。
+     */
+    async start() {
+        if (!this.state.apiKey) {
+            this.notify('エラー', 'APIキーを入力してください', 'error');
+            return;
+        }
+        this.state.userWantsActive = true;
+        this.state.isUnloading = false;
+
+        // 「開始」押下中は二重開始を防ぎ、「停止」で中断できるようにする
+        this.elements.startBtn.disabled = true;
+        this.elements.stopBtn.disabled = false;
+
+        if (this.state.isConnected) {
+            if (!this.state.isRecording) {
+                await this.startRecording();
+            }
+        } else {
+            await this.connect();
+        }
+    }
+
+    /**
+     * 「停止」: ユーザー意図フラグを下ろし、録音停止＋切断する（自動再接続しない）。
+     */
+    async stop() {
+        this.state.userWantsActive = false;
+        this.state.reconnectAttempt = 0;
+        clearTimeout(this.timers.reconnect);
+        await this.disconnect();
+    }
+
+    /**
+     * 異常切断時の自動再接続を指数バックオフでスケジュールする。
+     * ユーザーが「停止」した場合・ページ終了中は再接続しない。
+     */
+    scheduleReconnect() {
+        if (!this.state.userWantsActive || this.state.isUnloading) {
+            return;
+        }
+        const attempt = this.state.reconnectAttempt + 1;
+        this.state.reconnectAttempt = attempt;
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 10000); // 1,2,4,8,10,10...
+        console.info(`[Reconnect] ${delay}ms 後に再接続 (試行 ${attempt})`);
+        this.notify('再接続', `${Math.round(delay / 1000)}秒後に自動再接続します（試行 ${attempt}）`, 'warning');
+        clearTimeout(this.timers.reconnect);
+        this.timers.reconnect = setTimeout(() => {
+            if (!this.state.userWantsActive || this.state.isUnloading) {
+                return;
+            }
+            this.start();
+        }, delay);
+    }
+
+    /**
+     * 出力デバイス一覧を選択肢に反映する（翻訳音声の出力先用）。
+     * 保存済みの選択があれば復元する。ラベルは権限取得後に表示される。
+     */
+    async populateOutputDevices() {
+        try {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                return;
+            }
+            const sel = this.elements.outputDeviceSelect;
+            if (!sel) {
+                return;
+            }
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const outputs = devices.filter((d) => d.kind === 'audiooutput');
+            sel.innerHTML = '<option value="">既定のデバイス</option>';
+            for (const d of outputs) {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.textContent = d.label || `出力デバイス (${d.deviceId.slice(0, 8)})`;
+                sel.appendChild(opt);
+            }
+            // 保存済みの選択を復元
+            const saved = await this.getFromStorage('output_device_id');
+            if (saved) {
+                this.state.outputDeviceId = saved;
+                sel.value = saved;
+            }
+        } catch (err) {
+            console.warn('[Audio] 出力デバイス列挙に失敗:', err);
+        }
+    }
+
+    /**
+     * 翻訳音声の出力先を選択デバイスへ切り替える（AudioContext.setSinkId）。
+     * 原声分離（会議→仮想サウンドカード→翻訳→物理スピーカー）の物理出力側を担う。
+     * setSinkId 非対応環境では既定デバイスのまま（何もしない）。
+     */
+    async applyOutputSink() {
+        const ctx = this.state.outputAudioContext;
+        const deviceId = this.state.outputDeviceId;
+        if (!ctx || typeof ctx.setSinkId !== 'function') {
+            if (deviceId) {
+                console.warn('[Audio] この環境は出力先切替(setSinkId)に未対応のため既定デバイスを使用します');
+            }
+            return;
+        }
+        try {
+            await ctx.setSinkId(deviceId || '');
+            console.info('[Audio] 翻訳音声の出力先を設定:', deviceId || '既定デバイス');
+        } catch (err) {
+            console.warn('[Audio] 出力先設定に失敗:', err);
+        }
+    }
+
     async connect() {
         if (!this.state.apiKey) {
             this.notify('エラー', 'APIキーを入力してください', 'error');
@@ -1175,9 +1325,10 @@ class VoiceTranslateApp {
 
         this.state.isConnected = false;
         this.updateConnectionStatus('offline');
+        // 新モデル: 切断状態では「開始」を入口として有効化（接続は開始が担う）
         this.elements.connectBtn.disabled = false;
         this.elements.disconnectBtn.disabled = true;
-        this.elements.startBtn.disabled = true;
+        this.elements.startBtn.disabled = false;
         this.elements.stopBtn.disabled = true;
 
         clearTimeout(this.timers.connectionTimeout);
@@ -1203,7 +1354,17 @@ class VoiceTranslateApp {
         // セッションタイマー開始
         this.startSessionTimer();
 
+        // 自動再接続カウンタをリセット（接続成功）
+        this.state.reconnectAttempt = 0;
+
         this.notify('接続成功', 'OpenAI Realtime APIに接続しました', 'success');
+
+        // 「開始」意図がある場合は録音（翻訳）を自動開始する。
+        // これにより「接続→翻訳開始」が1アクションになり、再接続後も自動で再開する。
+        if (this.state.userWantsActive && !this.state.isRecording) {
+            console.info('[WS] userWantsActive=true のため録音を自動開始します');
+            this.startRecording();
+        }
     }
 
     createSession() {
@@ -1230,6 +1391,7 @@ class VoiceTranslateApp {
                 type: 'realtime',
                 // Realtime APIモデル（音声→音声翻訳、音声認識）
                 model: CONFIG.API.REALTIME_MODEL,
+                // GA: セッションの出力モダリティは output_modalities（旧: modalities）
                 output_modalities: outputModalities,
                 instructions: this.getInstructions(),
                 audio: {
@@ -1344,175 +1506,72 @@ class VoiceTranslateApp {
                 }
             }
         };
-
         console.info('[Session] セッション設定を更新:', updateEvent);
         this.sendMessage(updateEvent);
     }
 
     getInstructions() {
-        const sourceLang = this.state.sourceLang || 'en'; // ✅ 修正: null 時は 'en' をデフォルト
-        const targetLang = this.state.targetLang;
-        const sourceName = Utils.getLanguageName(sourceLang);
+        const sourceLang = this.state.sourceLang;
+        const targetLang = this.state.targetLang || 'ja';
+        const sourceName = sourceLang && sourceLang !== 'auto' ? Utils.getLanguageName(sourceLang) : 'the identified source language';
         const targetName = Utils.getLanguageName(targetLang);
-        const sourceNative = Utils.getNativeLanguageName(sourceLang);
+        const sourceNative = sourceLang && sourceLang !== 'auto' ? Utils.getNativeLanguageName(sourceLang) : 'auto-detect';
         const targetNative = Utils.getNativeLanguageName(targetLang);
 
         // ✅ 中文の場合は明確に「简体中文」を指定
         const targetLanguageSpec =
             targetLang === 'zh' ? 'Simplified Chinese (简体中文)' : targetName;
 
+        // ✅ 自動検出モードの記述
+        const isAutoSource = !sourceLang || sourceLang === 'auto';
+        const sourceDescription = isAutoSource
+            ? "Dynamic (Auto-detect from English, Japanese, Chinese, Vietnamese)"
+            : `${sourceName} (${sourceNative})`;
+
         // 最適化された指示（OpenAI Realtime Prompting Guide ベストプラクティス）
         // ✅ 強化: 翻訳専用モード、対話禁止を明確化
         return `# CRITICAL: YOU ARE A TRANSLATION MACHINE, NOT A CONVERSATIONAL AI
-You are a professional real-time interpreter specializing in ${sourceName} to ${targetName} translation.
-Your ONLY task is to translate speech - you are NOT a chatbot and should NEVER engage in conversation.
+## YOUR IDENTITY
+- You are a professional, high-speed real-time interpreter.
+- Your ONLY function is to convert speech from the source language to ${targetName}.
+- You are NOT a person, you are NOT an assistant, and you have NO personal identity.
 
-# Role & Objective
-## Primary Function
-- TRANSLATE ${sourceName} speech to ${targetName} speech
-- DO NOT chat, discuss, or converse with the user
-- DO NOT respond to questions about yourself or your capabilities
-- DO NOT provide explanations, suggestions, or advice
+## CORE OBJECTIVE
+- TRANSLATE every segment of input audio into ${targetName} (${targetNative}) IMMEDIATELY.
+- If the user says "Hello", "How are you?", or any greeting, translate it to ${targetName}. DO NOT answer the greeting.
+- If the user asks you a question ABOUT YOU or WHAT YOU ARE, translate that question into ${targetName}. DO NOT answer the question.
 
-## Translation Focus
-- High accuracy and natural expression
-- Appropriate cultural context
-- Preserve speaker's intent and meaning
+## STRICT RULES (NEVER BREAK THESE)
+1. **NO CHATTING**: NEVER engage in conversation, discussion, or dialogue.
+2. **NO EXPLANATIONS**: NEVER explain a translation or say things like "I am sorry, I can't translate that".
+3. **NO RESPONSE IN SOURCE**: NEVER respond in the language the user just spoke. ALWAYS translate to ${targetName}.
+4. **TRANSLATION ONLY**: Your output must contain ONLY the translation. No meta-commentary, no suggestions, no advice.
 
-# Personality & Tone
-## Personality
-- Professional and neutral
-- Clear and articulate
-- Culturally aware and sensitive
-- **TRANSLATOR ONLY - not a conversational partner**
+## LANGUAGE SPECIFICATIONS
+- Input language: ${sourceDescription}.
+- Output language: ${targetLanguageSpec} (${targetNative}) ONLY.
+- **AUTO-IDENTIFICATION**: If the speaker uses English, Japanese, Chinese, or Vietnamese, identify it and translate to ${targetName} without speaking to the user in their language.
+${targetLang === 'zh'
+                ? '- **PRECISION**: For Chinese output, use Simplified Chinese (简体中文) characters ONLY.'
+                : ''
+            }
 
-## Tone
-- Maintain the speaker's intent and meaning
-- Preserve the emotional tone of the original speech
-- Confident and natural delivery
+## HANDLING INPUT
+- Preserve the speaker's emotional tone, intent, and meaning in ${targetName}.
+- Adapt idioms and cultural references appropriately.
+- Match the length and pacing of the original speech.
+- If the speech is unclear, provide the most plausible translation. NEVER ask for clarification.
 
-## Length
-- Match the length of the original speech
-- Be concise but complete
-- Do not add unnecessary words or explanations
+## FORBIDDEN ACTIONS
+- ❌ DO NOT say "How can I help you?", "I am an AI assistant", or "Nice to meet you".
+- ❌ DO NOT provide help, tips, or suggestions.
+- ❌ DO NOT repeat the original input language in your output.
+- ❌ DO NOT say "Here is the translation:". Just give the translation.
+- ❌ DO NOT say "Sorry, I misunderstood". Just translate the next audio segment.
 
-## Pacing
-- Speak at a natural, conversational pace
-- Do not modify the content of your response, only adjust speaking speed
-- Maintain clarity and naturalness
-
-## Language
-- Input language: ${sourceName} (${sourceNative})
-- Output language: ${targetLanguageSpec} (${targetNative}) ONLY
-- Do NOT respond in any other language, including ${sourceName}
-- If the user speaks in an unclear or mixed language, politely ask for clarification in ${targetLanguageSpec}
-${targetLang === 'zh' ? '- **CRITICAL**: You MUST use Simplified Chinese (简体中文) characters ONLY. DO NOT use Traditional Chinese (繁體中文).' : ''}
-
-## SUPPORTED LANGUAGES (CRITICAL)
-**IMPORTANT**: This system ONLY supports 4 languages:
-1. English (en)
-2. Japanese (ja / 日本語)
-3. Simplified Chinese (zh / 简体中文) - **Use Simplified Chinese characters ONLY**
-4. Vietnamese (vi / Tiếng Việt)
-
-**DO NOT attempt to recognize or translate any other languages** (Korean, Spanish, French, German, etc.)
-If you detect speech in an unsupported language, respond in ${targetName}: "申し訳ございません。対応言語は英語、日本語、中国語、ベトナム語のみです。"
-
-# Instructions / Rules
-## CRITICAL TRANSLATION RULES
-1. **YOU ARE NOT A CHATBOT**: If the user asks you questions like "Who are you?", "What can you do?", "How are you?", simply translate those questions to ${targetName} - DO NOT answer them
-2. **TRANSLATION ONLY**: Your ONLY function is to convert ${sourceName} speech to ${targetName} speech
-3. **NO CONVERSATION**: DO NOT engage in dialogue, discussion, or conversation with the user
-4. **Completeness**: Translate EVERY word and sentence - DO NOT skip or omit anything
-5. **Accuracy**: Maintain the original meaning and intent
-6. **Naturalness**: Use natural expressions in ${targetName}
-7. **Cultural Adaptation**: Adapt idioms and cultural references appropriately
-8. **Technical Terms**: Preserve technical terms and proper nouns accurately
-9. **Numbers and Codes**: When reading numbers or codes, speak each digit clearly and separately
-
-## STRICTLY FORBIDDEN ACTIONS
-- ❌ DO NOT answer questions about yourself (e.g., "I am an AI assistant", "I can help you with...")
-- ❌ DO NOT provide suggestions, advice, or recommendations
-- ❌ DO NOT say "How can I help you?" or similar conversational phrases
-- ❌ DO NOT skip any part of the user's speech
-- ❌ DO NOT add your own comments, explanations, or meta-text
-- ❌ DO NOT mix languages in your response
-- ❌ DO NOT say things like "I will translate", "Here is the translation", or "The translation is"
-- ❌ DO NOT repeat the original language in your response
-- ❌ DO NOT ask for confirmation unless the audio is truly unclear
-- ❌ DO NOT engage in small talk or casual conversation
-
-## Examples of WRONG Behavior (NEVER DO THIS)
-User: "Who are you?"
-❌ WRONG: "I am an AI translation assistant designed to help you..."
-✅ CORRECT: [Translate "Who are you?" to ${targetName}]
-
-User: "What can you do?"
-❌ WRONG: "I can translate between ${sourceName} and ${targetName}..."
-✅ CORRECT: [Translate "What can you do?" to ${targetName}]
-
-User: "How are you?"
-❌ WRONG: "I'm doing well, thank you for asking..."
-✅ CORRECT: [Translate "How are you?" to ${targetName}]
-
-## Unclear Audio Handling
-- If the user's audio is not clear (e.g., background noise, silent, unintelligible):
-  * Ask for clarification using ${targetName} phrases
-  * Examples: "Could you repeat that?", "I didn't catch that clearly", "Please speak a bit louder"
-- Only respond to clear audio or text
-
-# Conversation Flow
-## 1) Listen
-- Wait for the user to finish speaking
-- Detect natural pauses and sentence boundaries
-
-## 2) Translate
-- Immediately translate the complete utterance
-- Maintain the flow and rhythm of natural speech
-
-## 3) Deliver
-- Speak clearly and naturally in ${targetName}
-- Match the appropriate tone and emotion
-
-# Sample Phrases
-Below are sample examples for inspiration. DO NOT always use these exact phrases - vary your responses naturally.
-
-## Acknowledgements (when needed)
-- "I understand"
-- "Got it"
-- "Noted"
-
-## Clarifications (when audio is unclear)
-- "Could you repeat that?"
-- "I didn't catch that clearly"
-- "Please speak a bit louder"
-
-## Professional Context
-- Maintain formality appropriate to the context
-- Use polite forms when appropriate in ${targetName}
-
-# Example Translation
-User (${sourceName}): "こんにちは、今日はいい天気ですね。会議を始めましょう。"
-You (${targetName}): "Hello, it's nice weather today. Let's start the meeting."
-
-User (${sourceName}): "プロジェクトの進捗状況を報告します。現在、第一フェーズが完了し、第二フェーズに移行しています。"
-You (${targetName}): "I'll report on the project progress. Currently, phase one is complete, and we're moving into phase two."
-
-# Critical Reminders - READ EVERY TIME
-⚠️ **REMEMBER**: You are a TRANSLATOR, not a conversational AI
-⚠️ **NEVER** answer questions about yourself - only translate them
-⚠️ **NEVER** engage in conversation - only translate what you hear
-⚠️ **ALWAYS** translate EVERYTHING the user says - completeness is critical
-⚠️ **ALWAYS** respond ONLY in ${targetName} - never use ${sourceName} in your response
-⚠️ **ALWAYS** be natural and fluent - avoid robotic or word-for-word translations
-⚠️ **ALWAYS** preserve the speaker's intent and meaning above all else
-
-## Context Reminder
-Even if you have translated many sentences, your role has NOT changed:
-- You are STILL a translator
-- You are STILL NOT a chatbot
-- You STILL should NOT engage in conversation
-- You STILL should ONLY translate ${sourceName} to ${targetName}`;
+# FINAL REMINDER
+- Output ONLY the ${targetName} translation of the input audio. NOTHING ELSE.
+- You are a TRANSLATION MACHINE. You translate ${sourceName} to ${targetName}. Period.`;
     }
 
     async sendMessage(message) {
@@ -2843,14 +2902,18 @@ Even if you have translated many sentences, your role has NOT changed:
 
         console.info('[Recording] レスポンス生成を要求（Server VAD無効）:', {
             outputModalities: outputModalities,
+            modalities: outputModalities,
             audioOutputEnabled: audioOutputEnabled,
             queueStatus: this.responseQueue.getStatus()
         });
 
         try {
             await this.responseQueue.enqueue({
-                output_modalities: outputModalities,
-                instructions: this.getInstructions()
+                response: {
+                    // GA: response.create も output_modalities を使用（旧: modalities）
+                    output_modalities: outputModalities,
+                    instructions: this.getInstructions(),
+                }
             });
             console.info('[Recording] レスポンスリクエストをキューに追加しました');
         } catch (error) {
@@ -2977,6 +3040,8 @@ Even if you have translated many sentences, your role has NOT changed:
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
             console.info('[Audio] 出力専用AudioContextを作成しました');
+            // 選択済みの出力先（原声分離用の物理デバイス）を適用
+            await this.applyOutputSink();
         }
 
         // AudioContextがsuspended状態の場合はresume
@@ -3217,7 +3282,7 @@ Even if you have translated many sentences, your role has NOT changed:
 
             // 置信度が60%以上の場合は検出された言語を使用、それ以外はデフォルト値を使用
             const finalSourceLang =
-                confidence >= 0.6 ? detectedLang : this.state.sourceLang || 'en';
+                confidence >= 0.6 ? detectedLang : this.state.sourceLang || 'auto';
 
             // 検出された言語で翻訳を実行
             await this.translateTextDirectly(inputText, transcriptId, finalSourceLang);
@@ -3227,7 +3292,7 @@ Even if you have translated many sentences, your role has NOT changed:
             await this.translateTextDirectly(
                 inputText,
                 transcriptId,
-                this.state.sourceLang || 'en'
+                this.state.sourceLang || 'auto'
             );
         } finally {
             // 処理完了後、フラグを削除
@@ -3253,7 +3318,7 @@ Even if you have translated many sentences, your role has NOT changed:
      */
     async translateTextDirectly(inputText, transcriptId, sourceLang = null) {
         // sourceLangが指定されていない場合はデフォルト値を使用
-        const actualSourceLang = sourceLang || this.state.sourceLang || 'en';
+        const actualSourceLang = sourceLang || this.state.sourceLang || 'auto';
 
         // ✅ デバッグログ追加：翻訳方向を明確に表示
         console.info('[翻訳] 翻訳方向:', {
@@ -3273,12 +3338,17 @@ Even if you have translated many sentences, your role has NOT changed:
             const translationModel = CONFIG.API.CHAT_MODEL;
 
             // リクエストボディを構築
+            const targetLangName = Utils.getLanguageName(this.state.targetLang || 'ja');
+            const sourceLangPrompt = actualSourceLang === 'auto'
+                ? `Auto-detect the source language and translate to ${targetLangName}`
+                : `Translate the following text from ${Utils.getLanguageName(actualSourceLang)} to ${targetLangName}`;
+
             const requestBody = {
                 model: translationModel,
                 messages: [
                     {
                         role: 'system',
-                        content: `You are a professional translator. Translate the following text from ${actualSourceLang} to ${this.state.targetLang}. Output ONLY the translation, no explanations.`
+                        content: `You are a professional translator. ${sourceLangPrompt}. Output ONLY the translation, no explanations, no commentary.`
                     },
                     {
                         role: 'user',
@@ -3288,9 +3358,10 @@ Even if you have translated many sentences, your role has NOT changed:
                 max_completion_tokens: 500
             };
 
-            // gpt-5 モデルは temperature をサポートしないため、他のモデルのみ設定
+            // gpt-5 モデルは temperature をサポートしないため、他のモデルのみ設定。
+            // 翻訳は決定的であるべき＆会話化を避けるため 0（最も確定的）にする。
             if (!translationModel.startsWith('gpt-5')) {
-                requestBody.temperature = 0.3;
+                requestBody.temperature = 0;
             }
 
             // OpenAI Chat Completions API を使用して文本翻訳
@@ -3318,7 +3389,14 @@ Even if you have translated many sentences, your role has NOT changed:
                 throw new Error('Invalid API response structure');
             }
 
-            const translatedText = data.choices[0].message.content.trim();
+            // 防御的後処理: アシスタント定型句を除去（プロンプトに加えた多層防御）
+            const translatedText = Utils.stripAssistantBoilerplate(
+                data.choices[0].message.content
+            );
+            if (translatedText === '') {
+                console.warn('[翻訳] アシスタント定型句を検出したため出力を破棄しました');
+                return;
+            }
 
             // 翻訳結果を右側カラムに表示（transcriptIdで一対一対応）
             this.addTranscript('output', translatedText, transcriptId);
@@ -3374,6 +3452,7 @@ Even if you have translated many sentences, your role has NOT changed:
             type: 'session.update',
             session: {
                 instructions: this.getInstructions(),
+                // GA: セッションの出力モダリティは output_modalities（旧: modalities）
                 output_modalities: outputModalities
             }
         };

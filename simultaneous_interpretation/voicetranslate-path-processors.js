@@ -110,20 +110,28 @@ class TextPathProcessor {
             if (this.mode === 2) {
                 const translatedText = await this.translateText(transcript);
 
-                console.info('[Path1] テキスト翻訳完了:', {
-                    segmentId: segment.id,
-                    translatedText: translatedText.substring(0, 50) + '...',
-                    length: translatedText.length
-                });
+                // 定型句検出で破棄された場合は表示せず、認識結果のみ完了扱いにする
+                if (translatedText === '') {
+                    console.warn('[Path1] アシスタント定型句を検出したため翻訳出力を破棄しました');
+                    this.audioQueue.markPathComplete(segment.id, 'path1', {
+                        transcript: transcript
+                    });
+                } else {
+                    console.info('[Path1] テキスト翻訳完了:', {
+                        segmentId: segment.id,
+                        translatedText: translatedText.substring(0, 50) + '...',
+                        length: translatedText.length
+                    });
 
-                // 翻訳テキスト表示
-                this.displayTranslatedText(translatedText);
+                    // 翻訳テキスト表示
+                    this.displayTranslatedText(translatedText);
 
-                // マーク完了
-                this.audioQueue.markPathComplete(segment.id, 'path1', {
-                    transcript: transcript,
-                    translatedText: translatedText
-                });
+                    // マーク完了
+                    this.audioQueue.markPathComplete(segment.id, 'path1', {
+                        transcript: transcript,
+                        translatedText: translatedText
+                    });
+                }
             } else {
                 // モード1の場合、音声認識のみ
                 this.audioQueue.markPathComplete(segment.id, 'path1', {
@@ -404,7 +412,8 @@ class TextPathProcessor {
                         content: text
                     }
                 ],
-                temperature: 0.3
+                // 翻訳は決定的に（会話化回避）。gpt-5 は temperature 非対応のため除外する。
+                ...(this.app.config.chatModel?.startsWith('gpt-5') ? {} : { temperature: 0 })
             })
         });
 
@@ -414,7 +423,8 @@ class TextPathProcessor {
         }
 
         const data = await response.json();
-        return data.choices[0].message.content.trim();
+        // 防御的後処理: アシスタント定型句を除去（多層防御）。破棄すべき場合は '' を返す。
+        return Utils.stripAssistantBoilerplate(data.choices[0].message.content);
     }
 
     /**

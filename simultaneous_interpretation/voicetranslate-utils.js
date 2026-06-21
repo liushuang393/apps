@@ -427,11 +427,51 @@ const AudioUtils = {
         return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     },
 
+    /**
+     * 翻訳出力からアシスタント定型句を除去する防御的後処理（多層防御）。
+     *
+     * プロンプトで「翻訳のみ」を強制しているが、稀にモデルが定型句を出すため、
+     * 表示前の最終ガードとして使う。誤って正当な翻訳を捨てないよう **保守的** に判定する:
+     *   - 先頭の「Here is the translation:」「翻訳:」等のメタ接頭辞のみ除去
+     *   - 全文がモデルの自己言及/拒否（"I'm an AI assistant" 等）の場合のみ空文字を返す
+     * 上記以外の本文は一切変更しない。
+     *
+     * @param {string} text - モデル出力（trim 済みを想定）
+     * @returns {string} 整形後テキスト。破棄すべき場合は ''（空文字）
+     */
+    stripAssistantBoilerplate(text) {
+        if (typeof text !== 'string') {
+            return '';
+        }
+        let out = text.trim();
+
+        // 先頭のメタ接頭辞を除去（例: "Here is the translation: ..." → "..."）
+        out = out.replace(
+            /^(here is|here'?s)\s+(the\s+|your\s+)?(translation|translated text)\s*[:：]?\s*/i,
+            ''
+        );
+        out = out.replace(/^(translation|translated text|翻訳|訳)\s*[:：]\s*/i, '');
+        out = out.trim();
+
+        // 全文がモデルの自己言及/拒否の場合のみ破棄（正当な翻訳本文は残す）
+        const selfReference = [
+            /^i(?:'?m| am)\s+(?:an?\s+)?(?:ai|assistant|language model)\b/i,
+            /^i\s+(?:can(?:'?t|not)|am unable to)\s+(?:translate|help|assist)\b/i,
+            /^sorry,?\s+i\s+(?:can(?:'?t|not)|misunderstood|didn'?t)\b/i,
+            /^as an ai\b/i
+        ];
+        if (selfReference.some((re) => re.test(out))) {
+            return '';
+        }
+
+        return out;
+    },
+
     getLanguageName(code) {
         const languages = {
             ja: '日本語',
             en: 'English',
-            zh: '简体中文',
+            zh: '中国語',
             ko: '한국어',
             es: 'Español',
             fr: 'Français',
@@ -447,7 +487,7 @@ const AudioUtils = {
         const nativeNames = {
             ja: '日本語',
             en: 'English',
-            zh: '简体中文',
+            zh: '中国語/Chinese',
             ko: '한국어',
             es: 'Español',
             fr: 'Français',

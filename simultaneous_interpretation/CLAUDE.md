@@ -70,18 +70,25 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 Real-time voice translation for online meetings (Teams, Zoom, Google Meet) and system audio, built on the OpenAI Realtime API (voice↔voice) plus the Chat Completions API (higher-precision text translation). This project lives in `simultaneous_interpretation/` but the git root is the parent `apps/` directory.
 
-## Two parallel, fully independent codebases
+## Single source of truth: the root `voicetranslate-*.js` is the live app
 
-The single most important thing to understand before editing. There are **two implementations of the same app that share no code** — synced only by manual porting.
+**The single most important thing to understand before editing.** The running app — in **all** forms (browser, Chrome extension, **and** the Electron desktop renderer) — executes the **root-level `voicetranslate-*.js` files**, loaded by `teams-realtime-translator.html`. This is the production code path; **this is where runtime behavior changes belong.**
 
-1. **HTML + plain JavaScript** (browser / Chrome extension / Electron renderer)
-   - Entry UI: `teams-realtime-translator.html`
-   - Logic: the root-level `voicetranslate-*.js` files — `voicetranslate-pro.js` (main), plus `-utils.js`, `-audio-queue.js`, `-path-processors.js`, `-websocket-mixin.js`, `-ui-mixin.js`, `-state-manager.js`, `-audio-capture-strategy.js`.
-   - **These root `.js` files are hand-written source, NOT compiled output from `src/`.** Edit them directly; there is no build step. Reload the browser (Ctrl+F5) to see changes. They load in dependency order via `<script>` tags (see the header comment in `voicetranslate-pro.js`).
+- Entry UI: `teams-realtime-translator.html` (Electron loads it directly — see `electron/main.ts` `loadFile('teams-realtime-translator.html')`).
+- Logic: `voicetranslate-pro.js` (main), plus `-utils.js`, `-audio-queue.js`, `-path-processors.js`, `-websocket-mixin.js`, `-ui-mixin.js`, `-state-manager.js`, `-audio-capture-strategy.js`, `-platform-adapter.js`.
+- **These root `.js` files are hand-written source, NOT compiled from `src/`.** Edit them directly; there is no build step. Reload the browser (Ctrl+F5) to see changes. They load in dependency order via `<script>` tags (see the header comment in `voicetranslate-pro.js`).
 
-2. **TypeScript** (`src/` + `electron/`) → compiled to `dist/` for the Electron desktop app. Strongly typed, modular, unit-tested. New features and refactors belong here.
+### `src/**` is NOT wired into the running app (reference/experimental only)
 
-`src/core/*.ts` does **not** import the root `voicetranslate-*.js`, and vice versa. A bug fix affecting both must be ported by hand. A third TypeScript codebase, `browser-extension/src/`, builds the packaged Chrome extension separately. When asked to change behavior, first determine **which runtime** is in play — the file you edit differs completely.
+`src/**` (the TypeScript core: `src/core/`, `src/audio/`, etc.) compiles to `dist/` but **nothing loads it as the renderer** — `electron/main.ts` loads the root HTML/JS instead, and no file outside `src/` and `tests/` imports it. Treat `src/**` as a **non-production reference reimplementation**: editing it does **not** change app behavior. ⚠️ This is the source of the "fix one place, miss three" trap — a real GA-migration bug (`modalities` vs `output_modalities`) survived in the root JS precisely because attention went to `src/`/probe. **Make runtime fixes in the root `voicetranslate-*.js`.** See `src/README.md`.
+
+### What IS live besides the root JS
+
+- **`electron/**`** (main process): system audio via `desktopCapturer`, Realtime WebSocket auth, SQLite history (`ConversationDatabase.ts`), IPC. Compiled to `dist/electron/` and used (`package.json` `main`).
+- **`browser-extension/src/`**: packaged Chrome extension (popup/background/adapter) — a separate, thin build.
+- **`api/*.js`**: Vercel serverless functions (ForgePay payment) — server-side, not part of the renderer.
+
+When asked to change translation/UI/audio behavior, edit the **root `voicetranslate-*.js`**. Touch `src/**` only if explicitly reviving/maintaining that reference tree (it still has the unit tests and the `npm run quality` gate).
 
 ## Commands
 

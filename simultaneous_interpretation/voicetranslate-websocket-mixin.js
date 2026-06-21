@@ -1085,6 +1085,8 @@ const WebSocketMixin = {
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
             console.info('[Audio] 出力専用AudioContextを作成しました');
+            // 選択済みの出力先（原声分離用の物理デバイス）を適用
+            await this.applyOutputSink();
         }
 
         // AudioContextがsuspended状態の場合はresume
@@ -1461,6 +1463,29 @@ const WebSocketMixin = {
             this.notify('接続終了', errorDetail, 'warning');
         }
 
+        // 自動再接続: ユーザーが「開始」状態かつ終了中でなく、異常切断なら背景で再接続する。
+        // 認証エラー(4000)は再接続しても解決しないため除外する。
+        const isAuthError = code === 4000;
+        if (
+            this.state.userWantsActive &&
+            !this.state.isUnloading &&
+            !isNormalClose &&
+            !isAuthError
+        ) {
+            console.warn('[WS Close] 異常切断 → 自動再接続をスケジュールします');
+            this.state.isConnected = false;
+            this.state.ws = null;
+            // ローカルの録音/音声処理のみ停止（「開始」意図は維持して resume する）
+            this.stopRecording();
+            this.updateConnectionStatus('connecting');
+            this.scheduleReconnect();
+            return;
+        }
+
+        // 認証エラーや「停止」意図のときは再接続しない
+        if (isAuthError) {
+            this.state.userWantsActive = false;
+        }
         this.disconnect();
     }
 };
