@@ -700,6 +700,10 @@ class VoiceTranslateApp {
         const isActive = element.classList.contains('active');
         const mode = isActive ? '音声翻訳（高速・高品質）' : 'テキスト翻訳（入力と一対一対応）';
         console.info('[Translation Mode] 翻訳モード:', mode);
+        
+        // パスプロセッサのモードを同期
+        this.updateProcessorModes();
+        
         this.notify('翻訳モード変更', `翻訳モードを${mode}に変更しました`, 'info');
     }
 
@@ -758,6 +762,50 @@ class VoiceTranslateApp {
         } else {
             this.notify(
                 '音声出力設定',
+                '翻訳音声を出力をONにしました',
+                'info'
+            );
+        }
+
+        // パスプロセッサのモードを同期
+        this.updateProcessorModes();
+    }
+
+    /**
+     * ✅ パスプロセッサの動作モードを現在の設定に同期
+     *
+     * 目的:
+     *   UIの設定（リアルタイム音声翻訳、音声出力）に応じて、
+     *   Path1 (Text) と Path2 (Voice) の処理内容を動的に切り替える
+     */
+    updateProcessorModes() {
+        const isAudioTranslation = this.elements.translationModeAudio.classList.contains('active');
+        const isAudioOutput = this.elements.audioOutputEnabled.classList.contains('active');
+
+        console.info('[ProcessorModes] モード同期を開始:', {
+            isAudioTranslation,
+            isAudioOutput
+        });
+
+        if (isAudioTranslation) {
+            // ✅ 音声翻訳モード（Path2 優先）
+            // Path1: 音声認識のみ（字幕表示用）
+            this.textPathProcessor.setMode(1);
+            // Path2: 音声翻訳実行
+            this.voicePathProcessor.mode = 1; 
+        } else {
+            // ✅ テキスト翻訳モード（Path1 優先）
+            // Path1: 音声認識 + テキスト翻訳
+            this.textPathProcessor.setMode(2);
+            // Path2: 無効化（または待機）
+            this.voicePathProcessor.mode = 0; // 0 は「何もしない」モードとして扱う
+        }
+
+        console.info('[ProcessorModes] モード同期完了:', {
+            path1Mode: this.textPathProcessor.mode,
+            path2Mode: this.voicePathProcessor.mode
+        });
+    }
                 `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`,
                 'info'
             );
