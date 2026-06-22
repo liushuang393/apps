@@ -444,11 +444,7 @@ class VoiceTranslateApp {
             this.saveToStorage('realtime_model', e.target.value);
 
             if (this.state.isConnected) {
-                this.notify(
-                    'モデル変更',
-                    'Realtimeモデルは次回「接続」時に反映されます',
-                    'info'
-                );
+                this.notify('モデル変更', 'Realtimeモデルは次回「接続」時に反映されます', 'info');
             }
         });
 
@@ -504,7 +500,11 @@ class VoiceTranslateApp {
                     await this.startRecording();
                 } catch (err) {
                     console.error('[Audio Source] ソース再起動エラー:', err);
-                    this.notify('音声ソース', 'ソース切替に失敗しました。停止→開始で再試行してください。', 'error');
+                    this.notify(
+                        '音声ソース',
+                        'ソース切替に失敗しました。停止→開始で再試行してください。',
+                        'error'
+                    );
                 }
             } else if (this.state.isConnected) {
                 // 接続中（待機）なら server VAD 設定のみ更新
@@ -562,8 +562,8 @@ class VoiceTranslateApp {
                         this.notify(
                             '音声トラックなし',
                             '【重要】音声をキャプチャするには「タブ」を選択してください。\n\n' +
-                            '画面全体やウィンドウを選択した場合、音声は含まれません。\n' +
-                            'または、音声ソースを「マイク」に変更してください。',
+                                '画面全体やウィンドウを選択した場合、音声は含まれません。\n' +
+                                'または、音声ソースを「マイク」に変更してください。',
                             'warning'
                         );
                     }
@@ -608,7 +608,10 @@ class VoiceTranslateApp {
                 this.state.virtualCardDeviceId = e.target.value;
                 this.saveToStorage('virtual_card_device_id', e.target.value);
                 // 録音中（かつ原声分離=OFF）なら新デバイスでキャプチャを取り直す
-                if (this.state.isRecording && !this.elements.playOriginalToSpeaker.classList.contains('active')) {
+                if (
+                    this.state.isRecording &&
+                    !this.elements.playOriginalToSpeaker.classList.contains('active')
+                ) {
                     await this.restartCaptureForSourceChange();
                 }
             });
@@ -1028,11 +1031,7 @@ class VoiceTranslateApp {
                 );
             }
         } else {
-            this.notify(
-                '音声出力設定',
-                '翻訳音声を出力をONにしました',
-                'info'
-            );
+            this.notify('音声出力設定', '翻訳音声を出力をONにしました', 'info');
         }
 
         // パスプロセッサのモードを同期
@@ -1391,7 +1390,11 @@ class VoiceTranslateApp {
         this.state.reconnectAttempt = attempt;
         const delay = Math.min(1000 * 2 ** (attempt - 1), 10000); // 1,2,4,8,10,10...
         console.info(`[Reconnect] ${delay}ms 後に再接続 (試行 ${attempt})`);
-        this.notify('再接続', `${Math.round(delay / 1000)}秒後に自動再接続します（試行 ${attempt}）`, 'warning');
+        this.notify(
+            '再接続',
+            `${Math.round(delay / 1000)}秒後に自動再接続します（試行 ${attempt}）`,
+            'warning'
+        );
         clearTimeout(this.timers.reconnect);
         this.timers.reconnect = setTimeout(() => {
             if (!this.state.userWantsActive || this.state.isUnloading) {
@@ -1493,7 +1496,9 @@ class VoiceTranslateApp {
         const deviceId = this.state.outputDeviceId;
         if (!ctx || typeof ctx.setSinkId !== 'function') {
             if (deviceId) {
-                console.warn('[Audio] この環境は出力先切替(setSinkId)に未対応のため既定デバイスを使用します');
+                console.warn(
+                    '[Audio] この環境は出力先切替(setSinkId)に未対応のため既定デバイスを使用します'
+                );
             }
             return;
         }
@@ -1750,14 +1755,19 @@ class VoiceTranslateApp {
         // ✅ semantic_vad: 発話の「意味的な完結」をモデルが判定して区切る公式機能。
         //    文の途中で切れにくく、完全な文（整句）単位で翻訳できるため文脈品質が向上する。
         //    eagerness が低いほど長めに待ち、より多くの完結した発話をまとめる。
-        //    ※ create_response / interrupt_response は設定しない（server_vad時と同様）。
-        //      応答生成は responseQueue 経由で手動制御しているため、サーバ自動応答の挙動を変えない。
+        //    ※ create_response: false / interrupt_response: false は必須。
+        //      Realtime GA API では turn_detection.create_response の既定が true のため、
+        //      設定しないとサーバがターン毎に自動でレスポンス（翻訳音声）を生成し、
+        //      クライアント（Path2）の手動 response.create と二重になって音声が2回再生される。
+        //      翻訳は responseQueue / Path2 経由で手動制御するため、サーバ自動応答は無効化する。
         if (CONFIG.TRANSLATION && CONFIG.TRANSLATION.VAD_TYPE === 'semantic_vad') {
             const eagerness = CONFIG.TRANSLATION.SEMANTIC_EAGERNESS || 'low';
             console.info(`[VAD] semantic_vad を使用: eagerness=${eagerness}`);
             return {
                 type: 'semantic_vad',
-                eagerness: eagerness
+                eagerness: eagerness,
+                create_response: false,
+                interrupt_response: false
             };
         }
 
@@ -1782,7 +1792,11 @@ class VoiceTranslateApp {
                 type: 'server_vad',
                 threshold: threshold, // ✅ VAD感度に応じて調整
                 prefix_padding_ms: 300, // 音声開始前のパディング
-                silence_duration_ms: 500 // 短い静音で素早く翻訳開始
+                silence_duration_ms: 500, // 短い静音で素早く翻訳開始
+                // ✅ サーバ自動応答を無効化（既定 true）。翻訳は Path2 が手動制御するため、
+                //    放置すると自動response＋手動responseで音声が2回再生される。
+                create_response: false,
+                interrupt_response: false
             };
         } else {
             // システム音声モード（会議監視）: 長い発話、自然な停顿を許容
@@ -1790,9 +1804,12 @@ class VoiceTranslateApp {
                 type: 'server_vad',
                 threshold: threshold, // ✅ VAD感度に応じて調整
                 prefix_padding_ms: 300, // 音声開始前のパディング
-                silence_duration_ms: 1200 // 長い静音判定で途中の停顿を許容
+                silence_duration_ms: 1200, // 長い静音判定で途中の停顿を許容
                 // 理由: 会議・プレゼンでは呼吸や考え中の停顿があるため
                 //       1.2秒の静音で完全な文章を待つ
+                // ✅ サーバ自動応答を無効化（既定 true）。マイクモードと同理由。
+                create_response: false,
+                interrupt_response: false
             };
         }
     }
@@ -1836,7 +1853,10 @@ class VoiceTranslateApp {
                 ? Utils.getLanguageName(sourceLang)
                 : 'the identified source language';
         const targetName = Utils.getLanguageName(targetLang);
-        const sourceNative = sourceLang && sourceLang !== 'auto' ? Utils.getNativeLanguageName(sourceLang) : 'auto-detect';
+        const sourceNative =
+            sourceLang && sourceLang !== 'auto'
+                ? Utils.getNativeLanguageName(sourceLang)
+                : 'auto-detect';
         const targetNative = Utils.getNativeLanguageName(targetLang);
 
         // ✅ 中文の場合は明確に「简体中文」を指定
@@ -1873,10 +1893,11 @@ class VoiceTranslateApp {
 - Output language: ${targetLanguageSpec} (${targetNative}) ONLY.
 - **AUTO-IDENTIFICATION**: Identify the source language independently for every audio segment. Do not reuse the previous segment's language when the current segment sounds different.
 - If the speaker uses English, Japanese, Simplified Chinese, or Vietnamese, translate it to ${targetName} without speaking to the user in their language.
-${targetLang === 'zh'
-                ? '- **PRECISION**: For Chinese output, use Simplified Chinese (简体中文) characters ONLY.'
-                : ''
-            }
+${
+    targetLang === 'zh'
+        ? '- **PRECISION**: For Chinese output, use Simplified Chinese (简体中文) characters ONLY.'
+        : ''
+}
 
 ## HANDLING INPUT
 - Preserve the speaker's emotional tone, intent, and meaning in ${targetName}.
@@ -2688,8 +2709,8 @@ ${targetLang === 'zh'
                 reject(
                     new Error(
                         'Chrome内部ページ（chrome://）では音声キャプチャできません。\n' +
-                        '通常のウェブページ（YouTube、Google Meetなど）で使用するか、\n' +
-                        '音声ソースを「マイク」または「画面/ウィンドウを選択」に変更してください。'
+                            '通常のウェブページ（YouTube、Google Meetなど）で使用するか、\n' +
+                            '音声ソースを「マイク」または「画面/ウィンドウを選択」に変更してください。'
                     )
                 );
             } else {
@@ -2757,10 +2778,10 @@ ${targetLang === 'zh'
                     reject(
                         new Error(
                             'Chrome内部ページでは音声キャプチャできません。\n\n' +
-                            '解決方法:\n' +
-                            '1. 通常のウェブページ（YouTube、Google Meetなど）を開く\n' +
-                            '2. 音声ソースを「マイク」に変更する\n' +
-                            '3. 音声ソースを「画面/ウィンドウを選択」に変更する'
+                                '解決方法:\n' +
+                                '1. 通常のウェブページ（YouTube、Google Meetなど）を開く\n' +
+                                '2. 音声ソースを「マイク」に変更する\n' +
+                                '3. 音声ソースを「画面/ウィンドウを選択」に変更する'
                         )
                     );
                     return;
@@ -2816,16 +2837,16 @@ ${targetLang === 'zh'
                 if (this.platform.isElectron) {
                     throw new Error(
                         '音声トラックが検出されませんでした。\n' +
-                        '会議アプリで音声が再生されているか確認してください。'
+                            '会議アプリで音声が再生されているか確認してください。'
                     );
                 } else {
                     throw new Error(
                         '音声トラックが検出されませんでした。\n\n' +
-                        '【重要】getDisplayMedia() で音声をキャプチャするには:\n' +
-                        '1. 「タブ」を選択してください（画面/ウィンドウでは音声が含まれません）\n' +
-                        '2. または、音声ソースを「マイク」に変更してください\n\n' +
-                        '詳細: Chromeの仕様により、画面全体やウィンドウを選択した場合、\n' +
-                        '音声トラックは含まれません。タブを選択すると音声が含まれます。'
+                            '【重要】getDisplayMedia() で音声をキャプチャするには:\n' +
+                            '1. 「タブ」を選択してください（画面/ウィンドウでは音声が含まれません）\n' +
+                            '2. または、音声ソースを「マイク」に変更してください\n\n' +
+                            '詳細: Chromeの仕様により、画面全体やウィンドウを選択した場合、\n' +
+                            '音声トラックは含まれません。タブを選択すると音声が含まれます。'
                     );
                 }
             }
@@ -3294,7 +3315,13 @@ ${targetLang === 'zh'
     // helper: input_audio_buffer.commit とレスポンス生成リクエストを行う
     async commitAndEnqueueResponseIfNeeded() {
         console.info('[Recording] 音声バッファをコミットします（Server VAD無効）');
-        this.sendMessage({ type: 'input_audio_buffer.commit' });
+        const committed = this.commitRealtimeInputAudioBuffer('recording-stop');
+        if (!committed) {
+            console.warn(
+                '[Recording] 送信済み音声が不足しているためレスポンス生成をスキップします'
+            );
+            return false;
+        }
 
         const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
         // GA: output_modalities は ['audio'] または ['text']
@@ -3312,13 +3339,14 @@ ${targetLang === 'zh'
                 response: {
                     // GA: response.create も output_modalities を使用（旧: modalities）
                     output_modalities: outputModalities,
-                    instructions: this.getInstructions(),
+                    instructions: this.getInstructions()
                 }
             });
             console.info('[Recording] レスポンスリクエストをキューに追加しました');
         } catch (error) {
             console.error('[Recording] レスポンスリクエスト失敗:', error);
         }
+        return true;
     }
 
     // helper: mediaStream のトラック停止
@@ -3711,9 +3739,10 @@ ${targetLang === 'zh'
 
             // リクエストボディを構築
             const targetLangName = Utils.getLanguageName(this.state.targetLang || 'ja');
-            const sourceLangPrompt = actualSourceLang === 'auto'
-                ? `Auto-detect the source language and translate to ${targetLangName}`
-                : `Translate the following text from ${Utils.getLanguageName(actualSourceLang)} to ${targetLangName}`;
+            const sourceLangPrompt =
+                actualSourceLang === 'auto'
+                    ? `Auto-detect the source language and translate to ${targetLangName}`
+                    : `Translate the following text from ${Utils.getLanguageName(actualSourceLang)} to ${targetLangName}`;
 
             const requestBody = {
                 model: translationModel,
@@ -3762,9 +3791,7 @@ ${targetLang === 'zh'
             }
 
             // 防御的後処理: アシスタント定型句を除去（プロンプトに加えた多層防御）
-            const translatedText = Utils.stripAssistantBoilerplate(
-                data.choices[0].message.content
-            );
+            const translatedText = Utils.stripAssistantBoilerplate(data.choices[0].message.content);
             if (translatedText === '') {
                 console.warn('[翻訳] アシスタント定型句を検出したため出力を破棄しました');
                 return '';

@@ -117,7 +117,9 @@ class TextPathProcessor {
 
             const alignedSegment = this.app.segmentAlignment?.getSegment(transcriptId);
             const shouldRenderInput =
-                !alignedSegment || !alignedSegment.input.text || alignedSegment.input.source !== 'live-sra';
+                !alignedSegment ||
+                !alignedSegment.input.text ||
+                alignedSegment.input.source !== 'live-sra';
 
             if (!this.app.segmentAlignment) {
                 throw new Error('SegmentAlignmentManager is required for transcript rendering');
@@ -156,7 +158,9 @@ class TextPathProcessor {
                         : await this.translateText(transcript, transcriptId);
 
                 if (translatedText === null || translatedText === undefined) {
-                    console.warn('[Path1] テキスト翻訳結果が空のため、認識結果のみ完了扱いにします');
+                    console.warn(
+                        '[Path1] テキスト翻訳結果が空のため、認識結果のみ完了扱いにします'
+                    );
                     this.audioQueue.markPathComplete(segment.id, 'path1', {
                         transcript: transcript,
                         error: 'Empty translation'
@@ -229,11 +233,28 @@ class TextPathProcessor {
             throw new Error('音声データが空です');
         }
 
+        // ✅ サーバVAD（turn_detection）有効時は音声再送＋手動commitをスキップする。
+        //    理由: サーバの semantic_vad/server_vad が既にライブ音声をターン毎に
+        //    自動 commit＆文字起こし済み。ここで同じ音声を再送し手動 commit すると、
+        //    サーバのターン境界自動 commit と競合して残りバッファが <100ms になり、
+        //    "Error committing input audio buffer: buffer too small" を誘発する。
+        //    左列の入力テキストはライブ転写（handleTranscriptionCompleted）が独立して埋め、
+        //    Path2 の response.create はサーバ会話コンテキスト（自動 commit 済み音声）を翻訳する。
+        const serverVadActive = !!this.app.elements?.vadEnabled?.classList?.contains('active');
+        if (serverVadActive) {
+            console.info(
+                '[Path1] サーバVAD有効のため音声再送と手動commitをスキップ（buffer too small 回避）',
+                { samples: audioData.length }
+            );
+            return;
+        }
+
         // 使用主应用的 sendAudioData 方法（会转换为PCM16并送信）
         // 批量送信以避免过载
         const CHUNK_SIZE = 4800; // 200ms @ 24kHz
         let offset = 0;
         let chunksent = 0;
+        let sentSamples = 0;
 
         console.info('[Path1] 音声データ送信開始:', {
             totalSamples: audioData.length,
@@ -256,8 +277,11 @@ class TextPathProcessor {
             }
 
             // 送信音声块
-            this.app.sendAudioData(chunk);
-            chunksent++;
+            const sent = this.app.sendAudioData(chunk, { force: true });
+            if (sent) {
+                chunksent++;
+                sentSamples += chunk.length;
+            }
 
             offset += chunkSize;
 
@@ -269,26 +293,32 @@ class TextPathProcessor {
 
         console.info('[Path1] 音声データ送信完了:', {
             totalSamples: audioData.length,
+            sentSamples: sentSamples,
             chunks: chunksent,
             bytesPerChunk: CHUNK_SIZE,
             completedPercentage: ((offset / audioData.length) * 100).toFixed(1) + '%'
         });
 
+        if (sentSamples === 0) {
+            throw new Error('Realtime APIへ音声データを送信できませんでした');
+        }
+
         // ✅ 验证所有数据都已发送
-        if (offset < audioData.length) {
+        if (sentSamples < audioData.length) {
             console.warn('[Path1] 一部のデータが送信されていません:', {
                 totalSamples: audioData.length,
-                sentSamples: offset,
-                missingSamples: audioData.length - offset
+                sentSamples: sentSamples,
+                missingSamples: audioData.length - sentSamples
             });
         }
 
         // 提交音声缓冲区
-        const commitMessage = {
-            type: 'input_audio_buffer.commit'
-        };
-
-        this.app.sendMessage(commitMessage);
+        const committed = this.app.commitRealtimeInputAudioBuffer('path1-stt');
+        if (!committed) {
+            throw new Error(
+                'Realtime APIへ送信した音声データが短すぎるため、commitをスキップしました'
+            );
+        }
         console.info('[Path1] input_audio_buffer.commit 送信完了');
     }
 
@@ -402,7 +432,11 @@ class TextPathProcessor {
             if (/[\uAC00-\uD7AF]/.test(trimmed)) {
                 return { language: 'ko', name: '한국어' };
             }
-            if (/[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(trimmed)) {
+            if (
+                /[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(
+                    trimmed
+                )
+            ) {
                 return { language: 'vi', name: 'Tiếng Việt' };
             }
             if (/[áéíñóúü¿¡]/i.test(trimmed)) {
@@ -445,7 +479,8 @@ class TextPathProcessor {
         // OpenAI Chat Completions API を使用
         const chatModel = this.app.config?.chatModel || CONFIG.API.CHAT_MODEL;
         const apiKey = this.app.config?.apiKey || this.app.state?.apiKey;
-        const targetLanguage = this.app.config?.targetLanguage || this.app.state?.targetLang || 'ja';
+        const targetLanguage =
+            this.app.config?.targetLanguage || this.app.state?.targetLang || 'ja';
 
         if (chatModel === null || chatModel === undefined) {
             throw new Error('chatModel が設定されていません');
@@ -968,7 +1003,8 @@ class VoicePathProcessor {
                         message.response_id === responseId
                     ) {
                         if (this.app.segmentAlignment) {
-                            const aligned = this.app.segmentAlignment.markOutputTextDone(responseId);
+                            const aligned =
+                                this.app.segmentAlignment.markOutputTextDone(responseId);
                             if (aligned) {
                                 this.app.upsertSegmentOutput(aligned.id, aligned.output.text, {
                                     responseId,
@@ -997,10 +1033,13 @@ class VoicePathProcessor {
                         if (this.app.segmentAlignment) {
                             this.app.segmentAlignment.markOutputAudioDone(responseId);
                         }
-                        console.info('[Path2] 翻訳音声受信完了 (処理はメイン mixin 側で実行済み):', {
-                            segmentId: segment.id,
-                            responseId: responseId
-                        });
+                        console.info(
+                            '[Path2] 翻訳音声受信完了 (処理はメイン mixin 側で実行済み):',
+                            {
+                                segmentId: segment.id,
+                                responseId: responseId
+                            }
+                        );
                     }
 
                     // Response 完全完了

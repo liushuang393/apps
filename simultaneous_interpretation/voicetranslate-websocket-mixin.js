@@ -13,6 +13,8 @@
  *   Object.assign(VoiceTranslateApp.prototype, WebSocketMixin);
  */
 
+const REALTIME_MIN_COMMIT_AUDIO_MS = 100;
+
 const WebSocketMixin = {
     /**
      * WebSocketメッセージ送信
@@ -34,6 +36,83 @@ const WebSocketMixin = {
             // ブラウザ環境
             this.state.ws.send(JSON.stringify(message));
         }
+    },
+
+    getRealtimeInputAudioSampleRate() {
+        if (typeof CONFIG !== 'undefined' && CONFIG.AUDIO && CONFIG.AUDIO.SAMPLE_RATE) {
+            return CONFIG.AUDIO.SAMPLE_RATE;
+        }
+        return this.state.audioContext?.sampleRate || 24000;
+    },
+
+    getRealtimeInputAudioBufferStats() {
+        if (!this.realtimeInputAudioBufferStats) {
+            this.realtimeInputAudioBufferStats = {
+                samples: 0,
+                chunks: 0,
+                updatedAt: 0
+            };
+        }
+
+        const sampleRate = this.getRealtimeInputAudioSampleRate();
+        return {
+            ...this.realtimeInputAudioBufferStats,
+            sampleRate,
+            durationMs: (this.realtimeInputAudioBufferStats.samples / sampleRate) * 1000
+        };
+    },
+
+    resetRealtimeInputAudioBufferStats() {
+        this.realtimeInputAudioBufferStats = {
+            samples: 0,
+            chunks: 0,
+            updatedAt: 0
+        };
+    },
+
+    recordRealtimeInputAudioAppend(audioData) {
+        const samples = audioData?.length || 0;
+        if (samples <= 0) {
+            return;
+        }
+
+        const stats = this.getRealtimeInputAudioBufferStats();
+        this.realtimeInputAudioBufferStats = {
+            samples: stats.samples + samples,
+            chunks: stats.chunks + 1,
+            updatedAt: Date.now()
+        };
+    },
+
+    clearRealtimeInputAudioBuffer(reason = 'manual-clear') {
+        console.info('[Audio] Realtime input buffer をクリア:', reason);
+        this.sendMessage({ type: 'input_audio_buffer.clear' });
+        this.resetRealtimeInputAudioBufferStats();
+    },
+
+    commitRealtimeInputAudioBuffer(reason = 'manual-commit') {
+        const stats = this.getRealtimeInputAudioBufferStats();
+        if (stats.durationMs < REALTIME_MIN_COMMIT_AUDIO_MS) {
+            console.warn('[Audio] Realtime input buffer が短すぎるため commit をスキップ:', {
+                reason,
+                samples: stats.samples,
+                chunks: stats.chunks,
+                durationMs: stats.durationMs.toFixed(2),
+                minRequiredMs: REALTIME_MIN_COMMIT_AUDIO_MS
+            });
+            this.clearRealtimeInputAudioBuffer(`too-short:${reason}`);
+            return false;
+        }
+
+        console.info('[Audio] Realtime input buffer を commit:', {
+            reason,
+            samples: stats.samples,
+            chunks: stats.chunks,
+            durationMs: stats.durationMs.toFixed(2)
+        });
+        this.sendMessage({ type: 'input_audio_buffer.commit' });
+        this.resetRealtimeInputAudioBufferStats();
+        return true;
     },
 
     /**
@@ -193,6 +272,7 @@ const WebSocketMixin = {
             speechDuration: speechDuration + 'ms',
             timestamp: now
         });
+        this.resetRealtimeInputAudioBufferStats();
 
         // ✅ 重複コミット防止（500ms以内の重複を無視）
         if (this.isDuplicateCommit(now)) {
@@ -214,7 +294,9 @@ const WebSocketMixin = {
             this.extractAudioBuffer();
 
         // ✅ 早期検証: 音声が無い場合はスキップ
-        if (!this.isValidAudioDuration(totalLength, actualDuration)) {
+        // isValidAudioDuration は「スキップすべき(無効)とき true」を返す契約のため、
+        // 否定せずそのまま return 判定に使う（! を付けると有効音声を誤って破棄する）。
+        if (this.isValidAudioDuration(totalLength, actualDuration)) {
             return;
         }
 
@@ -1299,17 +1381,23 @@ const WebSocketMixin = {
      * 入力:
      *   audioData: Float32Array形式の音声データ
      */
-    sendAudioData(audioData) {
+    sendAudioData(audioData, options = {}) {
+        const force = !!options.force;
         // 接続状態チェック
         if (!this.state.isConnected) {
             console.warn('[Audio] 未接続のため音声データを送信できません');
-            return;
+            return false;
         }
 
         // 録音状態チェック
-        if (!this.state.isRecording) {
+        if (!this.state.isRecording && !force) {
             console.warn('[Audio] 録音停止中のため音声データを送信しません');
-            return;
+            return false;
+        }
+
+        if (!audioData || audioData.length === 0) {
+            console.warn('[Audio] 空の音声データは送信しません');
+            return false;
         }
 
         // ✅ ループバック防止: 翻訳音声の再キャプチャを防止
@@ -1351,13 +1439,13 @@ const WebSocketMixin = {
             }
         }
 
-        if (shouldSkip) {
+        if (shouldSkip && !force) {
             console.info('[Audio] ループバック防止: 音声をスキップ', {
                 isPlayingAudio,
                 audioSourceType: this.state.audioSourceType,
                 reason: isPlayingAudio ? '再生中' : 'バッファウィンドウ内'
             });
-            return;
+            return false;
         }
 
         // Float32をPCM16に変換（即座に送信、節流なし）
@@ -1370,6 +1458,8 @@ const WebSocketMixin = {
         };
 
         this.sendMessage(message);
+        this.recordRealtimeInputAudioAppend(audioData);
+        return true;
     },
 
     /**
