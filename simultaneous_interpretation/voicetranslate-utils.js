@@ -374,16 +374,20 @@ const CONFIG = {
      *
      * @property {string} TURN_MODE - 'grouped'（整文1-3句をまとめて翻訳。既定・推奨）| 'immediate'（従来の無音区切り即時翻訳）
      * @property {string} VAD_TYPE - 'semantic_vad'（意味的完結で区切る公式機能。既定）| 'server_vad'（従来の無音検出）
-     * @property {string} SEMANTIC_EAGERNESS - semantic_vad の区切り積極性 'low'（既定・文脈優先）| 'medium' | 'high' | 'auto'
+     * @property {string} SEMANTIC_EAGERNESS - semantic_vad の区切り積極性 'medium'（既定・品質/遅延の均衡）| 'low' | 'high' | 'auto'
+     * @property {number} MIN_COMPLETE_SENTENCES - 翻訳を開始できる最小の完全文数（既定1）
      * @property {number} MAX_SENTENCES - グルーピングの最大文数（既定3）
-     * @property {number} MAX_BUFFER_MS - グルーピングの最大蓄積時間ms（既定8000）。無限待機を防ぐ上限
+     * @property {number} POST_SENTENCE_HOLD_MS - 1文完結後に追加発話を待つ短い猶予（既定500ms）
+     * @property {number} MAX_BUFFER_MS - グルーピングの最大蓄積時間ms（既定6000）。無限待機を防ぐ上限
      */
     TRANSLATION: {
         TURN_MODE: 'grouped',
         VAD_TYPE: 'semantic_vad',
-        SEMANTIC_EAGERNESS: 'low',
+        SEMANTIC_EAGERNESS: 'medium',
+        MIN_COMPLETE_SENTENCES: 1,
         MAX_SENTENCES: 3,
-        MAX_BUFFER_MS: 8000
+        POST_SENTENCE_HOLD_MS: 500,
+        MAX_BUFFER_MS: 6000
     },
 
     VAD: {

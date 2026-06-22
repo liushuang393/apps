@@ -118,6 +118,106 @@ const UIMixin = {
     },
 
     /**
+     * セグメント単位でトランスクリプトDOMを作成/更新する。
+     * STSモードでは input/output/audio を同じ segmentId に結びつける。
+     *
+     * @param {string} type - 'input' または 'output'
+     * @param {string} segmentId - 安定したセグメントID
+     * @param {string} text - 表示テキスト
+     * @param {Object} options - 表示状態
+     * @returns {Element|null}
+     */
+    upsertSegmentTranscript(type, segmentId, text, options = {}) {
+        if (!segmentId) {
+            return this.addTranscript(type, text, null);
+        }
+
+        if (!this.shouldShowTranscript(type)) {
+            return null;
+        }
+
+        const container = this.getTranscriptContainer(type);
+        if (!container) {
+            return null;
+        }
+
+        this.removeEmptyState(container);
+
+        const selector = `.transcript-message[data-segment-id="${segmentId}"]`;
+        let message = container.querySelector(selector);
+
+        if (!message) {
+            // 作成順シーケンス（seq）で並べる。左右カラムとも同じ seq を使うため順序が必ず一致する。
+            const seq = this.segmentAlignment?.getSegment?.(segmentId)?.seq ?? null;
+            message = this.createTranscriptMessage(type, text || options.placeholder || '', null);
+            message.dataset.segmentId = segmentId;
+            message.dataset.transcriptId = segmentId;
+            if (seq != null) {
+                message.dataset.seq = String(seq);
+            }
+            if (options.responseId) {
+                message.dataset.responseId = options.responseId;
+            }
+            this.insertSegmentMessage(container, message, seq);
+        }
+
+        if (options.responseId) {
+            message.dataset.responseId = options.responseId;
+        }
+        if (options.status) {
+            message.dataset.status = options.status;
+        }
+
+        const textElement = message.querySelector('.transcript-text');
+        if (textElement) {
+            textElement.textContent = text || options.placeholder || '';
+        }
+
+        container.scrollTop = 0;
+        return message;
+    },
+
+    /**
+     * 作成順シーケンス（seq）の降順で挿入する（新しい=seq が大きいものを上）。
+     * 文字列比較ではなく数値比較なので、segmentId のタイムスタンプ桁揃えに依存しない。
+     *
+     * @param {Element} container
+     * @param {Element} message
+     * @param {number|null} seq - segment の作成順シーケンス
+     */
+    insertSegmentMessage(container, message, seq) {
+        const newSeq = Number(seq);
+        let insertPosition = null;
+        if (Number.isFinite(newSeq)) {
+            const messages = container.querySelectorAll('.transcript-message[data-segment-id]');
+            for (const msg of messages) {
+                const existingSeq = Number(msg.dataset.seq);
+                if (Number.isFinite(existingSeq) && newSeq > existingSeq) {
+                    insertPosition = msg;
+                    break;
+                }
+            }
+        }
+
+        if (insertPosition) {
+            insertPosition.before(message);
+        } else {
+            container.appendChild(message);
+        }
+    },
+
+    upsertSegmentInput(segmentId, text, options = {}) {
+        return this.upsertSegmentTranscript('input', segmentId, text, options);
+    },
+
+    upsertSegmentOutput(segmentId, text, options = {}) {
+        return this.upsertSegmentTranscript('output', segmentId, text, {
+            placeholder: '翻訳中...',
+            ...options
+        });
+    },
+
+    /**
      * 空状態要素を削除
      * 目的: 最初のメッセージ追加時に空状態表示を削除
      *
@@ -429,6 +529,10 @@ const UIMixin = {
         this.state.charCount = 0;
         if (this.elements.charCount) {
             this.elements.charCount.textContent = '0';
+        }
+
+        if (type === 'both' && this.segmentAlignment) {
+            this.segmentAlignment.clear();
         }
 
         this.notify('クリア完了', 'トランスクリプトをクリアしました', 'success');

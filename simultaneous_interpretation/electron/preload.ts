@@ -117,6 +117,7 @@ export interface ElectronAPI {
             vadType?: string;
             semanticEagerness?: string;
             maxSentences?: number;
+            postSentenceHoldMs?: number;
             maxBufferMs?: number;
         };
     }>;

@@ -1214,8 +1214,10 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="realtimeModel">🧠 Realtimeモデル（音声→音声）</label>
+                            <!-- オプションは setupModelSelects() が後台設定に基づき再構築する
+                                 （後台で設定中のモデルを最上部・選択状態にし、残りは新しい順にソート） -->
                             <select id="realtimeModel" class="form-input">
-                                <option value="gpt-realtime-2025-08-28" selected>gpt-realtime-2025-08-28（最新・推奨）</option>
+                                <option value="gpt-realtime-2025-08-28">gpt-realtime-2025-08-28</option>
                                 <option value="gpt-realtime-translate">gpt-realtime-translate</option>
                                 <option value="gpt-realtime-2">gpt-realtime-2</option>
                             </select>
@@ -1225,8 +1227,9 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="chatModel">💬 Chatモデル（テキスト翻訳・言語検出）</label>
+                            <!-- オプションは setupModelSelects() が後台設定に基づき再構築する -->
                             <select id="chatModel" class="form-input">
-                                <option value="gpt-5-2025-08-07" selected>gpt-5-2025-08-07（最新）</option>
+                                <option value="gpt-5-2025-08-07">gpt-5-2025-08-07</option>
                                 <option value="gpt-5.5">gpt-5.5</option>
                                 <option value="gpt-4o">gpt-4o</option>
                             </select>
@@ -1491,6 +1494,8 @@
     <script src="voicetranslate-platform-adapter.js"></script>
     <!-- ユーティリティモジュール -->
     <script src="voicetranslate-utils.js"></script>
+    <!-- STS/SRA セグメント対齐モジュール -->
+    <script src="voicetranslate-segment-alignment.js"></script>
     <!-- ✅ 双路径异步处理架构模块 -->
     <script src="voicetranslate-audio-queue.js"></script>
     <script src="voicetranslate-path-processors.js"></script>

@@ -21,6 +21,7 @@ const INCLUDE_FILES = [
     'teams-realtime-translator.html',
     'voicetranslate-platform-adapter.js',
     'voicetranslate-pro.js',
+    'voicetranslate-segment-alignment.js',
     'voicetranslate-audio-capture-strategy.js',
     'voicetranslate-audio-queue.js',
     'voicetranslate-path-processors.js',

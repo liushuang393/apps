@@ -44,8 +44,12 @@ class AudioSegment {
      * @param {number} [metadata.timestamp] タイムスタンプ（オプション）
      */
     constructor(audioData, metadata = {}) {
-        // ✅ 一意ID生成
-        this.id = 'seg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        // ✅ 一意ID生成（alignment層から渡された安定IDを優先）
+        this.id =
+            metadata.segmentId ||
+            metadata.id ||
+            'seg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        this.segmentId = this.id;
 
         // ✅ 音声データ (追加: 直接保存してスキップ検証を可能にする)
         this.audio = audioData;
@@ -56,7 +60,17 @@ class AudioSegment {
             timestamp: metadata.timestamp || Date.now(),
             duration: metadata.duration || 0,
             language: metadata.language || null,
-            sourceType: metadata.sourceType || 'unknown'
+            sourceType: metadata.sourceType || 'unknown',
+            alignmentId: this.id
+        };
+
+        this.alignment = {
+            id: this.id,
+            responseId: null,
+            inputText: '',
+            outputText: '',
+            inputFinal: false,
+            outputFinal: false
         };
 
         // ✅ 双パス処理状態

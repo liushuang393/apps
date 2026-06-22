@@ -85,12 +85,6 @@ class StateManager {
             currentAudioStartTime: 0
         };
 
-        // 翻訳テキスト累積
-        this.translationState = {
-            currentText: '',
-            currentTranscriptId: null
-        };
-
         // 音声源トラッキング
         this.audioSourceTracker = {
             outputStartTime: null,

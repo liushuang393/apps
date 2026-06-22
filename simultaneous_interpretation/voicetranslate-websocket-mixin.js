@@ -56,10 +56,64 @@ const WebSocketMixin = {
 
             // メッセージタイプに応じたハンドラーを呼び出す
             this.dispatchWSMessage(message);
+            this.notifyRealtimeMessageListeners(message);
         } catch (error) {
             console.error('[Message Error]', error);
             console.error('[Message Error] Event data:', event.data);
         }
+    },
+
+    /**
+     * Path1/Path2 が Realtime message stream を購読するための共通入口。
+     * Browser/extension は WebSocket 直結、Electron は IPC 転送だが、処理器は同じ API で受け取る。
+     *
+     * @param {Function} listener
+     */
+    addRealtimeMessageListener(listener) {
+        if (!this.realtimeMessageListeners) {
+            this.realtimeMessageListeners = new Set();
+        }
+        this.realtimeMessageListeners.add(listener);
+    },
+
+    /**
+     * @param {Function} listener
+     */
+    removeRealtimeMessageListener(listener) {
+        if (this.realtimeMessageListeners) {
+            this.realtimeMessageListeners.delete(listener);
+        }
+    },
+
+    /**
+     * パース済み message オブジェクトをそのまま購読者へ渡す。
+     * 旧実装の JSON.stringify→各 listener で JSON.parse を廃止し、
+     * 巨大な base64 audio delta を含むホットパスの二重シリアライズを排除する。
+     *
+     * @param {Object} message
+     */
+    notifyRealtimeMessageListeners(message) {
+        if (!this.realtimeMessageListeners || this.realtimeMessageListeners.size === 0) {
+            return;
+        }
+
+        for (const listener of Array.from(this.realtimeMessageListeners)) {
+            try {
+                listener(message);
+            } catch (error) {
+                console.error('[Realtime Listener] メッセージ処理エラー:', error);
+            }
+        }
+    },
+
+    /**
+     * @returns {boolean}
+     */
+    isRealtimeTransportReady() {
+        if (this.platform?.isElectron) {
+            return !!this.state.isConnected;
+        }
+        return !!(this.state.ws && this.state.ws.readyState === WebSocket.OPEN);
     },
 
     /**
@@ -90,17 +144,15 @@ const WebSocketMixin = {
                 break;
             // GA: response.audio_transcript.* → response.output_audio_transcript.*
             case 'response.output_audio_transcript.delta':
-                this.handleAudioTranscriptDelta(message);
-                break;
             case 'response.output_audio_transcript.done':
-                this.handleAudioTranscriptDone();
+                // STS transcript text is rendered by VoicePathProcessor with response_id binding.
                 break;
             // GA: response.audio.* → response.output_audio.*
             case 'response.output_audio.delta':
                 this.handleAudioDelta(message);
                 break;
             case 'response.output_audio.done':
-                this.handleAudioDone();
+                this.handleAudioDone(message);
                 break;
             case 'response.created':
                 this.handleResponseCreated(message);
@@ -130,7 +182,7 @@ const WebSocketMixin = {
      *   音声バッファがコミットされた際の処理
      *   重複チェック、発話時長検証、音声データ抽出を実行
      */
-    handleAudioBufferCommitted() {
+    handleAudioBufferCommitted(message = {}) {
         const queueStatus = this.responseQueue.getStatus();
         const now = Date.now();
         const speechDuration = this.speechStartTime ? now - this.speechStartTime : 0;
@@ -197,25 +249,20 @@ const WebSocketMixin = {
             this.clearPendingBuffer();
         }
 
-        // ✅ Phase 3: 新アーキテクチャ有効化
-        const ENABLE_AUDIO_QUEUE = true; // ← 新アーキテクチャ有効化
+        // ✅ このコミットの item_id を保持し、後段で collecting 中の segment へ bindItemId する。
+        //    item_id で結ぶことで、flush 後に遅れて届く transcription.completed も
+        //    正しい segment に戻せる（FIFO 順依存を排除）。
+        this.pendingCommittedItemId = message.item_id || null;
 
         // ✅ groupedモード: 完結した発話（semantic_vad のターン）を client 側で
         //    最大 MAX_SENTENCES 文 / 最大 MAX_BUFFER_MS までまとめ、1つの
         //    AudioSegment として翻訳する。文脈を保ち、完全な音声で再生するため。
-        if (ENABLE_AUDIO_QUEUE && this.isGroupedTurnMode()) {
+        if (this.isGroupedTurnMode()) {
             this.accumulateGroupedAudio(finalAudio, finalDuration, sampleRate, now);
             return;
         }
 
-        if (ENABLE_AUDIO_QUEUE) {
-            if (this.tryEnqueueAudioSegment(finalAudio, finalDuration, sampleRate, now)) {
-                return; // ← 新アーキテクチャ使用、旧ロジック非実行
-            }
-        }
-
-        // ✅ 旧ロジック（フォールバック）
-        this.processFallbackAudioRequest(queueStatus);
+        this.tryEnqueueAudioSegment(finalAudio, finalDuration, sampleRate, now);
     },
 
     /**
@@ -235,6 +282,7 @@ const WebSocketMixin = {
      * 完結ターンの音声を蓄積し、上限到達でまとめて enqueue する
      *
      * 区切り条件:
+     *   - 文数が MIN_COMPLETE_SENTENCES 以上になった後、POST_SENTENCE_HOLD_MS だけ短く待つ
      *   - 文数が MAX_SENTENCES 以上（best-effort。ライブ入力転写から計数）
      *   - 蓄積時間が MAX_BUFFER_MS 以上（文末が来なくても確実に確定する保証）
      *
@@ -248,7 +296,39 @@ const WebSocketMixin = {
             this.groupedAudioChunks = [];
             this.groupedAudioStartTime = now;
             this.groupedAudioDuration = 0;
-            this.groupSentenceCount = 0;
+            this.groupSentenceCount = this.groupSentenceCount || 0;
+            if (this.segmentAlignment) {
+                const segment = this.segmentAlignment.createSegment({
+                    durationMs: 0,
+                    sampleRate,
+                    sourceLang: this.state.sourceLang,
+                    status: 'collecting'
+                });
+                this.groupedSegmentId = segment.id;
+                if (this.groupedPendingTranscriptText) {
+                    const updated = this.segmentAlignment.updateInput(segment.id, this.groupedPendingTranscriptText, {
+                        isFinal: true,
+                        source: 'live-sra',
+                        sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(
+                            this.groupedPendingTranscriptText
+                        )
+                    });
+                    this.upsertSegmentInput(updated.id, updated.input.text, {
+                        status: 'input-ready'
+                    });
+                    this.upsertSegmentOutput(updated.id, updated.output.text, {
+                        status: 'collecting',
+                        placeholder: '翻訳待機中...'
+                    });
+                    this.groupedPendingTranscriptText = '';
+                }
+            }
+        }
+        // ✅ このターンの item_id を現在 collecting 中の grouped segment に結ぶ。
+        //    1つの grouped segment が複数ターン（複数 item_id）を集約しても、全ターンが同じ segment に対応する。
+        if (this.segmentAlignment && this.groupedSegmentId && this.pendingCommittedItemId) {
+            this.segmentAlignment.bindItemId(this.pendingCommittedItemId, this.groupedSegmentId);
+            this.pendingCommittedItemId = null;
         }
         this.groupedAudioChunks.push(audio);
         this.groupedAudioDuration += duration;
@@ -274,11 +354,32 @@ const WebSocketMixin = {
         if (!this.isGroupedTurnMode() || !transcript) {
             return;
         }
-        // 文末記号（半角/全角の 。.!? 等）で文数を計数。記号が無い短い発話も1文と数える
-        const matches = transcript.match(/[。．.!?！？]+/g);
-        const count = matches ? matches.length : 0;
-        this.groupSentenceCount = (this.groupSentenceCount || 0) + Math.max(count, 1);
+        const count = this.countCompleteSentences(transcript);
+        this.groupSentenceCount = (this.groupSentenceCount || 0) + count;
+        this.groupLastSentenceAt = Date.now();
+        console.info('[Group] ライブ転写から完全文数を加算:', {
+            added: count,
+            total: this.groupSentenceCount,
+            transcript: transcript.substring(0, 80)
+        });
         this.maybeFlushGroupedAudio(Date.now());
+    },
+
+    /**
+     * semantic_vad の completed transcript は意味的に完結した発話として扱う。
+     * 句読点がある場合は句読点数、無い場合は1文として数える。
+     *
+     * @param {string} transcript
+     * @returns {number}
+     */
+    countCompleteSentences(transcript) {
+        const text = (transcript || '').trim();
+        if (!text) {
+            return 0;
+        }
+
+        const matches = text.match(/[。．.!?！？]+/g);
+        return Math.max(matches ? matches.length : 0, 1);
     },
 
     /**
@@ -290,21 +391,30 @@ const WebSocketMixin = {
         if (!this.groupedAudioChunks || this.groupedAudioChunks.length === 0) {
             return;
         }
+        const minCompleteSentences =
+            (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MIN_COMPLETE_SENTENCES) || 1;
         const maxSentences = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MAX_SENTENCES) || 3;
-        const maxBufferMs = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MAX_BUFFER_MS) || 8000;
+        const maxBufferMs = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MAX_BUFFER_MS) || 6000;
         const elapsed = now - (this.groupedAudioStartTime || now);
+        const sentenceCount = this.groupSentenceCount || 0;
 
-        const reachedSentences = (this.groupSentenceCount || 0) >= maxSentences;
+        const reachedSentences = sentenceCount >= maxSentences;
         const reachedTime = elapsed >= maxBufferMs || this.groupedAudioDuration >= maxBufferMs;
 
         if (reachedSentences || reachedTime) {
+            this.clearGroupedPostSentenceTimer();
             console.info('[Group] flush 条件達成:', {
                 reason: reachedSentences
-                    ? `文数(${this.groupSentenceCount}/${maxSentences})`
+                    ? `文数(${sentenceCount}/${maxSentences})`
                     : `時間(${Math.round(elapsed)}ms)`,
                 turns: this.groupedAudioChunks.length
             });
             this.flushGroupedAudio(now);
+            return;
+        }
+
+        if (sentenceCount >= minCompleteSentences) {
+            this.scheduleGroupedPostSentenceFlush();
         }
     },
 
@@ -315,13 +425,48 @@ const WebSocketMixin = {
         if (this.groupedFlushTimer) {
             return;
         }
-        const maxBufferMs = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MAX_BUFFER_MS) || 8000;
+        const maxBufferMs = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MAX_BUFFER_MS) || 6000;
         const elapsed = Date.now() - (this.groupedAudioStartTime || Date.now());
         const remaining = Math.max(0, maxBufferMs - elapsed);
         this.groupedFlushTimer = setTimeout(() => {
             this.groupedFlushTimer = null;
             this.maybeFlushGroupedAudio(Date.now());
         }, remaining + 50);
+    },
+
+    /**
+     * 最小完全文数に達した後、短い猶予だけ待って flush する。
+     */
+    scheduleGroupedPostSentenceFlush() {
+        if (this.groupedPostSentenceTimer) {
+            return;
+        }
+
+        const holdMs =
+            (CONFIG.TRANSLATION && CONFIG.TRANSLATION.POST_SENTENCE_HOLD_MS) || 500;
+        this.groupedPostSentenceTimer = setTimeout(() => {
+            this.groupedPostSentenceTimer = null;
+            if (!this.groupedAudioChunks || this.groupedAudioChunks.length === 0) {
+                return;
+            }
+
+            const minCompleteSentences =
+                (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MIN_COMPLETE_SENTENCES) || 1;
+            if ((this.groupSentenceCount || 0) >= minCompleteSentences) {
+                console.info('[Group] 1文完結後の短い待機を終えて flush:', {
+                    sentenceCount: this.groupSentenceCount,
+                    holdMs
+                });
+                this.flushGroupedAudio(Date.now());
+            }
+        }, holdMs);
+    },
+
+    clearGroupedPostSentenceTimer() {
+        if (this.groupedPostSentenceTimer) {
+            clearTimeout(this.groupedPostSentenceTimer);
+            this.groupedPostSentenceTimer = null;
+        }
     },
 
     /**
@@ -334,6 +479,7 @@ const WebSocketMixin = {
             clearTimeout(this.groupedFlushTimer);
             this.groupedFlushTimer = null;
         }
+        this.clearGroupedPostSentenceTimer();
         const chunks = this.groupedAudioChunks || [];
         if (chunks.length === 0) {
             return;
@@ -357,15 +503,23 @@ const WebSocketMixin = {
         this.groupedAudioDuration = 0;
         this.groupedAudioStartTime = null;
         this.groupSentenceCount = 0;
+        this.groupLastSentenceAt = null;
+        this.groupedPendingTranscriptText = '';
 
         console.info('[Group] まとめて enqueue:', {
             samples: totalLength,
             durationMs: Math.round(duration)
         });
 
-        if (!this.tryEnqueueAudioSegment(combined, duration, sampleRate, now || Date.now())) {
-            // enqueue 失敗時は旧ロジックにフォールバック
-            this.processFallbackAudioRequest(this.responseQueue.getStatus());
+        const segmentId = this.groupedSegmentId || null;
+        this.groupedSegmentId = null;
+
+        if (!this.tryEnqueueAudioSegment(combined, duration, sampleRate, now || Date.now(), {
+            segmentId
+        })) {
+            console.error('[Group] enqueue 失敗: segment を破棄してエラーとして扱います', {
+                segmentId
+            });
         }
     },
 
@@ -377,10 +531,15 @@ const WebSocketMixin = {
             clearTimeout(this.groupedFlushTimer);
             this.groupedFlushTimer = null;
         }
+        this.clearGroupedPostSentenceTimer();
         this.groupedAudioChunks = [];
         this.groupedAudioDuration = 0;
         this.groupedAudioStartTime = null;
         this.groupSentenceCount = 0;
+        this.groupLastSentenceAt = null;
+        this.groupedPendingTranscriptText = '';
+        this.groupedSegmentId = null;
+        this.pendingCommittedItemId = null;
     },
 
     /**
@@ -585,9 +744,9 @@ const WebSocketMixin = {
             // バッファをクリア（無限ループ防止）
             this.clearPendingBuffer();
 
-            // ✅ 直接キューに追加
+            // ✅ 直接キューに追加（grouped時は同じグループに蓄積）
             const sampleRate = this.state.audioContext?.sampleRate || 24000;
-            this.tryEnqueueAudioSegment(bufferedAudio, bufferedDuration, sampleRate, Date.now());
+            this.queueOrAccumulateAudioSegment(bufferedAudio, bufferedDuration, sampleRate, Date.now());
         }, this.pendingAudioTimeout);
 
         // ✅ 保留バッファが300ms以上になったら即座に送信
@@ -604,10 +763,27 @@ const WebSocketMixin = {
             // バッファをクリア（無限ループ防止）
             this.clearPendingBuffer();
 
-            // ✅ 直接キューに追加
+            // ✅ 直接キューに追加（grouped時は同じグループに蓄積）
             const sampleRate = this.state.audioContext?.sampleRate || 24000;
-            this.tryEnqueueAudioSegment(bufferedAudio, bufferedDuration, sampleRate, Date.now());
+            this.queueOrAccumulateAudioSegment(bufferedAudio, bufferedDuration, sampleRate, Date.now());
         }
+    },
+
+    /**
+     * 現在のターンモードに合わせて音声を蓄積または enqueue する。
+     *
+     * @param {Float32Array} audioData
+     * @param {number} duration
+     * @param {number} sampleRate
+     * @param {number} now
+     */
+    queueOrAccumulateAudioSegment(audioData, duration, sampleRate, now) {
+        if (this.isGroupedTurnMode()) {
+            this.accumulateGroupedAudio(audioData, duration, sampleRate, now);
+            return;
+        }
+
+        this.tryEnqueueAudioSegment(audioData, duration, sampleRate, now);
     },
 
     /**
@@ -618,7 +794,7 @@ const WebSocketMixin = {
      * @param {number} now - 現在のタイムスタンプ
      * @returns {boolean} 成功した場合は true
      */
-    tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now) {
+    tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now, options = {}) {
         // ✅ デバッグ：tryEnqueueAudioSegment 呼び出し確認
         console.warn('[Audio] ========== tryEnqueueAudioSegment 呼び出し ==========');
         console.warn('[Audio] combinedAudio.length:', combinedAudio?.length);
@@ -629,8 +805,26 @@ const WebSocketMixin = {
         // ✅ 新アーキテクチャ有効化フラグを設定
         this.useAudioQueue = true;
 
+        if (!this.segmentAlignment) {
+            console.error('[Audio] SegmentAlignmentManager が未初期化のため処理を停止します');
+            this.notify?.(
+                '音声翻訳エラー',
+                'Segment alignment layer is not initialized',
+                'error'
+            );
+            return false;
+        }
+
+        const alignmentSegment = this.segmentAlignment.ensureSegment(options.segmentId, {
+            durationMs: actualDuration,
+            sampleRate,
+            sourceLang: this.state.sourceLang,
+            status: 'queued'
+        });
+
         // ✅ 有効な音声データのみをキューに追加
         const segment = this.audioQueue.enqueue(combinedAudio, {
+            segmentId: alignmentSegment?.id || options.segmentId,
             duration: actualDuration,
             language: this.state.sourceLang,
             sourceType: this.state.audioSourceType,
@@ -640,10 +834,38 @@ const WebSocketMixin = {
 
         if (!segment) {
             console.error('[Audio] AudioQueue への追加失敗（キューが満杯か短すぎる）');
-            // 旧ロジックをフォールバックとして継続使用
-            this.useAudioQueue = false; // ← フォールバック時は旧アーキテクチャを使用
+            this.segmentAlignment.recordError(alignmentSegment.id, 'AudioQueue enqueue failed');
             return false;
         }
+
+        const aligned = this.segmentAlignment.ensureSegment(segment.id, {
+            durationMs: actualDuration,
+            sampleRate,
+            sourceLang: this.state.sourceLang,
+            status: 'queued'
+        });
+        segment.alignment = {
+            ...segment.alignment,
+            id: aligned.id,
+            inputText: aligned.input.text,
+            outputText: aligned.output.text
+        };
+        if (!aligned.input.isFinal && !aligned.input.text) {
+            this.segmentAlignment.enqueueInputSegment(segment.id);
+        }
+        // ✅ 非groupedパスでも item_id を結び、転写完了を順序非依存で正しい segment に戻す。
+        if (this.pendingCommittedItemId) {
+            this.segmentAlignment.bindItemId(this.pendingCommittedItemId, segment.id);
+            this.pendingCommittedItemId = null;
+        }
+        this.upsertSegmentInput(segment.id, aligned.input.text, {
+            status: aligned.input.text ? 'input-ready' : 'transcribing',
+            placeholder: '認識中...'
+        });
+        this.upsertSegmentOutput(segment.id, aligned.output.text, {
+            status: 'queued',
+            placeholder: '翻訳待機中...'
+        });
 
         console.info('[Audio] AudioSegment 作成完了:', {
             segmentId: segment.id,
@@ -651,72 +873,8 @@ const WebSocketMixin = {
             samples: combinedAudio.length,
             queueSize: this.audioQueue.size()
         });
-        // ✅ 双パス処理会通过 segmentReady イベント自动触発
-        // 参见: handleNewAudioSegment()
+        // 双パス処理は startPathConsumers() の pull-based loop が消費する。
         return true;
-    },
-
-    /**
-     * フォールバック音声リクエスト処理
-     * 修正内容（プル型アーキテクチャ）:
-     *   - activeResponseId/pendingResponseId のチェックを削除
-     *   - ResponseQueue が自動的に並発制御を行う
-     *   - キューのpendingCountが多すぎる場合のみスキップ
-     * @param {Object} queueStatus - キューのステータス
-     */
-    processFallbackAudioRequest(queueStatus) {
-        // ✅ プル型アーキテクチャ: pendingResponseId のチェックを削除
-        // 理由: ResponseQueue が自動的に並発制御を行うため不要
-        //       response.done イベント後に自動的に次のリクエストを送信
-
-        // ✅ キューの pending 数が多い場合はスキップ（バックアップ防止）
-        if (queueStatus.pendingCount > 5) {
-            console.warn('[Audio] キューの待機数が多いため、スキップします', {
-                pendingCount: queueStatus.pendingCount,
-                maxPending: 5
-            });
-            return;
-        }
-
-        this.enqueueResponseRequest(queueStatus);
-    },
-
-    /**
-     * レスポンスリクエストをキューに追加
-     * 修正内容（プル型アーキテクチャ）:
-     *   - activeResponseId/pendingResponseId の管理を削除
-     *   - ResponseQueue が自動的に並発制御を行う
-     * @param {Object} queueStatus - キューのステータス
-     */
-    enqueueResponseRequest(queueStatus) {
-        // ✅ プル型アーキテクチャ: pendingResponseId の管理を削除
-        // 理由: ResponseQueue が自動的に並発制御を行うため不要
-
-        const audioOutputEnabled = this.elements.audioOutputEnabled.classList.contains('active');
-        // GA: output_modalities は ['audio'] または ['text']
-        const outputModalities = audioOutputEnabled ? ['audio'] : ['text'];
-
-        console.info('[🔊 Response Create] 要求:', {
-            outputModalities: outputModalities,
-            audioOutputEnabled: audioOutputEnabled,
-            queueStatus: queueStatus
-        });
-
-        this.responseQueue
-            .enqueue({
-                output_modalities: outputModalities,
-                instructions: this.getInstructions()
-            })
-            .then(() => {
-                console.info('[Audio] レスポンスリクエストをキューに追加しました');
-            })
-            .catch((error) => {
-                if (error.message.includes('Queue is full')) {
-                    console.warn('[Audio] キューが満杯のため、リクエストをスキップしました');
-                } else {
-                    console.error('[Audio] レスポンスリクエスト失敗:', error);
-                }
-            });
     },
 
     /**
@@ -755,25 +913,131 @@ const WebSocketMixin = {
     handleTranscriptionCompleted(message) {
         console.info('[Transcription] 入力音声認識完了:', message.transcript);
         if (message.transcript) {
+            // ✅ item_id 優先解決: コミット時に結んだ segment へ確実に戻す。
+            //    flush 後に遅れて届く転写でも、commit 時点の正しい segment に入り、
+            //    後続グループを汚染しない（順序非依存の 1:1 対応保証）。
+            if (this.useAudioQueue && this.segmentAlignment && !this.segmentResendDepth) {
+                const boundSegment = this.segmentAlignment.getSegmentByItemId(message.item_id);
+                if (boundSegment) {
+                    const nextText = this.joinSegmentTranscriptText(
+                        boundSegment.input.text,
+                        message.transcript
+                    );
+                    const segment = this.segmentAlignment.updateInput(boundSegment.id, nextText, {
+                        isFinal: true,
+                        source: 'live-sra',
+                        sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(nextText)
+                    });
+                    this.upsertSegmentInput(segment.id, segment.input.text, {
+                        status: 'input-ready'
+                    });
+                    this.upsertSegmentOutput(segment.id, segment.output.text, {
+                        status: segment.output.responseId ? 'responding' : 'collecting',
+                        placeholder: '翻訳待機中...'
+                    });
+                    // 文数計数は「現在 collecting 中のグループ」に属する転写のみ。
+                    // flush 済みグループの遅延転写は次グループの flush を誤って早めない。
+                    if (this.isGroupedTurnMode() && this.groupedSegmentId === boundSegment.id) {
+                        this.addGroupedSentenceCount(message.transcript);
+                    }
+                    return;
+                }
+            }
+            let handledByCurrentGroup = false;
             // ✅ groupedモード: ライブ入力転写から文数を計数して区切りを判断する。
             //    Path1 の音声再送で発生する転写は二重計数になるため除外する。
             if (this.isGroupedTurnMode() && !this.segmentResendDepth) {
-                this.addGroupedSentenceCount(message.transcript);
+                const belongsToFlushedPendingSegment = !!(
+                    this.useAudioQueue &&
+                    !this.groupedSegmentId &&
+                    this.segmentAlignment?.pendingInputSegments?.length
+                );
+                if (!belongsToFlushedPendingSegment) {
+                    this.addGroupedSentenceCount(message.transcript);
+                }
+                if (this.segmentAlignment && this.groupedSegmentId) {
+                    const existing = this.segmentAlignment.getSegment(this.groupedSegmentId);
+                    const nextText = this.joinSegmentTranscriptText(
+                        existing?.input.text,
+                        message.transcript
+                    );
+                    const segment = this.segmentAlignment.updateInput(
+                        this.groupedSegmentId,
+                        nextText,
+                        {
+                            isFinal: true,
+                            source: 'live-sra',
+                            sourceLang:
+                                this.textPathProcessor?.detectLanguageFromTranscript?.(nextText)
+                        }
+                    );
+                    this.upsertSegmentInput(segment.id, segment.input.text, {
+                        status: 'input-ready'
+                    });
+                    this.upsertSegmentOutput(segment.id, segment.output.text, {
+                        status: 'collecting',
+                        placeholder: '翻訳待機中...'
+                    });
+                    handledByCurrentGroup = true;
+                } else if (!belongsToFlushedPendingSegment) {
+                    this.groupedPendingTranscriptText = this.joinSegmentTranscriptText(
+                        this.groupedPendingTranscriptText,
+                        message.transcript
+                    );
+                    handledByCurrentGroup = true;
+                }
+            }
+            if (handledByCurrentGroup) {
+                return;
             }
             if (this.useAudioQueue) {
+                if (this.segmentAlignment && !this.segmentResendDepth) {
+                    const segment = this.segmentAlignment.completeNextInput(message.transcript, {
+                        source: 'live-sra',
+                        sourceLang:
+                            this.textPathProcessor?.detectLanguageFromTranscript?.(
+                                message.transcript
+                            )
+                    });
+                    if (segment) {
+                        this.upsertSegmentInput(segment.id, segment.input.text, {
+                            status: 'input-ready'
+                        });
+                        this.upsertSegmentOutput(segment.id, segment.output.text, {
+                            status: 'queued',
+                            placeholder: '翻訳待機中...'
+                        });
+                    }
+                }
                 console.info(
                     '[Transcription] AudioQueue有効のため、Path1側でsegment ID付き表示を処理します'
                 );
                 return;
             }
 
-            const transcriptId = Date.now();
-            this.addTranscript('input', message.transcript, transcriptId);
-            this.currentTranscriptId = transcriptId;
-
-            // ✅ 句子数量追踪（実時性向上）
-            this.updateTranscriptBuffer(message.transcript);
+            console.warn('[Transcription] AudioQueue 未使用の入力転写を受信しました。旧DOM対直接書き込みは行いません。', {
+                transcript: message.transcript.substring(0, 80)
+            });
         }
+    },
+
+    /**
+     * @param {string} previous
+     * @param {string} next
+     * @returns {string}
+     */
+    joinSegmentTranscriptText(previous, next) {
+        const left = (previous || '').trim();
+        const right = (next || '').trim();
+        if (!left) {
+            return right;
+        }
+        if (!right) {
+            return left;
+        }
+
+        const shouldInsertSpace = /[A-Za-z0-9]$/.test(left) && /^[A-Za-z0-9]/.test(right);
+        return shouldInsertSpace ? `${left} ${right}` : `${left}${right}`;
     },
 
     /**
@@ -884,75 +1148,46 @@ const WebSocketMixin = {
     },
 
     /**
-     * 音声翻訳テキストデルタ処理
-     *
-     * @description
-     * 旧アーキテクチャ用のハンドラー
-     * 新アーキテクチャ（AudioQueue）では、Path2 が独自にテキストを処理するため、
-     * このハンドラーは実行されない
-     */
-    handleAudioTranscriptDelta(message) {
-        // ✅ 新アーキテクチャが有効な場合はスキップ
-        if (this.useAudioQueue) {
-            return;
-        }
-
-        if (message.delta) {
-            this.currentTranslationText += message.delta;
-        }
-    },
-
-    /**
-     * 音声翻訳テキスト完了処理
-     *
-     * @description
-     * 旧アーキテクチャ用のハンドラー
-     * 新アーキテクチャ（AudioQueue）では、Path2 が独自にテキストを表示するため、
-     * このハンドラーは実行されない
-     */
-    handleAudioTranscriptDone() {
-        // ✅ 新アーキテクチャが有効な場合はスキップ
-        if (this.useAudioQueue) {
-            console.info(
-                '[旧アーキテクチャ] handleAudioTranscriptDone スキップ（新アーキテクチャ有効）'
-            );
-            return;
-        }
-
-        console.info('[処理1-2] 🔊 音声翻訳テキスト完了:', this.currentTranslationText);
-
-        if (this.currentTranslationText.trim()) {
-            console.info('[音声翻訳] テキスト:', this.currentTranslationText.trim());
-            const transcriptId = this.currentTranscriptId || Date.now();
-            this.addTranscript('output', this.currentTranslationText.trim(), transcriptId);
-            this.currentTranslationText = '';
-            this.currentTranscriptId = null;
-        }
-
-        this.state.isNewResponse = true;
-    },
-
-    /**
      * 音声デルタ受信処理
      */
     handleAudioDelta(message) {
         console.info('[🔊 Audio Delta] 受信:', {
             hasDelta: !!message.delta,
             deltaLength: message.delta ? message.delta.length : 0,
-            currentQueueSize: this.playbackQueue ? this.playbackQueue.length : 0
+            currentQueueSize: this.playbackQueue ? this.playbackQueue.length : 0,
+            responseId: message.response_id || null
         });
         if (message.delta) {
-            this.playAudioChunk(message.delta);
+            let segment = null;
+            if (this.useAudioQueue && this.segmentAlignment) {
+                segment = this.segmentAlignment.appendOutputAudioByResponse(message.response_id);
+                if (!segment) {
+                    // ✅ 未バインドでも翻訳音声は捨てない（STS の中核機能のサイレント失敗を防ぐ）。
+                    //    segment 追跡はできないが、ベストエフォートで再生しログで識別可能にする。
+                    console.warn('[🔊 Audio Delta] 未バインド response_id のため fallback 再生（segment 追跡なし）:', {
+                        responseId: message.response_id || null
+                    });
+                }
+            }
+
+            this.playAudioChunk(message.delta, {
+                responseId: message.response_id || null,
+                segmentId: segment?.id || null
+            });
         }
     },
 
     /**
      * 音声データ受信完了処理
      */
-    handleAudioDone() {
+    handleAudioDone(message = {}) {
+        if (this.segmentAlignment && message.response_id) {
+            this.segmentAlignment.markOutputAudioDone(message.response_id);
+        }
         console.info('[🔊 Audio Done] 音声データ受信完了:', {
             audioOutputEnabled: this.elements.audioOutputEnabled.classList.contains('active'),
-            modalities: this.state.ws ? '確認必要' : 'WebSocket未接続'
+            realtimeConnected: this.isRealtimeTransportReady(),
+            responseId: message.response_id || null
         });
     },
 
@@ -965,10 +1200,22 @@ const WebSocketMixin = {
             timestamp: Date.now()
         });
 
-        // ✅ 新しい翻訳開始時に古い音声をクリア（翻訳音声の中断を防ぐ）
-        // 理由: 複数の翻訳リクエストが並行して処理される場合、
-        //       古い翻訳音声が新しい翻訳音声と混在して再生されるのを防ぐ
-        this.clearPlaybackQueue();
+        if (this.segmentAlignment && this.useAudioQueue) {
+            const segment = this.segmentAlignment.bindNextResponse(message.response.id);
+            if (segment) {
+                this.upsertSegmentOutput(segment.id, segment.output.text, {
+                    responseId: message.response.id,
+                    status: 'responding',
+                    placeholder: '翻訳中...'
+                });
+            }
+        } else {
+            console.warn('[Response] SegmentAlignment 未準備の response.created を受信:', {
+                responseId: message.response.id,
+                useAudioQueue: this.useAudioQueue,
+                hasSegmentAlignment: !!this.segmentAlignment
+            });
+        }
 
         // ✅ プル型アーキテクチャ: activeResponseId のみ記録（デバッグ用）
         this.activeResponseId = message.response.id;
@@ -986,6 +1233,15 @@ const WebSocketMixin = {
         });
         // ✅ プル型アーキテクチャ: 状態をクリア
         this.activeResponseId = null;
+        if (this.segmentAlignment && message.response?.id) {
+            const segment = this.segmentAlignment.markResponseDone(message.response.id);
+            if (segment && segment.output.text) {
+                this.upsertSegmentOutput(segment.id, segment.output.text, {
+                    responseId: message.response.id,
+                    status: 'done'
+                });
+            }
+        }
         // ✅ ResponseQueue が自動的に次のリクエストを送信（consume()）
         this.responseQueue.handleResponseDone(message.response.id);
         this.updateStatus('recording', '待機中');
@@ -1125,14 +1381,20 @@ const WebSocketMixin = {
      *
      * @param {string} base64Audio - base64エンコードされた音声データ
      */
-    async playAudioChunk(base64Audio) {
+    async playAudioChunk(base64Audio, metadata = {}) {
         try {
             // 再生キューに追加
-            this.playbackQueue.push(base64Audio);
+            this.playbackQueue.push({
+                audio: base64Audio,
+                segmentId: metadata.segmentId || null,
+                responseId: metadata.responseId || null
+            });
 
             console.info('[🔊 Streaming] チャンク受信:', {
                 queueLength: this.playbackQueue.length,
-                isPlayingFromQueue: this.isPlayingFromQueue
+                isPlayingFromQueue: this.isPlayingFromQueue,
+                segmentId: metadata.segmentId || null,
+                responseId: metadata.responseId || null
             });
 
             // 再生中でなければ再生開始
@@ -1177,10 +1439,18 @@ const WebSocketMixin = {
         this.isPlayingFromQueue = true;
 
         // キューから最初の音声を取り出す
-        const audioData = this.playbackQueue.shift();
+        const queueItem = this.playbackQueue.shift();
+        if (!queueItem || typeof queueItem.audio !== 'string') {
+            console.error('[Playback Queue] 無効な音声キュー項目をスキップ:', queueItem);
+            this.playNextInQueue();
+            return;
+        }
+        const audioData = queueItem.audio;
 
         console.info('[Playback Queue] 次の音声を再生:', {
-            remainingInQueue: this.playbackQueue.length
+            remainingInQueue: this.playbackQueue.length,
+            segmentId: queueItem?.segmentId || null,
+            responseId: queueItem?.responseId || null
         });
 
         // 音声を再生（await しない - 非同期で開始）
@@ -1447,105 +1717,6 @@ const WebSocketMixin = {
             this.handleAudioPlaybackError(error);
             throw error;
         }
-    },
-
-    /**
-     * ✅ 新しい音声セグメント処理（双パス並列処理）
-     *
-     * @description
-     * 音声入力を起点として、2つの処理を並列実行：
-     * 1. Path1（テキストパス）: 音声送信 → STT → テキスト翻訳（モード2のみ）
-     * 2. Path2（音声パス）: 音声送信待機 → 音声翻訳 → 音声再生
-     *
-     * 重複防止メカニズム:
-     *   - Path1: 音声をサーバーに送信 → markAudioSent() 呼び出し
-     *   - Path2: waitForAudioSent() で Path1 の送信完了を待機
-     *   - 両パスが完了したらセグメントを削除
-     *
-     * @param {AudioSegment} segment 音声セグメント
-     */
-    async handleNewAudioSegment(segment) {
-        console.info('[Audio] 新しいセグメント処理開始:', {
-            id: segment.id,
-            queueSize: this.audioQueue.size(),
-            duration: segment.getDuration() + 'ms'
-        });
-
-        // ✅ モード設定: 「リアルタイム音声翻訳」トグルの状態に基づいて設定
-        // ON（true）: モード2（音声翻訳 + テキスト翻訳）
-        // OFF（false）: モード2（テキスト翻訳のみ）- バグ修正: テキスト翻訳を実行
-        const isRealtimeAudioMode = this.elements.translationModeAudio.classList.contains('active');
-        const textPathMode = 2; // ✅ 常にテキスト翻訳を実行
-        const voicePathMode = isRealtimeAudioMode ? 2 : 1; // ON: 音声翻訳も実行, OFF: 音声翻訳はスキップ
-
-        this.textPathProcessor.setMode(textPathMode);
-        this.voicePathProcessor.setMode(voicePathMode);
-
-        console.info('[Audio] パス処理器モード設定:', {
-            isRealtimeAudioMode: isRealtimeAudioMode,
-            textPathMode: textPathMode,
-            voicePathMode: voicePathMode,
-            description: isRealtimeAudioMode
-                ? '音声翻訳 + テキスト翻訳モード'
-                : 'テキスト翻訳のみモード'
-        });
-
-        // ✅ パス1とパス2を並列実行（リアルタイム性向上）
-        const startTime = Date.now();
-        console.info('[Audio] 並列処理開始:', { segmentId: segment.id });
-
-        // Promise.allSettled を使用して、一方のエラーが他方に影響しないようにする
-        const results = await Promise.allSettled([
-            this.textPathProcessor.process(segment),
-            this.voicePathProcessor.process(segment)
-        ]);
-
-        const processingTime = Date.now() - startTime;
-
-        // ✅ 各パスの結果を確認
-        const [path1Result, path2Result] = results;
-
-        console.info('[Audio] 並列処理完了:', {
-            segmentId: segment.id,
-            processingTime: processingTime + 'ms',
-            path1Status: path1Result.status,
-            path2Status: path2Result.status,
-            path1Complete: segment.processingStatus.path1_text === 1,
-            path2Complete: segment.processingStatus.path2_voice === 1
-        });
-
-        // ✅ エラーチェック（各パス内で既にエラーハンドリングされているが、念のため）
-        if (path1Result.status === 'rejected') {
-            console.error('[Audio] Path1 エラー:', {
-                segmentId: segment.id,
-                error: path1Result.reason
-            });
-            // Path1 が完了マークされていない場合のみマーク
-            if (segment.processingStatus.path1_text === 0) {
-                this.audioQueue.markPathComplete(segment.id, 'path1', {
-                    error: path1Result.reason?.message || 'Unknown error'
-                });
-            }
-        }
-
-        if (path2Result.status === 'rejected') {
-            console.error('[Audio] Path2 エラー:', {
-                segmentId: segment.id,
-                error: path2Result.reason
-            });
-            // Path2 が完了マークされていない場合のみマーク
-            if (segment.processingStatus.path2_voice === 0) {
-                this.audioQueue.markPathComplete(segment.id, 'path2', {
-                    error: path2Result.reason?.message || 'Unknown error'
-                });
-            }
-        }
-
-        console.info('[Audio] セグメント処理完全完了:', {
-            segmentId: segment.id,
-            totalDuration: segment.getAge() + 'ms',
-            processingTime: processingTime + 'ms'
-        });
     },
 
     /**

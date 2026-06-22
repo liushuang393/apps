@@ -66,10 +66,6 @@ class VoiceTranslateApp {
         this.currentAudioStartTime = 0;
         this.currentAudioSource = null; // 現在再生中のAudioBufferSourceNode（停止用）
 
-        // 翻訳テキスト累積用（delta → 完全なテキスト）
-        this.currentTranslationText = ''; // 現在の翻訳テキストを累積
-        this.currentTranscriptId = null; // 現在の transcriptId（入力テキストと対応）
-
         // ✅ レスポンス状態管理（並発制御）
         this.activeResponseId = null; // 現在処理中のレスポンスID
         this.pendingResponseId = null; // ✅ リクエスト送信中フラグ（レース条件対策）
@@ -160,6 +156,12 @@ class VoiceTranslateApp {
             // 注意: cleanupDelay はデフォルト値（1000ms）を使用
         });
 
+        this.segmentAlignment =
+            typeof SegmentAlignmentManager !== 'undefined'
+                ? new SegmentAlignmentManager({ maxSegments: 300 })
+                : null;
+        this.realtimeMessageListeners = new Set();
+
         // ✅ パス処理器
         this.textPathProcessor = new TextPathProcessor(this.audioQueue, this);
         this.voicePathProcessor = new VoicePathProcessor(this.audioQueue, this);
@@ -220,7 +222,12 @@ class VoiceTranslateApp {
         this.groupedAudioStartTime = null; // グループ開始時刻
         this.groupedSampleRate = CONFIG.AUDIO.SAMPLE_RATE; // グループ音声のサンプルレート
         this.groupSentenceCount = 0; // グループ内の文数（ライブ転写から計数）
+        this.groupLastSentenceAt = null; // 最後に完全文を検出した時刻
+        this.groupedPendingTranscriptText = ''; // segment 作成前に届いたライブ転写の一時保持
+        this.groupedSegmentId = null; // 現在のグループに対応する alignment segment id
+        this.pendingCommittedItemId = null; // 直近コミットの item_id（segment への bindItemId 用）
         this.groupedFlushTimer = null; // MAX_BUFFER_MS 到達用の保険タイマー
+        this.groupedPostSentenceTimer = null; // 1文完結後の短い待機タイマー
         this.segmentResendDepth = 0; // Path1 音声再送中フラグ（文数二重計数ガード）
 
         // ✅ 監視先の無音自動検証
@@ -1108,12 +1115,11 @@ class VoiceTranslateApp {
         if (settings.realtimeModel) {
             CONFIG.API.REALTIME_MODEL = settings.realtimeModel;
         }
-        this.elements.realtimeModel.value = CONFIG.API.REALTIME_MODEL;
-
         if (settings.chatModel) {
             CONFIG.API.CHAT_MODEL = settings.chatModel;
         }
-        this.elements.chatModel.value = CONFIG.API.CHAT_MODEL;
+        // 後台で設定中のモデルを必ず表示・選択し、新しい順に並べ替える
+        this.setupModelSelects();
 
         if (settings.vadSensitivity) {
             this.elements.vadSensitivity.value = settings.vadSensitivity;
@@ -1287,6 +1293,8 @@ class VoiceTranslateApp {
                     if (t.semanticEagerness != null)
                         CONFIG.TRANSLATION.SEMANTIC_EAGERNESS = t.semanticEagerness;
                     if (t.maxSentences != null) CONFIG.TRANSLATION.MAX_SENTENCES = t.maxSentences;
+                    if (t.postSentenceHoldMs != null)
+                        CONFIG.TRANSLATION.POST_SENTENCE_HOLD_MS = t.postSentenceHoldMs;
                     if (t.maxBufferMs != null) CONFIG.TRANSLATION.MAX_BUFFER_MS = t.maxBufferMs;
                 }
 
@@ -1796,7 +1804,7 @@ class VoiceTranslateApp {
      *   接続中にVAD感度を変更した場合、Server VADの設定を更新
      */
     async updateSessionConfig() {
-        if (!this.state.isConnected || !this.state.ws) {
+        if (!this.state.isConnected) {
             console.warn('[Session] 未接続のためセッション設定を更新できません');
             return;
         }
@@ -1805,6 +1813,8 @@ class VoiceTranslateApp {
         const updateEvent = {
             type: 'session.update',
             session: {
+                // GA: session.update では session.type が必須（'realtime'）
+                type: 'realtime',
                 audio: {
                     input: {
                         turn_detection: this.elements.vadEnabled.classList.contains('active')
@@ -1821,7 +1831,10 @@ class VoiceTranslateApp {
     getInstructions() {
         const sourceLang = this.state.sourceLang;
         const targetLang = this.state.targetLang || 'ja';
-        const sourceName = sourceLang && sourceLang !== 'auto' ? Utils.getLanguageName(sourceLang) : 'the identified source language';
+        const sourceName =
+            sourceLang && sourceLang !== 'auto'
+                ? Utils.getLanguageName(sourceLang)
+                : 'the identified source language';
         const targetName = Utils.getLanguageName(targetLang);
         const sourceNative = sourceLang && sourceLang !== 'auto' ? Utils.getNativeLanguageName(sourceLang) : 'auto-detect';
         const targetNative = Utils.getNativeLanguageName(targetLang);
@@ -1833,7 +1846,7 @@ class VoiceTranslateApp {
         // ✅ 自動検出モードの記述
         const isAutoSource = !sourceLang || sourceLang === 'auto';
         const sourceDescription = isAutoSource
-            ? "Dynamic (Auto-detect from English, Japanese, Chinese, Vietnamese)"
+            ? 'Dynamic per segment (auto-detect English, Japanese, Simplified Chinese, or Vietnamese from the current audio only)'
             : `${sourceName} (${sourceNative})`;
 
         // 最適化された指示（OpenAI Realtime Prompting Guide ベストプラクティス）
@@ -1858,7 +1871,8 @@ class VoiceTranslateApp {
 ## LANGUAGE SPECIFICATIONS
 - Input language: ${sourceDescription}.
 - Output language: ${targetLanguageSpec} (${targetNative}) ONLY.
-- **AUTO-IDENTIFICATION**: If the speaker uses English, Japanese, Chinese, or Vietnamese, identify it and translate to ${targetName} without speaking to the user in their language.
+- **AUTO-IDENTIFICATION**: Identify the source language independently for every audio segment. Do not reuse the previous segment's language when the current segment sounds different.
+- If the speaker uses English, Japanese, Simplified Chinese, or Vietnamese, translate it to ${targetName} without speaking to the user in their language.
 ${targetLang === 'zh'
                 ? '- **PRECISION**: For Chinese output, use Simplified Chinese (简体中文) characters ONLY.'
                 : ''
@@ -1895,22 +1909,8 @@ ${targetLang === 'zh'
         }
     }
 
-    async handleWSMessage(event) {
-        try {
-            const message = JSON.parse(event.data);
-
-            // デバッグモードでのみ詳細ログを出力
-            if (CONFIG.DEBUG_MODE) {
-                console.info('[WS Message]', message.type, message);
-            }
-
-            // メッセージタイプに応じたハンドラーを呼び出す
-            this.dispatchWSMessage(message);
-        } catch (error) {
-            console.error('[Message Error]', error);
-            console.error('[Message Error] Event data:', event.data);
-        }
-    }
+    // handleWSMessage は WebSocketMixin 側が唯一の実体（notifyRealtimeMessageListeners を含む）。
+    // ここに class メソッドを再定義すると Object.assign(prototype, WebSocketMixin) で上書きされ無効になるため定義しない。
     /**
      * 録音を開始
      *
@@ -3186,6 +3186,25 @@ ${targetLang === 'zh'
         this.audioBufferStartTime = null;
 
         // ✅ groupedモードの蓄積状態をリセット（保険タイマー解除を含む）
+        //    停止時は消費者ループが既に停止済みのため flush しても再生されない。
+        //    設計（停止時は残セグメントを flush するか明示的に discard して通知）に従い、
+        //    未送信の蓄積音声が残っている場合はサイレント破棄せずユーザーへ通知する。
+        const hasPendingGroupedAudio = !!(
+            this.groupedAudioChunks &&
+            this.groupedAudioChunks.length > 0 &&
+            this.groupedAudioDuration > 0
+        );
+        if (hasPendingGroupedAudio) {
+            console.warn('[Recording] 停止時に未送信の蓄積音声を破棄します', {
+                turns: this.groupedAudioChunks.length,
+                durationMs: Math.round(this.groupedAudioDuration)
+            });
+            this.notify(
+                '翻訳未完了',
+                '停止時にまとめ翻訳待ちの音声が残っていたため破棄しました。最後の発話は翻訳されていません。',
+                'warning'
+            );
+        }
         if (typeof this.resetGroupedAudioState === 'function') {
             this.resetGroupedAudioState();
         }
@@ -3369,34 +3388,6 @@ ${targetLang === 'zh'
                 this.state.processor = null;
                 console.info('[Recording] ScriptProcessorNode をクリーンアップしました');
             }
-        }
-    }
-    /**
-     * ✅ ストリーミング再生: 音声チャンクを即座に再生
-     *
-     * 目的:
-     *   Realtime API の低遅延ストリーミングの利点を活かすため、
-     *   音声チャンクを受信したら即座にデコード・再生する
-     *
-     * @param {string} base64Audio - base64エンコードされた音声データ
-     */
-    async playAudioChunk(base64Audio) {
-        try {
-            // 再生キューに追加
-            this.playbackQueue.push(base64Audio);
-
-            console.info('[🔊 Streaming] チャンク受信:', {
-                queueLength: this.playbackQueue.length,
-                isPlayingFromQueue: this.isPlayingFromQueue
-            });
-
-            // 再生中でなければ再生開始
-            if (!this.isPlayingFromQueue) {
-                console.info('[🔊 Streaming] 再生開始');
-                this.playNextInQueue();
-            }
-        } catch (error) {
-            console.error('[🔊 Streaming] チャンク処理エラー:', error);
         }
     }
     /**
@@ -3834,6 +3825,8 @@ ${targetLang === 'zh'
         const session = {
             type: 'session.update',
             session: {
+                // GA: session.update では session.type が必須（'realtime'）
+                type: 'realtime',
                 instructions: this.getInstructions(),
                 // GA: セッションの出力モダリティは output_modalities（旧: modalities）
                 output_modalities: outputModalities
@@ -3852,6 +3845,87 @@ ${targetLang === 'zh'
             audioOutputEnabled: audioOutputEnabled,
             outputModalities: outputModalities
         });
+    }
+
+    /**
+     * モデル選択ドロップダウンを後台設定に合わせて再構築する
+     *
+     * 目的:
+     *   - 「最新」等の独自マークは付けず、モデルIDをそのまま表示する
+     *   - 後台（.env / 保存値）で設定中のモデルを必ず選択肢に含め、最上部・選択状態にする
+     *   - 残りはモデルID末尾の日付（YYYY-MM-DD）降順＝新しい順に並べる
+     */
+    setupModelSelects() {
+        this.populateModelSelect(this.elements.realtimeModel, CONFIG.API.REALTIME_MODEL);
+        this.populateModelSelect(this.elements.chatModel, CONFIG.API.CHAT_MODEL);
+    }
+
+    /**
+     * 単一のモデル選択を再構築する
+     *
+     * @param {HTMLSelectElement} selectEl - 対象の select 要素
+     * @param {string} currentModel - 後台で設定中（選択すべき）のモデルID
+     */
+    populateModelSelect(selectEl, currentModel) {
+        if (!selectEl) {
+            return;
+        }
+
+        // 既存 option の value 集合（重複防止）
+        const values = [];
+        for (const opt of Array.from(selectEl.options)) {
+            if (!values.includes(opt.value)) {
+                values.push(opt.value);
+            }
+        }
+        // 後台設定のモデルが候補に無ければ追加（＝後台設定をそのまま表示できるようにする）
+        if (currentModel && !values.includes(currentModel)) {
+            values.push(currentModel);
+        }
+
+        // モデルID末尾の日付で新しい順にソート（日付なしは元の相対順を維持）
+        const dateKey = (v) => {
+            const m = v.match(/(\d{4})-(\d{2})-(\d{2})/);
+            return m ? `${m[1]}${m[2]}${m[3]}` : '';
+        };
+        const sorted = values
+            .map((v, i) => ({ v, i }))
+            .sort((a, b) => {
+                const da = dateKey(a.v);
+                const db = dateKey(b.v);
+                if (da && db) {
+                    return db.localeCompare(da); // 新しい日付を上へ
+                }
+                if (da) {
+                    return -1; // 日付あり（新しい想定）を上へ
+                }
+                if (db) {
+                    return 1;
+                }
+                return a.i - b.i; // どちらも日付なしは元の順序を維持
+            })
+            .map((o) => o.v);
+
+        // 後台設定のモデルを最上部へ（「放到最上面」）
+        if (currentModel) {
+            const idx = sorted.indexOf(currentModel);
+            if (idx > 0) {
+                sorted.splice(idx, 1);
+                sorted.unshift(currentModel);
+            }
+        }
+
+        // option を再構築（ラベルはモデルID のみ、独自マークは付けない）
+        selectEl.innerHTML = '';
+        for (const v of sorted) {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            selectEl.appendChild(opt);
+        }
+        if (currentModel) {
+            selectEl.value = currentModel;
+        }
     }
 
     startSessionTimer() {

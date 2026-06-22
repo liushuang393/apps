@@ -112,13 +112,35 @@ class TextPathProcessor {
                 length: transcript.length
             });
 
-            const transcriptId = segment.transcriptId || Date.now();
+            const transcriptId = segment.segmentId || segment.id;
             segment.transcriptId = transcriptId;
 
-            // 入力テキスト表示
-            this.displayInputText(transcript, segment.metadata.language, transcriptId);
+            const alignedSegment = this.app.segmentAlignment?.getSegment(transcriptId);
+            const shouldRenderInput =
+                !alignedSegment || !alignedSegment.input.text || alignedSegment.input.source !== 'live-sra';
 
-            if (typeof this.app.updateTranscriptBuffer === 'function') {
+            if (!this.app.segmentAlignment) {
+                throw new Error('SegmentAlignmentManager is required for transcript rendering');
+            }
+
+            const updated = shouldRenderInput
+                ? this.app.segmentAlignment.updateInput(transcriptId, transcript, {
+                      isFinal: true,
+                      source: 'path1-stt',
+                      sourceLang: segment.metadata.language
+                  })
+                : alignedSegment;
+            segment.alignment.inputText = updated.input.text;
+            if (shouldRenderInput && typeof this.app.upsertSegmentInput === 'function') {
+                this.app.upsertSegmentInput(transcriptId, updated.input.text, {
+                    status: 'input-ready'
+                });
+            }
+
+            if (
+                typeof this.app.updateTranscriptBuffer === 'function' &&
+                !this.app.isGroupedTurnMode?.()
+            ) {
                 this.app.updateTranscriptBuffer(transcript);
             }
 
@@ -293,9 +315,7 @@ class TextPathProcessor {
             let settled = false;
 
             const cleanup = () => {
-                if (this.app.state.ws) {
-                    this.app.state.ws.removeEventListener('message', transcriptionListener);
-                }
+                this.app.removeRealtimeMessageListener?.(transcriptionListener);
             };
 
             const timeoutId = setTimeout(() => {
@@ -307,15 +327,7 @@ class TextPathProcessor {
                 reject(new Error('STT timeout (30s)'));
             }, 30000);
 
-            const transcriptionListener = (event) => {
-                let message;
-                try {
-                    message = JSON.parse(event.data);
-                } catch (error) {
-                    console.error('[Path1] STTメッセージ解析エラー:', error);
-                    return;
-                }
-
+            const transcriptionListener = (message) => {
                 if (message.type === 'conversation.item.input_audio_transcription.completed') {
                     if (settled) {
                         return;
@@ -356,8 +368,8 @@ class TextPathProcessor {
             };
 
             // 添加监听器
-            if (this.app.state.ws && this.app.state.ws.readyState === WebSocket.OPEN) {
-                this.app.state.ws.addEventListener('message', transcriptionListener);
+            if (this.app.isRealtimeTransportReady?.()) {
+                this.app.addRealtimeMessageListener(transcriptionListener);
             } else {
                 clearTimeout(timeoutId);
                 reject(new Error('WebSocket 未接続または未準備'));
@@ -382,56 +394,44 @@ class TextPathProcessor {
             return null;
         }
 
-        // ✅ 文字パターンマッチング優先度順
-        const patterns = [
-            {
-                language: 'zh',
-                regex: /[\u4E00-\u9FFF]/, // 中国語
-                name: '中文'
-            },
-            {
-                language: 'ja',
-                regex: /[\u3040-\u309F\u30A0-\u30FF]/, // 日本語（ひらがな・カタカナ）
-                name: '日本語'
-            },
-            {
-                language: 'ko',
-                regex: /[\uAC00-\uD7AF]/, // ハングル
-                name: '한국어'
-            },
-            {
-                language: 'en',
-                regex: /^[a-zA-Z\s0-9!?,.\'-]+$/, // 英字のみ
-                name: 'English'
-            },
-            {
-                language: 'es',
-                regex: /[\u00E1\u00E9\u00ED\u00F1\u00F3\u00FA]/, // スペイン語
-                name: 'Español'
-            },
-            {
-                language: 'fr',
-                regex: /[\u00E0\u00E7\u00E9\u00E8\u00EA\u00FB\u00F9]/, // フランス語
-                name: 'Français'
+        const trimmed = text.trim();
+        const detected = (() => {
+            if (/[\u3040-\u309F\u30A0-\u30FF]/.test(trimmed)) {
+                return { language: 'ja', name: '日本語' };
             }
-        ];
-
-        // パターンマッチング
-        for (const pattern of patterns) {
-            if (pattern.regex.test(text)) {
-                console.info('[Language Detection] ' + pattern.name + ' 検出', {
-                    text: text.substring(0, 30),
-                    language: pattern.language
-                });
-                return pattern.language;
+            if (/[\uAC00-\uD7AF]/.test(trimmed)) {
+                return { language: 'ko', name: '한국어' };
             }
-        }
+            if (/[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(trimmed)) {
+                return { language: 'vi', name: 'Tiếng Việt' };
+            }
+            if (/[áéíñóúü¿¡]/i.test(trimmed)) {
+                return { language: 'es', name: 'Español' };
+            }
+            if (/[àâçéèêëîïôûùüÿœæ]/i.test(trimmed)) {
+                return { language: 'fr', name: 'Français' };
+            }
 
-        // デフォルト: 英語
-        console.info('[Language Detection] デフォルト English を使用', {
-            text: text.substring(0, 30)
+            if (/[\u4E00-\u9FFF]/.test(trimmed)) {
+                // 漢字だけの日本語/中国語は文字種だけでは危険なので、明確な簡体中文特徴がある時だけ zh。
+                if (/[这们汉语吗没过说让对]/.test(trimmed)) {
+                    return { language: 'zh', name: '中文' };
+                }
+                return { language: 'auto', name: 'CJK ambiguous' };
+            }
+
+            if (/^[a-zA-Z\s0-9!?,.'-]+$/.test(trimmed)) {
+                return { language: 'en', name: 'English' };
+            }
+
+            return { language: 'auto', name: 'unknown' };
+        })();
+
+        console.info('[Language Detection] ' + detected.name + ' 検出', {
+            text: trimmed.substring(0, 30),
+            language: detected.language
         });
-        return 'en';
+        return detected.language;
     }
 
     /**
@@ -514,11 +514,10 @@ class TextPathProcessor {
 
         if (typeof this.app.addTranscript === 'function') {
             this.app.addTranscript('input', text, transcriptId);
-            this.app.currentTranscriptId = transcriptId;
             return;
         }
 
-        const container = this.app.elements.inputTranscript || this.app.elements.transcriptOutput;
+        const container = this.app.elements.inputTranscript;
         if (!container) {
             console.warn('[Path1] inputTranscript 要素が見つかりません');
             return;
@@ -675,7 +674,7 @@ class TextPathProcessor {
         const timestamp = new Date().toLocaleTimeString('ja-JP');
         const targetLanguage =
             this.app.config?.targetLanguage || this.app.state?.targetLang || 'unknown';
-        const container = this.app.elements.outputTranscript || this.app.elements.transcriptOutput;
+        const container = this.app.elements.outputTranscript;
 
         if (!container) {
             console.warn('[Path1] outputTranscript 要素が見つかりません');
@@ -834,12 +833,12 @@ class VoicePathProcessor {
             // 理由: 音声再生を待つと、次のセグメントの処理が遅延してしまう
             // ⚠️ 修正: result.audio が 'received' の場合は既にメイン mixin で再生済みのためスキップ
             if (result.audio && result.audio !== 'received') {
-                this.playAudio(result.audio);
+                this.playAudio(result.audio, segment.id, segment.alignment?.responseId || null);
             }
 
-            // モード1の場合、テキストも表示
+            // モード1の場合、STS transcript も同じ segment に表示
             if (this.mode === 1 && result.text !== null && result.text.trim() !== '') {
-                this.displayTranslatedText(result.text);
+                this.displayTranslatedText(result.text, segment.id, segment.alignment?.responseId);
             }
 
             // マーク完了
@@ -893,9 +892,7 @@ class VoicePathProcessor {
         return new Promise((resolve, reject) => {
             const timeoutId = setTimeout(() => {
                 // ✅ タイムアウト時はリスナーを削除
-                if (this.app.state.ws) {
-                    this.app.state.ws.removeEventListener('message', unifiedListener);
-                }
+                this.app.removeRealtimeMessageListener?.(unifiedListener);
                 reject(new Error('Voice-to-Voice timeout (60s)'));
             }, 60000);
 
@@ -905,13 +902,23 @@ class VoicePathProcessor {
             let responseId = null;
 
             // ✅ 統合リスナー（重複登録を防止）
-            const unifiedListener = (event) => {
+            const unifiedListener = (message) => {
                 try {
-                    const message = JSON.parse(event.data);
-
                     // Response created
                     if (message.type === 'response.created') {
                         responseId = message.response.id;
+                        segment.alignment.responseId = responseId;
+                        if (this.app.segmentAlignment) {
+                            const aligned = this.app.segmentAlignment.bindResponse(
+                                segment.id,
+                                responseId
+                            );
+                            this.app.upsertSegmentOutput(segment.id, aligned.output.text, {
+                                responseId,
+                                status: 'responding',
+                                placeholder: '翻訳中...'
+                            });
+                        }
                         console.info('[Path2] Response created:', {
                             responseId: responseId,
                             segmentId: segment.id
@@ -932,6 +939,19 @@ class VoicePathProcessor {
 
                         if (message.delta && message.response_id === responseId) {
                             textData += message.delta;
+                            if (this.app.segmentAlignment) {
+                                const aligned =
+                                    this.app.segmentAlignment.appendOutputTextByResponse(
+                                        responseId,
+                                        message.delta
+                                    );
+                                if (aligned) {
+                                    this.app.upsertSegmentOutput(aligned.id, aligned.output.text, {
+                                        responseId,
+                                        status: 'responding'
+                                    });
+                                }
+                            }
                             console.info('[Path2] 翻訳テキストデルタ蓄積:', {
                                 segmentId: segment.id,
                                 responseId: responseId,
@@ -947,6 +967,15 @@ class VoicePathProcessor {
                         message.type === 'response.output_audio_transcript.done' &&
                         message.response_id === responseId
                     ) {
+                        if (this.app.segmentAlignment) {
+                            const aligned = this.app.segmentAlignment.markOutputTextDone(responseId);
+                            if (aligned) {
+                                this.app.upsertSegmentOutput(aligned.id, aligned.output.text, {
+                                    responseId,
+                                    status: 'text-done'
+                                });
+                            }
+                        }
                         console.info('[Path2] 翻訳テキスト受信完了:', {
                             segmentId: segment.id,
                             responseId: responseId,
@@ -965,6 +994,9 @@ class VoicePathProcessor {
                         // 理由: 実際の音声データは WebSocketMixin.handleAudioDelta によって既に playbackQueue に追加されている
                         //       ここで 'queued' という文字列を入れると playbackQueue が汚染されエラーの原因になる
                         audioData = 'received';
+                        if (this.app.segmentAlignment) {
+                            this.app.segmentAlignment.markOutputAudioDone(responseId);
+                        }
                         console.info('[Path2] 翻訳音声受信完了 (処理はメイン mixin 側で実行済み):', {
                             segmentId: segment.id,
                             responseId: responseId
@@ -976,9 +1008,7 @@ class VoicePathProcessor {
                         clearTimeout(timeoutId);
 
                         // ✅ リスナーを削除
-                        if (this.app.state.ws) {
-                            this.app.state.ws.removeEventListener('message', unifiedListener);
-                        }
+                        this.app.removeRealtimeMessageListener?.(unifiedListener);
 
                         console.info('[Path2] Response.done 受信、処理完了:', {
                             segmentId: segment.id,
@@ -1001,19 +1031,38 @@ class VoicePathProcessor {
                 }
             };
 
-            // 検証: WebSocket が接続済みか
-            if (!this.app.state.ws || this.app.state.ws.readyState !== WebSocket.OPEN) {
+            // 検証: Realtime transport が接続済みか
+            if (!this.app.isRealtimeTransportReady?.()) {
                 clearTimeout(timeoutId);
                 console.error('[Path2] WebSocket が接続されていません:', {
+                    platform: this.app.platform?.kind || 'unknown',
                     wsExists: !!this.app.state.ws,
-                    readyState: this.app.state.ws?.readyState
+                    readyState: this.app.state.ws?.readyState,
+                    isConnected: this.app.state.isConnected
                 });
                 reject(new Error('WebSocket 未接続または未準備'));
                 return;
             }
 
+            if (!this.app.segmentAlignment) {
+                clearTimeout(timeoutId);
+                reject(new Error('SegmentAlignmentManager is required for STS mode'));
+                return;
+            }
+            this.app.segmentAlignment.ensureSegment(segment.id, {
+                durationMs: segment.getDuration(),
+                sampleRate: segment.metadata.sampleRate || 24000,
+                sourceLang: segment.metadata.language,
+                status: 'responding'
+            });
+            this.app.segmentAlignment.enqueueResponseSegment(segment.id);
+            this.app.upsertSegmentOutput(segment.id, '', {
+                status: 'responding',
+                placeholder: '翻訳中...'
+            });
+
             // ✅ 単一リスナーを登録
-            this.app.state.ws.addEventListener('message', unifiedListener);
+            this.app.addRealtimeMessageListener(unifiedListener);
 
             console.info('[Path2] WebSocket リスナー登録完了');
 
@@ -1035,9 +1084,7 @@ class VoicePathProcessor {
                 });
             } catch (error) {
                 clearTimeout(timeoutId);
-                if (this.app.state.ws) {
-                    this.app.state.ws.removeEventListener('message', unifiedListener);
-                }
+                this.app.removeRealtimeMessageListener?.(unifiedListener);
                 console.error('[Path2] Response.create 送信エラー:', {
                     error: error.message,
                     segmentId: segment.id
@@ -1064,7 +1111,7 @@ class VoicePathProcessor {
      * @param {string} audioData Base64エンコードされた音声データ
      * @returns {Promise<void>}
      */
-    async playAudio(audioData) {
+    async playAudio(audioData, segmentId = null, responseId = null) {
         // ✅ 「翻訳音声を出力」設定をチェック
         const audioOutputEnabled =
             this.app.elements?.audioOutputEnabled?.classList.contains('active') ?? true;
@@ -1080,11 +1127,17 @@ class VoicePathProcessor {
         }
 
         // ✅ 音声再生キューに追加
-        this.app.playbackQueue.push(audioData);
+        this.app.playbackQueue.push({
+            audio: audioData,
+            segmentId,
+            responseId
+        });
 
         console.info('[Path2] 音声をキューに追加:', {
             queueLength: this.app.playbackQueue.length,
-            isPlayingFromQueue: this.app.isPlayingFromQueue
+            isPlayingFromQueue: this.app.isPlayingFromQueue,
+            segmentId,
+            responseId
         });
 
         // ✅ キューが処理中でなければ、再生開始
@@ -1103,32 +1156,32 @@ class VoicePathProcessor {
      * @private
      * @param {string} text 翻译文本
      */
-    displayTranslatedText(text) {
-        if (
-            this.app.elements.transcriptOutput === null ||
-            this.app.elements.transcriptOutput === undefined
-        ) {
-            console.warn('[Path2] transcriptOutput 要素が見つかりません');
-            return;
+    displayTranslatedText(text, segmentId, responseId = null) {
+        if (!segmentId || !this.app.segmentAlignment) {
+            throw new Error('STS output requires SegmentAlignmentManager and segmentId');
         }
 
-        const timestamp = new Date().toLocaleTimeString('ja-JP');
-        const targetLanguage = this.app.config.targetLanguage || 'unknown';
+        let segment = responseId
+            ? this.app.segmentAlignment.setOutputTextByResponse(responseId, text, {
+                  isFinal: true
+              })
+            : this.app.segmentAlignment.ensureSegment(segmentId);
 
-        const entry = document.createElement('div');
-        entry.className = 'transcript-entry voice-output';
-        entry.innerHTML = `
-            <div class="transcript-meta">
-                <span class="transcript-time">${timestamp}</span>
-                <span class="transcript-lang">[${targetLanguage}]</span>
-                <span class="transcript-label">🔊 音声出力:</span>
-            </div>
-            <div class="transcript-text">${this.escapeHtml(text)}</div>
-        `;
+        if (!segment && responseId) {
+            segment = this.app.segmentAlignment.bindResponse(segmentId, responseId);
+            segment.output.text = text;
+            segment.output.isFinal = true;
+        }
 
-        this.app.elements.transcriptOutput.appendChild(entry);
-        this.app.elements.transcriptOutput.scrollTop =
-            this.app.elements.transcriptOutput.scrollHeight;
+        if (!responseId) {
+            segment.output.text = text;
+            segment.output.isFinal = true;
+        }
+
+        this.app.upsertSegmentOutput(segment.id, segment.output.text, {
+            responseId: responseId || segment.output.responseId,
+            status: 'done'
+        });
     }
 
     /**

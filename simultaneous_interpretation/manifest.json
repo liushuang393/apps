@@ -50,6 +50,7 @@
       "resources": [
         "voicetranslate-platform-adapter.js",
         "voicetranslate-utils.js",
+        "voicetranslate-segment-alignment.js",
         "voicetranslate-audio-queue.js",
         "voicetranslate-path-processors.js",
         "voicetranslate-audio-capture-strategy.js",
