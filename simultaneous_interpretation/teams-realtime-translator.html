@@ -1334,18 +1334,40 @@
 
                     <!-- システム音声ソース選択（初期非表示） -->
                     <div id="systemAudioSourceGroup" class="form-group" style="display: none;">
-                        <label class="form-label" for="systemAudioSource">
-                            <span>🖥️</span>
-                            <span>キャプチャ対象</span>
-                        </label>
-                        <button id="detectSourcesBtn" class="btn btn-secondary"
-                            style="width: 100%; margin-bottom: 8px;">
-                            <span>🔍</span>
-                            <span>会議アプリを検出</span>
-                        </button>
-                        <select id="systemAudioSource" class="form-input">
-                            <option value="">ソースを選択...</option>
-                        </select>
+                        <!-- 原声出力の連動スイッチ。監視先（loopback or 仮想サウンドカード）を切り替える。
+                             ON  = 原声をPCスピーカーに出す → スピーカー出力(loopback)を監視
+                             OFF = 原声分離（仮想サウンドカードへ） → 仮想カードの入力を監視 -->
+                        <div class="toggle-group" style="margin-bottom: 8px;">
+                            <span class="toggle-label">原声をPCスピーカーに出す（OFFで仮想サウンドカードを監視）</span>
+                            <div class="toggle-switch active" id="playOriginalToSpeaker"></div>
+                        </div>
+
+                        <!-- ON時: 物理スピーカー(loopback)のキャプチャ対象 -->
+                        <div id="loopbackSourceGroup">
+                            <label class="form-label" for="systemAudioSource">
+                                <span>🖥️</span>
+                                <span>キャプチャ対象</span>
+                            </label>
+                            <button id="detectSourcesBtn" class="btn btn-secondary"
+                                style="width: 100%; margin-bottom: 8px;">
+                                <span>🔍</span>
+                                <span>会議アプリを検出</span>
+                            </button>
+                            <select id="systemAudioSource" class="form-input">
+                                <option value="">ソースを選択...</option>
+                            </select>
+                        </div>
+
+                        <!-- OFF時: 監視する仮想サウンドカードの入力デバイス（VB-Cable等） -->
+                        <div id="virtualCardGroup" style="display: none;">
+                            <label class="form-label" for="virtualCardDevice">
+                                <span>🎚️</span>
+                                <span>仮想サウンドカード（入力）</span>
+                            </label>
+                            <select id="virtualCardDevice" class="form-input">
+                                <option value="">入力デバイスを選択...</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div class="btn-group" style="margin-top: 12px;">

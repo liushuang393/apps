@@ -364,6 +364,28 @@ const CONFIG = {
         FORMAT: 'pcm16'
     },
 
+    /**
+     * 翻訳の区切り（ターン検出）方式の既定値
+     *
+     * @description
+     * リアルタイムLLMの特性を活かし、文脈を保った高精度翻訳を行うための設定。
+     * ブラウザ/拡張機能は .env を読めないため、ここが既定値として効く。
+     * Electron では .env の TRANSLATION_* で上書きされる（voicetranslate-pro.js の loadEnvConfig）。
+     *
+     * @property {string} TURN_MODE - 'grouped'（整文1-3句をまとめて翻訳。既定・推奨）| 'immediate'（従来の無音区切り即時翻訳）
+     * @property {string} VAD_TYPE - 'semantic_vad'（意味的完結で区切る公式機能。既定）| 'server_vad'（従来の無音検出）
+     * @property {string} SEMANTIC_EAGERNESS - semantic_vad の区切り積極性 'low'（既定・文脈優先）| 'medium' | 'high' | 'auto'
+     * @property {number} MAX_SENTENCES - グルーピングの最大文数（既定3）
+     * @property {number} MAX_BUFFER_MS - グルーピングの最大蓄積時間ms（既定8000）。無限待機を防ぐ上限
+     */
+    TRANSLATION: {
+        TURN_MODE: 'grouped',
+        VAD_TYPE: 'semantic_vad',
+        SEMANTIC_EAGERNESS: 'low',
+        MAX_SENTENCES: 3,
+        MAX_BUFFER_MS: 8000
+    },
+
     VAD: {
         MICROPHONE: {
             LOW: { threshold: 0.008, debounce: 600 }, // ✅ 400 → 600ms (音声結巴を防ぐ)

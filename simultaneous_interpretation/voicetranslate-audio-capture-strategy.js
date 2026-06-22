@@ -228,15 +228,21 @@ class MicrophoneAudioCaptureStrategy extends AudioCaptureStrategy {
         console.info('[MicrophoneAudioCapture] マイクキャプチャ開始');
 
         try {
-            const constraints = {
-                audio: {
-                    channelCount: 1,
-                    sampleRate: this.config.sampleRate,
-                    echoCancellation: this.config.echoCancellation,
-                    noiseSuppression: this.config.noiseSuppression,
-                    autoGainControl: this.config.autoGainControl
-                }
+            const audioConstraints = {
+                channelCount: 1,
+                sampleRate: this.config.sampleRate,
+                echoCancellation: this.config.echoCancellation,
+                noiseSuppression: this.config.noiseSuppression,
+                autoGainControl: this.config.autoGainControl
             };
+
+            // ✅ deviceId 指定時は特定の入力デバイス（例: 仮想サウンドカード）を取得
+            if (this.config.deviceId) {
+                audioConstraints.deviceId = { exact: this.config.deviceId };
+                console.info('[MicrophoneAudioCapture] 指定デバイスを使用:', this.config.deviceId);
+            }
+
+            const constraints = { audio: audioConstraints };
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
@@ -281,11 +287,12 @@ class AudioCaptureStrategyFactory {
      * @returns {AudioCaptureStrategy} - 音声キャプチャ戦略
      */
     static createStrategy(options) {
-        const { sourceType, config, sourceId, preSelectedStream } = options;
+        const { sourceType, config, sourceId, preSelectedStream, deviceId } = options;
 
-        // マイクの場合
+        // マイク（または deviceId 指定の入力デバイス＝仮想サウンドカード）の場合
         if (sourceType === 'microphone') {
-            return new MicrophoneAudioCaptureStrategy(config);
+            // deviceId を config に載せて特定の入力デバイスを取得できるようにする
+            return new MicrophoneAudioCaptureStrategy(deviceId ? { ...config, deviceId } : config);
         }
 
         // システム音声の場合

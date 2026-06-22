@@ -516,16 +516,33 @@ function registerIPCHandlers(): void {
             throw new Error(errorMessage);
         }
 
+        // 翻訳の区切り（ターン検出）設定（オプション、未設定はレンダラー側の既定値を使用）
+        // 数値は不正値を弾き、未設定なら undefined のままにしてレンダラー既定にフォールバックさせる
+        const parsePositiveInt = (raw: string | undefined): number | undefined => {
+            if (raw == null || raw === '') return undefined;
+            const n = Number.parseInt(raw, 10);
+            return Number.isFinite(n) && n > 0 ? n : undefined;
+        };
+        const translation = {
+            turnMode: process.env['TRANSLATION_TURN_MODE'],
+            vadType: process.env['TRANSLATION_VAD_TYPE'],
+            semanticEagerness: process.env['TRANSLATION_SEMANTIC_EAGERNESS'],
+            maxSentences: parsePositiveInt(process.env['TRANSLATION_MAX_SENTENCES']),
+            maxBufferMs: parsePositiveInt(process.env['TRANSLATION_MAX_BUFFER_MS'])
+        };
+
         const config = {
             realtimeModel: realtimeModel!,
             chatModel: chatModel!,
-            realtimeUrl
+            realtimeUrl,
+            translation
         };
 
         console.info('[Main] Config loaded from environment:', {
             realtimeModel: config.realtimeModel,
             chatModel: config.chatModel,
-            realtimeUrl: config.realtimeUrl
+            realtimeUrl: config.realtimeUrl,
+            translation: config.translation
         });
 
         return config;

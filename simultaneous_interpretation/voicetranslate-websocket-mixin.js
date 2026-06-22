@@ -200,6 +200,14 @@ const WebSocketMixin = {
         // ✅ Phase 3: 新アーキテクチャ有効化
         const ENABLE_AUDIO_QUEUE = true; // ← 新アーキテクチャ有効化
 
+        // ✅ groupedモード: 完結した発話（semantic_vad のターン）を client 側で
+        //    最大 MAX_SENTENCES 文 / 最大 MAX_BUFFER_MS までまとめ、1つの
+        //    AudioSegment として翻訳する。文脈を保ち、完全な音声で再生するため。
+        if (ENABLE_AUDIO_QUEUE && this.isGroupedTurnMode()) {
+            this.accumulateGroupedAudio(finalAudio, finalDuration, sampleRate, now);
+            return;
+        }
+
         if (ENABLE_AUDIO_QUEUE) {
             if (this.tryEnqueueAudioSegment(finalAudio, finalDuration, sampleRate, now)) {
                 return; // ← 新アーキテクチャ使用、旧ロジック非実行
@@ -208,6 +216,171 @@ const WebSocketMixin = {
 
         // ✅ 旧ロジック（フォールバック）
         this.processFallbackAudioRequest(queueStatus);
+    },
+
+    /**
+     * groupedモード（整文1〜3句まとめ翻訳）が有効か
+     *
+     * @returns {boolean} CONFIG.TRANSLATION.TURN_MODE === 'grouped' のとき true
+     */
+    isGroupedTurnMode() {
+        return !!(
+            typeof CONFIG !== 'undefined' &&
+            CONFIG.TRANSLATION &&
+            CONFIG.TRANSLATION.TURN_MODE === 'grouped'
+        );
+    },
+
+    /**
+     * 完結ターンの音声を蓄積し、上限到達でまとめて enqueue する
+     *
+     * 区切り条件:
+     *   - 文数が MAX_SENTENCES 以上（best-effort。ライブ入力転写から計数）
+     *   - 蓄積時間が MAX_BUFFER_MS 以上（文末が来なくても確実に確定する保証）
+     *
+     * @param {Float32Array} audio - このターンの結合済み音声
+     * @param {number} duration - このターンの時長（ms）
+     * @param {number} sampleRate - サンプルレート
+     * @param {number} now - 現在時刻（ms）
+     */
+    accumulateGroupedAudio(audio, duration, sampleRate, now) {
+        if (!this.groupedAudioChunks || this.groupedAudioChunks.length === 0) {
+            this.groupedAudioChunks = [];
+            this.groupedAudioStartTime = now;
+            this.groupedAudioDuration = 0;
+            this.groupSentenceCount = 0;
+        }
+        this.groupedAudioChunks.push(audio);
+        this.groupedAudioDuration += duration;
+        this.groupedSampleRate = sampleRate;
+
+        console.info('[Group] ターン蓄積:', {
+            turns: this.groupedAudioChunks.length,
+            sentenceCount: this.groupSentenceCount,
+            accumulatedMs: Math.round(this.groupedAudioDuration)
+        });
+
+        this.maybeFlushGroupedAudio(now);
+        // 文末が来なくても MAX_BUFFER_MS で確実に flush するための保険タイマー
+        this.scheduleGroupedFlush();
+    },
+
+    /**
+     * groupベースの文数を加算する（ライブ入力転写から呼ばれる）
+     *
+     * @param {string} transcript - 入力音声の文字起こし
+     */
+    addGroupedSentenceCount(transcript) {
+        if (!this.isGroupedTurnMode() || !transcript) {
+            return;
+        }
+        // 文末記号（半角/全角の 。.!? 等）で文数を計数。記号が無い短い発話も1文と数える
+        const matches = transcript.match(/[。．.!?！？]+/g);
+        const count = matches ? matches.length : 0;
+        this.groupSentenceCount = (this.groupSentenceCount || 0) + Math.max(count, 1);
+        this.maybeFlushGroupedAudio(Date.now());
+    },
+
+    /**
+     * 上限到達をチェックし、達していれば flush する
+     *
+     * @param {number} now - 現在時刻（ms）
+     */
+    maybeFlushGroupedAudio(now) {
+        if (!this.groupedAudioChunks || this.groupedAudioChunks.length === 0) {
+            return;
+        }
+        const maxSentences = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MAX_SENTENCES) || 3;
+        const maxBufferMs = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MAX_BUFFER_MS) || 8000;
+        const elapsed = now - (this.groupedAudioStartTime || now);
+
+        const reachedSentences = (this.groupSentenceCount || 0) >= maxSentences;
+        const reachedTime = elapsed >= maxBufferMs || this.groupedAudioDuration >= maxBufferMs;
+
+        if (reachedSentences || reachedTime) {
+            console.info('[Group] flush 条件達成:', {
+                reason: reachedSentences
+                    ? `文数(${this.groupSentenceCount}/${maxSentences})`
+                    : `時間(${Math.round(elapsed)}ms)`,
+                turns: this.groupedAudioChunks.length
+            });
+            this.flushGroupedAudio(now);
+        }
+    },
+
+    /**
+     * MAX_BUFFER_MS 到達時に確実に flush するための保険タイマーを仕込む
+     */
+    scheduleGroupedFlush() {
+        if (this.groupedFlushTimer) {
+            return;
+        }
+        const maxBufferMs = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MAX_BUFFER_MS) || 8000;
+        const elapsed = Date.now() - (this.groupedAudioStartTime || Date.now());
+        const remaining = Math.max(0, maxBufferMs - elapsed);
+        this.groupedFlushTimer = setTimeout(() => {
+            this.groupedFlushTimer = null;
+            this.maybeFlushGroupedAudio(Date.now());
+        }, remaining + 50);
+    },
+
+    /**
+     * 蓄積した音声を結合し、1つの AudioSegment として enqueue する
+     *
+     * @param {number} now - 現在時刻（ms）
+     */
+    flushGroupedAudio(now) {
+        if (this.groupedFlushTimer) {
+            clearTimeout(this.groupedFlushTimer);
+            this.groupedFlushTimer = null;
+        }
+        const chunks = this.groupedAudioChunks || [];
+        if (chunks.length === 0) {
+            return;
+        }
+
+        let totalLength = 0;
+        for (const c of chunks) {
+            totalLength += c.length;
+        }
+        const combined = new Float32Array(totalLength);
+        let offset = 0;
+        for (const c of chunks) {
+            combined.set(c, offset);
+            offset += c.length;
+        }
+        const duration = this.groupedAudioDuration;
+        const sampleRate = this.groupedSampleRate || 24000;
+
+        // グループ状態をリセット（enqueue 前にリセットして再入を防ぐ）
+        this.groupedAudioChunks = [];
+        this.groupedAudioDuration = 0;
+        this.groupedAudioStartTime = null;
+        this.groupSentenceCount = 0;
+
+        console.info('[Group] まとめて enqueue:', {
+            samples: totalLength,
+            durationMs: Math.round(duration)
+        });
+
+        if (!this.tryEnqueueAudioSegment(combined, duration, sampleRate, now || Date.now())) {
+            // enqueue 失敗時は旧ロジックにフォールバック
+            this.processFallbackAudioRequest(this.responseQueue.getStatus());
+        }
+    },
+
+    /**
+     * groupedモードの蓄積状態をリセットする（録音停止/開始時に呼ぶ）
+     */
+    resetGroupedAudioState() {
+        if (this.groupedFlushTimer) {
+            clearTimeout(this.groupedFlushTimer);
+            this.groupedFlushTimer = null;
+        }
+        this.groupedAudioChunks = [];
+        this.groupedAudioDuration = 0;
+        this.groupedAudioStartTime = null;
+        this.groupSentenceCount = 0;
     },
 
     /**
@@ -582,6 +755,18 @@ const WebSocketMixin = {
     handleTranscriptionCompleted(message) {
         console.info('[Transcription] 入力音声認識完了:', message.transcript);
         if (message.transcript) {
+            // ✅ groupedモード: ライブ入力転写から文数を計数して区切りを判断する。
+            //    Path1 の音声再送で発生する転写は二重計数になるため除外する。
+            if (this.isGroupedTurnMode() && !this.segmentResendDepth) {
+                this.addGroupedSentenceCount(message.transcript);
+            }
+            if (this.useAudioQueue) {
+                console.info(
+                    '[Transcription] AudioQueue有効のため、Path1側でsegment ID付き表示を処理します'
+                );
+                return;
+            }
+
             const transcriptId = Date.now();
             this.addTranscript('input', message.transcript, transcriptId);
             this.currentTranscriptId = transcriptId;
@@ -635,6 +820,11 @@ const WebSocketMixin = {
      *   2. 或超过最大缓冲时长（10秒）
      */
     checkShouldCommitAudio() {
+        // ✅ groupedモードでは grouping を accumulateGroupedAudio() が担うため、
+        //    旧来の手動コミット経路は無効化する（二重コミット防止）。
+        if (this.isGroupedTurnMode()) {
+            return;
+        }
         if (!this.isBufferingAudio || !this.audioBufferStartTime) {
             return; // 未在缓冲中
         }

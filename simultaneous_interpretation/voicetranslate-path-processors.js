@@ -78,6 +78,15 @@ class TextPathProcessor {
 
             this.isProcessing = true;
 
+            // STT completion can arrive immediately after commit. Register the
+            // waiter before sending/committing audio so this segment cannot miss
+            // its own transcription event.
+            const transcriptPromise = this.speechToText(segment);
+
+            // groupedモードのライブ転写による文数計数と、ここでの音声再送による
+            // 転写が二重計数されないよう、再送中はフラグを立てる（finally で解除）。
+            this.app.segmentResendDepth = (this.app.segmentResendDepth || 0) + 1;
+
             // ✅ ステップ0: 音声データをサーバーへ送信
             await this.sendAudioToServer(segment.audioData);
 
@@ -85,7 +94,7 @@ class TextPathProcessor {
             segment.markAudioSent();
 
             // ステップ1: 音声認識（STT）
-            const transcript = await this.speechToText(segment);
+            const transcript = await transcriptPromise;
 
             if (transcript === null || transcript.trim() === '') {
                 console.warn('[Path1] 音声認識結果が空:', { segmentId: segment.id });
@@ -103,15 +112,35 @@ class TextPathProcessor {
                 length: transcript.length
             });
 
+            const transcriptId = segment.transcriptId || Date.now();
+            segment.transcriptId = transcriptId;
+
             // 入力テキスト表示
-            this.displayInputText(transcript, segment.metadata.language);
+            this.displayInputText(transcript, segment.metadata.language, transcriptId);
+
+            if (typeof this.app.updateTranscriptBuffer === 'function') {
+                this.app.updateTranscriptBuffer(transcript);
+            }
 
             // モード2の場合、テキスト翻訳を続行
             if (this.mode === 2) {
-                const translatedText = await this.translateText(transcript);
+                const translatedText =
+                    typeof this.app.translateTextDirectly === 'function'
+                        ? await this.app.translateTextDirectly(
+                              transcript,
+                              transcriptId,
+                              segment.metadata.language
+                          )
+                        : await this.translateText(transcript, transcriptId);
 
-                // 定型句検出で破棄された場合は表示せず、認識結果のみ完了扱いにする
-                if (translatedText === '') {
+                if (translatedText === null || translatedText === undefined) {
+                    console.warn('[Path1] テキスト翻訳結果が空のため、認識結果のみ完了扱いにします');
+                    this.audioQueue.markPathComplete(segment.id, 'path1', {
+                        transcript: transcript,
+                        error: 'Empty translation'
+                    });
+                } else if (translatedText === '') {
+                    // 定型句検出で破棄された場合は表示せず、認識結果のみ完了扱いにする
                     console.warn('[Path1] アシスタント定型句を検出したため翻訳出力を破棄しました');
                     this.audioQueue.markPathComplete(segment.id, 'path1', {
                         transcript: transcript
@@ -123,8 +152,10 @@ class TextPathProcessor {
                         length: translatedText.length
                     });
 
-                    // 翻訳テキスト表示
-                    this.displayTranslatedText(translatedText);
+                    if (typeof this.app.translateTextDirectly !== 'function') {
+                        // 翻訳テキスト表示
+                        this.displayTranslatedText(translatedText, transcriptId);
+                    }
 
                     // マーク完了
                     this.audioQueue.markPathComplete(segment.id, 'path1', {
@@ -153,6 +184,10 @@ class TextPathProcessor {
             });
         } finally {
             this.isProcessing = false;
+            // 再送中フラグを解除（groupedモードの文数計数ガード）
+            if (this.app.segmentResendDepth) {
+                this.app.segmentResendDepth = Math.max(0, this.app.segmentResendDepth - 1);
+            }
         }
     }
 
@@ -254,16 +289,38 @@ class TextPathProcessor {
 
         // 创建 Promise 来待機转录完了
         return new Promise((resolve, reject) => {
+            let transcriptText = null;
+            let settled = false;
+
+            const cleanup = () => {
+                if (this.app.state.ws) {
+                    this.app.state.ws.removeEventListener('message', transcriptionListener);
+                }
+            };
+
             const timeoutId = setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                cleanup();
                 reject(new Error('STT timeout (30s)'));
             }, 30000);
 
-            let transcriptText = null;
-
             const transcriptionListener = (event) => {
-                const message = JSON.parse(event.data);
+                let message;
+                try {
+                    message = JSON.parse(event.data);
+                } catch (error) {
+                    console.error('[Path1] STTメッセージ解析エラー:', error);
+                    return;
+                }
 
                 if (message.type === 'conversation.item.input_audio_transcription.completed') {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
                     clearTimeout(timeoutId);
                     transcriptText = message.transcript || '';
 
@@ -292,9 +349,7 @@ class TextPathProcessor {
                     }
 
                     // 移除监听器
-                    if (this.app.state.ws) {
-                        this.app.state.ws.removeEventListener('message', transcriptionListener);
-                    }
+                    cleanup();
 
                     resolve(transcriptText);
                 }
@@ -388,20 +443,26 @@ class TextPathProcessor {
      */
     async translateText(text) {
         // OpenAI Chat Completions API を使用
-        if (this.app.config.chatModel === null || this.app.config.chatModel === undefined) {
+        const chatModel = this.app.config?.chatModel || CONFIG.API.CHAT_MODEL;
+        const apiKey = this.app.config?.apiKey || this.app.state?.apiKey;
+        const targetLanguage = this.app.config?.targetLanguage || this.app.state?.targetLang || 'ja';
+
+        if (chatModel === null || chatModel === undefined) {
             throw new Error('chatModel が設定されていません');
         }
 
-        const targetLanguage = this.app.config.targetLanguage || 'ja';
+        if (!apiKey) {
+            throw new Error('APIキーが設定されていません');
+        }
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                Authorization: `Bearer ${this.app.config.apiKey}`
+                Authorization: `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: this.app.config.chatModel,
+                model: chatModel,
                 messages: [
                     {
                         role: 'system',
@@ -413,7 +474,7 @@ class TextPathProcessor {
                     }
                 ],
                 // 翻訳は決定的に（会話化回避）。gpt-5 は temperature 非対応のため除外する。
-                ...(this.app.config.chatModel?.startsWith('gpt-5') ? {} : { temperature: 0 })
+                ...(chatModel?.startsWith('gpt-5') ? {} : { temperature: 0 })
             })
         });
 
@@ -434,15 +495,7 @@ class TextPathProcessor {
      * @param {string} text 文本
      * @param {string} language 语言代码
      */
-    displayInputText(text, language) {
-        if (
-            this.app.elements.transcriptOutput === null ||
-            this.app.elements.transcriptOutput === undefined
-        ) {
-            console.warn('[Path1] transcriptOutput 要素が見つかりません');
-            return;
-        }
-
+    displayInputText(text, language, transcriptId = null) {
         // ✅ 自動検出言語で状態を更新（UI削除後の後替案）
         if (language && language !== 'auto') {
             this.app.state.sourceLang = language;
@@ -452,7 +505,6 @@ class TextPathProcessor {
         }
 
         const timestamp = new Date().toLocaleTimeString('ja-JP');
-        const languageLabel = language || 'unknown';
 
         // ✅ 新規: 自動検出言語を UI に表示
         this.updateDetectedLanguageDisplay(language);
@@ -460,20 +512,30 @@ class TextPathProcessor {
         // ✅ 修正: sourceLangDisplay も更新
         this.updateSourceLangDisplay(language);
 
+        if (typeof this.app.addTranscript === 'function') {
+            this.app.addTranscript('input', text, transcriptId);
+            this.app.currentTranscriptId = transcriptId;
+            return;
+        }
+
+        const container = this.app.elements.inputTranscript || this.app.elements.transcriptOutput;
+        if (!container) {
+            console.warn('[Path1] inputTranscript 要素が見つかりません');
+            return;
+        }
+
         const entry = document.createElement('div');
-        entry.className = 'transcript-entry';
+        entry.className = 'transcript-message';
+        if (transcriptId) {
+            entry.dataset.transcriptId = transcriptId;
+        }
         entry.innerHTML = `
-            <div class="transcript-meta">
-                <span class="transcript-time">${timestamp}</span>
-                <span class="transcript-lang">[${languageLabel}]</span>
-                <span class="transcript-label">入力:</span>
-            </div>
+            <div class="transcript-time">${timestamp}</div>
             <div class="transcript-text">${this.escapeHtml(text)}</div>
         `;
 
-        this.app.elements.transcriptOutput.appendChild(entry);
-        this.app.elements.transcriptOutput.scrollTop =
-            this.app.elements.transcriptOutput.scrollHeight;
+        container.insertBefore(entry, container.firstChild);
+        container.scrollTop = 0;
     }
 
     /**
@@ -604,20 +666,27 @@ class TextPathProcessor {
      * @private
      * @param {string} text 翻译文本
      */
-    displayTranslatedText(text) {
-        if (
-            this.app.elements.transcriptOutput === null ||
-            this.app.elements.transcriptOutput === undefined
-        ) {
-            console.warn('[Path1] transcriptOutput 要素が見つかりません');
+    displayTranslatedText(text, transcriptId = null) {
+        if (typeof this.app.addTranscript === 'function') {
+            this.app.addTranscript('output', text, transcriptId);
             return;
         }
 
         const timestamp = new Date().toLocaleTimeString('ja-JP');
-        const targetLanguage = this.app.config.targetLanguage || 'unknown';
+        const targetLanguage =
+            this.app.config?.targetLanguage || this.app.state?.targetLang || 'unknown';
+        const container = this.app.elements.outputTranscript || this.app.elements.transcriptOutput;
+
+        if (!container) {
+            console.warn('[Path1] outputTranscript 要素が見つかりません');
+            return;
+        }
 
         const entry = document.createElement('div');
-        entry.className = 'transcript-entry translated';
+        entry.className = 'transcript-message translation';
+        if (transcriptId) {
+            entry.dataset.transcriptId = transcriptId;
+        }
         entry.innerHTML = `
             <div class="transcript-meta">
                 <span class="transcript-time">${timestamp}</span>
@@ -627,9 +696,8 @@ class TextPathProcessor {
             <div class="transcript-text">${this.escapeHtml(text)}</div>
         `;
 
-        this.app.elements.transcriptOutput.appendChild(entry);
-        this.app.elements.transcriptOutput.scrollTop =
-            this.app.elements.transcriptOutput.scrollHeight;
+        container.insertBefore(entry, container.firstChild);
+        container.scrollTop = 0;
     }
 
     /**

@@ -112,6 +112,13 @@ export interface ElectronAPI {
         realtimeModel: string;
         chatModel: string;
         realtimeUrl: string;
+        translation: {
+            turnMode?: string;
+            vadType?: string;
+            semanticEagerness?: string;
+            maxSentences?: number;
+            maxBufferMs?: number;
+        };
     }>;
 
     /**
