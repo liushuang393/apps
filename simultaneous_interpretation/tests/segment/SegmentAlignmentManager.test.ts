@@ -70,6 +70,22 @@ describe('SegmentAlignmentManager', () => {
         expect(manager.getSegment('seg_2').input.text).toBe('第二句。');
     });
 
+    test('dequeue keeps FIFO aligned when a transcription fails', () => {
+        const manager = new SegmentAlignmentManager();
+        manager.createSegment({ id: 'seg_1' });
+        manager.createSegment({ id: 'seg_2' });
+        manager.enqueueInputSegment('seg_1');
+        manager.enqueueInputSegment('seg_2');
+
+        // seg_1 の認識失敗で待ちキューから除去 → 後続の確定が seg_2 にずれずに入る
+        manager.dequeueInputSegment('seg_1');
+        const next = manager.completeNextInput('第二句。', { source: 'live-sra' });
+
+        expect(next.id).toBe('seg_2');
+        expect(manager.getSegment('seg_2').input.text).toBe('第二句。');
+        expect(manager.getSegment('seg_1').input.text).toBe('');
+    });
+
     test('keeps output aligned when response arrives before input text', () => {
         const manager = new SegmentAlignmentManager();
         manager.createSegment({ id: 'seg_out_of_order' });

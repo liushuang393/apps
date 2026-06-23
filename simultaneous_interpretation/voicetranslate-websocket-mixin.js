@@ -30,7 +30,6 @@ const WebSocketMixin = {
             // Electron環境（mainプロセス経由IPC）
             const result = await this.platform.sendRealtime(message);
             if (!result.success) {
-                console.error('[Send Message] Electron送信エラー:', result.message);
             }
         } else if (this.state.ws && this.state.ws.readyState === WebSocket.OPEN) {
             // ブラウザ環境
@@ -85,7 +84,6 @@ const WebSocketMixin = {
     },
 
     clearRealtimeInputAudioBuffer(reason = 'manual-clear') {
-        console.info('[Audio] Realtime input buffer をクリア:', reason);
         this.sendMessage({ type: 'input_audio_buffer.clear' });
         this.resetRealtimeInputAudioBufferStats();
     },
@@ -93,23 +91,10 @@ const WebSocketMixin = {
     commitRealtimeInputAudioBuffer(reason = 'manual-commit') {
         const stats = this.getRealtimeInputAudioBufferStats();
         if (stats.durationMs < REALTIME_MIN_COMMIT_AUDIO_MS) {
-            console.warn('[Audio] Realtime input buffer が短すぎるため commit をスキップ:', {
-                reason,
-                samples: stats.samples,
-                chunks: stats.chunks,
-                durationMs: stats.durationMs.toFixed(2),
-                minRequiredMs: REALTIME_MIN_COMMIT_AUDIO_MS
-            });
             this.clearRealtimeInputAudioBuffer(`too-short:${reason}`);
             return false;
         }
 
-        console.info('[Audio] Realtime input buffer を commit:', {
-            reason,
-            samples: stats.samples,
-            chunks: stats.chunks,
-            durationMs: stats.durationMs.toFixed(2)
-        });
         this.sendMessage({ type: 'input_audio_buffer.commit' });
         this.resetRealtimeInputAudioBufferStats();
         return true;
@@ -130,16 +115,12 @@ const WebSocketMixin = {
 
             // デバッグモードでのみ詳細ログを出力
             if (CONFIG.DEBUG_MODE) {
-                console.info('[WS Message]', message.type, message);
             }
 
             // メッセージタイプに応じたハンドラーを呼び出す
             this.dispatchWSMessage(message);
             this.notifyRealtimeMessageListeners(message);
-        } catch (error) {
-            console.error('[Message Error]', error);
-            console.error('[Message Error] Event data:', event.data);
-        }
+        } catch (error) {}
     },
 
     /**
@@ -179,9 +160,7 @@ const WebSocketMixin = {
         for (const listener of Array.from(this.realtimeMessageListeners)) {
             try {
                 listener(message);
-            } catch (error) {
-                console.error('[Realtime Listener] メッセージ処理エラー:', error);
-            }
+            } catch (error) {}
         }
     },
 
@@ -221,6 +200,9 @@ const WebSocketMixin = {
             case 'conversation.item.input_audio_transcription.completed':
                 this.handleTranscriptionCompleted(message);
                 break;
+            case 'conversation.item.input_audio_transcription.failed':
+                this.handleTranscriptionFailed(message);
+                break;
             // GA: response.audio_transcript.* → response.output_audio_transcript.*
             case 'response.output_audio_transcript.delta':
             case 'response.output_audio_transcript.done':
@@ -243,16 +225,13 @@ const WebSocketMixin = {
                 this.handleWSMessageError(message);
                 break;
             default:
-                console.info('[WS Message] 未処理のメッセージタイプ:', message.type);
         }
     },
 
     /**
      * セッション更新イベント処理
      */
-    handleSessionUpdated(message) {
-        console.info('[Session] Updated:', message.session);
-    },
+    handleSessionUpdated(message) {},
 
     /**
      * 音声バッファコミット完了処理
@@ -266,12 +245,6 @@ const WebSocketMixin = {
         const now = Date.now();
         const speechDuration = this.speechStartTime ? now - this.speechStartTime : 0;
 
-        console.info('[Audio] 音声バッファコミット完了', {
-            processingCount: queueStatus.processingCount,
-            pendingCount: queueStatus.pendingCount,
-            speechDuration: speechDuration + 'ms',
-            timestamp: now
-        });
         this.resetRealtimeInputAudioBufferStats();
 
         // ✅ 重複コミット防止（500ms以内の重複を無視）
@@ -313,12 +286,6 @@ const WebSocketMixin = {
 
         // ✅ 1秒以上の音声: 保留中の音声がある場合は結合
         if (this.pendingAudioBuffer) {
-            console.info('[Audio Combine] 保留音声と結合して送信:', {
-                pendingDuration: this.pendingAudioDuration + 'ms',
-                currentDuration: actualDuration + 'ms',
-                totalDuration: this.pendingAudioDuration + actualDuration + 'ms'
-            });
-
             const combined = new Float32Array(
                 this.pendingAudioBuffer.length + combinedAudio.length
             );
@@ -388,13 +355,17 @@ const WebSocketMixin = {
                 });
                 this.groupedSegmentId = segment.id;
                 if (this.groupedPendingTranscriptText) {
-                    const updated = this.segmentAlignment.updateInput(segment.id, this.groupedPendingTranscriptText, {
-                        isFinal: true,
-                        source: 'live-sra',
-                        sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(
-                            this.groupedPendingTranscriptText
-                        )
-                    });
+                    const updated = this.segmentAlignment.updateInput(
+                        segment.id,
+                        this.groupedPendingTranscriptText,
+                        {
+                            isFinal: true,
+                            source: 'live-sra',
+                            sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(
+                                this.groupedPendingTranscriptText
+                            )
+                        }
+                    );
                     this.upsertSegmentInput(updated.id, updated.input.text, {
                         status: 'input-ready'
                     });
@@ -416,12 +387,6 @@ const WebSocketMixin = {
         this.groupedAudioDuration += duration;
         this.groupedSampleRate = sampleRate;
 
-        console.info('[Group] ターン蓄積:', {
-            turns: this.groupedAudioChunks.length,
-            sentenceCount: this.groupSentenceCount,
-            accumulatedMs: Math.round(this.groupedAudioDuration)
-        });
-
         this.maybeFlushGroupedAudio(now);
         // 文末が来なくても MAX_BUFFER_MS で確実に flush するための保険タイマー
         this.scheduleGroupedFlush();
@@ -439,11 +404,6 @@ const WebSocketMixin = {
         const count = this.countCompleteSentences(transcript);
         this.groupSentenceCount = (this.groupSentenceCount || 0) + count;
         this.groupLastSentenceAt = Date.now();
-        console.info('[Group] ライブ転写から完全文数を加算:', {
-            added: count,
-            total: this.groupSentenceCount,
-            transcript: transcript.substring(0, 80)
-        });
         this.maybeFlushGroupedAudio(Date.now());
     },
 
@@ -485,12 +445,6 @@ const WebSocketMixin = {
 
         if (reachedSentences || reachedTime) {
             this.clearGroupedPostSentenceTimer();
-            console.info('[Group] flush 条件達成:', {
-                reason: reachedSentences
-                    ? `文数(${sentenceCount}/${maxSentences})`
-                    : `時間(${Math.round(elapsed)}ms)`,
-                turns: this.groupedAudioChunks.length
-            });
             this.flushGroupedAudio(now);
             return;
         }
@@ -524,8 +478,7 @@ const WebSocketMixin = {
             return;
         }
 
-        const holdMs =
-            (CONFIG.TRANSLATION && CONFIG.TRANSLATION.POST_SENTENCE_HOLD_MS) || 500;
+        const holdMs = (CONFIG.TRANSLATION && CONFIG.TRANSLATION.POST_SENTENCE_HOLD_MS) || 500;
         this.groupedPostSentenceTimer = setTimeout(() => {
             this.groupedPostSentenceTimer = null;
             if (!this.groupedAudioChunks || this.groupedAudioChunks.length === 0) {
@@ -535,10 +488,6 @@ const WebSocketMixin = {
             const minCompleteSentences =
                 (CONFIG.TRANSLATION && CONFIG.TRANSLATION.MIN_COMPLETE_SENTENCES) || 1;
             if ((this.groupSentenceCount || 0) >= minCompleteSentences) {
-                console.info('[Group] 1文完結後の短い待機を終えて flush:', {
-                    sentenceCount: this.groupSentenceCount,
-                    holdMs
-                });
                 this.flushGroupedAudio(Date.now());
             }
         }, holdMs);
@@ -588,20 +537,14 @@ const WebSocketMixin = {
         this.groupLastSentenceAt = null;
         this.groupedPendingTranscriptText = '';
 
-        console.info('[Group] まとめて enqueue:', {
-            samples: totalLength,
-            durationMs: Math.round(duration)
-        });
-
         const segmentId = this.groupedSegmentId || null;
         this.groupedSegmentId = null;
 
-        if (!this.tryEnqueueAudioSegment(combined, duration, sampleRate, now || Date.now(), {
-            segmentId
-        })) {
-            console.error('[Group] enqueue 失敗: segment を破棄してエラーとして扱います', {
+        if (
+            !this.tryEnqueueAudioSegment(combined, duration, sampleRate, now || Date.now(), {
                 segmentId
-            });
+            })
+        ) {
         }
     },
 
@@ -632,9 +575,6 @@ const WebSocketMixin = {
     isDuplicateCommit(now) {
         if (now - this.lastCommitTime < 800) {
             // ✅ 500ms → 800ms に変更（音声結巴を防ぐ）
-            console.warn('[Audio] 重複コミットを検出、スキップします', {
-                timeSinceLastCommit: now - this.lastCommitTime
-            });
             return true;
         }
         return false;
@@ -647,12 +587,6 @@ const WebSocketMixin = {
      */
     shouldWaitForSpeechConfirmation(speechDuration) {
         if (speechDuration > 0 && speechDuration < this.minSpeechDuration) {
-            console.warn('[VAD Buffer] 発話時長が短い、確認待機中...', {
-                duration: speechDuration + 'ms',
-                minDuration: this.minSpeechDuration + 'ms',
-                willConfirmIn: this.silenceConfirmDelay + 'ms'
-            });
-
             // 既存のタイマーをクリア
             if (this.silenceConfirmTimer) {
                 clearTimeout(this.silenceConfirmTimer);
@@ -674,24 +608,16 @@ const WebSocketMixin = {
     confirmSpeechDuration() {
         // ✅ 防御: speechStartTime が null の場合は処理しない
         if (!this.speechStartTime) {
-            console.warn('[VAD Buffer] speechStartTime が null、スキップ');
             this.silenceConfirmTimer = null;
             return;
         }
 
         const finalDuration = Date.now() - this.speechStartTime;
         if (finalDuration >= this.minSpeechDuration) {
-            console.info('[VAD Buffer] 確認完了: 発話時長OK', {
-                duration: finalDuration + 'ms'
-            });
             // 再帰呼び出し（但し今回は時長チェックをパスする）
             this.speechStartTime = null; // リセットしてチェックをスキップ
             this.handleAudioBufferCommitted();
         } else {
-            console.warn('[VAD Buffer] 発話時長が短すぎる、スキップ', {
-                duration: finalDuration + 'ms',
-                minRequired: this.minSpeechDuration + 'ms'
-            });
         }
         this.silenceConfirmTimer = null;
     },
@@ -711,13 +637,6 @@ const WebSocketMixin = {
         // これにより 0.00ms の問題を防ぐ
         const sampleRate = this.state.audioContext?.sampleRate || 24000;
         const actualDuration = (totalLength / sampleRate) * 1000;
-
-        console.info('[Audio] 音声データ抽出完了:', {
-            samples: totalLength,
-            duration: actualDuration.toFixed(2) + 'ms',
-            bufferChunks: this.audioBuffer.length,
-            sampleRate: sampleRate + 'Hz'
-        });
 
         // ✅ ここまで来たら音声は有効、バッファをクリア
         const combinedAudio = new Float32Array(totalLength);
@@ -741,10 +660,6 @@ const WebSocketMixin = {
         // ✅ 早期検証: 音声が無い場合はスキップ
         if (totalLength === 0 || actualDuration < 100) {
             // 100ms 未満は無視
-            console.warn('[Audio] 音声データが不足、スキップ:', {
-                samples: totalLength,
-                duration: actualDuration.toFixed(2) + 'ms'
-            });
             return true;
         }
 
@@ -752,11 +667,6 @@ const WebSocketMixin = {
         // 理由: 短い単語や文の前半部分も重要（例: "Yes", "OK", "I think..."）
         //       300ms未満は明らかなノイズ・クリック音のみスキップ
         if (actualDuration < 300) {
-            console.info('[Audio] 音声が短すぎる、スキップ:', {
-                duration: actualDuration.toFixed(2) + 'ms',
-                minRequired: '300ms',
-                reason: '300ms未満はノイズの可能性が高い'
-            });
             return true; // ✅ スキップ（キューに入れない）
         }
 
@@ -785,10 +695,6 @@ const WebSocketMixin = {
             // 初回: 新しいバッファを作成
             this.pendingAudioBuffer = audioData;
             this.pendingAudioDuration = duration;
-            console.info('[Audio Combine] 音声を保留バッファに追加（初回）:', {
-                duration: duration + 'ms',
-                samples: audioData.length
-            });
         } else {
             // 2回目以降: 既存のバッファと結合
             const combined = new Float32Array(this.pendingAudioBuffer.length + audioData.length);
@@ -796,12 +702,6 @@ const WebSocketMixin = {
             combined.set(audioData, this.pendingAudioBuffer.length);
             this.pendingAudioBuffer = combined;
             this.pendingAudioDuration += duration;
-            console.info('[Audio Combine] 音声を保留バッファに追加（結合）:', {
-                previousDuration: this.pendingAudioDuration - duration + 'ms',
-                addedDuration: duration + 'ms',
-                totalDuration: this.pendingAudioDuration + 'ms',
-                totalSamples: combined.length
-            });
         }
 
         // ✅ タイムアウトタイマーをリセット
@@ -815,10 +715,6 @@ const WebSocketMixin = {
                 return;
             }
 
-            console.info('[Audio Combine] タイムアウト - 保留音声を強制送信:', {
-                duration: this.pendingAudioDuration + 'ms'
-            });
-
             // ✅ 修正: 保留バッファを直接キューに送信（handleAudioBufferCommitted を再帰呼び出ししない）
             const bufferedAudio = this.pendingAudioBuffer;
             const bufferedDuration = this.pendingAudioDuration;
@@ -828,14 +724,16 @@ const WebSocketMixin = {
 
             // ✅ 直接キューに追加（grouped時は同じグループに蓄積）
             const sampleRate = this.state.audioContext?.sampleRate || 24000;
-            this.queueOrAccumulateAudioSegment(bufferedAudio, bufferedDuration, sampleRate, Date.now());
+            this.queueOrAccumulateAudioSegment(
+                bufferedAudio,
+                bufferedDuration,
+                sampleRate,
+                Date.now()
+            );
         }, this.pendingAudioTimeout);
 
         // ✅ 保留バッファが300ms以上になったら即座に送信
         if (this.pendingAudioDuration >= 300) {
-            console.info('[Audio Combine] 保留バッファが300ms以上 - 即座に送信:', {
-                duration: this.pendingAudioDuration + 'ms'
-            });
             clearTimeout(this.pendingAudioTimer);
 
             // ✅ 修正: 保留バッファを直接キューに送信（handleAudioBufferCommitted を再帰呼び出ししない）
@@ -847,7 +745,12 @@ const WebSocketMixin = {
 
             // ✅ 直接キューに追加（grouped時は同じグループに蓄積）
             const sampleRate = this.state.audioContext?.sampleRate || 24000;
-            this.queueOrAccumulateAudioSegment(bufferedAudio, bufferedDuration, sampleRate, Date.now());
+            this.queueOrAccumulateAudioSegment(
+                bufferedAudio,
+                bufferedDuration,
+                sampleRate,
+                Date.now()
+            );
         }
     },
 
@@ -878,22 +781,12 @@ const WebSocketMixin = {
      */
     tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now, options = {}) {
         // ✅ デバッグ：tryEnqueueAudioSegment 呼び出し確認
-        console.warn('[Audio] ========== tryEnqueueAudioSegment 呼び出し ==========');
-        console.warn('[Audio] combinedAudio.length:', combinedAudio?.length);
-        console.warn('[Audio] actualDuration:', actualDuration + 'ms');
-        console.warn('[Audio] sampleRate:', sampleRate);
-        console.warn('[Audio] =======================================================');
 
         // ✅ 新アーキテクチャ有効化フラグを設定
         this.useAudioQueue = true;
 
         if (!this.segmentAlignment) {
-            console.error('[Audio] SegmentAlignmentManager が未初期化のため処理を停止します');
-            this.notify?.(
-                '音声翻訳エラー',
-                'Segment alignment layer is not initialized',
-                'error'
-            );
+            this.notify?.('音声翻訳エラー', 'Segment alignment layer is not initialized', 'error');
             return false;
         }
 
@@ -915,7 +808,6 @@ const WebSocketMixin = {
         });
 
         if (!segment) {
-            console.error('[Audio] AudioQueue への追加失敗（キューが満杯か短すぎる）');
             this.segmentAlignment.recordError(alignmentSegment.id, 'AudioQueue enqueue failed');
             return false;
         }
@@ -949,12 +841,6 @@ const WebSocketMixin = {
             placeholder: '翻訳待機中...'
         });
 
-        console.info('[Audio] AudioSegment 作成完了:', {
-            segmentId: segment.id,
-            duration: actualDuration.toFixed(2) + 'ms',
-            samples: combinedAudio.length,
-            queueSize: this.audioQueue.size()
-        });
         // 双パス処理は startPathConsumers() の pull-based loop が消費する。
         return true;
     },
@@ -975,7 +861,6 @@ const WebSocketMixin = {
         this.currentTranscriptBuffer = '';
         this.sentenceCount = 0;
 
-        console.info('[Speech] 音声検出開始', { startTime: this.speechStartTime });
         this.updateStatus('recording', '話し中...');
     },
 
@@ -984,7 +869,6 @@ const WebSocketMixin = {
      */
     handleSpeechStopped() {
         const duration = this.speechStartTime ? Date.now() - this.speechStartTime : 0;
-        console.info('[Speech] 音声検出停止', { duration: duration + 'ms' });
         this.updateStatus('recording', '処理中...');
         this.state.isNewResponse = true;
     },
@@ -993,7 +877,6 @@ const WebSocketMixin = {
      * 入力音声認識完了イベント処理
      */
     handleTranscriptionCompleted(message) {
-        console.info('[Transcription] 入力音声認識完了:', message.transcript);
         if (message.transcript) {
             // ✅ item_id 優先解決: コミット時に結んだ segment へ確実に戻す。
             //    flush 後に遅れて届く転写でも、commit 時点の正しい segment に入り、
@@ -1076,10 +959,9 @@ const WebSocketMixin = {
                 if (this.segmentAlignment && !this.segmentResendDepth) {
                     const segment = this.segmentAlignment.completeNextInput(message.transcript, {
                         source: 'live-sra',
-                        sourceLang:
-                            this.textPathProcessor?.detectLanguageFromTranscript?.(
-                                message.transcript
-                            )
+                        sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(
+                            message.transcript
+                        )
                     });
                     if (segment) {
                         this.upsertSegmentInput(segment.id, segment.input.text, {
@@ -1091,16 +973,59 @@ const WebSocketMixin = {
                         });
                     }
                 }
-                console.info(
-                    '[Transcription] AudioQueue有効のため、Path1側でsegment ID付き表示を処理します'
-                );
                 return;
             }
-
-            console.warn('[Transcription] AudioQueue 未使用の入力転写を受信しました。旧DOM対直接書き込みは行いません。', {
-                transcript: message.transcript.substring(0, 80)
-            });
         }
+    },
+
+    /**
+     * 入力音声認識失敗イベント処理
+     *
+     * 目的:
+     *   OpenAI が転写失敗（無音・雑音・短すぎ等）を返したとき、対象セグメントの
+     *   「認識中...」プレースホルダを確実に解放する。あわせて pendingInputSegments
+     *   から該当セグメントを除去し、以降の completeNextInput() の FIFO shift が
+     *   1 つずれて後続の左右対応を崩すのを防ぐ（識別欠落＋左右ズレの根本対策）。
+     *
+     * @param {Object} message - transcription.failed イベント
+     */
+    handleTranscriptionFailed(message = {}) {
+        // 音声再送中（Path1 STS）に発生する失敗は二重処理になるため無視する。
+        if (!this.useAudioQueue || !this.segmentAlignment || this.segmentResendDepth) {
+            return;
+        }
+
+        // item_id で結んだ segment を優先解決。無ければ FIFO 先頭を失敗対象とする。
+        let segment = this.segmentAlignment.getSegmentByItemId(message.item_id);
+        if (!segment) {
+            const segmentId = this.segmentAlignment.pendingInputSegments[0];
+            segment = segmentId ? this.segmentAlignment.getSegment(segmentId) : null;
+        }
+        if (!segment) {
+            return;
+        }
+
+        // 収集中の grouped セグメントは複数ターン（複数 item_id）を集約するため、
+        // 1 ターンの失敗で全体を error にせず、後続ターン／flush の確定に委ねる。
+        if (this.groupedSegmentId && segment.id === this.groupedSegmentId) {
+            this.segmentAlignment.recordError(
+                segment.id,
+                message.error || '音声認識に失敗しました'
+            );
+            return;
+        }
+
+        // 待ちキューから確実に除去（以降の shift ずれを防ぐ）。
+        this.segmentAlignment.dequeueInputSegment(segment.id);
+        this.segmentAlignment.recordError(segment.id, message.error || '音声認識に失敗しました');
+
+        // 既に部分認識テキストがあれば残し、無ければ失敗を明示する。
+        const failedText = segment.input.text || '（音声認識できませんでした）';
+        const updated = this.segmentAlignment.updateInput(segment.id, failedText, {
+            isFinal: true,
+            status: 'error'
+        });
+        this.upsertSegmentInput(updated.id, updated.input.text, { status: 'error' });
     },
 
     /**
@@ -1144,16 +1069,6 @@ const WebSocketMixin = {
         const matches = this.currentTranscriptBuffer.match(sentenceEndings);
         this.sentenceCount = matches ? matches.length : 0;
 
-        console.info('[Transcript Buffer] 句子追踪:', {
-            currentText: this.currentTranscriptBuffer.substring(0, 50) + '...',
-            sentenceCount: this.sentenceCount,
-            targetCount: this.targetSentenceCount,
-            bufferDuration:
-                this.isBufferingAudio && this.audioBufferStartTime
-                    ? Date.now() - this.audioBufferStartTime + 'ms'
-                    : 'N/A'
-        });
-
         // ✅ 检查是否应该提交音频
         this.checkShouldCommitAudio();
     },
@@ -1180,16 +1095,6 @@ const WebSocketMixin = {
         const shouldCommitByDuration = bufferDuration >= this.maxBufferDuration;
 
         if (shouldCommitBySentenceCount || shouldCommitByDuration) {
-            console.warn('[Transcript Buffer] ========== 音声提交触发 ==========');
-            console.warn(
-                '[Transcript Buffer] 触发原因:',
-                shouldCommitBySentenceCount
-                    ? `句子数達成（${this.sentenceCount}句）`
-                    : `時長超過（${bufferDuration}ms）`
-            );
-            console.warn('[Transcript Buffer] 累積文本:', this.currentTranscriptBuffer);
-            console.warn('[Transcript Buffer] =============================================');
-
             // 手动触发音频提交
             this.manuallyCommitAudioBuffer();
 
@@ -1208,14 +1113,8 @@ const WebSocketMixin = {
      */
     manuallyCommitAudioBuffer() {
         if (!this.isBufferingAudio || this.audioBuffer.length === 0) {
-            console.warn('[Manual Commit] 无音声数据可提交');
             return;
         }
-
-        console.info('[Manual Commit] 手动提交音声缓冲:', {
-            bufferChunks: this.audioBuffer.length,
-            sentenceCount: this.sentenceCount
-        });
 
         // 停止缓冲
         this.isBufferingAudio = false;
@@ -1233,12 +1132,6 @@ const WebSocketMixin = {
      * 音声デルタ受信処理
      */
     handleAudioDelta(message) {
-        console.info('[🔊 Audio Delta] 受信:', {
-            hasDelta: !!message.delta,
-            deltaLength: message.delta ? message.delta.length : 0,
-            currentQueueSize: this.playbackQueue ? this.playbackQueue.length : 0,
-            responseId: message.response_id || null
-        });
         if (message.delta) {
             let segment = null;
             if (this.useAudioQueue && this.segmentAlignment) {
@@ -1246,9 +1139,6 @@ const WebSocketMixin = {
                 if (!segment) {
                     // ✅ 未バインドでも翻訳音声は捨てない（STS の中核機能のサイレント失敗を防ぐ）。
                     //    segment 追跡はできないが、ベストエフォートで再生しログで識別可能にする。
-                    console.warn('[🔊 Audio Delta] 未バインド response_id のため fallback 再生（segment 追跡なし）:', {
-                        responseId: message.response_id || null
-                    });
                 }
             }
 
@@ -1266,22 +1156,12 @@ const WebSocketMixin = {
         if (this.segmentAlignment && message.response_id) {
             this.segmentAlignment.markOutputAudioDone(message.response_id);
         }
-        console.info('[🔊 Audio Done] 音声データ受信完了:', {
-            audioOutputEnabled: this.elements.audioOutputEnabled.classList.contains('active'),
-            realtimeConnected: this.isRealtimeTransportReady(),
-            responseId: message.response_id || null
-        });
     },
 
     /**
      * レスポンス作成イベント処理
      */
     handleResponseCreated(message) {
-        console.info('[Response] Created:', {
-            responseId: message.response.id,
-            timestamp: Date.now()
-        });
-
         if (this.segmentAlignment && this.useAudioQueue) {
             const segment = this.segmentAlignment.bindNextResponse(message.response.id);
             if (segment) {
@@ -1292,11 +1172,6 @@ const WebSocketMixin = {
                 });
             }
         } else {
-            console.warn('[Response] SegmentAlignment 未準備の response.created を受信:', {
-                responseId: message.response.id,
-                useAudioQueue: this.useAudioQueue,
-                hasSegmentAlignment: !!this.segmentAlignment
-            });
         }
 
         // ✅ プル型アーキテクチャ: activeResponseId のみ記録（デバッグ用）
@@ -1308,11 +1183,6 @@ const WebSocketMixin = {
      * レスポンス完了イベント処理
      */
     handleResponseDone(message) {
-        console.info('[Response] Complete:', {
-            responseId: message.response.id,
-            activeId: this.activeResponseId,
-            timestamp: Date.now()
-        });
         // ✅ プル型アーキテクチャ: 状態をクリア
         this.activeResponseId = null;
         if (this.segmentAlignment && message.response?.id) {
@@ -1334,14 +1204,8 @@ const WebSocketMixin = {
      * WebSocketメッセージエラー処理
      */
     handleWSMessageError(message) {
-        console.error('[Error]', message.error);
-
         const errorCode = message.error.code || '';
         if (errorCode === 'conversation_already_has_active_response') {
-            console.warn('[Error] 前のレスポンスが処理中です。ResponseQueue がリトライします。', {
-                activeResponseId: this.activeResponseId,
-                pendingResponseId: this.pendingResponseId
-            });
             // ✅ プル型アーキテクチャ: エラー時は状態をクリアしない
             // 理由: ResponseQueue が自動的にリトライするため、
             //       状態をクリアすると二重送信の原因になる
@@ -1360,14 +1224,6 @@ const WebSocketMixin = {
      * WebSocketエラー処理
      */
     handleWSError(error) {
-        console.error('[WS Error] WebSocketエラーが発生:', error);
-        console.error('[WS Error] エラー詳細:', {
-            type: error.type,
-            target: error.target,
-            message: error.message,
-            readyState: this.state.ws ? this.state.ws.readyState : 'なし'
-        });
-
         this.notify('接続エラー', 'WebSocket接続でエラーが発生しました', 'error');
     },
 
@@ -1385,18 +1241,15 @@ const WebSocketMixin = {
         const force = !!options.force;
         // 接続状態チェック
         if (!this.state.isConnected) {
-            console.warn('[Audio] 未接続のため音声データを送信できません');
             return false;
         }
 
         // 録音状態チェック
         if (!this.state.isRecording && !force) {
-            console.warn('[Audio] 録音停止中のため音声データを送信しません');
             return false;
         }
 
         if (!audioData || audioData.length === 0) {
-            console.warn('[Audio] 空の音声データは送信しません');
             return false;
         }
 
@@ -1432,19 +1285,10 @@ const WebSocketMixin = {
 
             if (isWithinBufferWindow) {
                 shouldSkip = true;
-                console.info('[Audio] ループバック防止 (マイクモード): バッファウィンドウ内', {
-                    timeSincePlaybackEnd: `${timeSincePlaybackEnd.toFixed(0)}ms`,
-                    bufferWindow: this.audioSourceTracker.bufferWindow
-                });
             }
         }
 
         if (shouldSkip && !force) {
-            console.info('[Audio] ループバック防止: 音声をスキップ', {
-                isPlayingAudio,
-                audioSourceType: this.state.audioSourceType,
-                reason: isPlayingAudio ? '再生中' : 'バッファウィンドウ内'
-            });
             return false;
         }
 
@@ -1480,21 +1324,11 @@ const WebSocketMixin = {
                 responseId: metadata.responseId || null
             });
 
-            console.info('[🔊 Streaming] チャンク受信:', {
-                queueLength: this.playbackQueue.length,
-                isPlayingFromQueue: this.isPlayingFromQueue,
-                segmentId: metadata.segmentId || null,
-                responseId: metadata.responseId || null
-            });
-
             // 再生中でなければ再生開始
             if (!this.isPlayingFromQueue) {
-                console.info('[🔊 Streaming] 再生開始');
                 this.playNextInQueue();
             }
-        } catch (error) {
-            console.error('[🔊 Streaming] チャンク処理エラー:', error);
-        }
+        } catch (error) {}
     },
 
     /**
@@ -1518,10 +1352,8 @@ const WebSocketMixin = {
             // 注意: inputAudioOutputEnabled は削除されたため、常に0（ミュート）
             if (this.state.inputGainNode) {
                 this.state.inputGainNode.gain.value = 0;
-                console.info('[Playback Queue] キューが空 - 入力音声はミュート状態を維持');
             }
 
-            console.info('[Playback Queue] キューが空 - 再生終了');
             return;
         }
 
@@ -1531,21 +1363,13 @@ const WebSocketMixin = {
         // キューから最初の音声を取り出す
         const queueItem = this.playbackQueue.shift();
         if (!queueItem || typeof queueItem.audio !== 'string') {
-            console.error('[Playback Queue] 無効な音声キュー項目をスキップ:', queueItem);
             this.playNextInQueue();
             return;
         }
         const audioData = queueItem.audio;
 
-        console.info('[Playback Queue] 次の音声を再生:', {
-            remainingInQueue: this.playbackQueue.length,
-            segmentId: queueItem?.segmentId || null,
-            responseId: queueItem?.responseId || null
-        });
-
         // 音声を再生（await しない - 非同期で開始）
         this.playAudio(audioData).catch((error) => {
-            console.error('[Playback Queue] 再生エラー:', error);
             // エラーが発生しても次の音声を再生
             this.playNextInQueue();
         });
@@ -1634,7 +1458,6 @@ const WebSocketMixin = {
             )({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
-            console.info('[Audio] 出力専用AudioContextを作成しました');
             // 選択済みの出力先（原声分離用の物理デバイス）を適用
             await this.applyOutputSink();
         }
@@ -1642,7 +1465,6 @@ const WebSocketMixin = {
         // AudioContextがsuspended状態の場合はresume
         if (this.state.outputAudioContext.state === 'suspended') {
             await this.state.outputAudioContext.resume();
-            console.info('[Audio] AudioContextをresumeしました');
         }
     },
 
@@ -1725,7 +1547,6 @@ const WebSocketMixin = {
      *   ネストを減らすため別メソッドに抽出
      */
     handleAudioPlaybackError(error) {
-        console.error('[Audio Play Error]', error);
         this.notify('音声再生エラー', error.message, 'error');
 
         // エラー時もフラグをOFF（すべてのモードで適用）
@@ -1734,7 +1555,6 @@ const WebSocketMixin = {
         // 入力音声を復元
         if (this.state.inputGainNode) {
             this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
-            console.info('[Audio] エラー時 - 入力音声を復元');
         }
 
         // エラーでも次の音声を再生（キューを停止しない）
@@ -1764,10 +1584,6 @@ const WebSocketMixin = {
         // 出力音声再生中は入力音声を完全ミュート（優先度確保）
         if (this.state.inputGainNode) {
             this.state.inputGainNode.gain.value = 0;
-            console.info('[Audio] 出力再生中 - 入力音声を完全ミュート', {
-                playbackToken,
-                timestamp: this.audioSourceTracker.outputStartTime
-            });
         }
 
         try {
@@ -1784,21 +1600,13 @@ const WebSocketMixin = {
                 try {
                     source.disconnect();
                     gainNode.disconnect();
-                    console.info('[Audio] ノードをクリーンアップしました:', { playbackToken });
-                } catch (cleanupError) {
-                    console.warn('[Audio] ノードクリーンアップエラー:', cleanupError);
-                }
+                } catch (cleanupError) {}
 
                 // ✅ 出力完了時刻を記録（バッファウィンドウの計算用）
                 this.audioSourceTracker.outputEndTime = Date.now();
                 this.audioSourceTracker.playbackTokens.delete(playbackToken);
                 this.handleAudioPlaybackEnded();
             };
-
-            console.info('[Audio] 音声再生開始:', {
-                playbackToken,
-                outputStartTime: this.audioSourceTracker.outputStartTime
-            });
 
             source.start();
         } catch (error) {
@@ -1815,19 +1623,8 @@ const WebSocketMixin = {
      * @param {AudioSegment} segment 音声セグメント
      */
     handleSegmentComplete(segment) {
-        console.info('[Audio] セグメント完全処理完了:', {
-            id: segment.id,
-            duration: segment.getDuration() + 'ms',
-            age: segment.getAge() + 'ms',
-            results: {
-                path1: segment.results.path1 !== null ? 'OK' : 'N/A',
-                path2: segment.results.path2 !== null ? 'OK' : 'N/A'
-            }
-        });
-
         // 統計情報更新
         const stats = this.audioQueue.getStats();
-        console.info('[AudioQueue] 統計:', stats);
 
         // UI に統計情報を表示
         this.updateLatencyDisplay(stats);
@@ -1847,18 +1644,10 @@ const WebSocketMixin = {
      *   正常終了と異常終了を区別して処理
      */
     handleWSClose(event) {
-        console.info('[WS] Closed - WebSocket接続が閉じました');
-
         // イベントオブジェクトの安全な取得
         const code = event?.code || event || 1005;
         const reason = event?.reason || '';
         const wasClean = event?.wasClean !== undefined ? event.wasClean : true;
-
-        console.info('[WS Close] 詳細:', {
-            code: code,
-            reason: reason,
-            wasClean: wasClean
-        });
 
         // エラーコード詳細
         let errorDetail = '';
@@ -1907,10 +1696,8 @@ const WebSocketMixin = {
 
         // 正常切断の場合はinfoログ、異常終了の場合はerrorログ
         if (isNormalClose) {
-            console.info('[WS Close] 接続終了:', errorDetail);
             // 正常切断の場合は通知を表示しない
         } else {
-            console.error('[WS Close] エラー詳細:', errorDetail);
             this.notify('接続終了', errorDetail, 'warning');
         }
 
@@ -1923,7 +1710,6 @@ const WebSocketMixin = {
             !isNormalClose &&
             !isAuthError
         ) {
-            console.warn('[WS Close] 異常切断 → 自動再接続をスケジュールします');
             this.state.isConnected = false;
             this.state.ws = null;
             // ローカルの録音/音声処理のみ停止（「開始」意図は維持して resume する）

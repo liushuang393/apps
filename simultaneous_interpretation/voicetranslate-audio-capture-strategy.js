@@ -45,10 +45,8 @@ class AudioCaptureStrategy {
     validateAudioTrack(stream) {
         const audioTracks = stream.getAudioTracks();
         if (audioTracks.length === 0) {
-            console.warn('[AudioCapture] 音声トラックがありません');
             return false;
         }
-        console.info('[AudioCapture] 音声トラック検出:', audioTracks[0].label);
         return true;
     }
 
@@ -60,7 +58,6 @@ class AudioCaptureStrategy {
     stopVideoTracks(stream) {
         const videoTracks = stream.getVideoTracks();
         videoTracks.forEach((track) => {
-            console.info('[AudioCapture] ビデオトラック停止:', track.label);
             track.stop();
         });
     }
@@ -87,7 +84,6 @@ class ElectronAudioCaptureStrategy extends AudioCaptureStrategy {
      * @returns {Promise<MediaStream>} - 音声ストリーム
      */
     async capture() {
-        console.info('[ElectronAudioCapture] 音声キャプチャ開始:', this.sourceId);
 
         try {
             // getUserMedia で音声をキャプチャ
@@ -114,16 +110,11 @@ class ElectronAudioCaptureStrategy extends AudioCaptureStrategy {
 
             // 音声トラックがない場合は警告（会議アプリで音声がまだ開始されていない可能性）
             if (!this.validateAudioTrack(stream)) {
-                console.warn(
-                    '[ElectronAudioCapture] 音声トラックがありません（会議が開始されていない可能性）'
-                );
                 // Electron環境では音声トラックがなくても続行（後で追加される可能性がある）
             }
 
-            console.info('[ElectronAudioCapture] 音声キャプチャ成功');
             return stream;
         } catch (error) {
-            console.error('[ElectronAudioCapture] 音声キャプチャ失敗:', error);
             throw new Error(
                 '音声キャプチャに失敗しました。\n' + '会議アプリが起動しているか確認してください。'
             );
@@ -152,18 +143,15 @@ class BrowserAudioCaptureStrategy extends AudioCaptureStrategy {
      * @returns {Promise<MediaStream>} - 音声ストリーム
      */
     async capture() {
-        console.info('[BrowserAudioCapture] 音声キャプチャ開始');
 
         try {
             let stream;
 
             // 事前選択されたストリームがある場合はそれを使用
             if (this.preSelectedStream) {
-                console.info('[BrowserAudioCapture] 事前選択されたストリームを使用');
                 stream = this.preSelectedStream;
             } else {
                 // getDisplayMedia で選択ダイアログを表示
-                console.info('[BrowserAudioCapture] 画面/ウィンドウ選択ダイアログを表示');
 
                 // ブラウザ環境の場合、設定に基づいて回音消除を適用
                 const constraints = {
@@ -198,10 +186,8 @@ class BrowserAudioCaptureStrategy extends AudioCaptureStrategy {
                 );
             }
 
-            console.info('[BrowserAudioCapture] 音声キャプチャ成功');
             return stream;
         } catch (error) {
-            console.error('[BrowserAudioCapture] 音声キャプチャ失敗:', error);
 
             // エラーメッセージがすでに詳細な場合はそのまま投げる
             if (error.message.includes('getDisplayMedia')) {
@@ -225,7 +211,6 @@ class MicrophoneAudioCaptureStrategy extends AudioCaptureStrategy {
      * @returns {Promise<MediaStream>} - 音声ストリーム
      */
     async capture() {
-        console.info('[MicrophoneAudioCapture] マイクキャプチャ開始');
 
         try {
             const audioConstraints = {
@@ -239,17 +224,14 @@ class MicrophoneAudioCaptureStrategy extends AudioCaptureStrategy {
             // ✅ deviceId 指定時は特定の入力デバイス（例: 仮想サウンドカード）を取得
             if (this.config.deviceId) {
                 audioConstraints.deviceId = { exact: this.config.deviceId };
-                console.info('[MicrophoneAudioCapture] 指定デバイスを使用:', this.config.deviceId);
             }
 
             const constraints = { audio: audioConstraints };
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-            console.info('[MicrophoneAudioCapture] マイクキャプチャ成功');
             return stream;
         } catch (error) {
-            console.error('[MicrophoneAudioCapture] マイクキャプチャ失敗:', error);
 
             if (error.name === 'NotAllowedError') {
                 throw new Error(

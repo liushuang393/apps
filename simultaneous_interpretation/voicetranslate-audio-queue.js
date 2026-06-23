@@ -92,12 +92,6 @@ class AudioSegment {
         this.audioSent = false; // 音声がサーバーに送信済みかフラグ
         this.audioSendWaiters = []; // 音声送信完了待ちコールバックリスト
 
-        console.info('[AudioSegment] 作成:', {
-            id: this.id,
-            duration: this.metadata.duration + 'ms',
-            language: this.metadata.language,
-            samples: audioData && audioData.length ? audioData.length : 0
-        });
     }
 
     /**
@@ -116,20 +110,11 @@ class AudioSegment {
 
         // ✅ 既に取得済みの場合はスキップ
         if (this.processingStatus[statusKey] >= 1) {
-            console.warn('[AudioSegment] 既に取得済み:', {
-                id: this.id,
-                path: pathName,
-                status: this.processingStatus[statusKey]
-            });
             return false;
         }
 
         // ✅ 取得済みにマーク
         this.processingStatus[statusKey] = 1;
-        console.info('[AudioSegment] パス取得:', {
-            id: this.id,
-            path: pathName
-        });
         return true;
     }
 
@@ -154,12 +139,6 @@ class AudioSegment {
             this.results.path2 = result;
         }
 
-        console.info('[AudioSegment] パス完了:', {
-            id: this.id,
-            path: pathName,
-            progress: this.getProgress() * 100 + '%',
-            fullyProcessed: this.isFullyProcessed()
-        });
     }
 
     /**
@@ -191,15 +170,10 @@ class AudioSegment {
      */
     markAudioSent() {
         if (this.audioSent) {
-            console.warn('[AudioSegment] 音声データは既に送信済み:', this.id);
             return;
         }
 
         this.audioSent = true;
-        console.info('[AudioSegment] 音声データ送信完了:', {
-            id: this.id,
-            waiters: this.audioSendWaiters.length
-        });
 
         // 全待機コールバック起動
         this.audioSendWaiters.forEach((resolve) => resolve());
@@ -219,14 +193,9 @@ class AudioSegment {
     async waitForAudioSent() {
         if (this.audioSent) {
             // 送信済み、即座に返却
-            console.info('[AudioSegment] 音声データは既に送信済み、待機不要:', this.id);
             return;
         }
 
-        console.info('[AudioSegment] 音声データ送信完了を待機中...', {
-            id: this.id,
-            currentWaiters: this.audioSendWaiters.length
-        });
 
         // 待機Promise作成
         return new Promise((resolve, reject) => {
@@ -360,12 +329,6 @@ class AudioQueue {
             onQueueFull: null
         };
 
-        console.info('[AudioQueue] 初期化完了:', {
-            maxSegmentDuration: this.config.maxSegmentDuration + 'ms',
-            minSegmentDuration: this.config.minSegmentDuration + 'ms',
-            maxQueueSize: this.config.maxQueueSize,
-            architecture: 'pull-based'
-        });
     }
 
     /**
@@ -377,52 +340,21 @@ class AudioQueue {
      */
     enqueue(audioData, metadata = {}) {
         // ✅ デバッグ：enqueue呼び出し確認
-        console.warn('[AudioQueue] ========== enqueue呼び出し ==========');
-        console.warn('[AudioQueue] audioDataType:', audioData?.constructor?.name);
-        console.warn('[AudioQueue] audioDataSize:', audioData?.length || audioData?.byteLength);
-        console.warn('[AudioQueue] duration:', metadata.duration + 'ms');
-        console.warn('[AudioQueue] sampleRate:', metadata.sampleRate);
-        console.warn('[AudioQueue] minSegmentDuration:', this.config.minSegmentDuration + 'ms');
-        console.warn('[AudioQueue] maxSegmentDuration:', this.config.maxSegmentDuration + 'ms');
-        console.warn('[AudioQueue] ==========================================');
 
         // ✅ 時長チェック
         if (metadata.duration < this.config.minSegmentDuration) {
-            console.debug('[AudioQueue] 音声が短すぎる、スキップ:', {
-                duration: metadata.duration + 'ms',
-                minRequired: this.config.minSegmentDuration + 'ms',
-                note: '短い音声は通常ノイズのため、スキップは正常動作です'
-            });
             this.stats.droppedSegments++;
             return null;
         }
 
         // ✅ 長音声チェック（警告のみ、分割は後で実装）
         if (metadata.duration > this.config.maxSegmentDuration) {
-            console.warn('[AudioQueue] 音声が長すぎる:', {
-                duration: metadata.duration + 'ms',
-                maxAllowed: this.config.maxSegmentDuration + 'ms',
-                note: '分割が必要（TODO）'
-            });
             // TODO: 音声分割処理（後で実装）
         }
 
         // ✅ キュー容量チェック
         if (this.queue.size >= this.config.maxQueueSize) {
-            console.error('[AudioQueue] ========== セグメント破棄 ==========');
-            console.error('[AudioQueue] キューが満杯です！');
-            console.error('[AudioQueue] 現在のキューサイズ:', this.queue.size);
-            console.error('[AudioQueue] 最大キューサイズ:', this.config.maxQueueSize);
-            console.error('[AudioQueue] 破棄されたセグメント情報:', {
-                duration: metadata.duration + 'ms',
-                timestamp: metadata.timestamp,
-                sampleRate: metadata.sampleRate
-            });
             this.stats.droppedSegments++;
-            console.error('[AudioQueue] 累計破棄数:', this.stats.droppedSegments);
-            console.error('[AudioQueue] 破棄率:',
-                ((this.stats.droppedSegments / this.stats.totalSegments) * 100).toFixed(2) + '%');
-            console.error('[AudioQueue] ========================================');
 
             if (this.listeners.onQueueFull !== null) {
                 this.listeners.onQueueFull(this.queue.size);
@@ -437,22 +369,11 @@ class AudioQueue {
         this.stats.totalSegments++;
         this.stats.currentQueueSize = this.queue.size;
 
-        console.info('[AudioQueue] セグメント追加:', {
-            id: segment.id,
-            queueSize: this.queue.size,
-            duration: metadata.duration + 'ms'
-        });
 
         // ✅ 200秒後に自動クリーンアップ（タイムアウト）
         setTimeout(() => {
             const seg = this.queue.get(segment.id);
             if (seg && !seg.isFullyProcessed()) {
-                console.warn('[AudioQueue] タイムアウト - セグメントを強制削除:', {
-                    id: segment.id,
-                    age: seg.getAge() + 'ms',
-                    path1Status: seg.processingStatus.path1_text,
-                    path2Status: seg.processingStatus.path2_voice
-                });
                 this.cleanup(segment.id);
             }
         }, 200000); // 200秒
@@ -490,22 +411,12 @@ class AudioQueue {
             if (segment.isPathAvailable(pathName)) {
                 // ✅ 取得済みにマーク（重複防止）
                 if (segment.markPathConsumed(pathName)) {
-                    console.info('[AudioQueue] パス消費:', {
-                        segmentId,
-                        pathName,
-                        queueSize: this.queue.size,
-                        duration: segment.metadata.duration + 'ms'
-                    });
                     return segment;
                 }
             }
         }
 
         // ✅ 取得可能なセグメントがない
-        console.info('[AudioQueue] 取得可能なセグメントなし:', {
-            pathName,
-            queueSize: this.queue.size
-        });
         return null;
     }
 
@@ -519,19 +430,12 @@ class AudioQueue {
     markPathComplete(segmentId, pathName, result = null) {
         const segment = this.queue.get(segmentId);
         if (segment === undefined) {
-            console.warn('[AudioQueue] セグメントが見つかりません:', segmentId);
             return;
         }
 
         // ✅ マーク完了
         segment.markPathComplete(pathName, result);
 
-        console.info('[AudioQueue] パス完了通知:', {
-            segmentId,
-            pathName,
-            progress: (segment.getProgress() * 100).toFixed(0) + '%',
-            fullyProcessed: segment.isFullyProcessed()
-        });
 
         // ✅ 全パス完了チェック
         if (segment.isFullyProcessed()) {
@@ -546,15 +450,6 @@ class AudioQueue {
      * @param {AudioSegment} segment 音声セグメント
      */
     handleSegmentComplete(segment) {
-        console.info('[AudioQueue] セグメント完全処理完了:', {
-            id: segment.id,
-            duration: segment.metadata.duration + 'ms',
-            age: segment.getAge() + 'ms',
-            results: {
-                path1: segment.results.path1 !== null ? 'OK' : 'N/A',
-                path2: segment.results.path2 !== null ? 'OK' : 'N/A'
-            }
-        });
 
         // ✅ リスナー通知
         if (this.listeners.onSegmentComplete !== null) {
@@ -581,15 +476,7 @@ class AudioQueue {
             this.stats.processedSegments++;
             this.stats.currentQueueSize = this.queue.size;
 
-            console.info('[AudioQueue] セグメント削除:', {
-                id: segmentId,
-                remainingInQueue: this.queue.size
-            });
         } else {
-            console.warn('[AudioQueue] セグメントは未完了のため削除できません:', {
-                id: segmentId,
-                progress: (segment.getProgress() * 100).toFixed(0) + '%'
-            });
         }
     }
 
@@ -634,7 +521,6 @@ class AudioQueue {
         const size = this.queue.size;
         this.queue.clear();
         this.stats.currentQueueSize = 0;
-        console.info('[AudioQueue] キューをクリア:', { clearedCount: size });
     }
 
     /**

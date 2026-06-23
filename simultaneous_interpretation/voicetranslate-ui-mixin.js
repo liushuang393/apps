@@ -34,11 +34,6 @@ const UIMixin = {
 
         const existing = container.querySelector(`[data-transcript-id="${transcriptId}"]`);
         if (existing) {
-            console.warn('[Transcript] 重複検出 - スキップ:', {
-                type,
-                transcriptId,
-                text: text.substring(0, 20)
-            });
         }
         return existing;
     },
@@ -55,12 +50,10 @@ const UIMixin = {
         const showOutput = this.elements.showOutputTranscript?.classList.contains('active') ?? true;
 
         if (type === 'input' && !showInput) {
-            console.info('[Transcript] 入力音声表示がOFFのためスキップ');
             return false;
         }
 
         if (type === 'output' && !showOutput) {
-            console.info('[Transcript] 翻訳結果表示がOFFのためスキップ');
             return false;
         }
 
@@ -79,7 +72,6 @@ const UIMixin = {
             type === 'input' ? this.elements.inputTranscript : this.elements.outputTranscript;
 
         if (!container) {
-            console.error('[Transcript] コンテナが見つかりません:', type);
             return null;
         }
 
@@ -226,7 +218,6 @@ const UIMixin = {
     removeEmptyState(container) {
         const emptyState = container.querySelector('.empty-state');
         if (emptyState) {
-            console.info('[Transcript] 空状態を削除');
             emptyState.remove();
         }
     },
@@ -247,29 +238,14 @@ const UIMixin = {
             const existingId = Number.parseInt(msg.dataset.transcriptId, 10);
             if (existingId && transcriptId > existingId) {
                 insertPosition = msg;
-                console.info('[Transcript] 挿入位置を発見:', {
-                    currentId: transcriptId,
-                    existingId: existingId,
-                    insertBefore: true
-                });
                 break;
             }
         }
 
         if (insertPosition) {
             insertPosition.before(message);
-            console.info('[Transcript] 順序を保証して挿入:', {
-                transcriptId: transcriptId,
-                position: '中間位置',
-                totalMessages: container.children.length
-            });
         } else {
             container.appendChild(message);
-            console.info('[Transcript] 最後に追加:', {
-                transcriptId: transcriptId,
-                position: '最下部',
-                totalMessages: container.children.length
-            });
         }
     },
 
@@ -288,11 +264,6 @@ const UIMixin = {
         } else {
             container.appendChild(message);
         }
-        console.info('[Transcript] 最新メッセージを最上部に追加:', {
-            type: type,
-            transcriptId: transcriptId || 'なし',
-            totalMessages: container.children.length
-        });
     },
 
     /**
@@ -338,12 +309,6 @@ const UIMixin = {
             this.insertLatestMessage(container, message, type, transcriptId);
         }
 
-        console.info(
-            '[Transcript] メッセージ追加完了:',
-            container.children.length,
-            '件',
-            transcriptId ? `(ID: ${transcriptId})` : ''
-        );
 
         // 一番上にスクロール（最新のメッセージが見えるように）
         container.scrollTop = 0;
@@ -384,7 +349,6 @@ const UIMixin = {
 
         // セッションIDチェック
         if (!this.state.currentSessionId) {
-            console.warn('[Conversation] セッションIDがありません - 保存スキップ');
             return;
         }
 
@@ -403,14 +367,7 @@ const UIMixin = {
                 timestamp: transcriptId || Date.now()
             });
 
-            console.info('[Conversation] 音声入力保存完了:', {
-                role,
-                language,
-                contentLength: text.length,
-                transcriptId
-            });
         } catch (error) {
-            console.error('[Conversation] ターン保存エラー:', error);
         }
     },
 
@@ -428,7 +385,6 @@ const UIMixin = {
             type === 'input' ? this.elements.inputTranscript : this.elements.outputTranscript;
 
         if (!container) {
-            console.error('[Transcript] コンテナが見つかりません:', type);
             return;
         }
 
@@ -441,17 +397,11 @@ const UIMixin = {
                 firstMessage.querySelector('div:last-child');
 
             if (textElement && !textElement.classList.contains('transcript-time')) {
-                console.info(
-                    '[Transcript] 既存メッセージに追加:',
-                    textElement.textContent.substring(0, 20) + '...'
-                );
                 textElement.textContent += text;
             } else {
-                console.info('[Transcript] テキスト要素が見つからないため、新規メッセージを作成');
                 this.addTranscript(type, text);
             }
         } else {
-            console.info('[Transcript] メッセージが存在しないため、新規メッセージを作成');
             this.addTranscript(type, text);
         }
 
@@ -474,11 +424,9 @@ const UIMixin = {
      * @param {string} type - 'input', 'output', または 'both'（両方）
      */
     clearTranscript(type = 'both') {
-        console.info('[Transcript] クリア:', type);
 
         // 要素が初期化されているか確認
         if (!this.elements || !this.elements.inputTranscript || !this.elements.outputTranscript) {
-            console.warn('[Transcript] 要素が初期化されていません。クリアをスキップします。');
             return;
         }
 
@@ -489,7 +437,6 @@ const UIMixin = {
                     : this.elements.outputTranscript;
 
             if (!container) {
-                console.error('[Transcript] コンテナが見つかりません:', containerType);
                 return;
             }
 
@@ -515,7 +462,6 @@ const UIMixin = {
             emptyState.appendChild(text);
             container.appendChild(emptyState);
 
-            console.info('[Transcript] クリア完了:', containerType);
         };
 
         if (type === 'both') {
@@ -619,7 +565,6 @@ const UIMixin = {
      * @param {string} text - ステータステキスト
      */
     updateStatus(type, text) {
-        console.info(`[Status] ${type}: ${text}`);
     },
 
     /**
@@ -658,7 +603,6 @@ const UIMixin = {
      */
     updateLatencyDisplay(stats) {
         // 統計情報をUIに表示（実装は必要に応じて）
-        console.info('[UI] レイテンシー統計:', stats);
     },
 
     /**

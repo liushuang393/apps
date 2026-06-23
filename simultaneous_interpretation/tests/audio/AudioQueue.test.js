@@ -254,20 +254,12 @@ describe('AudioQueue', () => {
             expect(queue.stats.droppedSegments).toBe(1);
         });
 
-        it('should warn for segment that is too long', () => {
-            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
+        it('should accept a segment that is too long', () => {
             const segment = queue.enqueue(new ArrayBuffer(1000), {
                 duration: 20000 // > maxSegmentDuration (15000)
             });
 
             expect(segment).not.toBe(null);
-            expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('音声が長すぎる'),
-                expect.any(Object)
-            );
-
-            consoleSpy.mockRestore();
         });
 
         it('should reject when queue is full', () => {
@@ -347,17 +339,8 @@ describe('AudioQueue', () => {
             expect(updated.results.path1).toEqual({ transcript: 'Test' });
         });
 
-        it('should warn for non-existent segment', () => {
-            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
-            queue.markPathComplete('non-existent-id', 'path1', {});
-
-            expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('セグメントが見つかりません'),
-                'non-existent-id'
-            );
-
-            consoleSpy.mockRestore();
+        it('should handle non-existent segment gracefully', () => {
+            expect(() => queue.markPathComplete('non-existent-id', 'path1', {})).not.toThrow();
         });
 
         it('should trigger cleanup when both paths complete', (done) => {
@@ -408,18 +391,11 @@ describe('AudioQueue', () => {
         });
 
         it('should not cleanup incomplete segment', () => {
-            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
             const segment = queue.enqueue(new ArrayBuffer(100), { duration: 2000 });
 
             queue.cleanup(segment.id);
 
             expect(queue.size()).toBe(1);
-            expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('セグメントは未完了のため削除できません'),
-                expect.any(Object)
-            );
-
-            consoleSpy.mockRestore();
         });
     });
 
@@ -517,4 +493,3 @@ describe('AudioQueue', () => {
         });
     });
 });
-

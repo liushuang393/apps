@@ -105,7 +105,6 @@ class StateManager {
         // 状態変更リスナー
         this.listeners = new Map();
 
-        console.info('[StateManager] 初期化完了');
     }
 
     /**
@@ -148,7 +147,6 @@ class StateManager {
         }, this);
 
         if (!parent || typeof parent !== 'object' || !(lastKey in parent)) {
-            console.error('[StateManager] 無効なキー:', key);
             return;
         }
 
@@ -161,7 +159,6 @@ class StateManager {
             this.notifyListeners(key, value, oldValue);
         }
 
-        console.info(`[StateManager] 状態更新: ${key} =`, value);
     }
 
     /**
@@ -217,7 +214,6 @@ class StateManager {
                 try {
                     callback(newValue, oldValue, key);
                 } catch (error) {
-                    console.error('[StateManager] リスナーエラー:', error);
                 }
             }
         }
@@ -228,7 +224,6 @@ class StateManager {
                 try {
                     callback(newValue, oldValue, key);
                 } catch (error) {
-                    console.error('[StateManager] リスナーエラー:', error);
                 }
             }
         }
@@ -243,9 +238,7 @@ class StateManager {
     saveToStorage(key, value) {
         try {
             localStorage.setItem(key, JSON.stringify(value));
-            console.info(`[StateManager] localStorage に保存: ${key}`);
         } catch (error) {
-            console.error('[StateManager] localStorage 保存エラー:', error);
         }
     }
 
@@ -263,7 +256,6 @@ class StateManager {
                 return JSON.parse(value);
             }
         } catch (error) {
-            console.error('[StateManager] localStorage 読み込みエラー:', error);
         }
         return defaultValue;
     }
@@ -301,7 +293,6 @@ class StateManager {
         this.playbackQueue.isPlaying = false;
         this.playbackQueue.isPlayingFromQueue = false;
 
-        console.info('[StateManager] 状態リセット完了');
     }
 }
 

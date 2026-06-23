@@ -131,6 +131,21 @@ class SegmentAlignmentManager {
         this.pendingInputSegments.push(segmentId);
     }
 
+    /**
+     * 指定セグメントを入力待ちキューから除去する。
+     * 認識失敗（transcription.failed）で完了イベントが来ないセグメントを取り除き、
+     * 以降の completeNextInput() の shift が後続セグメントへ 1 つずれて
+     * 左右対応を崩すのを防ぐ。
+     *
+     * @param {string} segmentId
+     */
+    dequeueInputSegment(segmentId) {
+        if (!segmentId) {
+            return;
+        }
+        this.pendingInputSegments = this.pendingInputSegments.filter((id) => id !== segmentId);
+    }
+
     completeNextInput(text, metadata = {}) {
         const segmentId = metadata.segmentId || this.pendingInputSegments.shift();
         if (!segmentId) {

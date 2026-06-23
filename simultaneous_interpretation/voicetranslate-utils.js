@@ -46,24 +46,12 @@ class ResponseQueue {
             const totalInQueue = this.pendingQueue.length + this.processingQueue.length;
             if (totalInQueue >= this.config.maxQueueSize) {
                 const error = new Error('Queue is full');
-                console.warn('[ResponseQueue] キューが満杯:', {
-                    processing: this.processingQueue.length,
-                    pending: this.pendingQueue.length,
-                    maxSize: this.config.maxQueueSize
-                });
                 reject(error);
                 return;
             }
 
             // ✅ 修正: 処理中のリクエストがある場合は警告するが、キューに追加する
             if (this.processingQueue.length > 0) {
-                console.warn(
-                    '[ResponseQueue] 処理中のリクエストがあるため、ペンディングキューに追加:',
-                    {
-                        processing: this.processingQueue.length,
-                        pending: this.pendingQueue.length + 1
-                    }
-                );
             }
 
             const item = {
@@ -77,10 +65,6 @@ class ResponseQueue {
             this.stats.totalRequests++;
 
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] 生産:', {
-                    pending: this.pendingQueue.length,
-                    processing: this.processingQueue.length
-                });
             }
 
             this.consume();
@@ -90,16 +74,12 @@ class ResponseQueue {
     consume() {
         if (this.processingQueue.length > 0) {
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] 処理中のリクエストがあるため待機:', {
-                    processing: this.processingQueue.length
-                });
             }
             return;
         }
 
         if (this.pendingQueue.length === 0) {
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] 未送信キューが空です');
             }
             return;
         }
@@ -112,11 +92,6 @@ class ResponseQueue {
         this.processingQueue.push(item);
 
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] 消費開始:', {
-                pending: this.pendingQueue.length,
-                processing: this.processingQueue.length,
-                timestamp: Date.now()
-            });
         }
 
         this.startTimeoutTimer();
@@ -133,12 +108,8 @@ class ResponseQueue {
             });
 
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] リクエスト送信完了:', {
-                    processing: this.processingQueue.length
-                });
             }
         } catch (error) {
-            console.error('[ResponseQueue] 送信失敗:', error);
             this.clearTimeoutTimer();
             this.processingQueue.shift();
             if (item.reject) {
@@ -151,7 +122,6 @@ class ResponseQueue {
 
     handleResponseCreated(responseId) {
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] レスポンス作成:', responseId);
         }
 
         if (this.processingQueue.length > 0) {
@@ -159,27 +129,18 @@ class ResponseQueue {
             item.responseId = responseId;
 
             if (this.config.debugMode) {
-                console.info('[ResponseQueue] Response ID記録:', {
-                    responseId: responseId,
-                    timestamp: Date.now()
-                });
             }
         }
     }
 
     handleResponseDone(responseId) {
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] 消費完了:', responseId);
         }
 
         if (this.processingQueue.length > 0) {
             const item = this.processingQueue[0];
 
             if (item.responseId && item.responseId !== responseId) {
-                console.warn('[ResponseQueue] Response ID不一致:', {
-                    expected: item.responseId,
-                    received: responseId
-                });
                 return;
             }
         }
@@ -198,15 +159,11 @@ class ResponseQueue {
         // ✅ プル型アーキテクチャ: response.done 後に自動的に次のリクエストを送信
         // これにより、activeResponseId/pendingResponseId の管理が不要になる
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] 次のリクエストを自動送信:', {
-                pending: this.pendingQueue.length
-            });
         }
         this.consume();
     }
 
     handleError(error, code) {
-        console.error('[ResponseQueue] Error:', error);
 
         const errorCode = code || '';
         const errorMessage = error.message || '';
@@ -216,11 +173,6 @@ class ResponseQueue {
             errorMessage.includes('active response in progress');
 
         if (isActiveResponseError) {
-            console.warn('[ResponseQueue] Active response still in progress - waiting for response.done.', {
-                code: errorCode || 'N/A',
-                pending: this.pendingQueue.length,
-                processing: this.processingQueue.length
-            });
 
             this.clearTimeoutTimer();
 
@@ -234,10 +186,6 @@ class ResponseQueue {
                 this.pendingQueue.unshift(item); // 先頭に戻す（優先度確保）
 
                 if (this.config.debugMode) {
-                    console.info('[ResponseQueue] リクエストを保留キューに戻しました（response.done 後に自動再送信）:', {
-                        pending: this.pendingQueue.length,
-                        processing: this.processingQueue.length
-                    });
                 }
             }
 
@@ -264,7 +212,6 @@ class ResponseQueue {
         this.clearTimeoutTimer();
 
         this.timeoutTimer = setTimeout(() => {
-            console.error('[ResponseQueue] タイムアウト - processingQueueをクリアします');
 
             const item = this.processingQueue.shift();
 
@@ -288,7 +235,6 @@ class ResponseQueue {
 
     clear() {
         if (this.config.debugMode) {
-            console.info('[ResponseQueue] キューをクリア');
         }
 
         this.clearTimeoutTimer();
@@ -601,11 +547,6 @@ class VoiceActivityDetector {
             this.calibrationSamples.length;
         const stdDev = Math.sqrt(variance);
         this.noiseFloor = avg + stdDev;
-        console.info('[VAD] キャリブレーション完了:', {
-            average: avg.toFixed(6),
-            stdDev: stdDev.toFixed(6),
-            noiseFloor: this.noiseFloor.toFixed(6)
-        });
     }
 
     reset() {

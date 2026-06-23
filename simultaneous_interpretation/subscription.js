@@ -47,7 +47,6 @@ async function getPurchaseIntentId() {
 async function startPayment(plan) {
     try {
         showLoading(true);
-        console.info('[Payment] 開始:', plan);
 
         const purchaseIntentId = await getPurchaseIntentId();
         const apiUrl =
@@ -63,7 +62,6 @@ async function startPayment(plan) {
 
         // 既に有効な権限がある → 重複課金を避けて成功ページへ
         if (response.status === 409) {
-            console.info('[Payment] 既に有効な購入があります');
             globalThis.location.href = 'success.html';
             return;
         }
@@ -79,7 +77,6 @@ async function startPayment(plan) {
         // ForgePay 由来の Stripe Checkout へ遷移
         globalThis.location.href = data.checkout_url;
     } catch (error) {
-        console.warn('[Payment] 決済 API 利用不可、無料モードで続行:', error);
         showLoading(false);
 
         await chrome.storage.local.set({
@@ -106,6 +103,4 @@ globalThis.addEventListener('load', () => {
     if (buyOnceBtn) {
         buyOnceBtn.addEventListener('click', () => startPayment('onetime'));
     }
-
-    console.info('[Init] サブスクリプションページ初期化完了');
 });
