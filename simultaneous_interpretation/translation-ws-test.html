@@ -1,0 +1,132 @@
+<meta charset="utf-8">
+<title>Realtime Translation WS 診断治具</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; background:#0b1020; color:#e6e9f0; }
+  h1 { font-size: 18px; }
+  .row { margin: 8px 0; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  input, select, button { font-size: 14px; padding: 6px 8px; border-radius:6px; border:1px solid #334; background:#121a33; color:#e6e9f0; }
+  input#key { width: 420px; }
+  button { cursor:pointer; background:#2647c9; border-color:#2647c9; }
+  button.alt { background:#1b2547; border-color:#334; }
+  #log { white-space: pre-wrap; background:#070b18; border:1px solid #223; border-radius:8px; padding:10px; height:62vh; overflow:auto; font-family: ui-monospace, monospace; font-size:12px; }
+  .t-open{color:#5be37a}.t-err{color:#ff6b6b}.t-recv{color:#7fb4ff}.t-send{color:#e6c07b}.t-info{color:#9aa4bf}
+</style>
+
+<h1>🔬 Realtime Translation WebSocket 診断治具（本番コードに影響しません）</h1>
+<p class="t-info">目的: 実APIキーで <code>/v1/realtime/translations</code> に接続し、サーバが返す全イベント/エラー/closeコードを丸見えにする。推測せず事実で原因を特定する。</p>
+
+<div class="row">
+  <input id="key" type="password" placeholder="sk-... (このページ内だけで使用。保存しません)" />
+  <label>出力言語 <select id="lang"><option>ja</option><option>en</option><option>zh</option><option>vi</option></select></label>
+</div>
+<div class="row">
+  <label>session設定 <select id="cfg">
+    <option value="full">full（transcription + noise_reduction + output.language）= cookbook準拠</option>
+    <option value="min">min（output.language のみ）= 翻訳が動いていた版</option>
+    <option value="notrans">transcriptionなし + noise_reductionあり</option>
+  </select></label>
+</div>
+<div class="row">
+  <button id="connect">① 接続 + session.update 送信</button>
+  <button id="append" class="alt">② テスト音声(0.5s 440Hzトーン)を append</button>
+  <button id="close" class="alt">③ session.close</button>
+  <button id="clear" class="alt">ログ消去</button>
+</div>
+<div id="log"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+function log(cls, label, obj) {
+  const t = new Date().toISOString().slice(11, 23);
+  let body = '';
+  if (obj !== undefined) {
+    try { body = typeof obj === 'string' ? obj : JSON.stringify(obj); } catch { body = String(obj); }
+    if (body.length > 600) body = body.slice(0, 600) + ` …(+${body.length - 600} chars)`;
+  }
+  const div = document.createElement('div');
+  div.className = 't-' + cls;
+  div.textContent = `[${t}] ${label}${body ? ' ' + body : ''}`;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+let ws = null;
+
+function buildSession() {
+  const language = $('lang').value;
+  const mode = $('cfg').value;
+  if (mode === 'min') {
+    return { type: 'session.update', session: { audio: { output: { language } } } };
+  }
+  if (mode === 'notrans') {
+    return { type: 'session.update', session: { audio: { input: { noise_reduction: { type: 'near_field' } }, output: { language } } } };
+  }
+  // full = cookbook準拠
+  return {
+    type: 'session.update',
+    session: {
+      audio: {
+        input: {
+          transcription: { model: 'gpt-realtime-whisper' },
+          noise_reduction: { type: 'near_field' }
+        },
+        output: { language }
+      }
+    }
+  };
+}
+
+$('connect').onclick = () => {
+  const key = $('key').value.trim();
+  if (!key) { log('err', 'APIキーを入力してください'); return; }
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+
+  const url = 'wss://api.openai.com/v1/realtime/translations?model=gpt-realtime-translate';
+  // ブラウザはWSヘッダを付けられないため、Realtime標準のサブプロトコル認証を試す
+  // （cookbookのサーバ実装は Authorization ヘッダ。ブラウザでこれが通るかも含めて検証する）
+  const protocols = ['realtime', 'openai-insecure-api-key.' + key];
+  log('info', `接続開始 url=${url} (subprotocol auth)`);
+  try {
+    ws = new WebSocket(url, protocols);
+  } catch (e) { log('err', 'WebSocket生成失敗', String(e)); return; }
+
+  ws.onopen = () => {
+    log('open', '✅ onopen 接続成功');
+    const msg = buildSession();
+    log('send', '→ session.update', msg.session);
+    ws.send(JSON.stringify(msg));
+  };
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { log('recv', '← (非JSON)', String(ev.data).slice(0,200)); return; }
+    const cls = m.type === 'error' ? 'err' : 'recv';
+    // delta系は中身が巨大なので type と先頭だけ
+    const brief = m.type && m.type.endsWith('.delta') ? { delta: (m.delta||'').slice(0,40) } : m;
+    log(cls, '← ' + (m.type || '(no type)'), brief);
+  };
+  ws.onerror = (e) => log('err', '⚠️ onerror', (e && e.message) || 'WebSocket error');
+  ws.onclose = (e) => log('err', `🔌 onclose code=${e.code} reason="${e.reason || ''}" wasClean=${e.wasClean}`);
+};
+
+$('append').onclick = () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) { log('err', '未接続です'); return; }
+  // 0.5秒の 440Hz トーンを 24kHz PCM16(LE) で生成 → base64
+  const rate = 24000, sec = 0.5, n = Math.floor(rate * sec);
+  const pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) pcm[i] = Math.round(Math.sin(2 * Math.PI * 440 * i / rate) * 8000);
+  const bytes = new Uint8Array(pcm.buffer);
+  let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  const b64 = btoa(bin);
+  const msg = { type: 'session.input_audio_buffer.append', audio: b64 };
+  log('send', `→ session.input_audio_buffer.append (${b64.length} b64 chars, 24kHz PCM16 440Hz)`);
+  ws.send(JSON.stringify(msg));
+};
+
+$('close').onclick = () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) { log('err', '未接続です'); return; }
+  log('send', '→ session.close');
+  ws.send(JSON.stringify({ type: 'session.close' }));
+};
+
+$('clear').onclick = () => { logEl.innerHTML = ''; };
+</script>

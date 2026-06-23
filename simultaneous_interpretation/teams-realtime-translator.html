@@ -1303,9 +1303,10 @@
                             </select>
                         </div>
 
-                        <!-- 翻訳セッションは turn_detection を送らないため VAD感度は無効。非表示 -->
-                        <div class="form-group legacy-hidden" style="margin-top: 16px;">
-                            <label class="form-label" for="vadSensitivity">VAD感度</label>
+                        <!-- 音声検出の感度。クライアント側VAD(this.vad)の閾値を変え、
+                             どの音量から音声として拾い送信するかを制御する（聞き取れない時は「高」）。 -->
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label class="form-label" for="vadSensitivity">音声検出の感度（聞き取りにくい時は「高」）</label>
                             <select id="vadSensitivity" class="form-input">
                                 <option value="low">低（騒音環境）</option>
                                 <option value="medium" selected>中（標準）</option>
