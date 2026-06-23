@@ -176,6 +176,22 @@ const WebSocketMixin = {
     },
 
     /**
+     * 翻訳音声の出力先が採集源と分離されているか（回灌ループを物理的に断てる状態か）。
+     *
+     * 目的:
+     *   システム音声モードで「再生中も連続採集（不漏訳）」を有効にしてよいかの安全判定。
+     *   出力デバイスが明示選択（setSinkId 有効）されている場合のみ true。
+     *   未選択（既定デバイス＝採集対象の可能性）や setSinkId 非対応環境は false とし、
+     *   従来どおり再生中スキップして翻訳音声の再採集を防ぐ。
+     *
+     * @returns {boolean}
+     */
+    isOutputDeviceIsolated() {
+        const ctx = this.state.outputAudioContext;
+        return !!this.state.outputDeviceId && !!(ctx && typeof ctx.setSinkId === 'function');
+    },
+
+    /**
      * WebSocketメッセージをディスパッチ
      *
      * 目的:
@@ -1331,21 +1347,34 @@ const WebSocketMixin = {
 
         const now = Date.now();
         const isPlayingAudio = this.state.isPlayingAudio;
-        const isMicrophoneMode = this.state.audioSourceType !== 'system';
+        const isSystemMode = this.state.audioSourceType === 'system';
+        const isMicrophoneMode = !isSystemMode;
 
-        // マイクモードの場合のみバッファウィンドウを適用
-        let shouldSkip = isPlayingAudio; // 全モード: 再生中はスキップ
+        // 経路隔離が成立する場合のみ「再生中も連続採集」を許可（不漏訳）。
+        // 条件: システム音声モード + 翻訳セッション + 翻訳音声の出力が別デバイスへ分離済み。
+        // 未分離（既定出力＝採集対象の恐れ）や非翻訳セッションでは従来どおり再生中スキップ。
+        const continuousCapture =
+            isSystemMode && this.isRealtimeTranslationSession() && this.isOutputDeviceIsolated();
 
-        if (isMicrophoneMode && !isPlayingAudio) {
-            // マイクモード: 再生終了後もバッファウィンドウ内はスキップ
-            const timeSincePlaybackEnd = this.audioSourceTracker.outputEndTime
-                ? now - this.audioSourceTracker.outputEndTime
-                : Infinity;
-            const isWithinBufferWindow =
-                timeSincePlaybackEnd < this.audioSourceTracker.bufferWindow;
+        let shouldSkip;
+        if (continuousCapture) {
+            // 出力は別デバイスへ隔離済み → 自分の訳音再生中も対方の発話を落とさない
+            shouldSkip = false;
+        } else {
+            // 従来挙動: 再生中はスキップ（マイク回灌防止／未分離システム音声）
+            shouldSkip = isPlayingAudio;
 
-            if (isWithinBufferWindow) {
-                shouldSkip = true;
+            if (isMicrophoneMode && !isPlayingAudio) {
+                // マイクモード: 再生終了後もバッファウィンドウ内はスキップ
+                const timeSincePlaybackEnd = this.audioSourceTracker.outputEndTime
+                    ? now - this.audioSourceTracker.outputEndTime
+                    : Infinity;
+                const isWithinBufferWindow =
+                    timeSincePlaybackEnd < this.audioSourceTracker.bufferWindow;
+
+                if (isWithinBufferWindow) {
+                    shouldSkip = true;
+                }
             }
         }
 
