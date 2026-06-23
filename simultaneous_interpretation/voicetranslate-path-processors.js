@@ -37,7 +37,6 @@ class TextPathProcessor {
         this.app = appInstance;
         this.mode = 1; // 1=音声のみ, 2=音声+テキスト翻訳
         this.isProcessing = false;
-
     }
 
     /**
@@ -64,7 +63,6 @@ class TextPathProcessor {
         }
 
         try {
-
             this.isProcessing = true;
 
             // STT completion can arrive immediately after commit. Register the
@@ -93,7 +91,6 @@ class TextPathProcessor {
                 });
                 return;
             }
-
 
             const transcriptId = segment.segmentId || segment.id;
             segment.transcriptId = transcriptId;
@@ -151,7 +148,6 @@ class TextPathProcessor {
                         transcript: transcript
                     });
                 } else {
-
                     if (typeof this.app.translateTextDirectly !== 'function') {
                         // 翻訳テキスト表示
                         this.displayTranslatedText(translatedText, transcriptId);
@@ -169,9 +165,7 @@ class TextPathProcessor {
                     transcript: transcript
                 });
             }
-
         } catch (error) {
-
             // エラーでも完了マーク（リトライしない）
             this.audioQueue.markPathComplete(segment.id, 'path1', {
                 error: error.message
@@ -216,7 +210,6 @@ class TextPathProcessor {
         let chunksent = 0;
         let sentSamples = 0;
 
-
         while (offset < audioData.length) {
             const chunkSize = Math.min(CHUNK_SIZE, audioData.length - offset);
             const chunk = audioData.subarray(offset, offset + chunkSize);
@@ -240,7 +233,6 @@ class TextPathProcessor {
                 await new Promise((resolve) => setTimeout(resolve, 10));
             }
         }
-
 
         if (sentSamples === 0) {
             throw new Error('Realtime APIへ音声データを送信できませんでした');
@@ -271,7 +263,6 @@ class TextPathProcessor {
         // OpenAI Realtime API 在 input_audio_buffer.committed 后会送信
         // conversation.item.input_audio_transcription.completed イベント
 
-
         // 创建 Promise 来待機转录完了
         return new Promise((resolve, reject) => {
             let transcriptText = null;
@@ -301,7 +292,6 @@ class TextPathProcessor {
 
                     // ✅ 自動言語検出: 文字種からリアル言語を判定
                     const detectedLanguage = this.detectLanguageFromTranscript(transcriptText);
-
 
                     // ✅ セグメントのメタデータを実際の言語に更新
                     // これにより、displayInputText() で正しい言語ラベルが表示される
@@ -359,7 +349,11 @@ class TextPathProcessor {
             return 'ja';
         }
 
-        if (/[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(value)) {
+        if (
+            /[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(
+                value
+            )
+        ) {
             return 'vi';
         }
 
@@ -484,7 +478,6 @@ class TextPathProcessor {
         const displayElement = this.app.elements.detectedLanguageDisplay;
         const codeElement = this.app.elements.detectedLanguageCode;
 
-
         // ✅ 要素が見つからない場合は直接取得
         if (!displayElement) {
             const element = document.getElementById('detectedLanguageDisplay');
@@ -524,7 +517,6 @@ class TextPathProcessor {
         // ✅ UI を更新
         this.app.elements.detectedLanguageDisplay.textContent = `${emoji} ${displayName}`;
         this.app.elements.detectedLanguageCode.textContent = detectedLanguage || 'auto';
-
     }
 
     /**
@@ -535,7 +527,6 @@ class TextPathProcessor {
      */
     updateSourceLangDisplay(detectedLanguage) {
         const sourceLangDisplay = this.app.elements.sourceLangDisplay;
-
 
         // ✅ 要素が見つからない場合は直接取得
         let element = sourceLangDisplay;
@@ -568,7 +559,6 @@ class TextPathProcessor {
 
         // ✅ UI を更新
         element.textContent = `${emoji} ${displayName}`;
-
     }
 
     /**
@@ -652,7 +642,6 @@ class VoicePathProcessor {
         this.app = appInstance;
         this.mode = 1; // 1=テキスト表示あり, 2=テキスト表示なし
         this.isProcessing = false;
-
     }
 
     /**
@@ -686,7 +675,6 @@ class VoicePathProcessor {
             skipped: 'translation-session'
         });
     }
-
 }
 
 /**

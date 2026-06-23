@@ -236,6 +236,8 @@ const WebSocketMixin = {
                 this.handleTranslationTranscriptDelta('input', message.delta);
                 break;
             case 'session.closed':
+                // セッション終了時、句読点で確定されなかった末尾の字幕を取りこぼさず確定する。
+                this.flushTranslationCaptions();
                 break;
             case 'error':
                 this.handleWSMessageError(message);
@@ -266,6 +268,23 @@ const WebSocketMixin = {
             this.translationCaption[kind] = '';
             if (text && typeof this.addTranscript === 'function') {
                 this.addTranscript(kind, text, null);
+            }
+        }
+    },
+
+    /**
+     * 未確定の字幕バッファ（input/output）を確定して表示する。
+     * セッション終了時に末尾の一文を取りこぼさないために呼ぶ。
+     */
+    flushTranslationCaptions() {
+        if (!this.translationCaption) {
+            return;
+        }
+        for (const kind of ['input', 'output']) {
+            const buffered = this.translationCaption[kind];
+            this.translationCaption[kind] = '';
+            if (buffered && buffered.trim() && typeof this.addTranscript === 'function') {
+                this.addTranscript(kind, buffered.trim(), null);
             }
         }
     },

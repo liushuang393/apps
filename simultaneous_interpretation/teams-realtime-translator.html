@@ -597,6 +597,12 @@
             display: flex;
         }
 
+        /* リアルタイム音声翻訳（単一モード）では使わない設定を非表示にする。
+           既定値のまま動作する。復元するには下記 1 行をコメントアウトするだけ。 */
+        .legacy-hidden {
+            display: none !important;
+        }
+
         /* 通知 */
         .notification {
             position: fixed;
@@ -1199,7 +1205,8 @@
                                 💡 対応言語: 英語、日本語、簡体中文、ベトナム語の4言語のみ
                             </small>
                         </div>
-                        <div class="form-group">
+                        <!-- 翻訳セッションは audio.output.language のみ設定。音色指定は使わないため非表示 -->
+                        <div class="form-group legacy-hidden">
                             <label class="form-label" for="voiceType">🔊 翻訳音色</label>
                             <select id="voiceType" class="form-input">
                                 <option value="alloy">Alloy（標準）</option>
@@ -1212,7 +1219,8 @@
                                 <option value="cedar">Cedar（新・プロフェッショナル）</option>
                             </select>
                         </div>
-                        <div class="form-group">
+                        <!-- 単一モードでは gpt-realtime-translate に固定。選択不要のため非表示 -->
+                        <div class="form-group legacy-hidden">
                             <label class="form-label" for="realtimeModel">🧠 Realtimeモデル（音声→音声）</label>
                             <!-- オプションは setupModelSelects() が後台設定に基づき再構築する
                                  （後台で設定中のモデルを最上部・選択状態にし、残りは新しい順にソート） -->
@@ -1225,7 +1233,8 @@
                                 💡 変更は次回「接続」時に反映されます（セッション再作成が必要）
                             </small>
                         </div>
-                        <div class="form-group">
+                        <!-- power-user 向け。既定で十分のため非表示 -->
+                        <div class="form-group legacy-hidden">
                             <label class="form-label" for="chatModel">💬 Chatモデル（テキスト翻訳・言語検出）</label>
                             <!-- オプションは setupModelSelects() が後台設定に基づき再構築する -->
                             <select id="chatModel" class="form-input">
@@ -1253,7 +1262,8 @@
                                 <span class="toggle-label">自動音声検出</span>
                                 <div class="toggle-switch active" id="vadEnabled"></div>
                             </div>
-                            <div class="toggle-group">
+                            <!-- 単一モード（音声翻訳）に固定。モード切替は使わないため非表示 -->
+                            <div class="toggle-group legacy-hidden">
                                 <span class="toggle-label">リアルタイム音声翻訳</span>
                                 <div class="toggle-switch active" id="translationModeAudio"
                                     title="ON: 音声翻訳（高速・高品質）&#10;OFF: テキスト翻訳（入力と一対一対応）"></div>
@@ -1293,7 +1303,8 @@
                             </select>
                         </div>
 
-                        <div class="form-group" style="margin-top: 16px;">
+                        <!-- 翻訳セッションは turn_detection を送らないため VAD感度は無効。非表示 -->
+                        <div class="form-group legacy-hidden" style="margin-top: 16px;">
                             <label class="form-label" for="vadSensitivity">VAD感度</label>
                             <select id="vadSensitivity" class="form-input">
                                 <option value="low">低（騒音環境）</option>

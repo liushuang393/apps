@@ -1181,7 +1181,9 @@ class VoiceTranslateApp {
                 CONFIG.API.REALTIME_MODEL = envConfig.realtimeModel;
                 CONFIG.API.CHAT_MODEL = envConfig.chatModel;
                 CONFIG.API.TRANSCRIBE_MODEL =
-                    envConfig.transcribeModel || CONFIG.API.TRANSCRIBE_MODEL || 'gpt-realtime-whisper';
+                    envConfig.transcribeModel ||
+                    CONFIG.API.TRANSCRIBE_MODEL ||
+                    'gpt-realtime-whisper';
                 CONFIG.API.REALTIME_URL = envConfig.realtimeUrl;
 
                 // 翻訳の区切り（ターン検出）設定を .env から上書き
