@@ -91,7 +91,6 @@ class AudioSegment {
         // ✅ 音声送信状態（重複送信防止）
         this.audioSent = false; // 音声がサーバーに送信済みかフラグ
         this.audioSendWaiters = []; // 音声送信完了待ちコールバックリスト
-
     }
 
     /**
@@ -138,7 +137,6 @@ class AudioSegment {
             this.processingStatus.path2_voice = 2;
             this.results.path2 = result;
         }
-
     }
 
     /**
@@ -195,7 +193,6 @@ class AudioSegment {
             // 送信済み、即座に返却
             return;
         }
-
 
         // 待機Promise作成
         return new Promise((resolve, reject) => {
@@ -330,7 +327,6 @@ class AudioQueue {
             onSegmentComplete: null,
             onQueueFull: null
         };
-
     }
 
     /**
@@ -370,7 +366,6 @@ class AudioQueue {
         this.queue.set(segment.id, segment);
         this.stats.totalSegments++;
         this.stats.currentQueueSize = this.queue.size;
-
 
         // ✅ 200秒後に自動クリーンアップ（タイムアウト）
         setTimeout(() => {
@@ -438,7 +433,6 @@ class AudioQueue {
         // ✅ マーク完了
         segment.markPathComplete(pathName, result);
 
-
         // ✅ 全パス完了チェック
         if (segment.isFullyProcessed()) {
             this.handleSegmentComplete(segment);
@@ -452,7 +446,6 @@ class AudioQueue {
      * @param {AudioSegment} segment 音声セグメント
      */
     handleSegmentComplete(segment) {
-
         // ✅ リスナー通知
         if (this.listeners.onSegmentComplete !== null) {
             this.listeners.onSegmentComplete(segment);
@@ -477,7 +470,6 @@ class AudioQueue {
             this.queue.delete(segmentId);
             this.stats.processedSegments++;
             this.stats.currentQueueSize = this.queue.size;
-
         } else {
         }
     }
@@ -533,7 +525,6 @@ class AudioQueue {
     size() {
         return this.queue.size;
     }
-
 }
 
 /**

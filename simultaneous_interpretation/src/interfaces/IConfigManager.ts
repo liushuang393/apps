@@ -19,6 +19,8 @@ export interface APIConfig {
     realtimeModel: string;
     /** Chat API モデル */
     chatModel: string;
+    /** Transcription API モデル */
+    transcribeModel: string;
     /** API キー */
     apiKey: string;
     /** タイムアウト (ms) */

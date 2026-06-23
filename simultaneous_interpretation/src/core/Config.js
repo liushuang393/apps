@@ -24,16 +24,17 @@ export const CONFIG = {
         //
         // 1. REALTIME_MODEL: Realtime API用（音声→音声翻訳、音声認識）
         //    - 用途: WebSocket接続、Session作成、音声→音声翻訳
-        //    - 自動機能: 音声認識（whisper-1）、言語自動検出
-        //    - 推奨: gpt-realtime-2025-08-28 (最新・最高品質)
-        //    - 例: gpt-realtime-2025-08-28, gpt-4o-realtime-preview-2024-12-17
-        REALTIME_MODEL: 'gpt-realtime-2025-08-28',
+        //    - 自動機能: 音声認識、言語自動検出
+        //    - 推奨: gpt-realtime-2 (標準Realtime voice-agent)
+        //    - 例: gpt-realtime-2, gpt-realtime-translate
+        REALTIME_MODEL: 'gpt-realtime-2',
         // 2. CHAT_MODEL: Chat Completions API用（言語検出、テキスト翻訳）
         //    - 用途: 言語検出、テキスト→テキスト翻訳
         //    - API: /v1/chat/completions
         //    - 例: gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5-turbo
         //    - ⚠️ Realtime APIモデルは使用不可
         CHAT_MODEL: 'gpt-5-2025-08-07',
+        TRANSCRIBE_MODEL: 'gpt-realtime-whisper',
         TIMEOUT: 30000
     },
     // 音声設定プリセット（4つの方案から選択）

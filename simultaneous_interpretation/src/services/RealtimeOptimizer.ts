@@ -2,7 +2,7 @@
  * Realtime API 最適化サービス
  *
  * @description
- * OpenAI Realtime API (gpt-realtime-2025-08-28) の最適化設定とベストプラクティス実装
+ * OpenAI Realtime API (gpt-realtime-2) の最適化設定とベストプラクティス実装
  *
  * @features
  * - 最適化されたプロンプト生成
@@ -77,13 +77,13 @@ export class RealtimeOptimizer {
     /**
      * 推奨モデル
      */
-    public static readonly RECOMMENDED_MODEL = 'gpt-realtime-2025-08-28';
+    public static readonly RECOMMENDED_MODEL = 'gpt-realtime-2';
 
     /**
-     * 利用可能な音声タイプ (gpt-realtime-2025-08-28)
+     * 利用可能な音声タイプ (gpt-realtime-2)
      */
     public static readonly VOICES: Record<string, VoiceConfig> = {
-        // 新しい音声 (gpt-realtime-2025-08-28 専用)
+        // 新しい音声 (gpt-realtime-2 専用)
         cedar: {
             name: 'cedar',
             description: '自然で表現力豊かな音声 (新)',
@@ -283,6 +283,7 @@ You (${targetLanguage.name}): "I'll report on the project progress. Currently, p
         voice?: string;
         enableAudioOutput?: boolean;
         enableServerVAD?: boolean;
+        transcribeModel?: string;
         tone?: 'professional' | 'casual' | 'empathetic';
         pacing?: 'fast' | 'normal' | 'slow';
     }): RealtimeSessionConfig {
@@ -292,6 +293,7 @@ You (${targetLanguage.name}): "I'll report on the project progress. Currently, p
             voice = 'cedar', // デフォルトは新しい cedar 音声
             enableAudioOutput = true,
             enableServerVAD = true,
+            transcribeModel = 'gpt-realtime-whisper',
             tone = 'professional',
             pacing = 'normal'
         } = options;
@@ -321,7 +323,7 @@ You (${targetLanguage.name}): "I'll report on the project progress. Currently, p
                 input: {
                     format: audioFormat,
                     transcription: {
-                        model: 'whisper-1'
+                        model: transcribeModel
                     }
                 },
                 output: {

@@ -336,51 +336,42 @@ class TextPathProcessor {
      *
      * @private
      * @param {string} text - テキスト
-     * @returns {string|null} 言語コード ('ja', 'zh', 'ko', 'en', etc) または null
+     * @returns {string|null} 言語コード ('ja', 'zh', 'en', 'vi') または null
      */
     detectLanguageFromTranscript(text) {
         if (!text || text.trim().length === 0) {
             return null;
         }
 
-        const trimmed = text.trim();
-        const detected = (() => {
-            if (/[\u3040-\u309F\u30A0-\u30FF]/.test(trimmed)) {
-                return { language: 'ja', name: '日本語' };
-            }
-            if (/[\uAC00-\uD7AF]/.test(trimmed)) {
-                return { language: 'ko', name: '한국어' };
-            }
-            if (
-                /[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(
-                    trimmed
-                )
-            ) {
-                return { language: 'vi', name: 'Tiếng Việt' };
-            }
-            if (/[áéíñóúü¿¡]/i.test(trimmed)) {
-                return { language: 'es', name: 'Español' };
-            }
-            if (/[àâçéèêëîïôûùüÿœæ]/i.test(trimmed)) {
-                return { language: 'fr', name: 'Français' };
-            }
+        const fallback =
+            this.app?.state?.sourceLang && this.app.state.sourceLang !== 'auto'
+                ? this.app.state.sourceLang
+                : 'en';
 
-            if (/[\u4E00-\u9FFF]/.test(trimmed)) {
-                // 漢字だけの日本語/中国語は文字種だけでは危険なので、明確な簡体中文特徴がある時だけ zh。
-                if (/[这们汉语吗没过说让对]/.test(trimmed)) {
-                    return { language: 'zh', name: '中文' };
-                }
-                return { language: 'auto', name: 'CJK ambiguous' };
-            }
+        if (typeof Utils !== 'undefined' && Utils.detectSupportedLanguageFromText) {
+            return Utils.detectSupportedLanguageFromText(text, fallback);
+        }
 
-            if (/^[a-zA-Z\s0-9!?,.'-]+$/.test(trimmed)) {
-                return { language: 'en', name: 'English' };
-            }
+        const supportedFallback = ['ja', 'zh', 'en', 'vi'].includes(fallback) ? fallback : 'en';
+        const value = text.trim();
 
-            return { language: 'auto', name: 'unknown' };
-        })();
+        if (/[\u3040-\u30ff]/.test(value)) {
+            return 'ja';
+        }
 
-        return detected.language;
+        if (/[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(value)) {
+            return 'vi';
+        }
+
+        if (/[\u3400-\u9fff]/.test(value)) {
+            return 'zh';
+        }
+
+        if (/[A-Za-z]/.test(value)) {
+            return 'en';
+        }
+
+        return supportedFallback;
     }
 
     /**
@@ -687,338 +678,15 @@ class VoicePathProcessor {
             throw new Error('segment は null または undefined です');
         }
 
-        try {
-
-            // ✅ モード 0 の場合はスキップ
-            if (this.mode === 0) {
-                this.audioQueue.markPathComplete(segment.id, 'path2', {
-                    skipped: true
-                });
-                return;
-            }
-
-            this.isProcessing = true;
-
-            // ✅ パス1の音声送信完了待機
-
-            try {
-                await segment.waitForAudioSent();
-            } catch (error) {
-                throw new Error('Path1の音声送信を待機中にタイムアウト');
-            }
-
-            // ❌ 重複送信削除（Path1 已经送信）
-            // await this.sendAudioToServer(segment.audioData); // ← 削除
-
-            // 音声翻訳（OpenAI Realtime API）
-            // 注意: 現在の実装では、この処理は WebSocket 経由で行われるため
-            // ここでは API 呼び出しを待機する必要がある
-            const result = await this.voiceToVoice(segment);
-
-            if (result === null || result.audio === null) {
-                // 空でも完了マーク
-                this.audioQueue.markPathComplete(segment.id, 'path2', {
-                    error: 'Empty audio result'
-                });
-                return;
-            }
-
-
-            // ✅ 音声再生（非同期 - await しない）
-            // 理由: 音声再生を待つと、次のセグメントの処理が遅延してしまう
-            // ⚠️ 修正: result.audio が 'received' の場合は既にメイン mixin で再生済みのためスキップ
-            if (result.audio && result.audio !== 'received') {
-                this.playAudio(result.audio, segment.id, segment.alignment?.responseId || null);
-            }
-
-            // モード1の場合、STS transcript も同じ segment に表示
-            if (this.mode === 1 && result.text !== null && result.text.trim() !== '') {
-                this.displayTranslatedText(result.text, segment.id, segment.alignment?.responseId);
-            }
-
-            // マーク完了
-            this.audioQueue.markPathComplete(segment.id, 'path2', {
-                audio: result.audio,
-                text: result.text
-            });
-
-        } catch (error) {
-
-            // エラーでも完了マーク
-            this.audioQueue.markPathComplete(segment.id, 'path2', {
-                error: error.message
-            });
-        } finally {
-            this.isProcessing = false;
-        }
-    }
-
-    /**
-     * 音声 → 音声翻译
-     *
-     * @private
-     * @param {AudioSegment} segment 音声セグメント
-     * @returns {Promise<{audio: string|null, text: string|null}>} 翻译結果
-     */
-    async voiceToVoice(segment) {
-        // 使用 OpenAI Realtime API (WebSocket)
-        // 通过 VoiceTranslateApp 的现有 WebSocket 连接送信音声
-
-        // 创建 response.create 请求
-        const audioOutputEnabled =
-            this.app.elements?.audioOutputEnabled?.classList.contains('active') ?? true;
-        // GA: output_modalities は ['audio'] または ['text'] のいずれか
-        //（'audio' を指定すると音声出力＋文字起こしの両方が得られる）
-        const modalities = audioOutputEnabled ? ['audio'] : ['text'];
-
-
-        // 创建 Promise 来待機 WebSocket 响应
-        return new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
-                // ✅ タイムアウト時はリスナーを削除
-                this.app.removeRealtimeMessageListener?.(unifiedListener);
-                reject(new Error('Voice-to-Voice timeout (60s)'));
-            }, 60000);
-
-            // ✅ 監聴データ
-            let audioData = null;
-            let textData = ''; // ← 空文字列で初期化（delta を蓄積）
-            let responseId = null;
-
-            // ✅ 統合リスナー（重複登録を防止）
-            const unifiedListener = (message) => {
-                try {
-                    // Response created
-                    if (message.type === 'response.created') {
-                        responseId = message.response.id;
-                        segment.alignment.responseId = responseId;
-                        if (this.app.segmentAlignment) {
-                            const aligned = this.app.segmentAlignment.bindResponse(
-                                segment.id,
-                                responseId
-                            );
-                            this.app.upsertSegmentOutput(segment.id, aligned.output.text, {
-                                responseId,
-                                status: 'responding',
-                                placeholder: '翻訳中...'
-                            });
-                        }
-                    }
-
-                    // ✅ 翻訳テキストデルタ受信（段階的にテキストを蓄積）
-                    // ✅ 重要: responseId をチェックして、このセグメント専用のメッセージのみ処理
-                    if (message.type === 'response.output_audio_transcript.delta') {
-                        // ✅ デバッグ: すべての delta を記録
-
-                        if (message.delta && message.response_id === responseId) {
-                            textData += message.delta;
-                            if (this.app.segmentAlignment) {
-                                const aligned =
-                                    this.app.segmentAlignment.appendOutputTextByResponse(
-                                        responseId,
-                                        message.delta
-                                    );
-                                if (aligned) {
-                                    this.app.upsertSegmentOutput(aligned.id, aligned.output.text, {
-                                        responseId,
-                                        status: 'responding'
-                                    });
-                                }
-                            }
-                        }
-                    }
-
-                    // ✅ 翻訳テキスト受信完了
-                    if (
-                        message.type === 'response.output_audio_transcript.done' &&
-                        message.response_id === responseId
-                    ) {
-                        if (this.app.segmentAlignment) {
-                            const aligned =
-                                this.app.segmentAlignment.markOutputTextDone(responseId);
-                            if (aligned) {
-                                this.app.upsertSegmentOutput(aligned.id, aligned.output.text, {
-                                    responseId,
-                                    status: 'text-done'
-                                });
-                            }
-                        }
-                    }
-
-                    // 翻訳音声受信完了
-                    // ✅ 重要: responseId をチェックして、このセグメント専用のメッセージのみ処理
-                    if (
-                        message.type === 'response.output_audio.done' &&
-                        message.response_id === responseId
-                    ) {
-                        // ✅ 修正: audioData = 'queued' を削除
-                        // 理由: 実際の音声データは WebSocketMixin.handleAudioDelta によって既に playbackQueue に追加されている
-                        //       ここで 'queued' という文字列を入れると playbackQueue が汚染されエラーの原因になる
-                        audioData = 'received';
-                        if (this.app.segmentAlignment) {
-                            this.app.segmentAlignment.markOutputAudioDone(responseId);
-                        }
-                    }
-
-                    // Response 完全完了
-                    if (message.type === 'response.done' && message.response.id === responseId) {
-                        clearTimeout(timeoutId);
-
-                        // ✅ リスナーを削除
-                        this.app.removeRealtimeMessageListener?.(unifiedListener);
-
-
-                        resolve({
-                            audio: audioData,
-                            text: textData.trim() || null // ← 空文字列の場合は null
-                        });
-                    }
-                } catch (error) {
-                }
-            };
-
-            // 検証: Realtime transport が接続済みか
-            if (!this.app.isRealtimeTransportReady?.()) {
-                clearTimeout(timeoutId);
-                reject(new Error('WebSocket 未接続または未準備'));
-                return;
-            }
-
-            if (!this.app.segmentAlignment) {
-                clearTimeout(timeoutId);
-                reject(new Error('SegmentAlignmentManager is required for STS mode'));
-                return;
-            }
-            this.app.segmentAlignment.ensureSegment(segment.id, {
-                durationMs: segment.getDuration(),
-                sampleRate: segment.metadata.sampleRate || 24000,
-                sourceLang: segment.metadata.language,
-                status: 'responding'
-            });
-            this.app.segmentAlignment.enqueueResponseSegment(segment.id);
-            this.app.upsertSegmentOutput(segment.id, '', {
-                status: 'responding',
-                placeholder: '翻訳中...'
-            });
-
-            // ✅ 単一リスナーを登録
-            this.app.addRealtimeMessageListener(unifiedListener);
-
-
-            // 送信 response.create 请求
-            const request = {
-                type: 'response.create',
-                response: {
-                    // GA: response.create も output_modalities を使用（旧: modalities）
-                    output_modalities: modalities,
-                    instructions: this.app.getInstructions()
-                }
-            };
-
-            try {
-                this.app.sendMessage(request);
-            } catch (error) {
-                clearTimeout(timeoutId);
-                this.app.removeRealtimeMessageListener?.(unifiedListener);
-                reject(error);
-            }
+        // リアルタイム音声翻訳セッションでは per-segment の response.create を発行しない。
+        // 翻訳音声/テキストは session.output_* イベントでストリーム受信し、
+        // mixin 側（handleAudioDelta / handleTranslationTranscriptDelta）が再生・表示する。
+        // Path2 はパイプライン互換のため完了マークのみ行う。
+        this.audioQueue.markPathComplete(segment.id, 'path2', {
+            skipped: 'translation-session'
         });
     }
 
-    /**
-     * 音声播放
-     *
-     * 目的:
-     *   翻訳音声を出力設定に基づいて、音声を再生するかどうかを判定
-     *
-     * 入力:
-     *   audioData: Base64エンコードされた音声データ
-     *
-     * 注意:
-     *   「翻訳音声を出力」がOFFの場合は、音声を再生しない
-     *   音声再生は非同期で行われ、キューに追加されて順番に再生される
-     *
-     * @private
-     * @param {string} audioData Base64エンコードされた音声データ
-     * @returns {Promise<void>}
-     */
-    async playAudio(audioData, segmentId = null, responseId = null) {
-        // ✅ 「翻訳音声を出力」設定をチェック
-        const audioOutputEnabled =
-            this.app.elements?.audioOutputEnabled?.classList.contains('active') ?? true;
-
-        if (!audioOutputEnabled) {
-            return;
-        }
-
-        if (this.app.playbackQueue === null || this.app.playbackQueue === undefined) {
-            return;
-        }
-
-        // ✅ 音声再生キューに追加
-        this.app.playbackQueue.push({
-            audio: audioData,
-            segmentId,
-            responseId
-        });
-
-
-        // ✅ キューが処理中でなければ、再生開始
-        if (!this.app.isPlayingFromQueue) {
-            this.app.playNextInQueue();
-        }
-
-        // ✅ 注意: 音声再生は非同期で行われるため、ここでは await しない
-        // 再生完了を待つと、次のセグメントの処理が遅延してしまう
-        // 音声再生キューが順番に処理することで、音声の連続性を保証する
-    }
-
-    /**
-     * 显示翻译文本（模式1のみ）
-     *
-     * @private
-     * @param {string} text 翻译文本
-     */
-    displayTranslatedText(text, segmentId, responseId = null) {
-        if (!segmentId || !this.app.segmentAlignment) {
-            throw new Error('STS output requires SegmentAlignmentManager and segmentId');
-        }
-
-        let segment = responseId
-            ? this.app.segmentAlignment.setOutputTextByResponse(responseId, text, {
-                  isFinal: true
-              })
-            : this.app.segmentAlignment.ensureSegment(segmentId);
-
-        if (!segment && responseId) {
-            segment = this.app.segmentAlignment.bindResponse(segmentId, responseId);
-            segment.output.text = text;
-            segment.output.isFinal = true;
-        }
-
-        if (!responseId) {
-            segment.output.text = text;
-            segment.output.isFinal = true;
-        }
-
-        this.app.upsertSegmentOutput(segment.id, segment.output.text, {
-            responseId: responseId || segment.output.responseId,
-            status: 'done'
-        });
-    }
-
-    /**
-     * HTML转义
-     *
-     * @private
-     * @param {string} text 文本
-     * @returns {string} 转义后的文本
-     */
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
 }
 
 /**

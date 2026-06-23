@@ -499,9 +499,17 @@ function registerIPCHandlers(): void {
             errors.push('OPENAI_CHAT_MODEL が設定されていません');
         }
 
+        // 3. TRANSCRIBE_MODEL: 入力音声認識用（オプション）
+        // 旧名 OPENAI_TRANSCRIPTION_MODEL も互換で読む。
+        const transcribeModel =
+            process.env['OPENAI_TRANSCRIBE_MODEL'] ||
+            process.env['OPENAI_TRANSCRIPTION_MODEL'] ||
+            'gpt-realtime-whisper';
+
         // Realtime URL（オプション、デフォルト値あり）
         const realtimeUrl =
-            process.env['OPENAI_REALTIME_URL'] || 'wss://api.openai.com/v1/realtime';
+            process.env['OPENAI_REALTIME_URL'] ||
+            'wss://api.openai.com/v1/realtime/translations';
 
         // エラーがある場合は例外を投げる
         if (errors.length > 0) {
@@ -509,8 +517,9 @@ function registerIPCHandlers(): void {
                 `設定エラー: 必須の環境変数が設定されていません\n` +
                 `${errors.join('\n')}\n\n` +
                 `.env ファイルに以下の設定を追加してください:\n` +
-                `OPENAI_REALTIME_MODEL=gpt-realtime-2025-08-28\n` +
-                `OPENAI_CHAT_MODEL=gpt-5-2025-08-07`;
+                `OPENAI_REALTIME_MODEL=gpt-realtime-translate\n` +
+                `OPENAI_CHAT_MODEL=gpt-5-2025-08-07\n` +
+                `OPENAI_TRANSCRIBE_MODEL=gpt-realtime-whisper`;
 
             console.error('[Main]', errorMessage);
             throw new Error(errorMessage);
@@ -537,6 +546,7 @@ function registerIPCHandlers(): void {
         const config = {
             realtimeModel: realtimeModel!,
             chatModel: chatModel!,
+            transcribeModel,
             realtimeUrl,
             translation
         };
@@ -544,6 +554,7 @@ function registerIPCHandlers(): void {
         console.info('[Main] Config loaded from environment:', {
             realtimeModel: config.realtimeModel,
             chatModel: config.chatModel,
+            transcribeModel: config.transcribeModel,
             realtimeUrl: config.realtimeUrl,
             translation: config.translation
         });

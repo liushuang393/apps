@@ -199,7 +199,7 @@ describe('SegmentAlignmentManager', () => {
         const processor = new TextPathProcessor(null, {});
 
         expect(processor.detectLanguageFromTranscript('今日は良い天気です。')).toBe('ja');
-        expect(processor.detectLanguageFromTranscript('会議資料確認')).toBe('auto');
+        expect(processor.detectLanguageFromTranscript('会議資料確認')).toBe('zh');
         expect(processor.detectLanguageFromTranscript('这是中文。')).toBe('zh');
         expect(processor.detectLanguageFromTranscript('Xin chào mọi người.')).toBe('vi');
         expect(processor.detectLanguageFromTranscript('Hello everyone.')).toBe('en');

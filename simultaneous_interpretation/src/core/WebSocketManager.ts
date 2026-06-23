@@ -291,7 +291,7 @@ export class WebSocketManager {
                     input: {
                         format: audioFormat,
                         transcription: {
-                            model: 'whisper-1'
+                            model: CONFIG.API.TRANSCRIBE_MODEL || 'gpt-realtime-whisper'
                         },
                         turn_detection: config.vadEnabled
                             ? {

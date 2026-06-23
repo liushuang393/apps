@@ -539,15 +539,7 @@ export class TranslationInstructionGenerator {
             en: '英語',
             ja: '日本語',
             zh: '简体中文',
-            ko: '韓国語',
-            es: 'スペイン語',
-            fr: 'フランス語',
-            de: 'ドイツ語',
-            it: 'イタリア語',
-            pt: 'ポルトガル語',
-            ru: 'ロシア語',
-            ar: 'アラビア語',
-            hi: 'ヒンディー語'
+            vi: 'ベトナム語'
         };
 
         return languageMap[langCode] || langCode;

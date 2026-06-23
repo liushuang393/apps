@@ -62,6 +62,7 @@ export class LanguageDetector {
     private config: LanguageDetectorConfig;
     private detectionHistory: LanguageDetectionResult[] = [];
     private languageStats: Map<string, LanguageStats> = new Map();
+    private readonly supportedLanguages = new Set(['ja', 'zh', 'en', 'vi']);
 
     // 言語パターン（簡易版）
     private readonly languagePatterns: Map<string, RegExp[]> = new Map([
@@ -69,8 +70,7 @@ export class LanguageDetector {
             'ja',
             [
                 /[\u3040-\u309F]/, // ひらがな
-                /[\u30A0-\u30FF]/, // カタカナ
-                /[\u4E00-\u9FAF]/ // 漢字
+                /[\u30A0-\u30FF]/ // カタカナ
             ]
         ],
         [
@@ -83,27 +83,16 @@ export class LanguageDetector {
         [
             'zh',
             [
+                /[这们汉语吗没过说让对会后发现为国个来]/,
                 /[\u4E00-\u9FFF]/, // 中国語簡体字・繁体字
                 /[\u3400-\u4DBF]/ // CJK拡張A
             ]
         ],
         [
-            'ko',
+            'vi',
             [
-                /[\uAC00-\uD7AF]/, // ハングル
-                /[\u1100-\u11FF]/ // ハングル字母
-            ]
-        ],
-        [
-            'es',
-            [/\b(el|la|los|las|un|una|de|del|al)\b/i, /\b(es|son|está|están|hay|tiene|tienen)\b/i]
-        ],
-        ['fr', [/\b(le|la|les|un|une|de|du|des|au|aux)\b/i, /\b(est|sont|a|ont|fait|font)\b/i]],
-        [
-            'de',
-            [
-                /\b(der|die|das|den|dem|des|ein|eine|einen|einem)\b/i,
-                /\b(ist|sind|hat|haben|wird|werden)\b/i
+                /[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i,
+                /\b(va|cua|toi|ban|khong|mot|nhung|chung)\b/i
             ]
         ]
     ]);
@@ -115,7 +104,7 @@ export class LanguageDetector {
      */
     constructor(config: Partial<LanguageDetectorConfig> = {}) {
         this.config = {
-            defaultLanguage: config.defaultLanguage ?? 'en',
+            defaultLanguage: this.normalizeSupportedLanguage(config.defaultLanguage ?? 'en'),
             minConfidence: config.minConfidence ?? 0.5,
             historySize: config.historySize ?? 10
         };
@@ -123,6 +112,10 @@ export class LanguageDetector {
         logger.info('LanguageDetector initialized', {
             defaultLanguage: this.config.defaultLanguage
         });
+    }
+
+    private normalizeSupportedLanguage(language: string): string {
+        return this.supportedLanguages.has(language) ? language : 'en';
     }
 
     /**

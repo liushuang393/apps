@@ -32,6 +32,9 @@ export interface WebSocketConfig {
     /** 使用するモデル名 */
     model: string;
 
+    /** 入力音声認識モデル */
+    transcribeModel?: string;
+
     /** 再接続試行回数（デフォルト: 3） */
     reconnectAttempts?: number;
 
@@ -128,6 +131,7 @@ export enum MessageType {
     SESSION_UPDATE = 'session.update',
     SESSION_CREATED = 'session.created',
     INPUT_AUDIO_BUFFER_APPEND = 'input_audio_buffer.append',
+    SESSION_INPUT_AUDIO_BUFFER_APPEND = 'session.input_audio_buffer.append',
     INPUT_AUDIO_BUFFER_COMMIT = 'input_audio_buffer.commit',
     INPUT_AUDIO_BUFFER_CLEAR = 'input_audio_buffer.clear',
     CONVERSATION_ITEM_CREATE = 'conversation.item.create',

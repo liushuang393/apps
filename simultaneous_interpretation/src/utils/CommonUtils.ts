@@ -31,12 +31,8 @@ export class CommonUtils {
         const names: Record<string, string> = {
             ja: 'Japanese',
             en: 'English',
-            zh: 'Chinese',
-            ko: 'Korean',
-            es: 'Spanish',
-            fr: 'French',
-            de: 'German',
-            pt: 'Portuguese'
+            zh: 'Simplified Chinese',
+            vi: 'Vietnamese'
         };
         return names[code] || code;
     }
@@ -48,12 +44,8 @@ export class CommonUtils {
         const names: Record<string, string> = {
             ja: '日本語',
             en: 'English',
-            zh: '中文',
-            ko: '한국어',
-            es: 'Español',
-            fr: 'Français',
-            de: 'Deutsch',
-            pt: 'Português'
+            zh: '简体中文',
+            vi: 'Tiếng Việt'
         };
         return names[code] || code;
     }

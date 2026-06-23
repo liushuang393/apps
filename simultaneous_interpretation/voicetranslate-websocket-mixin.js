@@ -89,15 +89,9 @@ const WebSocketMixin = {
     },
 
     commitRealtimeInputAudioBuffer(reason = 'manual-commit') {
-        const stats = this.getRealtimeInputAudioBufferStats();
-        if (stats.durationMs < REALTIME_MIN_COMMIT_AUDIO_MS) {
-            this.clearRealtimeInputAudioBuffer(`too-short:${reason}`);
-            return false;
-        }
-
-        this.sendMessage({ type: 'input_audio_buffer.commit' });
-        this.resetRealtimeInputAudioBufferStats();
-        return true;
+        // 翻訳セッションは音声を連続ストリームで処理するため手動 commit を行わない。
+        // （commit すると per-turn のレスポンス生成を促してしまい、翻訳の連続性を壊す）
+        return false;
     },
 
     /**
@@ -174,6 +168,13 @@ const WebSocketMixin = {
         return !!(this.state.ws && this.state.ws.readyState === WebSocket.OPEN);
     },
 
+    isRealtimeTranslationSession() {
+        const api = typeof CONFIG !== 'undefined' ? CONFIG.API || {} : {};
+        const url = api.REALTIME_URL || '';
+        const model = api.REALTIME_MODEL || '';
+        return url.includes('/realtime/translations') || model === 'gpt-realtime-translate';
+    },
+
     /**
      * WebSocketメッセージをディスパッチ
      *
@@ -221,10 +222,51 @@ const WebSocketMixin = {
             case 'response.done':
                 this.handleResponseDone(message);
                 break;
+            // ▼ 翻訳専用セッション（/v1/realtime/translations）のストリームイベント
+            case 'session.output_audio.delta':
+                // 翻訳音声チャンク → 低遅延でそのまま再生（response_id バインド無し）
+                if (message.delta) {
+                    this.playAudioChunk(message.delta, { responseId: null, segmentId: null });
+                }
+                break;
+            case 'session.output_transcript.delta':
+                this.handleTranslationTranscriptDelta('output', message.delta);
+                break;
+            case 'session.input_transcript.delta':
+                this.handleTranslationTranscriptDelta('input', message.delta);
+                break;
+            case 'session.closed':
+                break;
             case 'error':
                 this.handleWSMessageError(message);
                 break;
             default:
+        }
+    },
+
+    /**
+     * 翻訳専用セッションの transcript デルタを左右カラムへ累積表示する。
+     * 文末（句点/疑問符/改行）で1エントリとして確定する Phase1 の簡易レンダラ。
+     * ※ セグメント/時刻アライメントは優先度3で導入予定（ここでは時系列追記のみ）。
+     *
+     * @param {'input'|'output'} kind input=入力転写(左) / output=訳文(右)
+     * @param {string} delta 追加テキスト
+     */
+    handleTranslationTranscriptDelta(kind, delta) {
+        if (!delta) {
+            return;
+        }
+        if (!this.translationCaption) {
+            this.translationCaption = { input: '', output: '' };
+        }
+        this.translationCaption[kind] += delta;
+        const buffered = this.translationCaption[kind];
+        if (/[。．.!?！？\n]\s*$/.test(buffered)) {
+            const text = buffered.trim();
+            this.translationCaption[kind] = '';
+            if (text && typeof this.addTranscript === 'function') {
+                this.addTranscript(kind, text, null);
+            }
         }
     },
 
@@ -1297,7 +1339,9 @@ const WebSocketMixin = {
         const base64Audio = Utils.arrayBufferToBase64(pcmData);
 
         const message = {
-            type: 'input_audio_buffer.append',
+            type: this.isRealtimeTranslationSession()
+                ? 'session.input_audio_buffer.append'
+                : 'input_audio_buffer.append',
             audio: base64Audio
         };
 

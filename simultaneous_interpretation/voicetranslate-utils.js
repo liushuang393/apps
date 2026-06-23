@@ -164,7 +164,6 @@ class ResponseQueue {
     }
 
     handleError(error, code) {
-
         const errorCode = code || '';
         const errorMessage = error.message || '';
         const isActiveResponseError =
@@ -173,7 +172,6 @@ class ResponseQueue {
             errorMessage.includes('active response in progress');
 
         if (isActiveResponseError) {
-
             this.clearTimeoutTimer();
 
             // ✅ プル型アーキテクチャ: 処理中のリクエストをpendingキューに戻す
@@ -212,7 +210,6 @@ class ResponseQueue {
         this.clearTimeoutTimer();
 
         this.timeoutTimer = setTimeout(() => {
-
             const item = this.processingQueue.shift();
 
             if (item) {
@@ -269,13 +266,14 @@ const CONFIG = {
     DEBUG_MODE: false,
 
     API: {
-        REALTIME_URL: 'wss://api.openai.com/v1/realtime',
-        REALTIME_MODEL: 'gpt-realtime-2025-08-28',
+        // リアルタイム音声翻訳の経路: /v1/realtime/translations + gpt-realtime-translate。
+        // 音声入力中に翻訳音声/字幕をストリーム返却し、response.create は使わない。
+        REALTIME_URL: 'wss://api.openai.com/v1/realtime/translations',
+        REALTIME_MODEL: 'gpt-realtime-translate',
         CHAT_MODEL: 'gpt-5-2025-08-07',
-        // 音声認識（入力音声→入力テキスト）モデル。
-        // whisper-1 は旧式で CJK 精度が低いため、最新の gpt-4o-transcribe を既定にする。
-        // 軽量・低遅延を優先する場合は 'gpt-4o-mini-transcribe' に変更可。
-        TRANSCRIBE_MODEL: 'gpt-4o-transcribe',
+        // ライブ入力音声の並行STT用モデル。
+        // gpt-realtime-whisper は低遅延ストリーミング向け。ファイル/リクエスト式の高精度転写は gpt-4o-transcribe。
+        TRANSCRIBE_MODEL: 'gpt-realtime-whisper',
         TIMEOUT: 30000
     },
 
@@ -356,6 +354,14 @@ const CONFIG = {
     }
 };
 
+const SUPPORTED_LANGUAGE_CODES = Object.freeze(['ja', 'zh', 'en', 'vi']);
+const VIETNAMESE_MARK_RE =
+    /[ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i;
+const JAPANESE_KANA_RE = /[\u3040-\u309F\u30A0-\u30FF]/;
+const CJK_RE = /[\u3400-\u4DBF\u4E00-\u9FFF]/;
+const SIMPLIFIED_CHINESE_HINT_RE = /[这们汉语吗没过说让对会后发现为国个来]/;
+const LATIN_RE = /[A-Za-z]/;
+
 /**
  * 現在のプリセット設定を取得
  */
@@ -367,6 +373,8 @@ function getAudioPreset() {
  * データ変換ユーティリティ
  */
 const AudioUtils = {
+    SUPPORTED_LANGUAGE_CODES,
+
     arrayBufferToBase64(buffer) {
         let binary = '';
         const bytes = new Uint8Array(buffer);
@@ -445,18 +453,49 @@ const AudioUtils = {
         return out;
     },
 
+    isSupportedLanguage(code) {
+        return SUPPORTED_LANGUAGE_CODES.includes(code);
+    },
+
+    normalizeLanguageCode(code, fallback = 'en') {
+        if (this.isSupportedLanguage(code)) {
+            return code;
+        }
+        return this.isSupportedLanguage(fallback) ? fallback : 'en';
+    },
+
+    detectSupportedLanguageFromText(text, fallback = 'en') {
+        const trimmed = (text || '').trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        if (JAPANESE_KANA_RE.test(trimmed)) {
+            return 'ja';
+        }
+        if (VIETNAMESE_MARK_RE.test(trimmed)) {
+            return 'vi';
+        }
+        if (CJK_RE.test(trimmed)) {
+            if (SIMPLIFIED_CHINESE_HINT_RE.test(trimmed)) {
+                return 'zh';
+            }
+            // Four-language mode must not return auto. Han-only text is closest to Chinese.
+            return 'zh';
+        }
+        if (LATIN_RE.test(trimmed)) {
+            return 'en';
+        }
+
+        return this.normalizeLanguageCode(fallback, 'en');
+    },
+
     getLanguageName(code) {
         const languages = {
-            ja: '日本語',
+            ja: 'Japanese',
             en: 'English',
-            zh: '中国語',
-            ko: '한국어',
-            es: 'Español',
-            fr: 'Français',
-            de: 'Deutsch',
-            it: 'Italiano',
-            pt: 'Português',
-            ru: 'Русский'
+            zh: 'Simplified Chinese',
+            vi: 'Vietnamese'
         };
         return languages[code] || code;
     },
@@ -465,14 +504,8 @@ const AudioUtils = {
         const nativeNames = {
             ja: '日本語',
             en: 'English',
-            zh: '中国語/Chinese',
-            ko: '한국어',
-            es: 'Español',
-            fr: 'Français',
-            de: 'Deutsch',
-            it: 'Italiano',
-            pt: 'Português',
-            ru: 'Русский'
+            zh: '简体中文',
+            vi: 'Tiếng Việt'
         };
         return nativeNames[code] || code;
     }

@@ -100,12 +100,8 @@ describe('Utils', () => {
         it('should return English name for known language codes', () => {
             expect(getLanguageName('ja')).toBe('Japanese');
             expect(getLanguageName('en')).toBe('English');
-            expect(getLanguageName('zh')).toBe('Chinese');
-            expect(getLanguageName('ko')).toBe('Korean');
-            expect(getLanguageName('es')).toBe('Spanish');
-            expect(getLanguageName('fr')).toBe('French');
-            expect(getLanguageName('de')).toBe('German');
-            expect(getLanguageName('pt')).toBe('Portuguese');
+            expect(getLanguageName('zh')).toBe('Simplified Chinese');
+            expect(getLanguageName('vi')).toBe('Vietnamese');
         });
 
         it('should return code itself for unknown language codes', () => {
@@ -118,12 +114,8 @@ describe('Utils', () => {
         it('should return native name for known language codes', () => {
             expect(getNativeLanguageName('ja')).toBe('日本語');
             expect(getNativeLanguageName('en')).toBe('English');
-            expect(getNativeLanguageName('zh')).toBe('中文');
-            expect(getNativeLanguageName('ko')).toBe('한국어');
-            expect(getNativeLanguageName('es')).toBe('Español');
-            expect(getNativeLanguageName('fr')).toBe('Français');
-            expect(getNativeLanguageName('de')).toBe('Deutsch');
-            expect(getNativeLanguageName('pt')).toBe('Português');
+            expect(getNativeLanguageName('zh')).toBe('简体中文');
+            expect(getNativeLanguageName('vi')).toBe('Tiếng Việt');
         });
 
         it('should return code itself for unknown language codes', () => {

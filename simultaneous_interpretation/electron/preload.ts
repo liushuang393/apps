@@ -106,11 +106,13 @@ export interface ElectronAPI {
      * @returns モデル設定オブジェクト
      *   - realtimeModel: Realtime API用モデル（音声→音声翻訳、音声認識）
      *   - chatModel: Chat Completions API用モデル（言語検出、テキスト翻訳）
+     *   - transcribeModel: 入力音声認識用モデル
      *   - realtimeUrl: Realtime API URL
      */
     getEnvConfig: () => Promise<{
         realtimeModel: string;
         chatModel: string;
+        transcribeModel: string;
         realtimeUrl: string;
         translation: {
             turnMode?: string;

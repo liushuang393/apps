@@ -52,6 +52,7 @@ export class WebSocketManager {
             url: config.url,
             apiKey: config.apiKey,
             model: config.model,
+            transcribeModel: config.transcribeModel ?? 'gpt-realtime-whisper',
             reconnectAttempts: config.reconnectAttempts ?? 3,
             reconnectDelay: config.reconnectDelay ?? 1000,
             connectionTimeout: config.connectionTimeout ?? 10000
@@ -213,7 +214,7 @@ export class WebSocketManager {
                     input: {
                         format: audioFormat,
                         transcription: {
-                            model: 'whisper-1'
+                            model: this.config.transcribeModel
                         },
                         turn_detection: {
                             type: 'server_vad',

@@ -337,6 +337,8 @@ export class VoiceTranslateCore {
             if (envConfig !== null) {
                 CONFIG.API.REALTIME_MODEL = envConfig.realtimeModel;
                 CONFIG.API.CHAT_MODEL = envConfig.chatModel;
+                CONFIG.API.TRANSCRIBE_MODEL =
+                    envConfig.transcribeModel || CONFIG.API.TRANSCRIBE_MODEL;
                 CONFIG.API.REALTIME_URL = envConfig.realtimeUrl;
             }
         } catch (error) {
