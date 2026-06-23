@@ -311,7 +311,9 @@ class AudioQueue {
             maxSegmentDuration: options.maxSegmentDuration || 15000,
             // ✅ 最小セグメント時長: 300ms（品質優先 - 短い単語も重要）
             minSegmentDuration: options.minSegmentDuration || 300,
-            maxQueueSize: options.maxQueueSize || 20,
+            // 翻訳漏れ厳禁: バースト発話でも取りこぼさないよう十分な深さを確保する。
+            // （満杯時は enqueue が drop するため、20 では会議の連続発話で漏れやすい）
+            maxQueueSize: options.maxQueueSize || 100,
             cleanupDelay: options.cleanupDelay || 1000
         };
 

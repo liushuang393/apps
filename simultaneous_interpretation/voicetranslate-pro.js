@@ -1575,8 +1575,9 @@ class VoiceTranslateApp {
                         format: audioFormat,
                         transcription: {
                             // 音声認識モデル（入力音声 → 入力テキスト）
-                            // gpt-realtime-2025-08-28 では whisper-1 を使用
-                            model: 'whisper-1'
+                            // 既定 gpt-4o-transcribe（CJK 精度が whisper-1 より大幅に高い）。
+                            // CONFIG.API.TRANSCRIBE_MODEL で差し替え可能。
+                            model: CONFIG.API.TRANSCRIBE_MODEL || 'gpt-4o-transcribe'
                             // language を指定しない → 自動言語検出を有効化
                             // 多人数・多言語環境で正確な言語検出を実現
                         },

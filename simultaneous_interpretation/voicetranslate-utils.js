@@ -272,6 +272,10 @@ const CONFIG = {
         REALTIME_URL: 'wss://api.openai.com/v1/realtime',
         REALTIME_MODEL: 'gpt-realtime-2025-08-28',
         CHAT_MODEL: 'gpt-5-2025-08-07',
+        // 音声認識（入力音声→入力テキスト）モデル。
+        // whisper-1 は旧式で CJK 精度が低いため、最新の gpt-4o-transcribe を既定にする。
+        // 軽量・低遅延を優先する場合は 'gpt-4o-mini-transcribe' に変更可。
+        TRANSCRIBE_MODEL: 'gpt-4o-transcribe',
         TIMEOUT: 30000
     },
 
@@ -332,7 +336,9 @@ const CONFIG = {
         SEMANTIC_EAGERNESS: 'medium',
         MIN_COMPLETE_SENTENCES: 1,
         MAX_SENTENCES: 3,
-        POST_SENTENCE_HOLD_MS: 500,
+        // 1文完結後にポーズ（次発話の有無）を見極める猶予。日中語の文間ポーズは
+        // 概ね 300-500ms。短くするほど「1文＝即送信」に近づき実時性が上がる。
+        POST_SENTENCE_HOLD_MS: 350,
         MAX_BUFFER_MS: 6000
     },
 
