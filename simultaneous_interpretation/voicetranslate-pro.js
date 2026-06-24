@@ -32,6 +32,11 @@ class VoiceTranslateApp {
             sessionStartTime: null,
             charCount: 0,
             ws: null,
+            // ▼ ブラウザ/拡張機能の翻訳エンドポイント接続用（WebRTC + ephemeral client secret）
+            //   翻訳エンドポイントはブラウザからの APIキー直WSを許可しないため WebRTC を使う。
+            pc: null, // RTCPeerConnection
+            dataChannel: null, // session.* イベント用データチャネル
+            translatedAudioEl: null, // 翻訳音声（リモートトラック）再生用 <audio>
             audioContext: null, // 入力音声処理用AudioContext
             outputAudioContext: null, // 出力音声再生専用AudioContext（優先度確保）
             mediaStream: null,
@@ -1372,11 +1377,19 @@ class VoiceTranslateApp {
      * setSinkId 非対応環境では既定デバイスのまま（何もしない）。
      */
     async applyOutputSink() {
-        const ctx = this.state.outputAudioContext;
         const deviceId = this.state.outputDeviceId;
+
+        // WebRTC 経路: 翻訳音声は <audio> 要素で再生されるため、要素側の出力先を切り替える。
+        // （原声分離・回灌防止のため、WS 経路の AudioContext と同様に物理出力を分離する）
+        const audioEl = this.state.translatedAudioEl;
+        if (audioEl && typeof audioEl.setSinkId === 'function') {
+            try {
+                await audioEl.setSinkId(deviceId || '');
+            } catch (err) {}
+        }
+
+        const ctx = this.state.outputAudioContext;
         if (!ctx || typeof ctx.setSinkId !== 'function') {
-            if (deviceId) {
-            }
             return;
         }
         try {
@@ -1456,6 +1469,13 @@ class VoiceTranslateApp {
                 return;
             }
 
+            // ✅ ブラウザ/拡張機能 + 翻訳エンドポイント: WebRTC + ephemeral client secret が必須。
+            //    （翻訳エンドポイントはブラウザからの APIキー直 WebSocket を受け付けない）
+            if (this.usesWebRtcTransport()) {
+                await this.connectWebRtcTranslation();
+                return;
+            }
+
             // ブラウザ環境の場合（sec-websocket-protocolで認証）
             const wsUrl = `${CONFIG.API.REALTIME_URL}?model=${CONFIG.API.REALTIME_MODEL}`;
 
@@ -1499,6 +1519,9 @@ class VoiceTranslateApp {
         if (this.platform.isElectron) {
             // Electron環境
             await this.platform.closeRealtime();
+        } else if (this.usesWebRtcTransport()) {
+            // ブラウザ/拡張機能の翻訳エンドポイント（WebRTC）
+            this.closeWebRtc();
         } else if (this.state.ws) {
             // ブラウザ環境
             this.state.ws.close();
@@ -1553,19 +1576,278 @@ class VoiceTranslateApp {
 
     createSession() {
         // リアルタイム音声翻訳セッション（/v1/realtime/translations）。
-        // 出力言語のみ指定。response.create / turn_detection / output_modalities は使わず、
-        // 音声を session.input_audio_buffer.append で流し続けると翻訳音声/字幕がストリーム返却される。
-        // ※ 入力音声フォーマットは公式の最小例に合わせ未指定。サーバが形式エラーを返す場合は
-        //   audio.input.format（audio/pcm, 24kHz）を追加する。
+        // Electron のサーバ側WS（Authorization ヘッダ）では session.update で設定を送る。
+        // ※ ブラウザ/拡張機能の WebRTC 経路は client_secret 発行時に設定を埋め込むため
+        //   本メソッドは呼ばない（handleWebRtcConnected を参照）。
+        // 入力転写（audio.input.transcription）を設定することで session.input_transcript.delta
+        // （＝左カラムの音声認識）が返るようになる（公式仕様）。
         const targetLang = this.state.targetLang || 'ja';
         this.sendMessage({
             type: 'session.update',
             session: {
                 audio: {
+                    input: {
+                        transcription: {
+                            model: CONFIG.API.TRANSCRIBE_MODEL || 'gpt-realtime-whisper'
+                        }
+                    },
                     output: { language: targetLang }
                 }
             }
         });
+    }
+
+    /**
+     * ブラウザ/拡張機能で翻訳エンドポイントに WebRTC 接続すべきか。
+     *
+     * 翻訳エンドポイント（/v1/realtime/translations）はブラウザからの APIキー直 WebSocket を
+     * 受け付けない（公式: ブラウザは WebRTC + 短命 client secret が必須）。
+     *
+     * @returns {boolean} 非Electron かつ翻訳セッションのとき true
+     */
+    usesWebRtcTransport() {
+        return !this.platform.isElectron && this.isRealtimeTranslationSession();
+    }
+
+    /**
+     * REALTIME_URL（wss://...）から REST 用の https ベース URL を導出する。
+     * 例: wss://api.openai.com/v1/realtime/translations → https://api.openai.com/v1/realtime/translations
+     *
+     * @returns {string}
+     */
+    getTranslationRestBase() {
+        const wsUrl = CONFIG.API.REALTIME_URL || 'wss://api.openai.com/v1/realtime/translations';
+        let base = wsUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
+        if (!/\/realtime\/translations$/.test(base)) {
+            base = 'https://api.openai.com/v1/realtime/translations';
+        }
+        return base;
+    }
+
+    /**
+     * サーバ役（拡張機能/ブラウザ）として短命 client secret を発行する。
+     * 翻訳セッションの設定（出力言語・入力転写）はここで埋め込む。
+     *
+     * @returns {Promise<string>} ephemeral client secret 文字列
+     * @throws {Error} 発行失敗・レスポンス形式不正のとき
+     */
+    async mintTranslationClientSecret() {
+        const targetLang = this.state.targetLang || 'ja';
+        const body = {
+            session: {
+                model: CONFIG.API.REALTIME_MODEL,
+                audio: {
+                    input: {
+                        transcription: {
+                            model: CONFIG.API.TRANSCRIBE_MODEL || 'gpt-realtime-whisper'
+                        },
+                        noise_reduction: { type: 'near_field' }
+                    },
+                    output: { language: targetLang }
+                }
+            }
+        };
+        const res = await fetch(`${this.getTranslationRestBase()}/client_secrets`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${this.state.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const detail = await res.text().catch(() => '');
+            throw new Error(`client_secret 発行に失敗しました (${res.status}) ${detail}`.trim());
+        }
+        const data = await res.json();
+        const secret =
+            (data && data.client_secret && (data.client_secret.value || data.client_secret)) ||
+            data.value ||
+            null;
+        if (!secret || typeof secret !== 'string') {
+            throw new Error('client_secret の取得に失敗しました（レスポンス形式が不正）');
+        }
+        return secret;
+    }
+
+    /**
+     * 翻訳エンドポイントへ WebRTC で接続する（ブラウザ/拡張機能経路）。
+     *
+     * 流れ:
+     *   1. client_secret を発行（設定を埋め込む）
+     *   2. RTCPeerConnection を生成し、データチャネル(oai-events)と音声 m-line を用意
+     *   3. リモート音声トラックを <audio> で再生（翻訳音声）
+     *   4. SDP を /calls に POST して answer を適用
+     *   5. データチャネル open で接続完了（handleWebRtcConnected）
+     */
+    async connectWebRtcTranslation() {
+        try {
+            const clientSecret = await this.mintTranslationClientSecret();
+
+            const pc = new RTCPeerConnection();
+            this.state.pc = pc;
+
+            // 翻訳音声（リモートトラック）を再生する <audio> を用意
+            let audioEl = this.state.translatedAudioEl;
+            if (!audioEl) {
+                audioEl = document.createElement('audio');
+                audioEl.autoplay = true;
+                audioEl.style.display = 'none';
+                document.body.appendChild(audioEl);
+                this.state.translatedAudioEl = audioEl;
+            }
+            // 翻訳音声の出力先（原声分離用の物理デバイス）を反映する。
+            await this.applyOutputSink();
+            pc.ontrack = (event) => {
+                if (event.streams && event.streams[0]) {
+                    audioEl.srcObject = event.streams[0];
+                }
+            };
+
+            // セッションイベント用データチャネル（session.* が流れる）
+            const dc = pc.createDataChannel('oai-events');
+            this.state.dataChannel = dc;
+            dc.onopen = () => this.handleWebRtcConnected();
+            dc.onmessage = (event) => this.handleWSMessage(event);
+
+            // 音声送受信の m-line を確保（マイクは録音開始時に replaceTrack で接続する）
+            pc.addTransceiver('audio', { direction: 'sendrecv' });
+
+            pc.onconnectionstatechange = () => {
+                const st = pc.connectionState;
+                if (st === 'failed' || st === 'disconnected' || st === 'closed') {
+                    this.handleWebRtcDisconnected();
+                }
+            };
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            const sdpResponse = await fetch(`${this.getTranslationRestBase()}/calls`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${clientSecret}`,
+                    'Content-Type': 'application/sdp'
+                },
+                body: offer.sdp
+            });
+            if (!sdpResponse.ok) {
+                throw new Error(`SDP交換に失敗しました (${sdpResponse.status})`);
+            }
+            const answerSdp = await sdpResponse.text();
+            await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+            // データチャネル open を待つタイムアウト
+            this.timers.connectionTimeout = setTimeout(() => {
+                if (!this.state.isConnected) {
+                    this.disconnect();
+                    this.notify('エラー', '接続タイムアウト (30秒)', 'error');
+                }
+            }, CONFIG.API.TIMEOUT);
+        } catch (error) {
+            // 確立途中で失敗した PeerConnection を確実に解放する（リーク防止）。
+            this.closeWebRtc();
+            throw error;
+        }
+    }
+
+    /**
+     * WebRTC データチャネル open 時の接続完了処理（handleWSOpen の WebRTC 版）。
+     * 設定は client_secret 発行時に埋め込み済みのため session.update は送らない。
+     */
+    handleWebRtcConnected() {
+        clearTimeout(this.timers.connectionTimeout);
+
+        this.state.isConnected = true;
+        this.updateConnectionStatus('connected');
+        this.elements.connectBtn.disabled = true;
+        this.elements.disconnectBtn.disabled = false;
+        this.elements.startBtn.disabled = false;
+
+        this.startSessionTimer();
+        this.state.reconnectAttempt = 0;
+
+        this.notify('接続成功', 'OpenAI 翻訳APIに接続しました (WebRTC)', 'success');
+
+        if (this.state.userWantsActive && !this.state.isRecording) {
+            this.startRecording();
+        }
+    }
+
+    /**
+     * WebRTC 切断時の処理。ユーザーが継続意図を持つ場合は自動再接続する。
+     */
+    handleWebRtcDisconnected() {
+        if (!this.state.isConnected && !this.state.userWantsActive) {
+            return;
+        }
+        const wasActive = this.state.userWantsActive && !this.state.isUnloading;
+        this.state.isConnected = false;
+        this.closeWebRtc();
+        if (wasActive) {
+            this.updateConnectionStatus('connecting');
+            this.stopRecording();
+            this.scheduleReconnect();
+        } else {
+            this.updateConnectionStatus('offline');
+        }
+    }
+
+    /**
+     * WebRTC リソース（データチャネル・PeerConnection・再生用 audio）を解放する。
+     */
+    closeWebRtc() {
+        if (this.state.dataChannel) {
+            try {
+                this.state.dataChannel.onopen = null;
+                this.state.dataChannel.onmessage = null;
+                this.state.dataChannel.close();
+            } catch (e) {}
+            this.state.dataChannel = null;
+        }
+        if (this.state.pc) {
+            try {
+                // 意図的なクローズ。先にハンドラを外し、pc.close() が発火する
+                // onconnectionstatechange('closed') が handleWebRtcDisconnected を
+                // 再帰的に呼んで再接続ループになるのを防ぐ（teardown を副作用なしにする）。
+                this.state.pc.onconnectionstatechange = null;
+                this.state.pc.ontrack = null;
+                this.state.pc.close();
+            } catch (e) {}
+            this.state.pc = null;
+        }
+        if (this.state.translatedAudioEl) {
+            try {
+                this.state.translatedAudioEl.srcObject = null;
+            } catch (e) {}
+        }
+    }
+
+    /**
+     * 録音開始時に、取得済みマイクトラックを WebRTC 送信側へ接続する。
+     */
+    async attachMicToWebRtc() {
+        if (!this.state.pc || !this.state.mediaStream) {
+            return;
+        }
+        const track = this.state.mediaStream.getAudioTracks()[0];
+        if (!track) {
+            return;
+        }
+        const sender = this.state.pc.getSenders()[0];
+        if (!sender) {
+            return;
+        }
+        try {
+            await sender.replaceTrack(track);
+        } catch (err) {
+            // 差し替え失敗を握り潰すと「録音中なのに無音」になるため明示通知する。
+            this.notify(
+                'マイク接続エラー',
+                'WebRTCへのマイク接続に失敗しました: ' + this.extractErrorMessage(err),
+                'error'
+            );
+        }
     }
 
     /**
@@ -1649,6 +1931,12 @@ class VoiceTranslateApp {
 
             // 共通の録音開始処理
             await this.setupAudioProcessing();
+
+            // ✅ WebRTC 経路では、取得したマイクトラックを送信側へ接続する
+            //    （音声は session.input_audio_buffer.append ではなくメディアトラックで送る）
+            if (this.usesWebRtcTransport()) {
+                await this.attachMicToWebRtc();
+            }
 
             // ✅ システム音声モードでは、選んだ監視先が実際に鳴っているかを自動検証する
             //    （誤設定で無音を監視し続ける穴を塞ぐ）
