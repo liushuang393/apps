@@ -390,7 +390,7 @@ class TextPathProcessor {
             throw new Error('APIキーが設定されていません');
         }
 
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        const response = await fetch(CONFIG.API.CHAT_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

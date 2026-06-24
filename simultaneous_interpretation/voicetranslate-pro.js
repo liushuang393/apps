@@ -1399,7 +1399,7 @@ class VoiceTranslateApp {
 
     normalizeRealtimeEndpointModel() {
         const api = CONFIG.API || {};
-        const translationUrl = 'wss://api.openai.com/v1/realtime/translations';
+        const translationUrl = OPENAI_REALTIME_TRANSLATION_URL;
         const isTranslationUrl = (api.REALTIME_URL || '').includes('/realtime/translations');
         const isTranslationModel = api.REALTIME_MODEL === 'gpt-realtime-translate';
 
@@ -1574,6 +1574,31 @@ class VoiceTranslateApp {
         }
     }
 
+    /**
+     * 入力転写(STT)設定を構築する。
+     *
+     * 目的:
+     *   対応4言語(日本語・英語・中国語・ベトナム語)以外(韓国語など)への
+     *   誤認識を防ぐ。ソース言語が確定していれば language を固定し、
+     *   auto のときは prompt で対応言語へバイアスをかける。
+     *
+     * @returns {Object} audio.input.transcription に渡す設定
+     */
+    buildInputTranscriptionConfig() {
+        // ※ /v1/realtime/translations の transcription は `prompt` を受け付けない
+        //   (400 unknown_parameter)。受理されるのは model / language のみ。
+        const config = {
+            model: CONFIG.API.TRANSCRIBE_MODEL || 'gpt-realtime-whisper'
+        };
+        const src = this.state.sourceLang;
+        if (src && src !== 'auto' && ['ja', 'en', 'zh', 'vi'].includes(src)) {
+            // ソース言語が確定しているときは ISO-639-1 を固定し、自動検出のブレ
+            // (短い中国語が韓国語に化けるなど)を抑える。auto のときは指定しない。
+            config.language = src;
+        }
+        return config;
+    }
+
     createSession() {
         // リアルタイム音声翻訳セッション（/v1/realtime/translations）。
         // Electron のサーバ側WS（Authorization ヘッダ）では session.update で設定を送る。
@@ -1587,9 +1612,7 @@ class VoiceTranslateApp {
             session: {
                 audio: {
                     input: {
-                        transcription: {
-                            model: CONFIG.API.TRANSCRIBE_MODEL || 'gpt-realtime-whisper'
-                        }
+                        transcription: this.buildInputTranscriptionConfig()
                     },
                     output: { language: targetLang }
                 }
@@ -1616,10 +1639,10 @@ class VoiceTranslateApp {
      * @returns {string}
      */
     getTranslationRestBase() {
-        const wsUrl = CONFIG.API.REALTIME_URL || 'wss://api.openai.com/v1/realtime/translations';
+        const wsUrl = CONFIG.API.REALTIME_URL || OPENAI_REALTIME_TRANSLATION_URL;
         let base = wsUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
         if (!/\/realtime\/translations$/.test(base)) {
-            base = 'https://api.openai.com/v1/realtime/translations';
+            base = OPENAI_REALTIME_TRANSLATION_URL.replace(/^wss:/i, 'https:');
         }
         return base;
     }
@@ -1638,9 +1661,7 @@ class VoiceTranslateApp {
                 model: CONFIG.API.REALTIME_MODEL,
                 audio: {
                     input: {
-                        transcription: {
-                            model: CONFIG.API.TRANSCRIBE_MODEL || 'gpt-realtime-whisper'
-                        },
+                        transcription: this.buildInputTranscriptionConfig(),
                         noise_reduction: { type: 'near_field' }
                     },
                     output: { language: targetLang }
@@ -3329,7 +3350,7 @@ class VoiceTranslateApp {
 
             // 言語検出API呼び出し
             // Chat Completions APIモデルを使用（環境変数から設定可能）
-            const detectionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            const detectionResponse = await fetch(CONFIG.API.CHAT_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3453,7 +3474,7 @@ class VoiceTranslateApp {
             }
 
             // OpenAI Chat Completions API を使用して文本翻訳
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            const response = await fetch(CONFIG.API.CHAT_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

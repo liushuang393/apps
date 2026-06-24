@@ -15,6 +15,11 @@
 
 const REALTIME_MIN_COMMIT_AUDIO_MS = 100;
 
+// 翻訳セッションの字幕確定ポリシー:
+// デルタが途切れてから本時間(ms)を超えたら、句末標点が無くても確定表示する。
+// 左カラムの原文STTは句末標点が来ないことが多く、これが無いと累積したまま表示されない。
+const TRANSLATION_CAPTION_IDLE_MS = 1500;
+
 const WebSocketMixin = {
     /**
      * WebSocketメッセージ送信
@@ -262,6 +267,16 @@ const WebSocketMixin = {
             case 'session.input_transcript.delta':
                 this.handleTranslationTranscriptDelta('input', message.delta);
                 break;
+            // セグメント終端イベントで確定する（句末標点に依存しない正規の境界）。
+            // API のイベント名揺れに備えて .done / .completed の両方を受ける。
+            case 'session.output_transcript.done':
+            case 'session.output_transcript.completed':
+                this.commitTranslationCaption('output');
+                break;
+            case 'session.input_transcript.done':
+            case 'session.input_transcript.completed':
+                this.commitTranslationCaption('input');
+                break;
             case 'session.closed':
                 // セッション終了時、句読点で確定されなかった末尾の字幕を取りこぼさず確定する。
                 this.flushTranslationCaptions();
@@ -290,13 +305,52 @@ const WebSocketMixin = {
         }
         this.translationCaption[kind] += delta;
         const buffered = this.translationCaption[kind];
+        // 文末標点で即確定。
         if (/[。．.!?！？\n]\s*$/.test(buffered)) {
-            const text = buffered.trim();
-            this.translationCaption[kind] = '';
-            if (text && typeof this.addTranscript === 'function') {
-                this.addTranscript(kind, text, null);
-            }
+            this.commitTranslationCaption(kind);
+            return;
         }
+        // 標点が来ない発話(特に左カラムの原文STT)対策: デルタが途切れたら確定する。
+        this.scheduleTranslationCaptionFlush(kind);
+    },
+
+    /**
+     * 指定カラムの字幕バッファを1エントリとして確定表示する。
+     * アイドルflushタイマーも併せて解除する。
+     *
+     * @param {'input'|'output'} kind
+     */
+    commitTranslationCaption(kind) {
+        if (this.captionFlushTimers && this.captionFlushTimers[kind]) {
+            clearTimeout(this.captionFlushTimers[kind]);
+            this.captionFlushTimers[kind] = null;
+        }
+        if (!this.translationCaption) {
+            return;
+        }
+        const text = (this.translationCaption[kind] || '').trim();
+        this.translationCaption[kind] = '';
+        if (text && typeof this.addTranscript === 'function') {
+            this.addTranscript(kind, text, null);
+        }
+    },
+
+    /**
+     * デルタが TRANSLATION_CAPTION_IDLE_MS 途切れたら確定するタイマーを張り直す。
+     *
+     * @param {'input'|'output'} kind
+     */
+    scheduleTranslationCaptionFlush(kind) {
+        if (!this.captionFlushTimers) {
+            this.captionFlushTimers = { input: null, output: null };
+        }
+        if (this.captionFlushTimers[kind]) {
+            clearTimeout(this.captionFlushTimers[kind]);
+        }
+        this.captionFlushTimers[kind] = setTimeout(() => {
+            this.captionFlushTimers[kind] = null;
+            this.commitTranslationCaption(kind);
+        }, TRANSLATION_CAPTION_IDLE_MS);
     },
 
     /**
@@ -308,11 +362,7 @@ const WebSocketMixin = {
             return;
         }
         for (const kind of ['input', 'output']) {
-            const buffered = this.translationCaption[kind];
-            this.translationCaption[kind] = '';
-            if (buffered && buffered.trim() && typeof this.addTranscript === 'function') {
-                this.addTranscript(kind, buffered.trim(), null);
-            }
+            this.commitTranslationCaption(kind);
         }
     },
 

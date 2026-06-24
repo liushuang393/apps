@@ -262,15 +262,22 @@ class ResponseQueue {
 /**
  * グローバル設定
  */
+// OpenAI エンドポイントの正準URL。CONFIG.API.* は設定で書き換わりうるため、
+// 復旧/フォールバック時の基準として別途 const で保持する(ハードコード重複の排除)。
+const OPENAI_CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_REALTIME_TRANSLATION_URL = 'wss://api.openai.com/v1/realtime/translations';
+
 const CONFIG = {
     DEBUG_MODE: false,
 
     API: {
         // リアルタイム音声翻訳の経路: /v1/realtime/translations + gpt-realtime-translate。
         // 音声入力中に翻訳音声/字幕をストリーム返却し、response.create は使わない。
-        REALTIME_URL: 'wss://api.openai.com/v1/realtime/translations',
+        REALTIME_URL: OPENAI_REALTIME_TRANSLATION_URL,
         REALTIME_MODEL: 'gpt-realtime-translate',
         CHAT_MODEL: 'gpt-5-2025-08-07',
+        // テキスト翻訳・言語検出に使う Chat Completions エンドポイント。
+        CHAT_URL: OPENAI_CHAT_COMPLETIONS_URL,
         // ライブ入力音声の並行STT用モデル。
         // gpt-realtime-whisper は低遅延ストリーミング向け。ファイル/リクエスト式の高精度転写は gpt-4o-transcribe。
         TRANSCRIBE_MODEL: 'gpt-realtime-whisper',
