@@ -8,10 +8,52 @@ HybridQoSMonitor（Phase 3 ハイブリッド 2 主線の QoS 計測, README §9
 from app.ai_pipeline.qos import (
     GLOSSARY_HIT_RATE_TARGET,
     HEARING_P95_TARGET_MS,
+    NUMBER_RETENTION_TARGET,
     READING_P95_TARGET_MS,
     HybridQoSMonitor,
+    extract_numbers,
+    number_retention,
     percentile,
 )
+
+
+def test_extract_numbers_handles_dates_money_and_time() -> None:
+    """日付・金額・時刻・単桁を 1 トークンずつ抽出する"""
+    nums = extract_numbers("2026-06-24 に 1,200 円を 12:30 へ。残り 5")
+    assert nums == ["2026-06-24", "1,200", "12:30", "5"]
+
+
+def test_number_retention_none_when_no_source_numbers() -> None:
+    """source に数字が無ければ評価対象外（None）"""
+    assert number_retention("こんにちは", "hello 5") is None
+
+
+def test_number_retention_full_and_partial() -> None:
+    """全保持は 1.0、欠落は割合で返す（多重集合照合）"""
+    assert (
+        number_retention("金額は 1,200 円、日付 2026-06-24", "1,200 yen on 2026-06-24")
+        == 1.0
+    )
+    # source に 2 個（5, 5）、translation に 1 個 → 0.5
+    assert number_retention("5 と 5", "only 5") == 0.5
+
+
+def test_monitor_number_retention_accumulates_and_evaluates() -> None:
+    """数字保持を累積し、目標未達で warning を返す"""
+    mon = HybridQoSMonitor()
+    mon.record_number_retention("価格 100 個数 3", "price 100 qty 9")  # 1/2 保持
+    assert mon.number_retention_rate() == 0.5
+    w = mon.evaluate_number_retention()
+    assert w is not None and w["metric"] == "number_retention_rate"
+    assert w["target"] == NUMBER_RETENTION_TARGET
+
+
+def test_monitor_number_retention_none_without_samples() -> None:
+    """数字を含む発話が無ければ None かつ warning なし"""
+    mon = HybridQoSMonitor()
+    mon.record_number_retention("数字なし", "no digits")
+    assert mon.number_retention_rate() is None
+    assert mon.evaluate_number_retention() is None
 
 
 def test_percentile_empty_returns_none() -> None:

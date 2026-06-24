@@ -55,6 +55,23 @@ class RoomManager:
             self._redis = redis.from_url(settings.redis_url, decode_responses=True)
         return self._redis
 
+    async def _persist(self, room_id: str, p: ParticipantPreference) -> None:
+        """参加者設定を DB へ write-through する（耐久記録。失敗はログのみ）。
+
+        Redis をライブの真実とし、本表は会議後の履歴・監査用の耐久コピー。
+        循環 import 回避のため persistence は遅延束縛する。
+        """
+        from app.webrtc.persistence import upsert_participant
+
+        await upsert_participant(
+            room_id=room_id,
+            user_id=p.user_id,
+            display_name=p.display_name,
+            preferred_language=p.native_language,
+            output_language=p.target_language,
+            voice_translation_enabled=(p.audio_mode == "translated"),
+        )
+
     async def create_room_state(self, room_id: str) -> None:
         """会議室状態を初期化"""
         r = await self.get_redis()
@@ -90,6 +107,7 @@ class RoomManager:
             f"room:{room_id}:participants", user_id, json.dumps(asdict(participant))
         )
         await r.expire(f"room:{room_id}:participants", 86400)
+        await self._persist(room_id, participant)
         return participant
 
     async def remove_participant(self, room_id: str, user_id: str) -> None:
@@ -140,6 +158,7 @@ class RoomManager:
         await r.hset(
             f"room:{room_id}:participants", user_id, json.dumps(asdict(participant))
         )
+        await self._persist(room_id, participant)
         return participant
 
     async def set_active_speaker(self, room_id: str, user_id: str | None) -> None:

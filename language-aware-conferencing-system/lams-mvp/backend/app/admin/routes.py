@@ -12,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_admin
 from app.db.database import get_db
-from app.db.models import Room, Subtitle, SystemConfig, User, UserRole, utc_now
+from app.db.models import (
+    Room,
+    SystemConfig,
+    TranscriptSegment,
+    User,
+    UserRole,
+    utc_now,
+)
 
 # 対応可能な全言語リスト（OpenAI高精度言語）
 ALL_SUPPORTED_LANGUAGES = [
@@ -206,8 +213,10 @@ async def get_system_stats(
         select(func.count()).select_from(Room).where(Room.is_active.is_(True))
     )
 
-    # 字幕統計
-    total_subtitles = await db.scalar(select(func.count()).select_from(Subtitle))
+    # 字幕統計（発話セグメント数）
+    total_subtitles = await db.scalar(
+        select(func.count()).select_from(TranscriptSegment)
+    )
 
     return SystemStatsResponse(
         total_users=total_users or 0,

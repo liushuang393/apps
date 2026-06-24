@@ -50,7 +50,7 @@ def _make(detect, monkeypatch) -> tuple[SegmentProcessor, _RecordingOrchestrator
     async def fake_save(**kwargs) -> None:
         saved.append(kwargs)
 
-    monkeypatch.setattr(processor_mod, "save_subtitle", fake_save)
+    monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
     orch = _RecordingOrchestrator()
     proc = SegmentProcessor(
         orchestrator=orch, sequencer=SubtitleSequencer(), detect_fn=detect
@@ -126,7 +126,7 @@ async def test_happy_path_drives_orchestrator_and_persists(monkeypatch) -> None:
     assert call["source_language"] == "ja" and call["original_text"] == "こんにちは"
     assert call["mode"] == "hybrid" and call["seq"] == 1 and call["speaker_id"] == "spk"
     assert captured[0]["lis"] == "en"  # 受聴者の目標言語が sink へ渡る
-    assert saved[0]["original_language"] == "ja"
+    assert saved[0]["source_language"] == "ja" and saved[0]["text"] == "こんにちは"
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,37 @@
+{
+  "_comment": "改善.md §15 品質ゲートのシード。number_cases=数字保持率、glossary_cases=用語命中率の評価用。good=合格訳、bad=不合格訳（ゲートが検知すべき改悪例）。実翻訳の評価はこの good/bad を実出力に差し替えて同じ関数へ通す。",
+  "number_cases": [
+    {
+      "source": "予算は 1,200 万円、納期は 2026-06-24 です",
+      "good": "预算 1,200 万元，交期为 2026-06-24",
+      "bad": "预算 1,300 万元，交期为 2026-07-24"
+    },
+    {
+      "source": "会議は 10:30 から、参加者は 5 名です",
+      "good": "Meeting starts at 10:30 with 5 participants",
+      "bad": "Meeting starts at 11:30 with 6 participants"
+    }
+  ],
+  "glossary_cases": [
+    {
+      "source_language": "ja",
+      "target_language": "zh",
+      "terms": [
+        {"source_term": "稟議", "target_term": "审批流程", "do_not_translate": false}
+      ],
+      "source": "この件は稟議を進めます",
+      "good": "这件事推进审批流程",
+      "bad": "这件事推进 approval 流程"
+    },
+    {
+      "source_language": "ja",
+      "target_language": "en",
+      "terms": [
+        {"source_term": "LAMS", "target_term": null, "do_not_translate": true}
+      ],
+      "source": "LAMS の字幕機能を説明します",
+      "good": "Let me explain the subtitle feature of LAMS",
+      "bad": "Let me explain the subtitle feature of the system"
+    }
+  ]
+}

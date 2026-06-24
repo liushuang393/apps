@@ -9,18 +9,20 @@ LAMS QoSコントローラー
 """
 
 import math
+import re
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from enum import Enum
 
 from app.config import settings
 
-# === Phase 3 ハイブリッド 2 主線の品質ゲート目標（README §9） ===
+# === Phase 3 ハイブリッド 2 主線の品質ゲート目標（README §9 / 改善.md §15） ===
 # 主線1（音声翻訳/聞く）と主線2（翻訳字幕/読む）で P95 遅延の上限が異なる。
 HEARING_P95_TARGET_MS = 5000.0  # 主線1: 音声翻訳 P95 ≤ 5 秒
 READING_P95_TARGET_MS = 4000.0  # 主線2: 翻訳字幕 P95 ≤ 4 秒
 GLOSSARY_HIT_RATE_TARGET = 0.95  # 用語命中率 ≥ 95%
+NUMBER_RETENTION_TARGET = 0.98  # 数字・日付・金額の保持率 ≥ 98%（改善.md §15）
 _QOS_WINDOW = 200  # P95 算出に用いる直近サンプル数（主線ごと）
 _DEFAULT_P95 = 95.0  # 既定パーセンタイル
 
@@ -29,6 +31,34 @@ _MAINLINE_TARGETS_MS: dict[str, float] = {
     "hearing": HEARING_P95_TARGET_MS,
     "reading": READING_P95_TARGET_MS,
 }
+
+# 数字・日付・金額の桁列を抽出する正規表現（区切り文字を含む連続桁、または単桁）。
+# 例: "2026-06-24" / "1,200" / "3.14" / "12:30" / "5" を 1 トークンとして抽出する。
+_NUMBER_RE = re.compile(r"\d[\d.,:/\-]*\d|\d")
+
+
+def extract_numbers(text: str) -> list[str]:
+    """テキストから数字トークン（数値・日付・金額の桁列）を抽出する（純ロジック）。"""
+    return [m.group(0) for m in _NUMBER_RE.finditer(text or "")]
+
+
+def number_retention(source: str, translation: str) -> float | None:
+    """source の数字が translation に保持された割合（0.0-1.0）。
+
+    数字・日付・金額は翻訳で改変されてはならない（改善.md §15）。多重集合として
+    照合し、保持された数字トークン数 / source の数字トークン数を返す。
+    source に数字が無ければ評価対象外として None を返す。
+    """
+    src = extract_numbers(source)
+    if not src:
+        return None
+    remaining = Counter(extract_numbers(translation))
+    kept = 0
+    for token in src:
+        if remaining[token] > 0:
+            remaining[token] -= 1
+            kept += 1
+    return kept / len(src)
 
 
 def percentile(values: list[float], pct: float = _DEFAULT_P95) -> float | None:
@@ -50,6 +80,7 @@ class HybridQoSSnapshot:
     hearing_p95_ms: float | None
     reading_p95_ms: float | None
     glossary_hit_rate: float | None
+    number_retention_rate: float | None
     hearing_samples: int
     reading_samples: int
 
@@ -75,18 +106,22 @@ class HybridQoSMonitor:
         window: int = _QOS_WINDOW,
         targets_ms: dict[str, float] | None = None,
         glossary_target: float = GLOSSARY_HIT_RATE_TARGET,
+        number_target: float = NUMBER_RETENTION_TARGET,
         percentile_pct: float = _DEFAULT_P95,
     ) -> None:
         self._targets_ms = dict(
             _MAINLINE_TARGETS_MS if targets_ms is None else targets_ms
         )
         self._glossary_target = glossary_target
+        self._number_target = number_target
         self._pct = percentile_pct
         self._latency: dict[str, deque[float]] = {
             name: deque(maxlen=window) for name in self._targets_ms
         }
         self._glossary_hits = 0
         self._glossary_total = 0
+        self._number_kept = 0
+        self._number_total = 0
 
     def record_latency(self, mainline: str, latency_ms: float) -> None:
         """主線の 1 サンプル遅延（ms）を記録する（未知主線・負値は無視）。"""
@@ -101,6 +136,17 @@ class HybridQoSMonitor:
         self._glossary_hits += max(0, min(hits, total))
         self._glossary_total += total
 
+    def record_number_retention(self, source: str, translation: str) -> None:
+        """source/translation の数字保持を 1 サンプルとして累積する（数字なしは無視）。"""
+        src = extract_numbers(source)
+        if not src:
+            return
+        rate = number_retention(source, translation)
+        # rate は None になり得ない（src 非空のため）が型のため明示ガード。
+        kept = round((rate or 0.0) * len(src))
+        self._number_kept += kept
+        self._number_total += len(src)
+
     def p95(self, mainline: str) -> float | None:
         """指定主線の P95 遅延（ms）。サンプルが無ければ None。"""
         return percentile(list(self._latency.get(mainline, ())), self._pct)
@@ -110,6 +156,16 @@ class HybridQoSMonitor:
         if self._glossary_total <= 0:
             return None
         return self._glossary_hits / self._glossary_total
+
+    def number_retention_rate(self) -> float | None:
+        """数字・日付・金額の保持率（0.0-1.0）。計測無しなら None。"""
+        if self._number_total <= 0:
+            return None
+        return self._number_kept / self._number_total
+
+    def number_samples(self) -> int:
+        """数字保持率の評価に用いた数字トークン総数（永続化・観測用）。"""
+        return self._number_total
 
     def evaluate_latency(self, mainline: str) -> dict | None:
         """P95 が §9 目標を超過していれば qos_warning を返す（正常時 None）。"""
@@ -137,12 +193,25 @@ class HybridQoSMonitor:
             "target": self._glossary_target,
         }
 
+    def evaluate_number_retention(self) -> dict | None:
+        """数字保持率が目標を下回れば qos_warning を返す（正常/未計測時 None）。"""
+        rate = self.number_retention_rate()
+        if rate is None or rate >= self._number_target:
+            return None
+        return {
+            "type": "qos_warning",
+            "metric": "number_retention_rate",
+            "value": round(rate, 4),
+            "target": self._number_target,
+        }
+
     def snapshot(self) -> HybridQoSSnapshot:
         """現在の主線別 P95 と用語命中率のスナップショットを返す。"""
         return HybridQoSSnapshot(
             hearing_p95_ms=self.p95("hearing"),
             reading_p95_ms=self.p95("reading"),
             glossary_hit_rate=self.glossary_hit_rate(),
+            number_retention_rate=self.number_retention_rate(),
             hearing_samples=len(self._latency.get("hearing", ())),
             reading_samples=len(self._latency.get("reading", ())),
         )

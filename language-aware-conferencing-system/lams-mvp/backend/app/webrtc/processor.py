@@ -28,7 +28,7 @@ from app.webrtc.persistence import (
     MeetingConfig,
     SubtitleSequencer,
     generate_subtitle_id,
-    save_subtitle,
+    save_transcript_segment,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,11 +122,12 @@ class SegmentProcessor:
             speaker_id=speaker_id,
         )
 
-        await save_subtitle(
+        await save_transcript_segment(
             room_id=room_id,
             speaker_id=speaker_id,
-            original_text=original_text,
-            original_language=detected_lang,
+            source_language=detected_lang,
+            text=original_text,
             translations=result.translations,
+            tags=result.tags,
         )
         return result

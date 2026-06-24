@@ -7,7 +7,8 @@ transport 非依存で呼べる永続化境界を提供する。WS 廃止（C1-8
 
 設計原則:
     - 採番・重複排除（SubtitleSequencer）は純ロジックで単体テスト可能。
-    - DB I/O（get_or_create_session / end_session / save_subtitle）は明示の失敗処理付き。
+    - DB I/O（get_or_create_session / end_session / save_transcript_segment）は
+      明示の失敗処理付き。
 """
 
 import logging
@@ -16,14 +17,25 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_pipeline.qos import HybridQoSMonitor
 from app.db.database import async_session
-from app.db.models import MeetingMode, MeetingSession, Room, Subtitle
+from app.db.models import (
+    MeetingMode,
+    MeetingSession,
+    Participant,
+    Room,
+    TranscriptSegment,
+    TranslationSegment,
+)
 
 logger = logging.getLogger(__name__)
 
 # room_id -> active session_id（メモリ内キャッシュ。DB が真実の源）。
 _active_sessions: dict[str, str] = {}
+# room_id -> 会議中の QoS モニタ（数字保持率を累積。end_session で永続化し破棄）。
+_session_monitors: dict[str, HybridQoSMonitor] = {}
 
 
 @dataclass(frozen=True)
@@ -122,8 +134,9 @@ async def get_or_create_session(room_id: str) -> str:
 
 
 async def end_session(room_id: str) -> None:
-    """会議セッションを終了する（全員退室時に呼び出す）。"""
+    """会議セッションを終了する（全員退室時に呼び出す）。QoS サマリも永続化する。"""
     session_id = _active_sessions.pop(room_id, None)
+    monitor = _session_monitors.pop(room_id, None)
     if not session_id:
         return
     async with async_session() as db:
@@ -134,35 +147,150 @@ async def end_session(room_id: str) -> None:
         if session:
             session.is_active = False
             session.ended_at = datetime.now(timezone.utc)
+            # QoS サマリ（改善.md §15）。現状は数字保持率のみ実測可能。
+            if monitor is not None:
+                rate = monitor.number_retention_rate()
+                if rate is not None:
+                    session.qos_summary = {
+                        "number_retention_rate": round(rate, 4),
+                        "number_samples": monitor.number_samples(),
+                    }
             await db.commit()
             logger.info("[SESSION] セッション終了: room=%s", room_id)
 
 
-async def save_subtitle(
+def _providers_by_lang(tags: list[dict]) -> dict[str, str | None]:
+    """orchestrator の tags から target_language → 翻訳 provider を導出する（純ロジック）。
+
+    収束時のタグ（subtitle_mainline / s2s_provider）から TranslationSegment.provider を
+    決める。聞く主線なら S2S provider、読む主線なら "asr_mt"、字幕なしは None。
+    """
+    out: dict[str, str | None] = {}
+    for t in tags:
+        lang = t.get("target_language")
+        if not lang:
+            continue
+        out[lang] = (
+            t.get("s2s_provider")
+            if t.get("subtitle_mainline") == "hearing"
+            else "asr_mt"
+        )
+    return out
+
+
+async def save_transcript_segment(
     *,
     room_id: str,
     speaker_id: str,
-    original_text: str,
-    original_language: str,
+    source_language: str,
+    text: str,
     translations: dict[str, str],
+    tags: list[dict] | None = None,
 ) -> None:
-    """字幕レコードを DB へ保存する（セッションに紐付け）。失敗はログのみ。"""
+    """発話を TranscriptSegment 1 件＋言語別 TranslationSegment N 件へ正規化保存する。
+
+    改善.md §13.3/§13.4 の正式記録基盤。失敗はログのみ（既存挙動踏襲）。
+    """
     try:
         session_id = await get_or_create_session(room_id)
+        provider_by_lang = _providers_by_lang(tags or [])
+        # QoS: 数字・日付・金額の保持率を会議単位で累積（改善.md §15）。
+        monitor = _session_monitors.setdefault(room_id, HybridQoSMonitor())
+        for translated_text in translations.values():
+            if translated_text:
+                monitor.record_number_retention(text, translated_text)
         async with async_session() as db:
-            db.add(
-                Subtitle(
-                    room_id=room_id,
-                    session_id=session_id,
-                    speaker_id=speaker_id,
-                    original_text=original_text,
-                    original_language=original_language,
-                    translations=translations,
-                )
+            seg = TranscriptSegment(
+                room_id=room_id,
+                session_id=session_id,
+                speaker_id=speaker_id,
+                source_language=source_language,
+                text=text,
+                # ponytail: confidence/provider は ASR 層から安価に取れないため null。
+                # ASR provider を OrchestrationResult に乗せられるようになったら充填する。
             )
+            db.add(seg)
+            await db.flush()  # seg.id 採番のため（FK 紐付けに必要）
+            for target_lang, translated_text in translations.items():
+                if not translated_text:
+                    continue
+                db.add(
+                    TranslationSegment(
+                        transcript_segment_id=seg.id,
+                        source_language=source_language,
+                        target_language=target_lang,
+                        translated_text=translated_text,
+                        provider=provider_by_lang.get(target_lang),
+                        # ponytail: llm_provider/glossary_version/quality_score は
+                        # 未計測のため null。評価ハーネス整備時に充填する。
+                    )
+                )
             await db.commit()
     except Exception as e:  # noqa: BLE001
-        logger.warning("[PERSIST] 字幕DB保存エラー(room=%s): %s", room_id, e)
+        logger.warning("[PERSIST] segment DB保存エラー(room=%s): %s", room_id, e)
+
+
+async def _active_session_id(db: AsyncSession, room_id: str) -> str | None:
+    """アクティブな MeetingSession.id を返す（無ければ None。新規作成はしない）。"""
+    session = (
+        await db.execute(
+            select(MeetingSession).where(
+                MeetingSession.room_id == room_id,
+                MeetingSession.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    return session.id if session is not None else None
+
+
+async def upsert_participant(
+    *,
+    room_id: str,
+    user_id: str,
+    display_name: str,
+    preferred_language: str,
+    output_language: str,
+    voice_translation_enabled: bool,
+) -> None:
+    """参加者の耐久レコードを (room_id, user_id) で upsert する（改善.md §13.2）。
+
+    Redis（room_manager）からの write-through。失敗はログのみで、ライブ動作は壊さない。
+    """
+    try:
+        async with async_session() as db:
+            existing = (
+                await db.execute(
+                    select(Participant).where(
+                        Participant.room_id == room_id,
+                        Participant.user_id == user_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            session_id = await _active_session_id(db, room_id)
+            if existing is None:
+                db.add(
+                    Participant(
+                        room_id=room_id,
+                        user_id=user_id,
+                        session_id=session_id,
+                        display_name=display_name,
+                        preferred_language=preferred_language,
+                        output_language=output_language,
+                        voice_translation_enabled=voice_translation_enabled,
+                    )
+                )
+            else:
+                existing.display_name = display_name
+                existing.preferred_language = preferred_language
+                existing.output_language = output_language
+                existing.voice_translation_enabled = voice_translation_enabled
+                if session_id is not None:
+                    existing.session_id = session_id
+            await db.commit()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[PERSIST] 参加者DB保存エラー(room=%s, user=%s): %s", room_id, user_id, e
+        )
 
 
 def generate_subtitle_id() -> str:

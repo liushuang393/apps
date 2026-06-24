@@ -167,43 +167,14 @@ class MeetingSession(Base):
         server_default=MeetingMode.HYBRID.value,
     )
 
-    # リレーション
-    room: Mapped["Room"] = relationship()
-    subtitles: Mapped[list["Subtitle"]] = relationship(back_populates="session")
-
-
-class Subtitle(Base):
-    """
-    字幕モデル
-    会議の発言記録を保存（多言語翻訳含む）
-    """
-
-    __tablename__ = "subtitles"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
-    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), index=True)
-    # セッションID（会議回ごとに字幕を分離）
-    session_id: Mapped[str | None] = mapped_column(
-        ForeignKey("meeting_sessions.id"), index=True, nullable=True
-    )
-    speaker_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
-
-    # 原文
-    original_text: Mapped[str] = mapped_column(Text)
-    original_language: Mapped[str] = mapped_column(String(10))
-
-    # 翻訳結果（JSON: {"en": "Hello", "zh": "你好", ...}）
-    translations: Mapped[dict] = mapped_column(JSON, default=dict)
-
-    # タイムスタンプ
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, index=True
-    )
+    # 会議終了時に書き込む QoS サマリ（改善.md §15）。
+    # 現状は数字保持率（number_retention_rate / number_samples）を記録する。
+    # ponytail: 遅延 P95・用語命中率は runtime QoS モニタが orchestrator に
+    # 配線されていないため null。配線時にここへ追記する。
+    qos_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # リレーション
     room: Mapped["Room"] = relationship()
-    session: Mapped["MeetingSession | None"] = relationship(back_populates="subtitles")
-    speaker: Mapped["User"] = relationship()
 
 
 class Room(Base):
@@ -336,6 +307,54 @@ class GlossaryTerm(Base):
     )
 
 
+class Participant(Base):
+    """
+    参加者の永続記録（改善.md §13.2 participant）。
+
+    目的:
+        リアルタイムの参加者設定（Redis / room_manager）を会議後も残すための
+        耐久レコード。監査・履歴・再入室時の設定復元の一次ソースとする。
+    注意点:
+        - Redis を真実とするのはライブ中のみ。本表は write-through の耐久コピー。
+        - (room_id, user_id) で一意（upsert）。joined_at は初回参加、updated_at は
+          設定変更時刻。ponytail: 会議回ごとの履歴が必要なら session_id 単位の行へ拡張。
+    """
+
+    __tablename__ = "participant"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), index=True)
+    # 会議回（任意。参加時点でアクティブな MeetingSession があれば紐付ける）
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("meeting_sessions.id"), index=True, nullable=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+
+    display_name: Mapped[str] = mapped_column(String(100))
+    # 母語（spec の preferred_language）
+    preferred_language: Mapped[str] = mapped_column(String(10))
+    # 受聴/出力言語（spec の output_language）
+    output_language: Mapped[str] = mapped_column(String(10))
+    # 翻訳音声を受信するか（audio_mode=translated 相当）
+    voice_translation_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    # リレーション
+    room: Mapped["Room"] = relationship()
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        # 会議室＋ユーザーで一意（write-through の upsert キー）
+        Index("ix_participant_room_user", "room_id", "user_id", unique=True),
+    )
+
+
 class TranscriptSegment(Base):
     """
     文字起こしセグメント（改善.md 13.3 transcript_segment）。
@@ -345,8 +364,8 @@ class TranscriptSegment(Base):
         provider / confidence / is_final / 時刻オフセット付きで保存し、議事録・
         検索・要約の一次ソースとする。
     注意点:
-        - 既存 Subtitle（翻訳をJSONで保持する軽量字幕）とは別表で additive 追加。
-          Subtitle を壊さず、richer なメタデータが必要な Mode B 用途を担う。
+        - 旧 Subtitle（翻訳を JSON で保持する軽量字幕）を置換する正式記録テーブル
+          （migration 008 でデータ移行、009 で subtitles を drop 済み）。
         - 翻訳は TranslationSegment に正規化して 1:N で保持する。
     """
 

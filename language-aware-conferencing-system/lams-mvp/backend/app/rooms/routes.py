@@ -7,12 +7,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.ai_pipeline.providers.minutes import MinutesRequest, get_minutes_provider
 from app.auth.dependencies import get_current_user
 from app.config import settings
 from app.db.database import get_db
-from app.db.models import MeetingMode, Room, Subtitle, User
+from app.db.models import (
+    MeetingMode,
+    Room,
+    TranscriptSegment,
+    User,
+)
 from app.rooms.manager import room_manager
 from app.webrtc.supervisor import agent_supervisor
 from app.webrtc.token import LiveKitNotConfiguredError, create_join_token
@@ -276,6 +282,21 @@ class TranscriptResponse(BaseModel):
     total: int
 
 
+async def _load_segments(db: AsyncSession, room_id: str) -> list[TranscriptSegment]:
+    """会議室の文字起こしセグメントを時系列順に取得する（翻訳を eager load）。
+
+    改善.md §13.3/§13.4 の正規化テーブル（TranscriptSegment 1:N TranslationSegment）を
+    旧 Subtitle の代替として読む。async では遅延ロード不可のため selectinload を使う。
+    """
+    result = await db.execute(
+        select(TranscriptSegment)
+        .where(TranscriptSegment.room_id == room_id)
+        .options(selectinload(TranscriptSegment.translations))
+        .order_by(TranscriptSegment.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
 @router.get("/{room_id}/transcript", response_model=TranscriptResponse)
 async def get_room_transcript(
     room_id: str,
@@ -304,16 +325,11 @@ async def get_room_transcript(
             detail="この会議室にはアクセスできません",
         )
 
-    # 字幕を取得（時系列順）
-    result = await db.execute(
-        select(Subtitle)
-        .where(Subtitle.room_id == room_id)
-        .order_by(Subtitle.timestamp.asc())
-    )
-    subtitles = result.scalars().all()
+    # 文字起こしセグメントを取得（時系列順、翻訳付き）
+    segments = await _load_segments(db, room_id)
 
     # ユーザー情報を取得してマッピング
-    user_ids = list({s.speaker_id for s in subtitles})
+    user_ids = list({s.speaker_id for s in segments})
     if user_ids:
         result = await db.execute(select(User).where(User.id.in_(user_ids)))
         users_list = result.scalars().all()
@@ -321,26 +337,22 @@ async def get_room_transcript(
     else:
         users_map = {}
 
-    # レスポンス構築
+    # レスポンス構築（旧 Subtitle と同一形状を維持＝フロント無改修）
     subtitle_responses = []
-    for s in subtitles:
+    for s in segments:
+        translations = {t.target_language: t.translated_text for t in s.translations}
         # 指定言語がある場合は翻訳テキストを使用
-        if lang and lang in s.translations:
-            text = s.translations[lang]
-        elif lang and lang == s.original_language:
-            text = s.original_text
-        else:
-            text = s.original_text
+        text = translations[lang] if lang and lang in translations else s.text
 
         subtitle_responses.append(
             SubtitleResponse(
                 id=s.id,
                 speaker_id=s.speaker_id,
                 speaker_name=users_map.get(s.speaker_id, "不明"),
-                original_text=s.original_text if not lang else text,
-                original_language=s.original_language,
-                translations=s.translations,
-                timestamp=s.timestamp.isoformat(),
+                original_text=s.text if not lang else text,
+                original_language=s.source_language,
+                translations=translations,
+                timestamp=s.created_at.isoformat(),
             )
         )
 
@@ -365,12 +377,14 @@ class MinutesResponse(BaseModel):
     segment_count: int  # 議事録生成に用いた発言数
 
 
-def _build_transcript_text(subtitles: list[Subtitle], users_map: dict[str, str]) -> str:
-    """字幕列を「話者名: 原文」行へ整形し議事録 LLM 入力用に結合する"""
+def _build_transcript_text(
+    segments: list[TranscriptSegment], users_map: dict[str, str]
+) -> str:
+    """セグメント列を「話者名: 原文」行へ整形し議事録 LLM 入力用に結合する"""
     lines = [
-        f"{users_map.get(s.speaker_id, '不明')}: {s.original_text}"
-        for s in subtitles
-        if s.original_text and s.original_text.strip()
+        f"{users_map.get(s.speaker_id, '不明')}: {s.text}"
+        for s in segments
+        if s.text and s.text.strip()
     ]
     return "\n".join(lines)
 
@@ -406,21 +420,16 @@ async def get_room_minutes(
             detail="議事録生成は現在無効です（LLM 未設定）",
         )
 
-    # 字幕を時系列順に取得し話者名でマッピングする
-    result = await db.execute(
-        select(Subtitle)
-        .where(Subtitle.room_id == room_id)
-        .order_by(Subtitle.timestamp.asc())
-    )
-    subtitles = list(result.scalars().all())
-    user_ids = list({s.speaker_id for s in subtitles})
+    # 文字起こしセグメントを時系列順に取得し話者名でマッピングする
+    segments = await _load_segments(db, room_id)
+    user_ids = list({s.speaker_id for s in segments})
     if user_ids:
         result = await db.execute(select(User).where(User.id.in_(user_ids)))
         users_map = {u.id: u.display_name for u in result.scalars().all()}
     else:
         users_map = {}
 
-    transcript_text = _build_transcript_text(subtitles, users_map)
+    transcript_text = _build_transcript_text(segments, users_map)
     req = MinutesRequest(
         transcript=transcript_text, output_language=lang, meeting_title=room.name
     )
@@ -440,5 +449,5 @@ async def get_room_minutes(
         decisions=minutes.decisions,
         action_items=minutes.action_items,
         provider=minutes.provider,
-        segment_count=len(subtitles),
+        segment_count=len(segments),
     )
