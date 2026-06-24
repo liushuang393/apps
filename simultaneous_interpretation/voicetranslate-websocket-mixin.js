@@ -257,6 +257,7 @@ const WebSocketMixin = {
                 // 翻訳音声チャンク → 低遅延でそのまま再生（response_id バインド無し）
                 // ※ WebRTC 経路では翻訳音声はリモートメディアトラックで再生されるため、
                 //   ここで PCM 再生すると二重になる。WebRTC のときはスキップする。
+                this.recordTranslationLatency('output');
                 if (message.delta && !this.usesWebRtcTransport()) {
                     this.playAudioChunk(message.delta, { responseId: null, segmentId: null });
                 }
@@ -296,10 +297,31 @@ const WebSocketMixin = {
      * @param {'input'|'output'} kind input=入力転写(左) / output=訳文(右)
      * @param {string} delta 追加テキスト
      */
+    /**
+     * 翻訳セッションのレイテンシ(原文認識の開始→訳出の開始)を観測して表示する。
+     * 純粋な観測のみ。タイムスタンプ記録と表示更新だけで、翻訳処理には一切干渉しない。
+     *
+     * @param {'input'|'output'} role input=原文認識デルタ / output=訳文・訳音デルタ
+     */
+    recordTranslationLatency(role) {
+        const now = Date.now();
+        if (role === 'input') {
+            if (this.latencyTurnStartAt == null) {
+                this.latencyTurnStartAt = now;
+            }
+            return;
+        }
+        if (this.latencyTurnStartAt != null) {
+            this.updateLatencyDisplay(now - this.latencyTurnStartAt);
+            this.latencyTurnStartAt = null;
+        }
+    },
+
     handleTranslationTranscriptDelta(kind, delta) {
         if (!delta) {
             return;
         }
+        this.recordTranslationLatency(kind === 'input' ? 'input' : 'output');
         if (!this.translationCaption) {
             this.translationCaption = { input: '', output: '' };
         }

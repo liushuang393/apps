@@ -601,8 +601,14 @@ const UIMixin = {
      *
      * @param {Object} stats - 統計情報
      */
-    updateLatencyDisplay(stats) {
-        // 統計情報をUIに表示（実装は必要に応じて）
+    updateLatencyDisplay(latencyMs) {
+        // 観測値(ms)のみ表示。旧経路は stats オブジェクトを渡すため、数値以外は無視する。
+        if (typeof latencyMs !== 'number' || !isFinite(latencyMs) || latencyMs < 0) {
+            return;
+        }
+        if (this.elements.latency) {
+            this.elements.latency.textContent = `${Math.round(latencyMs)} ms`;
+        }
     },
 
     /**
@@ -612,10 +618,10 @@ const UIMixin = {
      *   音声認識の精度を表示
      */
     updateAccuracy() {
-        // 簡易的な精度計算（実際の実装では音声認識の信頼度を使用）
-        const accuracy = Math.floor(85 + Math.random() * 10);
+        // 精度(正解率)は基準訳が無く、S2ST ストリームに confidence/logprob も無いため
+        // 実値を算出できない。乱数の偽装はせず、プレースホルダ表示に留める。
         if (this.elements.accuracy) {
-            this.elements.accuracy.textContent = `${accuracy}%`;
+            this.elements.accuracy.textContent = '実装中';
         }
     }
 };

@@ -3539,12 +3539,17 @@ class VoiceTranslateApp {
             return;
         }
 
-        // 翻訳セッションでは出力言語のみ更新する（翻訳先言語の変更を反映）。
+        // 出力言語を更新する。併せて入力転写(audio.input.transcription)も必ず再送する。
+        // ※ このAPIは session.update の audio を「マージではなく置換」するため、
+        //   output だけ送ると input.transcription が消え、左カラム(音声認識)が止まる。
         const targetLang = this.state.targetLang || 'ja';
         this.sendMessage({
             type: 'session.update',
             session: {
                 audio: {
+                    input: {
+                        transcription: this.buildInputTranscriptionConfig()
+                    },
                     output: { language: targetLang }
                 }
             }
