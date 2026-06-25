@@ -33,11 +33,14 @@ export default defineConfig(({ mode }) => {
   const backendPort = process.env['VITE_BACKEND_PORT'] || fileEnv.VITE_BACKEND_PORT || '8090';
 
   // プロキシターゲット設定:
-  // - VITE_API_URLが未設定（ローカル開発）: localhost:backendPort へ転送
-  // - VITE_API_URLが設定済み（Docker）: backend:8000（内部固定ポート）へ転送
-  const isDockerEnv = clientApiUrl !== '';
-  const proxyTarget = isDockerEnv ? 'http://backend:8000' : `http://localhost:${backendPort}`;
-  const wsProxyTarget = isDockerEnv ? 'ws://backend:8000' : `ws://localhost:${backendPort}`;
+  // VITE_PROXY_TARGET（compose から注入）を最優先。未指定時は VITE_API_URL の有無で判定。
+  // 相対パス(/api)運用時もプロキシ先はコンテナ内 backend:8000 を指す。
+  const isDockerEnv = clientApiUrl !== '' || !!process.env['VITE_PROXY_TARGET'];
+  const proxyTarget =
+    process.env['VITE_PROXY_TARGET'] ||
+    fileEnv.VITE_PROXY_TARGET ||
+    (clientApiUrl !== '' ? 'http://backend:8000' : `http://localhost:${backendPort}`);
+  const wsProxyTarget = proxyTarget.replace(/^http/, 'ws');
 
   // 開発サーバーポート（VITE_PORT環境変数から取得。Docker内部=5173、ローカル=FRONTEND_PORT）
   const devPort = parseInt(process.env['VITE_PORT'] || fileEnv.VITE_PORT || '5173', 10);

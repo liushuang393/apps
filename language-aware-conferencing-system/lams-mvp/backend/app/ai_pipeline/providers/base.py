@@ -59,14 +59,8 @@ class AIProvider(ABC):
         "hm",
         "mm",
         "mhm",
-        "thank you",
-        "thanks",
-        "okay",
-        "ok",
-        "yes",
-        "no",
-        "yeah",
-        "yep",
+        # 注: yes/no/ok/okay/yeah/yep/thank(s) は会議の意思表示として正当なため
+        # ノイズ除外しない（改善点 M1）。純粋なフィラーのみ残す。
         "so",
         "and",
         "but",
@@ -81,7 +75,7 @@ class AIProvider(ABC):
         ",",
         "-",
         "—",
-        "はい",
+        # 「はい」は会議の肯定回答として正当なため除外しない（改善点 M1）。
         "うん",
         "ええ",
         "あー",
@@ -94,17 +88,14 @@ class AIProvider(ABC):
         "嗯",
         "哦",
         "啊",
-        "好的",
-        "是的",
-        "谢谢",
-        "再见",
+        # 好的/是的/谢谢/再见 は正当な返答・挨拶として除外しない（改善点 M1）。
     ]
 
     # メディア系ノイズキーワード（部分一致用）
     MEDIA_NOISE_KEYWORDS = [
         "amara.org",
         "社群提供",
-        "字幕",
+        # 「字幕」は単独では正当語（部分一致で誤除外するため削除。改善点 M1）。
         "订阅",
         "訂閱",
         "点赞",
@@ -120,7 +111,7 @@ class AIProvider(ABC):
         "チャンネル登録",
         "高評価",
         "ご視聴",
-        "ありがとう",
+        # 「ありがとう」単独は正当な謝意。幻覚句「ご視聴ありがとう…」は "ご視聴" で捕捉する（改善点 M1）。
         "感谢观看",
         "感謝收看",
         "感謝觀看",
@@ -163,23 +154,33 @@ class AIProvider(ABC):
         if not text:
             return True
 
-        # 短すぎるテキストはノイズ（3文字以下）
-        if len(text) <= 3:
-            return True
-
         # 前後の記号・空白を除去
         text_clean = re.sub(r"^[\s\.\,\!\?\-\—]+|[\s\.\,\!\?\-\—]+$", "", text.lower())
+        if not text_clean:
+            return True  # 記号・空白のみ
 
-        # 完全一致パターンチェック
+        # CJK（かな/漢字）または数字を含む発話は、短くても意味を持つため除外しない。
+        # 例: 「三号」「火曜」「百万」「了解」「はい」「100万円」。会議の短い返答・数値を漏らさないため。
+        has_cjk = bool(re.search(r"[぀-ヿ㐀-鿿ｦ-ﾟ]", text))
+        has_digit = bool(re.search(r"\d", text))
+
+        # ラテン文字のみ・数字なしで 1 文字以下のみノイズ（"a" 等）。
+        # "No"/"OK"/"Yes" 等の意味のある短い返答語は通す。
+        if not has_cjk and not has_digit and len(text_clean) <= 1:
+            return True
+
+        # 完全一致パターン（非語彙フィラー・幻覚定型句）
         for pattern in self.NOISE_PATTERNS_EXACT:
             if text_clean == pattern.lower().strip():
                 return True
 
-        # 同じ文字の繰り返し（例：「あああ」）
-        if len(set(text.replace(" ", ""))) <= 2:
+        # 同一文字の長い繰り返し（例: 「ああああ」「。。。。」）。
+        # 短い正当語（「はい」=2文字種, "OK"）を誤判定しないよう長さ4以上に限定。
+        compact = text.replace(" ", "")
+        if len(compact) >= 4 and len(set(compact)) <= 2:
             return True
 
-        # メディア系ノイズ（部分一致で検出）
+        # メディア系ノイズ（Whisper 幻覚の宣伝句など。部分一致で検出）
         return any(
             keyword.lower() in text_clean for keyword in self.MEDIA_NOISE_KEYWORDS
         )

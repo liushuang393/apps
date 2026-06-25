@@ -15,7 +15,6 @@ import io
 import logging
 
 from app.ai_pipeline.providers.base import (
-    LANGUAGE_NAMES,
     AIProvider,
     TranslationResult,
     check_api_key,
@@ -265,40 +264,15 @@ class GPT4oTranscribeProvider(AIProvider):
                     audio_data=None,
                 )
 
-            # 2. テキスト翻訳
-            src_name = LANGUAGE_NAMES.get(source_language, source_language)
-            tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
-            translate_model = settings.openai_translate_model
+            # 2. テキスト翻訳（改善点 Q1）
+            #    用語集・直近文脈・LLM補正を内包する共通MT経路へ一本化する。
+            #    従来はここで素のプロンプト翻訳をしており、これらの品質機能が一切効かなかった。
+            logger.debug(f"[GPT4o-transcribe] 翻訳開始: '{original_text}' -> {target_language}")
+            from app.translate.routes import translate_text_simple
 
-            logger.debug(
-                f"[GPT4o-transcribe] 翻訳開始: '{original_text}' -> {tgt_name}"
+            translated_text = await translate_text_simple(
+                original_text, source_language, target_language
             )
-
-            # ★★★ 強化された翻訳プロンプト（AI乱話防止）★★★
-            system_prompt = (
-                f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
-                f"[CRITICAL] You are a TRANSLATION MACHINE for multilingual meetings.\n"
-                f"Translate the following {src_name} text into {tgt_name}.\n\n"
-                "ABSOLUTE RULES:\n"
-                "- Output ONLY the direct translation of the input text\n"
-                "- NEVER add comments, greetings, or acknowledgments\n"
-                "- NEVER say 'I understand', 'OK', 'Sure', or similar phrases\n"
-                "- NEVER engage in conversation or respond to the content\n"
-                "- Preserve the speaker's intent and tone accurately\n"
-                "- Keep technical terms and proper nouns intact\n\n"
-                "FORBIDDEN: Any output that is not a direct translation of the input."
-            )
-
-            chat_response = await client.chat.completions.create(
-                model=translate_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": original_text},
-                ],
-                max_tokens=500,
-                temperature=0.2,  # 翻訳の一貫性を高める
-            )
-            translated_text = chat_response.choices[0].message.content
             translated_text = translated_text.strip() if translated_text else ""
 
             if not translated_text:

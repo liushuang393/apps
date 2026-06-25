@@ -38,7 +38,9 @@ class RoomCreate(BaseModel):
     allow_mode_switch: bool = True
     is_private: bool = False  # 私有会議（他ユーザーの一覧に非表示）
     # 会議の既定モード（a/b/hybrid）。新規セッションの初期 mode となる（Phase 3）。
-    default_mode: str = MeetingMode.HYBRID.value
+    # モード2（ASR→翻訳→TTS）は hearing 主線 1 本で字幕＋翻訳音声を生成するため A を既定とする。
+    # HYBRID は reading 主線で MT を二重に行い無駄なので明日のリリースでは使わない。
+    default_mode: str = MeetingMode.A.value
     enable_openai_s2s: bool = True  # 聞く主線（S2S 翻訳音声）の会議レベル許可
     language_routes: dict = {}  # 言語ペア単位の主線/プロバイダー上書き
 
