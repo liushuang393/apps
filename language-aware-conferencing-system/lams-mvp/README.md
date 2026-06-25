@@ -243,7 +243,7 @@ LLM_MINUTES_PROVIDER=auto         # auto（GPT優先・Gemini fallback） / gpt 
 
 ### 1. 環境変数の準備（`.env`）
 
-```bash
+```bashdocker
 cd lams-mvp
 cp .env.example .env
 ```

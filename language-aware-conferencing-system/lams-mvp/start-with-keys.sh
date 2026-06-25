@@ -121,13 +121,15 @@ MODE="${1:-local}"
 case "$MODE" in
     docker)
         echo -e "${GREEN}[Docker]${NC} 起動中..."
-        docker compose up -d backend frontend
+        # 全サービスを起動（postgres/redis/livekit/coturn/backend/frontend）。
+        # 以前は backend frontend のみで livekit が起動せず接続不可になっていた。
+        docker compose up -d
         # FRONTEND_PORT は .env から先読み済み（未設定時は 5273 を使用）
         echo -e "${GREEN}[OK]${NC} http://localhost:${FRONTEND_PORT:-5273}"
         ;;
     "docker build")
         echo -e "${GREEN}[Docker Build]${NC} 再ビルド起動中..."
-        docker compose up -d --build backend frontend
+        docker compose up -d --build
         echo -e "${GREEN}[OK]${NC} http://localhost:${FRONTEND_PORT:-5273}"
         ;;
     local|*)

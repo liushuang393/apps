@@ -234,9 +234,11 @@ async def _call_openai_translate(
             detail="翻訳サービスが設定されていません",
         )
 
+    # 空文字の base_url=None は環境変数 OPENAI_BASE_URL="" を拾い接続エラーになるため、
+    # 他プロバイダーと同様に公式URLを明示する（他3箇所と統一）。
     client = AsyncOpenAI(
         api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url if settings.openai_base_url else None,
+        base_url=settings.openai_base_url or "https://api.openai.com/v1",
     )
 
     src_name = LANGUAGE_NAMES[source_language]

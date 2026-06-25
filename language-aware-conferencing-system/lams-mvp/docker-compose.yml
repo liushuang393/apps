@@ -34,8 +34,10 @@ services:
   # WS を廃止し WebRTC/LiveKit へ一本化。フロント/Agent はここへ接続する。
   # API キーは LIVEKIT_KEYS（.env 由来）で注入し、非秘密設定は livekit.yaml に置く。
   livekit:
-    image: livekit/livekit-server:v1.8
-    command: --config /etc/livekit.yaml
+    image: livekit/livekit-server:v1.13.1
+    # --node-ip: メディア(ICE)候補として広告するIP。Docker内部IPだとブラウザから到達できないため、
+    # ホストの到達可能IP（HOST_IP）を明示する。Agent(コンテナ)もhost.docker.internal経由で同IPに到達可能。
+    command: --config /etc/livekit.yaml --node-ip ${HOST_IP:-127.0.0.1}
     environment:
       # "APIキー: シークレット" 形式（livekit.yaml には秘密を書かない）
       - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret_change_in_production}"
@@ -72,6 +74,12 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    # .env を唯一の正として直接注入する。これによりシェルの無効 OPENAI_API_KEY(~/.bashrc) や
+    # 未配線の設定（LANGUAGE_DETECTION_MODE 等）に左右されない。CORS_ORIGINS/SUPPORTED_LANGUAGES は
+    # pydantic の list[str] なので .env では JSON 配列で記載すること。
+    # 下の environment: は env_file より優先され、コンテナ内専用の値（DB/Redis/LiveKit のホスト名等）を上書きする。
+    env_file:
+      - .env
     environment:
       # データベース・キャッシュ
       - DATABASE_URL=postgresql://lams:${DB_PASSWORD:-lams_secret_2024}@postgres:5432/lams
@@ -86,9 +94,8 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-models/gemini-2.5-flash-native-audio-preview-12-2025}
       # Gemini Live S2S 翻訳モデル（AI_PROVIDER=gemini_live 時に使用）
       - GEMINI_LIVE_MODEL=${GEMINI_LIVE_MODEL:-models/gemini-3.5-live-translate-preview}
-      # OpenAI Realtime設定
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      # OpenAI設定。OPENAI_API_KEY / OPENAI_BASE_URL は env_file(.env) から注入する。
+      # （environment に ${OPENAI_API_KEY} と書くとシェルの無効キーを拾うため、ここには書かない）
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL:-gpt-realtime-2025-08-28}
       # LiveKit / WebRTC 設定（Phase 3 C1：単一トランスポート）
       # LIVEKIT_URL: サーバ→LiveKit の内部接続先（同一ネットワーク内のサービス名）
@@ -123,10 +130,13 @@ services:
       dockerfile: Dockerfile
       target: development
     environment:
-      # LAN公開: .envのHOST_IPを設定するだけで自動反映
-      # BACKEND_PORTも.envで変更すればVITE_API_URL/WS_URLに自動反映
-      - VITE_API_URL=http://${HOST_IP:-localhost}:${BACKEND_PORT:-8090}
-      - VITE_WS_URL=ws://${HOST_IP:-localhost}:${BACKEND_PORT:-8090}
+      # API はブラウザと同一オリジンの相対パス /api で送信し、Vite(5273) が backend へプロキシする。
+      # これにより 8090 をブラウザから直接到達させる必要がなくなり、localhost でも LAN IP でも
+      # （5273 さえ開ければ）ログイン/会議室取得が動く。CORS・hairpin 問題も回避。
+      - VITE_API_URL=
+      - VITE_WS_URL=
+      # Vite の /api・/ws プロキシ先（コンテナ内部の backend サービス）
+      - VITE_PROXY_TARGET=http://backend:8000
       # コンテナ内部ポートは5173固定（外部ポートはdocker-compose.ymlのportsで変換）
       - VITE_PORT=5173
     ports:
