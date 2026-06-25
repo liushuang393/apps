@@ -252,7 +252,9 @@ class VoiceTranslateApp {
         // パスプロセッサの初期モードを同期
         try {
             this.updateProcessorModes();
-        } catch (e) {}
+        } catch (e) {
+            this.notify('警告', 'プロセッサモードの初期化に失敗しました', 'error');
+        }
 
         this.notify('システム準備完了', 'VoiceTranslate Proが起動しました', 'success');
     }
@@ -597,7 +599,9 @@ class VoiceTranslateApp {
             if (this.state.isConnected && this.elements.vadEnabled.classList.contains('active')) {
                 try {
                     await this.updateSessionConfig();
-                } catch (error) {}
+                } catch (error) {
+                    this.notify('警告', 'VAD設定の反映に失敗しました', 'error');
+                }
             }
         });
 
@@ -1205,7 +1209,9 @@ class VoiceTranslateApp {
                     if (t.maxBufferMs != null) CONFIG.TRANSLATION.MAX_BUFFER_MS = t.maxBufferMs;
                 }
             }
-        } catch (error) {}
+        } catch (error) {
+            this.notify('警告', '環境設定の読み込みに失敗しました（既定値を使用します）', 'error');
+        }
     }
 
     setupElectronWebSocketHandlers() {
@@ -1322,7 +1328,9 @@ class VoiceTranslateApp {
                 this.state.outputDeviceId = saved;
                 sel.value = saved;
             }
-        } catch (err) {}
+        } catch (err) {
+            this.notify('警告', '出力デバイス一覧の取得に失敗しました', 'error');
+        }
     }
 
     /**
@@ -1368,7 +1376,9 @@ class VoiceTranslateApp {
                 this.state.virtualCardDeviceId = virtual.deviceId;
                 sel.value = virtual.deviceId;
             }
-        } catch (err) {}
+        } catch (err) {
+            this.notify('警告', '入力デバイス一覧の取得に失敗しました', 'error');
+        }
     }
 
     /**
@@ -1385,7 +1395,14 @@ class VoiceTranslateApp {
         if (audioEl && typeof audioEl.setSinkId === 'function') {
             try {
                 await audioEl.setSinkId(deviceId || '');
-            } catch (err) {}
+            } catch (err) {
+                // 握り潰すと「切替えても反映されない」原因が分からなくなるため明示通知する。
+                this.notify(
+                    '出力先の切替に失敗',
+                    '翻訳音声の出力先を変更できませんでした: ' + this.extractErrorMessage(err),
+                    'warning'
+                );
+            }
         }
 
         const ctx = this.state.outputAudioContext;
@@ -1394,7 +1411,9 @@ class VoiceTranslateApp {
         }
         try {
             await ctx.setSinkId(deviceId || '');
-        } catch (err) {}
+        } catch (err) {
+            // 出力デバイス切替の失敗は致命的でないため無視（既定デバイスで再生継続）
+        }
     }
 
     normalizeRealtimeEndpointModel() {
@@ -1444,7 +1463,8 @@ class VoiceTranslateApp {
                     );
                     this.state.currentSessionId = sessionId;
                 } catch (error) {
-                    // セッション開始失敗でも接続は続行
+                    // セッション開始失敗でも接続は続行（履歴は保存されない）
+                    this.notify('警告', '会話履歴セッションの開始に失敗しました', 'error');
                 }
             }
 
@@ -1513,7 +1533,9 @@ class VoiceTranslateApp {
             try {
                 await this.platform.conversation.endSession();
                 this.state.currentSessionId = null;
-            } catch (error) {}
+            } catch (error) {
+                this.notify('警告', '会話履歴セッションの終了処理に失敗しました', 'error');
+            }
         }
 
         if (this.platform.isElectron) {
@@ -1823,7 +1845,9 @@ class VoiceTranslateApp {
                 this.state.dataChannel.onopen = null;
                 this.state.dataChannel.onmessage = null;
                 this.state.dataChannel.close();
-            } catch (e) {}
+            } catch (e) {
+                // 解放処理の失敗は無害なため無視
+            }
             this.state.dataChannel = null;
         }
         if (this.state.pc) {
@@ -1834,13 +1858,17 @@ class VoiceTranslateApp {
                 this.state.pc.onconnectionstatechange = null;
                 this.state.pc.ontrack = null;
                 this.state.pc.close();
-            } catch (e) {}
+            } catch (e) {
+                // 解放処理の失敗は無害なため無視
+            }
             this.state.pc = null;
         }
         if (this.state.translatedAudioEl) {
             try {
                 this.state.translatedAudioEl.srcObject = null;
-            } catch (e) {}
+            } catch (e) {
+                // 解放処理の失敗は無害なため無視
+            }
         }
     }
 
@@ -2245,10 +2273,15 @@ class VoiceTranslateApp {
 
     async startMicrophoneCapture() {
         // ✅ 音声キャプチャ戦略を使用（低結合・高凝集）
+        // ※ マイクモードでは echoCancellation / noiseSuppression を強制ONにする。
+        //   翻訳音声が同一マシンのスピーカーから出るため、ブラウザのAEC無しだと
+        //   マイクが訳音声を拾い直して翻訳モデルが自分の出力を再入力→認識崩れ・取りこぼし
+        //   （ループバック）が起きる。同時通訳アプリの標準対策。
+        //   （監視/システム音声モードは startSystemAudioCapture 側で別途設定する）
         const config = {
             sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-            echoCancellation: this.elements.echoCancellation.classList.contains('active'),
-            noiseSuppression: this.elements.noiseReduction.classList.contains('active'),
+            echoCancellation: true,
+            noiseSuppression: true,
             autoGainControl: this.elements.autoGainControl.classList.contains('active')
         };
 
@@ -2430,7 +2463,9 @@ class VoiceTranslateApp {
         this.notify('エラー', '画面共有の音声キャプチャが停止しました', 'error');
         try {
             await this.stopRecording();
-        } catch (error) {}
+        } catch (error) {
+            // キャプチャ停止は上で通知済み。停止処理の例外はここでは無視
+        }
     }
 
     /**
@@ -2456,7 +2491,9 @@ class VoiceTranslateApp {
         audioTrack.addEventListener('ended', async () => {
             try {
                 await this.handleBrowserAudioTrackEnded();
-            } catch (error) {}
+            } catch (error) {
+                // ハンドラ内で通知済みのため無視
+            }
         });
     }
 
@@ -2520,7 +2557,9 @@ class VoiceTranslateApp {
         this.notify('エラー', 'タブ音声のキャプチャが停止しました', 'error');
         try {
             await this.stopRecording();
-        } catch (error) {}
+        } catch (error) {
+            // キャプチャ停止は上で通知済み。停止処理の例外はここでは無視
+        }
     }
 
     /**
@@ -2546,7 +2585,9 @@ class VoiceTranslateApp {
         audioTrack.addEventListener('ended', async () => {
             try {
                 await this.handleAudioTrackEnded();
-            } catch (error) {}
+            } catch (error) {
+                // ハンドラ内で通知済みのため無視
+            }
         });
     }
 
@@ -2791,6 +2832,14 @@ class VoiceTranslateApp {
                         const audioChunk = new Float32Array(inputData.length);
                         audioChunk.set(inputData);
                         this.audioBuffer.push(audioChunk);
+                    }
+
+                    // ✅ 監視先の無音自動検証（開始直後の一定時間だけエネルギーを観測）
+                    //    ※ ScriptProcessor フォールバック経路と同様に必ず feed する。
+                    //      これが無いと maxEnergy が 0 のままになり、実際は音が鳴っていても
+                    //      「無音」と誤判定して監視先を勝手に切替→「音声が検出できません」を誤発火する。
+                    if (this.silenceVerifyActive) {
+                        this.feedSilenceVerifier(this.vad.calculateEnergy(inputData));
                     }
 
                     // Server VADが有効かどうかをチェック
@@ -3070,7 +3119,9 @@ class VoiceTranslateApp {
         if (this.state.audioContext) {
             try {
                 await this.state.audioContext.close();
-            } catch (e) {}
+            } catch (e) {
+                // 解放処理の失敗は無害なため無視
+            }
             this.state.audioContext = null;
         }
 
@@ -3118,7 +3169,9 @@ class VoiceTranslateApp {
         if (this.state.audioSource) {
             try {
                 this.state.audioSource.disconnect();
-            } catch (e) {}
+            } catch (e) {
+                // 解放処理の失敗は無害なため無視
+            }
             this.state.audioSource = null;
         }
 
@@ -3126,7 +3179,9 @@ class VoiceTranslateApp {
         if (this.state.inputGainNode) {
             try {
                 this.state.inputGainNode.disconnect();
-            } catch (e) {}
+            } catch (e) {
+                // 解放処理の失敗は無害なため無視
+            }
             this.state.inputGainNode = null;
         }
 

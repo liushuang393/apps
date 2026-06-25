@@ -118,14 +118,16 @@ const WebSocketMixin = {
         try {
             const message = JSON.parse(event.data);
 
-            // デバッグモードでのみ詳細ログを出力
-            if (CONFIG.DEBUG_MODE) {
-            }
-
             // メッセージタイプに応じたハンドラーを呼び出す
             this.dispatchWSMessage(message);
             this.notifyRealtimeMessageListeners(message);
-        } catch (error) {}
+        } catch (error) {
+            // ホットパス（音声デルタ含む）のため通知はセッション中1度だけに抑制（多重トースト防止）
+            if (!this._realtimeMsgErrorNotified) {
+                this._realtimeMsgErrorNotified = true;
+                this.notify('エラー', `メッセージ処理に失敗しました: ${error.message}`, 'error');
+            }
+        }
     },
 
     /**
@@ -165,7 +167,17 @@ const WebSocketMixin = {
         for (const listener of Array.from(this.realtimeMessageListeners)) {
             try {
                 listener(message);
-            } catch (error) {}
+            } catch (error) {
+                // 1つのリスナー例外で他を止めない（分離）。診断のためセッション中初回のみ通知
+                if (!this._realtimeMsgErrorNotified) {
+                    this._realtimeMsgErrorNotified = true;
+                    this.notify(
+                        'エラー',
+                        `リアルタイム処理でエラーが発生しました: ${error.message}`,
+                        'error'
+                    );
+                }
+            }
         }
     },
 
@@ -1507,7 +1519,9 @@ const WebSocketMixin = {
             if (!this.isPlayingFromQueue) {
                 this.playNextInQueue();
             }
-        } catch (error) {}
+        } catch (error) {
+            this.handleAudioPlaybackError(error);
+        }
     },
 
     /**
@@ -1779,7 +1793,9 @@ const WebSocketMixin = {
                 try {
                     source.disconnect();
                     gainNode.disconnect();
-                } catch (cleanupError) {}
+                } catch (cleanupError) {
+                    // 解放処理の失敗は無害なため無視
+                }
 
                 // ✅ 出力完了時刻を記録（バッファウィンドウの計算用）
                 this.audioSourceTracker.outputEndTime = Date.now();
