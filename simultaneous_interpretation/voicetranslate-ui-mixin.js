@@ -309,7 +309,6 @@ const UIMixin = {
             this.insertLatestMessage(container, message, type, transcriptId);
         }
 
-
         // 一番上にスクロール（最新のメッセージが見えるように）
         container.scrollTop = 0;
 
@@ -323,6 +322,63 @@ const UIMixin = {
         this.saveTranscriptToDatabase(type, text, transcriptId);
 
         return message;
+    },
+
+    /**
+     * 翻訳セッションのライブ字幕（暫定行）を作成/更新する。
+     *
+     * 目的:
+     *   確定（句末/アイドル）を待たず、到達したデルタを即座に1本の暫定行へ
+     *   反映し、滑らかな実時間表示にする。確定時は clearLiveCaption() で暫定行を
+     *   消し、addTranscript() が確定行を正式に追加する（確定行の挙動は不変）。
+     *
+     * @param {'input'|'output'} kind input=原文(左) / output=訳文(右)
+     * @param {string} text これまでに累積した暫定テキスト
+     */
+    renderLiveCaption(kind, text) {
+        if (!this.shouldShowTranscript(kind)) {
+            return;
+        }
+        const container = this.getTranscriptContainer(kind);
+        if (!container) {
+            return;
+        }
+        this.removeEmptyState(container);
+
+        if (!this.liveCaptionEl) {
+            this.liveCaptionEl = { input: null, output: null };
+        }
+
+        let el = this.liveCaptionEl[kind];
+        if (!el || !el.isConnected) {
+            el = this.createTranscriptMessage(kind, text, null);
+            el.dataset.live = '1';
+            container.insertBefore(el, container.firstChild);
+            this.liveCaptionEl[kind] = el;
+        } else {
+            const textElement = el.querySelector('.transcript-text');
+            if (textElement) {
+                textElement.textContent = text;
+            }
+        }
+
+        container.scrollTop = 0;
+    },
+
+    /**
+     * ライブ字幕（暫定行）を除去する。確定行を addTranscript() で追加する直前に呼ぶ。
+     *
+     * @param {'input'|'output'} kind
+     */
+    clearLiveCaption(kind) {
+        if (!this.liveCaptionEl) {
+            return;
+        }
+        const el = this.liveCaptionEl[kind];
+        if (el && el.isConnected) {
+            el.remove();
+        }
+        this.liveCaptionEl[kind] = null;
     },
 
     /**
@@ -366,8 +422,18 @@ const UIMixin = {
                 language: language,
                 timestamp: transcriptId || Date.now()
             });
-
         } catch (error) {
+            // 履歴保存(SQLite)の失敗は翻訳継続には致命的でないが、無言で履歴を
+            // 失わないよう、セッション中に一度だけ警告する（毎ターン通知の氾濫は避ける）。
+            if (!this._historySaveWarned) {
+                this._historySaveWarned = true;
+                const detail = error && error.message ? error.message : String(error);
+                this.notify(
+                    '履歴保存の警告',
+                    '会話履歴の保存に失敗しました（翻訳は継続します）: ' + detail,
+                    'warning'
+                );
+            }
         }
     },
 
@@ -424,7 +490,6 @@ const UIMixin = {
      * @param {string} type - 'input', 'output', または 'both'（両方）
      */
     clearTranscript(type = 'both') {
-
         // 要素が初期化されているか確認
         if (!this.elements || !this.elements.inputTranscript || !this.elements.outputTranscript) {
             return;
@@ -461,7 +526,6 @@ const UIMixin = {
             emptyState.appendChild(icon);
             emptyState.appendChild(text);
             container.appendChild(emptyState);
-
         };
 
         if (type === 'both') {
@@ -564,8 +628,7 @@ const UIMixin = {
      * @param {string} type - ステータスタイプ
      * @param {string} text - ステータステキスト
      */
-    updateStatus(type, text) {
-    },
+    updateStatus(type, text) {},
 
     /**
      * 通知表示

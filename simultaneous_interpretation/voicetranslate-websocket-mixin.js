@@ -339,12 +339,13 @@ const WebSocketMixin = {
         }
         this.translationCaption[kind] += delta;
         const buffered = this.translationCaption[kind];
-        // 文末標点で即確定。
-        if (/[。．.!?！？\n]\s*$/.test(buffered)) {
-            this.commitTranslationCaption(kind);
-            return;
-        }
-        // 標点が来ない発話(特に左カラムの原文STT)対策: デルタが途切れたら確定する。
+        // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
+        //    （確定時に commitTranslationCaption がライブ行を確定行へ置き換える）
+        this.renderLiveCaption(kind, buffered);
+        // ✅ BUG1(左右1:1): 確定境界はサーバの session.*_transcript.done に一本化する。
+        //    句読点での早期確定は左右カラムで切る回数が食い違い、対応を崩す主因のため廃止。
+        //    両列が「サーバの .done」という単一ルールで切れるので、順に並べるだけで 1:1。
+        //    .done が来ない場合の取りこぼし防止としてアイドル確定のみ保険で残す(両列同一規則)。
         this.scheduleTranslationCaptionFlush(kind);
     },
 
@@ -364,6 +365,8 @@ const WebSocketMixin = {
         }
         const text = (this.translationCaption[kind] || '').trim();
         this.translationCaption[kind] = '';
+        // ✅ ライブ表示中の暫定行を消し、確定行を addTranscript() で正式に追加する。
+        this.clearLiveCaption(kind);
         if (text && typeof this.addTranscript === 'function') {
             this.addTranscript(kind, text, null);
         }
