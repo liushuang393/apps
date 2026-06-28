@@ -265,8 +265,8 @@ class VoiceTranslateApp {
         this.elements.validateBtn = document.getElementById('validateBtn');
 
         // 言語設定
-        // ✅ 修正: sourceLang は自動検出されるため、HTML から削除
-        // this.elements.sourceLang = document.getElementById('sourceLang');
+        // ✅ D2: 入力言語セレクタ（既定=自動判定。指定すると認識精度が上がる）
+        this.elements.sourceLang = document.getElementById('sourceLang');
         this.elements.targetLang = document.getElementById('targetLang');
         this.elements.voiceType = document.getElementById('voiceType');
         // モデル設定
@@ -384,18 +384,17 @@ class VoiceTranslateApp {
         });
 
         // 言語設定変更
-        // ✅ 修正: sourceLang は自動検出されるため、手動設定は不要（コメント化）
-        // this.elements.sourceLang.addEventListener('change', (e) => {
-        //     this.state.sourceLang = e.target.value;
-        //     this.elements.sourceLangDisplay.textContent = Utils.getNativeLanguageName(
-        //         e.target.value
-        //     );
-        //     this.saveToStorage('source_lang', e.target.value);
-        //     this.clearTranscript('both');
-        //     if (this.state.isConnected) {
-        //         this.updateSession();
-        //     }
-        // });
+        // ✅ D2: 入力言語を指定したら state.sourceLang に反映。'auto' は null（自動判定）。
+        //    接続中は session.update で転写設定を再送し、buildInputTranscriptionConfig が
+        //    language を固定 → 短文の言語誤検出を抑え認識精度を上げる。
+        if (this.elements.sourceLang) {
+            this.elements.sourceLang.addEventListener('change', (e) => {
+                this.state.sourceLang = e.target.value === 'auto' ? null : e.target.value;
+                if (this.state.isConnected) {
+                    this.updateSession();
+                }
+            });
+        }
 
         this.elements.targetLang.addEventListener('change', (e) => {
             this.state.targetLang = e.target.value;
@@ -3244,95 +3243,6 @@ class VoiceTranslateApp {
     }
 
     /**
-     * 音声データのデコードと再生準備
-     *
-     * 目的:
-     *   Base64音声データをデコードしてAudioBufferSourceを作成
-     *
-     * Parameters:
-     *   base64Audio - Base64エンコードされた音声データ
-     *
-     * Returns:
-     *   AudioBufferSource - 再生準備完了のAudioBufferSource
-     *
-     * 注意:
-     *   ネストを減らすため別メソッドに抽出
-     */
-    async prepareAudioSource(base64Audio) {
-        // Base64からArrayBufferに変換
-        const pcm16Data = Utils.base64ToArrayBuffer(base64Audio);
-
-        // PCM16 を WAV 形式に変換（decodeAudioData が必要とする形式）
-        const wavData = this.createWavFromPCM16(pcm16Data, CONFIG.AUDIO.SAMPLE_RATE);
-
-        // 非同期デコード
-        const audioBuffer = await this.state.outputAudioContext.decodeAudioData(wavData);
-
-        // 音量調整用のGainNodeを作成
-        const gainNode = this.state.outputAudioContext.createGain();
-        // 音量を設定（Electronアプリでの音量不足を解消）
-        gainNode.gain.value = this.state.outputVolume;
-
-        // 再生
-        const source = this.state.outputAudioContext.createBufferSource();
-        source.buffer = audioBuffer;
-
-        // 音声チェーン: source → gainNode → destination
-        source.connect(gainNode);
-        gainNode.connect(this.state.outputAudioContext.destination);
-
-        return source;
-    }
-    async playAudio(base64Audio) {
-        // ✅ 音声源トラッキング開始: 出力再生時刻を記録
-        const playbackToken =
-            'playback_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);
-        this.audioSourceTracker.playbackTokens.add(playbackToken);
-        this.audioSourceTracker.outputStartTime = Date.now();
-
-        // 音声再生中フラグをON（ループバック防止）
-        // すべてのモード（マイク/ブラウザ音声/画面共有）で有効
-        this.state.isPlayingAudio = true;
-
-        // 出力音声再生中は入力音声を完全ミュート（優先度確保）
-        if (this.state.inputGainNode) {
-            this.state.inputGainNode.gain.value = 0;
-        }
-
-        try {
-            // 出力AudioContextの初期化
-            await this.initializeOutputAudioContext();
-
-            // ✅ 非同期デコード: AudioContext.decodeAudioData を使用
-            // 理由: メインスレッドのブロックを防ぎ、UI の応答性を維持
-            const source = await this.prepareAudioSource(base64Audio);
-
-            // 再生終了時にフラグをOFF（すべてのモードで適用）
-            source.onended = () => {
-                // ✅ 出力完了時刻を記録（バッファウィンドウの計算用）
-                this.audioSourceTracker.outputEndTime = Date.now();
-                this.audioSourceTracker.playbackTokens.delete(playbackToken);
-
-                // ✅ 現在のソースをクリア
-                if (this.currentAudioSource === source) {
-                    this.currentAudioSource = null;
-                }
-
-                this.handleAudioPlaybackEnded();
-            };
-
-            // ✅ 現在再生中のソースを記録（停止用）
-            this.currentAudioSource = source;
-            source.start();
-        } catch (error) {
-            // ✅ エラー時もトークンをクリア
-            this.audioSourceTracker.playbackTokens.delete(playbackToken);
-            this.handleAudioPlaybackError(error);
-            throw error;
-        }
-    }
-
-    /**
      * 再生キューをクリア（新しい翻訳開始時に古い音声を削除）
      *
      * 目的:
@@ -3345,13 +3255,20 @@ class VoiceTranslateApp {
      *   - ユーザー体験の向上
      */
     clearPlaybackQueue() {
-        const clearedChunks = this.playbackQueue.length;
-
-        if (clearedChunks > 0 || this.currentAudioSource) {
-        }
-
         // ✅ キューをクリア
         this.playbackQueue = [];
+
+        // ✅ ギャップレス予約で先読みスケジュール済みのソースを全て停止（割込み）
+        if (this._activeSources) {
+            for (const source of this._activeSources) {
+                try {
+                    source.stop();
+                } catch (error) {
+                    // 既に停止している場合は無視
+                }
+            }
+            this._activeSources.clear();
+        }
 
         // ✅ 現在再生中の音声を停止
         if (this.currentAudioSource) {
@@ -3362,6 +3279,10 @@ class VoiceTranslateApp {
             }
             this.currentAudioSource = null;
         }
+
+        // ✅ 連結カーソルと直列チェーンをリセット（次の翻訳は現在時刻から開始）
+        this._nextPlaybackTime = 0;
+        this._playbackChain = null;
 
         // ✅ 再生フラグをリセット
         this.isPlayingFromQueue = false;

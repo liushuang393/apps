@@ -94,11 +94,6 @@ const WebSocketMixin = {
         };
     },
 
-    clearRealtimeInputAudioBuffer(reason = 'manual-clear') {
-        this.sendMessage({ type: 'input_audio_buffer.clear' });
-        this.resetRealtimeInputAudioBufferStats();
-    },
-
     commitRealtimeInputAudioBuffer(reason = 'manual-commit') {
         // 翻訳セッションは音声を連続ストリームで処理するため手動 commit を行わない。
         // （commit すると per-turn のレスポンス生成を促してしまい、翻訳の連続性を壊す）
@@ -318,13 +313,19 @@ const WebSocketMixin = {
     recordTranslationLatency(role) {
         const now = Date.now();
         if (role === 'input') {
+            // 発話の最初の入力デルタ時刻を起点に保持（次の訳出開始までを測る）。
             if (this.latencyTurnStartAt == null) {
                 this.latencyTurnStartAt = now;
             }
             return;
         }
+        // 訳出の最初のデルタで「入力→訳出」遅延を確定し、次の発話に備えてリセット。
         if (this.latencyTurnStartAt != null) {
-            this.updateLatencyDisplay(now - this.latencyTurnStartAt);
+            const ms = now - this.latencyTurnStartAt;
+            // ✅ D8: 連続ストリームで句がまたがった場合の異常値は表示しない（0〜60秒のみ採用）。
+            if (ms >= 0 && ms < 60000) {
+                this.updateLatencyDisplay(ms);
+            }
             this.latencyTurnStartAt = null;
         }
     },
@@ -1452,11 +1453,14 @@ const WebSocketMixin = {
         const isSystemMode = this.state.audioSourceType === 'system';
         const isMicrophoneMode = !isSystemMode;
 
-        // 経路隔離が成立する場合のみ「再生中も連続採集」を許可（不漏訳）。
-        // 条件: システム音声モード + 翻訳セッション + 翻訳音声の出力が別デバイスへ分離済み。
-        // 未分離（既定出力＝採集対象の恐れ）や非翻訳セッションでは従来どおり再生中スキップ。
-        const continuousCapture =
-            isSystemMode && this.isRealtimeTranslationSession() && this.isOutputDeviceIsolated();
+        // ✅ 実時間化（同時通訳）: ストリーミング翻訳は訳音がほぼ連続再生されるため、
+        //   「再生中スキップ」だと相手の発話を取りこぼし実時間にならない（漏訳の主因）。
+        //   そこで翻訳セッションでは再生中も連続採集する。ただし回灌（訳音の再採集）を
+        //   物理的に断てる構成のときのみ:
+        //     - マイクモード: ヘッドホン/エコーキャンセルで訳音がマイクに回り込まない前提 → 連続採集可。
+        //     - システム音声モード: stereo-mix が訳音も拾い回灌し得るため従来どおり再生中スキップ
+        //       （実時間化には仮想ケーブル等での原声分離が必要）。
+        const continuousCapture = this.isRealtimeTranslationSession() && isMicrophoneMode;
 
         let shouldSkip;
         if (continuousCapture) {
@@ -1510,127 +1514,100 @@ const WebSocketMixin = {
      * @param {string} base64Audio - base64エンコードされた音声データ
      */
     async playAudioChunk(base64Audio, metadata = {}) {
-        try {
-            // 再生キューに追加
-            this.playbackQueue.push({
-                audio: base64Audio,
-                segmentId: metadata.segmentId || null,
-                responseId: metadata.responseId || null
-            });
-
-            // 再生中でなければ再生開始
-            if (!this.isPlayingFromQueue) {
-                this.playNextInQueue();
-            }
-        } catch (error) {
-            this.handleAudioPlaybackError(error);
+        if (!base64Audio || typeof base64Audio !== 'string') {
+            return;
         }
+        // ✅ 順序保証＋出力Context初期化レース回避のためスケジューリングを直列化する。
+        //    予約は currentTime ベースの先読みなので、直列でもギャップは生じない。
+        this._playbackChain = (this._playbackChain || Promise.resolve())
+            .then(() => this.scheduleAudioChunk(base64Audio))
+            .catch((error) => this.handleAudioPlaybackError(error));
     },
 
     /**
-     * 再生キューから次の音声を再生
+     * ✅ ギャップレス再生（D6）: PCM16チャンクを直前チャンクの終了時刻へ隙間なく予約する。
      *
      * 目的:
-     *   再生キューに蓄積された音声を順番に再生
-     *   前の音声が完全に再生終了してから次の音声を再生することで、
-     *   連続した翻訳音声が途中で切断されるのを防ぐ
+     *   従来は「前チャンクの onended 後にデコードして再生」していたため、チャンク毎に
+     *   デコード分の無音が入り訳音がブツ切れになっていた。ここでは
+     *   PCM16→AudioBuffer 直書き（同期・低遅延）＋ 連結カーソル _nextPlaybackTime での
+     *   先読み予約により、隙間のない連続再生にする。
      *
-     * 注意:
-     *   この関数は await せず、非同期で再生を開始する
-     *   再生完了時に playAudio() の onended から再度呼び出される
+     * @param {string} base64Audio base64 PCM16(24kHz mono)
      */
-    playNextInQueue() {
-        // キューが空の場合
-        if (this.playbackQueue.length === 0) {
-            this.isPlayingFromQueue = false;
+    async scheduleAudioChunk(base64Audio) {
+        await this.initializeOutputAudioContext();
+        const ctx = this.state.outputAudioContext;
+        if (!ctx) {
+            return;
+        }
 
-            // 入力音声を復元（すべての再生が完了）
-            // 注意: inputAudioOutputEnabled は削除されたため、常に0（ミュート）
-            if (this.state.inputGainNode) {
-                this.state.inputGainNode.gain.value = 0;
+        const buffer = this.pcm16ToAudioBuffer(base64Audio, ctx);
+        if (!buffer || buffer.length === 0) {
+            return;
+        }
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = this.state.outputVolume;
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        // 直前チャンクの終了時刻へ連結（過去になっていたら現在時刻にリセットして無音連鎖を防ぐ）。
+        const startAt = Math.max(ctx.currentTime, this._nextPlaybackTime || 0);
+        source.start(startAt);
+        this._nextPlaybackTime = startAt + buffer.duration;
+
+        // ループバック防止トラッキング＆入力ミュート（再生中）。
+        this.state.isPlayingAudio = true;
+        this.audioSourceTracker.outputStartTime = Date.now();
+        if (this.state.inputGainNode) {
+            this.state.inputGainNode.gain.value = 0;
+        }
+
+        if (!this._activeSources) {
+            this._activeSources = new Set();
+        }
+        this._activeSources.add(source);
+        this.currentAudioSource = source;
+
+        source.onended = () => {
+            try {
+                source.disconnect();
+                gainNode.disconnect();
+            } catch (cleanupError) {
+                // 解放処理の失敗は無害なため無視
             }
-
-            return;
-        }
-
-        // 再生中フラグをON
-        this.isPlayingFromQueue = true;
-
-        // キューから最初の音声を取り出す
-        const queueItem = this.playbackQueue.shift();
-        if (!queueItem || typeof queueItem.audio !== 'string') {
-            this.playNextInQueue();
-            return;
-        }
-        const audioData = queueItem.audio;
-
-        // 音声を再生（await しない - 非同期で開始）
-        this.playAudio(audioData).catch((error) => {
-            // エラーが発生しても次の音声を再生
-            this.playNextInQueue();
-        });
+            this._activeSources.delete(source);
+            // 予約済みが全て鳴り終わったら再生終了として扱う（バッファウィンドウ計算用）。
+            if (this._activeSources.size === 0) {
+                this.audioSourceTracker.outputEndTime = Date.now();
+                this.handleAudioPlaybackEnded();
+            }
+        };
     },
 
     /**
-     * ✅ PCM16 データを WAV 形式に変換
+     * ✅ PCM16(24kHz mono) を AudioBuffer へ直書きする（同期・低遅延。WAV化/decode を排除）。
      *
-     * 目的:
-     *   AudioContext.decodeAudioData が認識できる WAV 形式に変換
-     *
-     * @param {ArrayBuffer} pcm16Data - PCM16 データ
-     * @param {number} sampleRate - サンプルレート
-     * @returns {ArrayBuffer} WAV 形式のデータ
+     * @param {string} base64Audio base64 PCM16
+     * @param {AudioContext} ctx 出力 AudioContext
+     * @returns {AudioBuffer|null} 空データのときは null
      */
-    createWavFromPCM16(pcm16Data, sampleRate) {
-        const numChannels = 1; // モノラル
-        const bitsPerSample = 16;
-        const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
-        const blockAlign = (numChannels * bitsPerSample) / 8;
-        const dataSize = pcm16Data.byteLength;
-        const headerSize = 44;
-        const totalSize = headerSize + dataSize;
-
-        const buffer = new ArrayBuffer(totalSize);
-        const view = new DataView(buffer);
-
-        // RIFF チャンク
-        this.writeString(view, 0, 'RIFF');
-        view.setUint32(4, totalSize - 8, true);
-        this.writeString(view, 8, 'WAVE');
-
-        // fmt チャンク
-        this.writeString(view, 12, 'fmt ');
-        view.setUint32(16, 16, true); // fmt チャンクサイズ
-        view.setUint16(20, 1, true); // PCM フォーマット
-        view.setUint16(22, numChannels, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, byteRate, true);
-        view.setUint16(32, blockAlign, true);
-        view.setUint16(34, bitsPerSample, true);
-
-        // data チャンク
-        this.writeString(view, 36, 'data');
-        view.setUint32(40, dataSize, true);
-
-        // PCM データをコピー
-        const pcm16View = new Uint8Array(pcm16Data);
-        const wavView = new Uint8Array(buffer);
-        wavView.set(pcm16View, headerSize);
-
+    pcm16ToAudioBuffer(base64Audio, ctx) {
+        const pcm = Utils.base64ToArrayBuffer(base64Audio);
+        const int16 = new Int16Array(pcm);
+        if (int16.length === 0) {
+            return null;
+        }
+        const float32 = new Float32Array(int16.length);
+        for (let i = 0; i < int16.length; i++) {
+            float32[i] = int16[i] / 32768;
+        }
+        const buffer = ctx.createBuffer(1, float32.length, CONFIG.AUDIO.SAMPLE_RATE);
+        buffer.copyToChannel(float32, 0);
         return buffer;
-    },
-
-    /**
-     * DataView に文字列を書き込む
-     *
-     * @param {DataView} view - DataView
-     * @param {number} offset - オフセット
-     * @param {string} string - 文字列
-     */
-    writeString(view, offset, string) {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
     },
 
     /**
@@ -1665,48 +1642,6 @@ const WebSocketMixin = {
     },
 
     /**
-     * 音声データのデコードと再生準備
-     *
-     * 目的:
-     *   Base64音声データをデコードしてAudioBufferSourceを作成
-     *
-     * Parameters:
-     *   base64Audio - Base64エンコードされた音声データ
-     *
-     * Returns:
-     *   AudioBufferSource - 再生準備完了のAudioBufferSource
-     *
-     * 注意:
-     *   ネストを減らすため別メソッドに抽出
-     */
-    async prepareAudioSource(base64Audio) {
-        // Base64からArrayBufferに変換
-        const pcm16Data = Utils.base64ToArrayBuffer(base64Audio);
-
-        // PCM16 を WAV 形式に変換（decodeAudioData が必要とする形式）
-        const wavData = this.createWavFromPCM16(pcm16Data, CONFIG.AUDIO.SAMPLE_RATE);
-
-        // 非同期デコード
-        const audioBuffer = await this.state.outputAudioContext.decodeAudioData(wavData);
-
-        // 音量調整用のGainNodeを作成
-        const gainNode = this.state.outputAudioContext.createGain();
-        // 音量を設定（Electronアプリでの音量不足を解消）
-        gainNode.gain.value = this.state.outputVolume;
-
-        // 再生
-        const source = this.state.outputAudioContext.createBufferSource();
-        source.buffer = audioBuffer;
-
-        // 音声チェーン: source → gainNode → destination
-        source.connect(gainNode);
-        gainNode.connect(this.state.outputAudioContext.destination);
-
-        // ✅ メモリリーク修正: ノードの参照を保持して後でクリーンアップ
-        return { source, gainNode };
-    },
-
-    /**
      * 音声再生完了時の処理
      *
      * 目的:
@@ -1719,12 +1654,9 @@ const WebSocketMixin = {
      *   このメソッドはonendedコールバックから呼び出される
      */
     handleAudioPlaybackEnded() {
-        // 即座に次の音声を再生（連続性最優先）
+        // ✅ 予約済みの全チャンクが鳴り終わった。再生中フラグと連結カーソルを解除する。
         this.state.isPlayingAudio = false;
-
-        // 次の音声を再生（キューに残っている場合）
-        // 注意: 入力音声の復元は playNextInQueue() で統一処理
-        this.playNextInQueue();
+        this._nextPlaybackTime = 0;
     },
 
     /**
@@ -1747,71 +1679,11 @@ const WebSocketMixin = {
 
         // エラー時もフラグをOFF（すべてのモードで適用）
         this.state.isPlayingAudio = false;
+        this._nextPlaybackTime = 0;
 
-        // 入力音声を復元
-        if (this.state.inputGainNode) {
-            this.state.inputGainNode.gain.value = this.state.inputAudioOutputEnabled ? 1 : 0;
-        }
-
-        // エラーでも次の音声を再生（キューを停止しない）
-        this.playNextInQueue();
-    },
-
-    /**
-     * 音声再生処理
-     *
-     * 目的:
-     *   Base64エンコードされた音声データをデコードして再生
-     *   ループバック防止と入力音声ミュート制御を実装
-     *
-     * @param {string} base64Audio - Base64エンコードされた音声データ
-     */
-    async playAudio(base64Audio) {
-        // ✅ 音声源トラッキング開始: 出力再生時刻を記録
-        const playbackToken =
-            'playback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        this.audioSourceTracker.playbackTokens.add(playbackToken);
-        this.audioSourceTracker.outputStartTime = Date.now();
-
-        // 音声再生中フラグをON（ループバック防止）
-        // すべてのモード（マイク/ブラウザ音声/画面共有）で有効
-        this.state.isPlayingAudio = true;
-
-        // 出力音声再生中は入力音声を完全ミュート（優先度確保）
+        // 入力音声は常にミュート維持
         if (this.state.inputGainNode) {
             this.state.inputGainNode.gain.value = 0;
-        }
-
-        try {
-            // 出力AudioContextの初期化
-            await this.initializeOutputAudioContext();
-
-            // ✅ 非同期デコード: AudioContext.decodeAudioData を使用
-            // 理由: メインスレッドのブロックを防ぎ、UI の応答性を維持
-            const { source, gainNode } = await this.prepareAudioSource(base64Audio);
-
-            // 再生終了時にフラグをOFF（すべてのモードで適用）
-            source.onended = () => {
-                // ✅ メモリリーク修正: ノードを切断してクリーンアップ
-                try {
-                    source.disconnect();
-                    gainNode.disconnect();
-                } catch (cleanupError) {
-                    // 解放処理の失敗は無害なため無視
-                }
-
-                // ✅ 出力完了時刻を記録（バッファウィンドウの計算用）
-                this.audioSourceTracker.outputEndTime = Date.now();
-                this.audioSourceTracker.playbackTokens.delete(playbackToken);
-                this.handleAudioPlaybackEnded();
-            };
-
-            source.start();
-        } catch (error) {
-            // ✅ エラー時もトークンをクリア
-            this.audioSourceTracker.playbackTokens.delete(playbackToken);
-            this.handleAudioPlaybackError(error);
-            throw error;
         }
     },
 
