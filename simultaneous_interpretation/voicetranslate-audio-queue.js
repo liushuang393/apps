@@ -224,7 +224,11 @@ class AudioSegment {
      */
     getProgress() {
         const total = 2;
-        const completed = this.processingStatus.path1_text + this.processingStatus.path2_voice;
+        // processingStatus は 0=未取得 / 1=処理中 / 2=完了 の3状態。
+        // 進捗は「完了(=2)したパス数 / 全パス数」で 0.0〜1.0 に正規化する。
+        const completed =
+            (this.processingStatus.path1_text === 2 ? 1 : 0) +
+            (this.processingStatus.path2_voice === 2 ? 1 : 0);
         return completed / total;
     }
 
@@ -280,7 +284,7 @@ class AudioSegment {
  * });
  *
  * // イベント監視
- * queue.on('segmentReady', (segment) => {
+ * queue.on('segmentComplete', (segment) => {
  *     processSegment(segment);
  * });
  *
@@ -494,7 +498,7 @@ class AudioQueue {
     /**
      * 設定イベントリスナー
      *
-     * @param {string} event イベント名（'segmentReady', 'segmentComplete', 'queueFull'）
+     * @param {string} event イベント名（'segmentComplete', 'queueFull'）
      * @param {Function} callback コールバック関数
      * @throws {Error} 無効なイベント名
      */

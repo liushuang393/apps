@@ -21,6 +21,10 @@ class MockAudioContext {
     createMediaStreamDestination() {
         return new MockMediaStreamAudioDestinationNode();
     }
+
+    createDynamicsCompressor() {
+        return new MockDynamicsCompressorNode();
+    }
 }
 
 class MockAudioNode {
@@ -41,6 +45,14 @@ class MockBiquadFilterNode extends MockAudioNode {
 
 class MockGainNode extends MockAudioNode {
     gain = { value: 1.0 };
+}
+
+class MockDynamicsCompressorNode extends MockAudioNode {
+    threshold = { value: -24 };
+    knee = { value: 30 };
+    ratio = { value: 12 };
+    attack = { value: 0.003 };
+    release = { value: 0.25 };
 }
 
 class MockMediaStreamAudioDestinationNode extends MockAudioNode {
@@ -70,10 +82,7 @@ describe('NoiseSuppression', () => {
 
     describe('apply', () => {
         it('should apply noise suppression filters', () => {
-            const result = noiseSuppression.apply(
-                mockStream,
-                mockAudioContext as any
-            );
+            const result = noiseSuppression.apply(mockStream, mockAudioContext as any);
 
             expect(result).toBeDefined();
             expect(result).toBeInstanceOf(MockMediaStreamAudioDestinationNode);
@@ -81,11 +90,8 @@ describe('NoiseSuppression', () => {
 
         it('should passthrough when disabled', () => {
             const disabledNS = new NoiseSuppression({ enabled: false });
-            
-            const result = disabledNS.apply(
-                mockStream,
-                mockAudioContext as any
-            );
+
+            const result = disabledNS.apply(mockStream, mockAudioContext as any);
 
             expect(result).toBeDefined();
             disabledNS.dispose();
@@ -94,10 +100,7 @@ describe('NoiseSuppression', () => {
         it('should create correct filter chain', () => {
             const connectSpy = jest.spyOn(MockAudioNode.prototype, 'connect');
 
-            noiseSuppression.apply(
-                mockStream,
-                mockAudioContext as any
-            );
+            noiseSuppression.apply(mockStream, mockAudioContext as any);
 
             // Source → Highpass → Lowpass → Gain → Destination
             expect(connectSpy).toHaveBeenCalled();
@@ -108,10 +111,7 @@ describe('NoiseSuppression', () => {
 
     describe('updateConfig', () => {
         it('should update highpass frequency', () => {
-            noiseSuppression.apply(
-                mockStream,
-                mockAudioContext as any
-            );
+            noiseSuppression.apply(mockStream, mockAudioContext as any);
 
             noiseSuppression.updateConfig({ highpassFreq: 150 });
 
@@ -123,10 +123,7 @@ describe('NoiseSuppression', () => {
         });
 
         it('should update lowpass frequency', () => {
-            noiseSuppression.apply(
-                mockStream,
-                mockAudioContext as any
-            );
+            noiseSuppression.apply(mockStream, mockAudioContext as any);
 
             noiseSuppression.updateConfig({ lowpassFreq: 7000 });
 
@@ -136,10 +133,7 @@ describe('NoiseSuppression', () => {
         });
 
         it('should update gain', () => {
-            noiseSuppression.apply(
-                mockStream,
-                mockAudioContext as any
-            );
+            noiseSuppression.apply(mockStream, mockAudioContext as any);
 
             noiseSuppression.updateConfig({ gain: 1.2 });
 
@@ -153,10 +147,7 @@ describe('NoiseSuppression', () => {
         it('should disconnect all nodes', () => {
             const disconnectSpy = jest.spyOn(MockAudioNode.prototype, 'disconnect');
 
-            noiseSuppression.apply(
-                mockStream,
-                mockAudioContext as any
-            );
+            noiseSuppression.apply(mockStream, mockAudioContext as any);
 
             noiseSuppression.dispose();
 
@@ -166,10 +157,7 @@ describe('NoiseSuppression', () => {
         });
 
         it('should be safe to call multiple times', () => {
-            noiseSuppression.apply(
-                mockStream,
-                mockAudioContext as any
-            );
+            noiseSuppression.apply(mockStream, mockAudioContext as any);
 
             expect(() => {
                 noiseSuppression.dispose();
@@ -178,5 +166,3 @@ describe('NoiseSuppression', () => {
         });
     });
 });
-
-

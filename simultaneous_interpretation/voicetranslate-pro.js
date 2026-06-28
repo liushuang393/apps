@@ -28,7 +28,6 @@ class VoiceTranslateApp {
             isRecording: false,
             sourceLang: null, // ✅ 修正: 自動検出に変更、初期値は null
             targetLang: 'ja', // ✅ 修正: デフォルトを日本語に変更（中国語→日本語翻訳用）
-            voiceType: 'alloy',
             sessionStartTime: null,
             charCount: 0,
             ws: null,
@@ -125,12 +124,10 @@ class VoiceTranslateApp {
         this.audioSourceTracker = {
             outputStartTime: null, // 出力再生開始時刻
             outputEndTime: null, // 出力再生終了時刻
-            bufferWindow: 2000, // バッファウィンドウ（出力完了後3秒間は入力を無視）
-            // 注意: 3000msは以下の遅延を考慮
-            //   - スピーカー→マイク伝播: 100-500ms
-            //   - マイク処理: 100-200ms
-            //   - ネットワーク遅延: 100-300ms
-            //   - 安全マージン: 1000ms
+            // 半二重時、再生終了後にマイク送信を抑止する時間。残響/伝播のエコー末尾だけを断つ。
+            // 長すぎると次話者の発話頭を削る（＝丢声音）。実機で詰める校正値:
+            //   スピーカー→マイク伝播 100-500ms + マイク処理 100-200ms ≒ 400ms 前後。
+            bufferWindow: 400, // ※環境により残響が長い場合は 500-700 に上げて調整
             playbackTokens: new Set() // 再生中の音声トークンセット
         };
 
@@ -268,10 +265,7 @@ class VoiceTranslateApp {
         // ✅ D2: 入力言語セレクタ（既定=自動判定。指定すると認識精度が上がる）
         this.elements.sourceLang = document.getElementById('sourceLang');
         this.elements.targetLang = document.getElementById('targetLang');
-        this.elements.voiceType = document.getElementById('voiceType');
-        // モデル設定
-        this.elements.realtimeModel = document.getElementById('realtimeModel');
-        this.elements.chatModel = document.getElementById('chatModel');
+        // 音色/モデル選択UIは廃止（CONFIG / .env から決定）
         this.elements.sourceLangDisplay = document.getElementById('sourceLangDisplay');
         this.elements.targetLangDisplay = document.getElementById('targetLangDisplay');
 
@@ -282,9 +276,7 @@ class VoiceTranslateApp {
         // 詳細設定
         this.elements.vadEnabled = document.getElementById('vadEnabled');
         this.elements.translationModeAudio = document.getElementById('translationModeAudio');
-        this.elements.noiseReduction = document.getElementById('noiseReduction');
-        this.elements.echoCancellation = document.getElementById('echoCancellation');
-        this.elements.autoGainControl = document.getElementById('autoGainControl');
+        // ノイズ除去/エコー除去/自動ゲインのトグルUIは廃止（getUserMedia制約に既定値を直書き）
         this.elements.vadSensitivity = document.getElementById('vadSensitivity');
         this.elements.showInputTranscript = document.getElementById('showInputTranscript');
         this.elements.showOutputTranscript = document.getElementById('showOutputTranscript');
@@ -336,9 +328,6 @@ class VoiceTranslateApp {
      * デフォルト状態:
      * - 自動音声検出: ON
      * - リアルタイム音声翻訳: ON
-     * - ノイズ除去: ON (dev-only)
-     * - エコー除去: ON (dev-only)
-     * - 自動ゲイン: ON (dev-only)
      * - 入力音声を表示: ON
      * - 翻訳結果を表示: ON
      * - 翻訳音声を出力: ON
@@ -351,9 +340,6 @@ class VoiceTranslateApp {
         const defaultSettings = {
             vadEnabled: 'true', // ON
             translationModeAudio: 'true', // ON
-            noiseReduction: 'true', // ON (dev-only)
-            echoCancellation: 'true', // ON (dev-only)
-            autoGainControl: 'true', // ON (dev-only)
             showInputTranscript: 'true', // ON
             showOutputTranscript: 'true', // ON
             audioOutputEnabled: 'true', // ON
@@ -411,33 +397,7 @@ class VoiceTranslateApp {
             }
         });
 
-        this.elements.voiceType.addEventListener('change', (e) => {
-            this.state.voiceType = e.target.value;
-            this.saveToStorage('voice_type', e.target.value);
-
-            // 翻訳音色変更時にトランスクリプトをクリア
-            this.clearTranscript('both');
-
-            if (this.state.isConnected) {
-                this.updateSession();
-            }
-        });
-
-        // Realtimeモデル変更（次回接続時に反映）
-        this.elements.realtimeModel.addEventListener('change', (e) => {
-            CONFIG.API.REALTIME_MODEL = e.target.value;
-            this.saveToStorage('realtime_model', e.target.value);
-
-            if (this.state.isConnected) {
-                this.notify('モデル変更', 'Realtimeモデルは次回「接続」時に反映されます', 'info');
-            }
-        });
-
-        // Chatモデル変更（即時反映）
-        this.elements.chatModel.addEventListener('change', (e) => {
-            CONFIG.API.CHAT_MODEL = e.target.value;
-            this.saveToStorage('chat_model', e.target.value);
-        });
+        // 音色/モデル選択UIは廃止（CONFIG / .env から決定）
 
         // 音声ソース選択
         const audioSourceType = document.getElementById('audioSourceType');
@@ -561,9 +521,6 @@ class VoiceTranslateApp {
         [
             'vadEnabled',
             'translationModeAudio',
-            'noiseReduction',
-            'echoCancellation',
-            'autoGainControl',
             'showInputTranscript',
             'showOutputTranscript',
             'audioOutputEnabled',
@@ -736,7 +693,7 @@ class VoiceTranslateApp {
                 this.handlePlayOriginalToggle(element);
                 break;
             default:
-                // その他の設定（noiseReduction, echoCancellation, autoGainControl）
+                // 個別ハンドラを持たないトグルは状態保存のみ
                 break;
         }
     }
@@ -1013,9 +970,6 @@ class VoiceTranslateApp {
             // ✅ 修正: sourceLang は自動検出に変更、ストレージから読む必要なし
             // sourceLang: await this.getFromStorage('source_lang'),
             targetLang: await this.getFromStorage('target_lang'),
-            voiceType: await this.getFromStorage('voice_type'),
-            realtimeModel: await this.getFromStorage('realtime_model'),
-            chatModel: await this.getFromStorage('chat_model'),
             vadSensitivity: await this.getFromStorage('vad_sensitivity'),
             outputVolume: await this.getFromStorage('output_volume')
         };
@@ -1037,20 +991,7 @@ class VoiceTranslateApp {
             );
         }
 
-        if (settings.voiceType) {
-            this.elements.voiceType.value = settings.voiceType;
-            this.state.voiceType = settings.voiceType;
-        }
-
-        // モデル設定（UI保存値を環境変数より優先、未保存なら現在のCONFIG値を表示）
-        if (settings.realtimeModel) {
-            CONFIG.API.REALTIME_MODEL = settings.realtimeModel;
-        }
-        if (settings.chatModel) {
-            CONFIG.API.CHAT_MODEL = settings.chatModel;
-        }
-        // 後台で設定中のモデルを必ず表示・選択し、新しい順に並べ替える
-        this.setupModelSelects();
+        // 音色/モデル選択UIは廃止。モデルは CONFIG / .env から決定する。
 
         if (settings.vadSensitivity) {
             this.elements.vadSensitivity.value = settings.vadSensitivity;
@@ -1070,9 +1011,6 @@ class VoiceTranslateApp {
         const toggleSettings = [
             'vadEnabled',
             'translationModeAudio',
-            'noiseReduction',
-            'echoCancellation',
-            'autoGainControl',
             'showInputTranscript',
             'showOutputTranscript',
             'audioOutputEnabled',
@@ -1426,10 +1364,6 @@ class VoiceTranslateApp {
         } else if (isTranslationUrl && !isTranslationModel) {
             api.REALTIME_MODEL = 'gpt-realtime-translate';
         }
-
-        if (this.elements?.realtimeModel) {
-            this.elements.realtimeModel.value = api.REALTIME_MODEL;
-        }
     }
 
     async connect() {
@@ -1599,25 +1533,19 @@ class VoiceTranslateApp {
      * 入力転写(STT)設定を構築する。
      *
      * 目的:
-     *   対応4言語(日本語・英語・中国語・ベトナム語)以外(韓国語など)への
-     *   誤認識を防ぐ。ソース言語が確定していれば language を固定し、
-     *   auto のときは prompt で対応言語へバイアスをかける。
+     *   音声認識(左カラム)を有効にするための transcription 設定を返す。
+     *   ※ このエンドポイントは language/prompt を受け付けないため model のみ。
      *
      * @returns {Object} audio.input.transcription に渡す設定
      */
     buildInputTranscriptionConfig() {
-        // ※ /v1/realtime/translations の transcription は `prompt` を受け付けない
-        //   (400 unknown_parameter)。受理されるのは model / language のみ。
-        const config = {
+        // ※ /v1/realtime/translations の transcription が受理するのは `model` のみ。
+        //   `language` を渡すと 400 Unknown parameter:
+        //   'session.audio.input.transcription.language' になるため指定しない。
+        //   入力言語(state.sourceLang)は Chat API 翻訳プロンプト・言語検出のバイアスとして使う。
+        return {
             model: CONFIG.API.TRANSCRIBE_MODEL || 'gpt-realtime-whisper'
         };
-        const src = this.state.sourceLang;
-        if (src && src !== 'auto' && ['ja', 'en', 'zh', 'vi'].includes(src)) {
-            // ソース言語が確定しているときは ISO-639-1 を固定し、自動検出のブレ
-            // (短い中国語が韓国語に化けるなど)を抑える。auto のときは指定しない。
-            config.language = src;
-        }
-        return config;
     }
 
     createSession() {
@@ -2281,7 +2209,7 @@ class VoiceTranslateApp {
             sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: this.elements.autoGainControl.classList.contains('active')
+            autoGainControl: true // 旧トグル既定値(ON)を固定
         };
 
         // 戦略を作成
@@ -3530,87 +3458,6 @@ class VoiceTranslateApp {
                 }
             }
         });
-    }
-
-    /**
-     * モデル選択ドロップダウンを後台設定に合わせて再構築する
-     *
-     * 目的:
-     *   - 「最新」等の独自マークは付けず、モデルIDをそのまま表示する
-     *   - 後台（.env / 保存値）で設定中のモデルを必ず選択肢に含め、最上部・選択状態にする
-     *   - 残りはモデルID末尾の日付（YYYY-MM-DD）降順＝新しい順に並べる
-     */
-    setupModelSelects() {
-        this.populateModelSelect(this.elements.realtimeModel, CONFIG.API.REALTIME_MODEL);
-        this.populateModelSelect(this.elements.chatModel, CONFIG.API.CHAT_MODEL);
-    }
-
-    /**
-     * 単一のモデル選択を再構築する
-     *
-     * @param {HTMLSelectElement} selectEl - 対象の select 要素
-     * @param {string} currentModel - 後台で設定中（選択すべき）のモデルID
-     */
-    populateModelSelect(selectEl, currentModel) {
-        if (!selectEl) {
-            return;
-        }
-
-        // 既存 option の value 集合（重複防止）
-        const values = [];
-        for (const opt of Array.from(selectEl.options)) {
-            if (!values.includes(opt.value)) {
-                values.push(opt.value);
-            }
-        }
-        // 後台設定のモデルが候補に無ければ追加（＝後台設定をそのまま表示できるようにする）
-        if (currentModel && !values.includes(currentModel)) {
-            values.push(currentModel);
-        }
-
-        // モデルID末尾の日付で新しい順にソート（日付なしは元の相対順を維持）
-        const dateKey = (v) => {
-            const m = v.match(/(\d{4})-(\d{2})-(\d{2})/);
-            return m ? `${m[1]}${m[2]}${m[3]}` : '';
-        };
-        const sorted = values
-            .map((v, i) => ({ v, i }))
-            .sort((a, b) => {
-                const da = dateKey(a.v);
-                const db = dateKey(b.v);
-                if (da && db) {
-                    return db.localeCompare(da); // 新しい日付を上へ
-                }
-                if (da) {
-                    return -1; // 日付あり（新しい想定）を上へ
-                }
-                if (db) {
-                    return 1;
-                }
-                return a.i - b.i; // どちらも日付なしは元の順序を維持
-            })
-            .map((o) => o.v);
-
-        // 後台設定のモデルを最上部へ（「放到最上面」）
-        if (currentModel) {
-            const idx = sorted.indexOf(currentModel);
-            if (idx > 0) {
-                sorted.splice(idx, 1);
-                sorted.unshift(currentModel);
-            }
-        }
-
-        // option を再構築（ラベルはモデルID のみ、独自マークは付けない）
-        selectEl.innerHTML = '';
-        for (const v of sorted) {
-            const opt = document.createElement('option');
-            opt.value = v;
-            opt.textContent = v;
-            selectEl.appendChild(opt);
-        }
-        if (currentModel) {
-            selectEl.value = currentModel;
-        }
     }
 
     startSessionTimer() {

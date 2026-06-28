@@ -9,15 +9,20 @@ describe('TerminologyManager', () => {
 
     beforeEach(() => {
         manager = new TerminologyManager();
-        // LocalStorageのモック
-        global.localStorage = {
-            getItem: jest.fn(),
-            setItem: jest.fn(),
-            removeItem: jest.fn(),
-            clear: jest.fn(),
-            length: 0,
-            key: jest.fn()
-        } as any;
+        // LocalStorageのモック（jsdom の localStorage は getter のため直接代入が効かない。
+        // Object.defineProperty で確実に差し替える）
+        Object.defineProperty(global, 'localStorage', {
+            value: {
+                getItem: jest.fn(),
+                setItem: jest.fn(),
+                removeItem: jest.fn(),
+                clear: jest.fn(),
+                length: 0,
+                key: jest.fn()
+            },
+            writable: true,
+            configurable: true
+        });
     });
 
     describe('addUserTerm', () => {
@@ -236,13 +241,16 @@ describe('TerminologyManager', () => {
     describe('loadFromLocalStorage', () => {
         it('should load from localStorage', () => {
             const testData = [
-                ['Test', {
-                    source: 'Test',
-                    target: 'テスト',
-                    domain: 'general',
-                    priority: 5,
-                    createdAt: Date.now()
-                }]
+                [
+                    'Test',
+                    {
+                        source: 'Test',
+                        target: 'テスト',
+                        domain: 'general',
+                        priority: 5,
+                        createdAt: Date.now()
+                    }
+                ]
             ];
 
             (localStorage.getItem as jest.Mock).mockReturnValue(JSON.stringify(testData));
@@ -326,5 +334,3 @@ describe('TerminologyManager', () => {
         });
     });
 });
-
-

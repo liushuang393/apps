@@ -95,9 +95,19 @@ const WebSocketMixin = {
     },
 
     commitRealtimeInputAudioBuffer(reason = 'manual-commit') {
-        // 翻訳セッションは音声を連続ストリームで処理するため手動 commit を行わない。
-        // （commit すると per-turn のレスポンス生成を促してしまい、翻訳の連続性を壊す）
-        return false;
+        // server VAD OFF 時の Path1 STT 再送のみがここに到達する（VAD ON では sendAudioToServer が
+        // 手前で return し、連続翻訳ストリームはこの関数を呼ばない）。非 server-VAD では手動 commit
+        // しないと OpenAI が転写を開始しないため、最小長を満たせば commit、満たなければ破棄する。
+        const stats = this.getRealtimeInputAudioBufferStats();
+        if (stats.durationMs < REALTIME_MIN_COMMIT_AUDIO_MS) {
+            this.sendMessage({ type: 'input_audio_buffer.clear' });
+            this.resetRealtimeInputAudioBufferStats();
+            return false;
+        }
+
+        this.sendMessage({ type: 'input_audio_buffer.commit' });
+        this.resetRealtimeInputAudioBufferStats();
+        return true;
     },
 
     /**
@@ -1453,14 +1463,17 @@ const WebSocketMixin = {
         const isSystemMode = this.state.audioSourceType === 'system';
         const isMicrophoneMode = !isSystemMode;
 
-        // ✅ 実時間化（同時通訳）: ストリーミング翻訳は訳音がほぼ連続再生されるため、
-        //   「再生中スキップ」だと相手の発話を取りこぼし実時間にならない（漏訳の主因）。
-        //   そこで翻訳セッションでは再生中も連続採集する。ただし回灌（訳音の再採集）を
-        //   物理的に断てる構成のときのみ:
-        //     - マイクモード: ヘッドホン/エコーキャンセルで訳音がマイクに回り込まない前提 → 連続採集可。
-        //     - システム音声モード: stereo-mix が訳音も拾い回灌し得るため従来どおり再生中スキップ
-        //       （実時間化には仮想ケーブル等での原声分離が必要）。
-        const continuousCapture = this.isRealtimeTranslationSession() && isMicrophoneMode;
+        // 全二重（再生中も連続採集）は訳音がマイクに回り込まない構成でのみ許可する。
+        //   スピーカー運用（ヘッドホン無し）で連続採集すると、スピーカーの訳音をマイクが
+        //   拾い直してサーバへ送り続け、サーバVADが発話境界を切れず本人の発話を取りこぼす
+        //   （＝認識欠落の主因）。入力を24kHz固定で取得しているためブラウザAECも十分効かない。
+        //   → 出力が物理分離（ヘッドホン/別デバイス=setSinkId 有効）のときのみ全二重。
+        //     未分離（既定スピーカー）はターン制前提の半二重にし、再生中はマイク送信を止めて
+        //     エコーを物理的に断つ（認識をクリアに保つ）。
+        const continuousCapture =
+            this.isRealtimeTranslationSession() &&
+            isMicrophoneMode &&
+            this.isOutputDeviceIsolated();
 
         let shouldSkip;
         if (continuousCapture) {

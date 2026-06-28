@@ -59,14 +59,14 @@ describe('AudioSegment', () => {
         it('should mark path1 as complete', () => {
             segment.markPathComplete('path1', { transcript: 'Hello' });
 
-            expect(segment.processingStatus.path1_text).toBe(1);
+            expect(segment.processingStatus.path1_text).toBe(2);
             expect(segment.results.path1).toEqual({ transcript: 'Hello' });
         });
 
         it('should mark path2 as complete', () => {
             segment.markPathComplete('path2', { audio: 'data', text: 'こんにちは' });
 
-            expect(segment.processingStatus.path2_voice).toBe(1);
+            expect(segment.processingStatus.path2_voice).toBe(2);
             expect(segment.results.path2).toEqual({ audio: 'data', text: 'こんにちは' });
         });
 
@@ -79,7 +79,7 @@ describe('AudioSegment', () => {
         it('should allow null result', () => {
             segment.markPathComplete('path1', null);
 
-            expect(segment.processingStatus.path1_text).toBe(1);
+            expect(segment.processingStatus.path1_text).toBe(2);
             expect(segment.results.path1).toBe(null);
         });
     });
@@ -172,7 +172,7 @@ describe('AudioSegment', () => {
             expect(summary.duration).toBe(3000);
             expect(summary.language).toBe('ja');
             expect(summary.progress).toBe(0.5);
-            expect(summary.path1Status).toBe(1);
+            expect(summary.path1Status).toBe(2);
             expect(summary.path2Status).toBe(0);
             expect(summary.fullyProcessed).toBe(false);
         });
@@ -192,8 +192,8 @@ describe('AudioQueue', () => {
             const queue = new AudioQueue();
 
             expect(queue.config.maxSegmentDuration).toBe(15000);
-            expect(queue.config.minSegmentDuration).toBe(1000);
-            expect(queue.config.maxQueueSize).toBe(20);
+            expect(queue.config.minSegmentDuration).toBe(300);
+            expect(queue.config.maxQueueSize).toBe(100);
             expect(queue.config.cleanupDelay).toBe(1000);
         });
 
@@ -276,16 +276,6 @@ describe('AudioQueue', () => {
             expect(queue.stats.droppedSegments).toBe(1);
         });
 
-        it('should trigger onSegmentReady callback', (done) => {
-            queue.on('segmentReady', (segment) => {
-                expect(segment).not.toBe(null);
-                expect(segment.id).toMatch(/^seg_/);
-                done();
-            });
-
-            queue.enqueue(new ArrayBuffer(100), { duration: 2000 });
-        });
-
         it('should trigger onQueueFull callback', () => {
             const mockCallback = jest.fn();
             queue.on('queueFull', mockCallback);
@@ -335,7 +325,7 @@ describe('AudioQueue', () => {
             queue.markPathComplete(segment.id, 'path1', { transcript: 'Test' });
 
             const updated = queue.getSegment(segment.id);
-            expect(updated.processingStatus.path1_text).toBe(1);
+            expect(updated.processingStatus.path1_text).toBe(2);
             expect(updated.results.path1).toEqual({ transcript: 'Test' });
         });
 
@@ -412,8 +402,8 @@ describe('AudioQueue', () => {
                 queue.enqueue(new ArrayBuffer(100), { duration: 2000 });
             }
 
-            // Drop 1 segment (too short)
-            queue.enqueue(new ArrayBuffer(100), { duration: 500 });
+            // Drop 1 segment (too short, < minSegmentDuration=300)
+            queue.enqueue(new ArrayBuffer(100), { duration: 200 });
 
             const stats = queue.getStats();
 
@@ -466,12 +456,6 @@ describe('AudioQueue', () => {
 
         beforeEach(() => {
             queue = new AudioQueue();
-        });
-
-        it('should set segmentReady listener', () => {
-            const callback = jest.fn();
-            queue.on('segmentReady', callback);
-            expect(queue.listeners.onSegmentReady).toBe(callback);
         });
 
         it('should set segmentComplete listener', () => {

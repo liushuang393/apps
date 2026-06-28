@@ -62,6 +62,8 @@ function createApp() {
             outputEndTime: null,
             bufferWindow: 2000
         },
+        // usesWebRtcTransport は pro.js 側の実体。本テストは mixin のみ読み込むためスタブ化（非WebRTC=WS経路を検証）。
+        usesWebRtcTransport: () => false,
         sentMessages
     };
 
