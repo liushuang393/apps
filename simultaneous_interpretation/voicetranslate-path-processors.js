@@ -438,10 +438,7 @@ class TextPathProcessor {
 
         const timestamp = new Date().toLocaleTimeString('ja-JP');
 
-        // ✅ 新規: 自動検出言語を UI に表示
-        this.updateDetectedLanguageDisplay(language);
-
-        // ✅ 修正: sourceLangDisplay も更新
+        // 自動検出言語を左「入力音声」欄のラベル(sourceLangDisplay)に反映（専用欄は廃止）
         this.updateSourceLangDisplay(language);
 
         if (typeof this.app.addTranscript === 'function') {
@@ -466,57 +463,6 @@ class TextPathProcessor {
 
         container.insertBefore(entry, container.firstChild);
         container.scrollTop = 0;
-    }
-
-    /**
-     * 自動検出言語を UI に表示
-     *
-     * @private
-     * @param {string} detectedLanguage - 検出した言語コード
-     */
-    updateDetectedLanguageDisplay(detectedLanguage) {
-        const displayElement = this.app.elements.detectedLanguageDisplay;
-        const codeElement = this.app.elements.detectedLanguageCode;
-
-        // ✅ 要素が見つからない場合は直接取得
-        if (!displayElement) {
-            const element = document.getElementById('detectedLanguageDisplay');
-            if (!element) {
-                return;
-            }
-            this.app.elements.detectedLanguageDisplay = element;
-        }
-
-        if (!codeElement) {
-            const element = document.getElementById('detectedLanguageCode');
-            if (!element) {
-                return;
-            }
-            this.app.elements.detectedLanguageCode = element;
-        }
-
-        // 言語コードから言語名へ変換（対応言語: 英語、日本語、簡体中文、ベトナム語のみ）
-        const languageNames = {
-            ja: '日本語',
-            en: 'English',
-            zh: '简体中文',
-            vi: 'Tiếng Việt',
-            auto: '待機中...'
-        };
-
-        const languageEmojis = {
-            ja: '🇯🇵',
-            en: '🇬🇧',
-            zh: '🇨🇳',
-            vi: '🇻🇳'
-        };
-
-        const displayName = languageNames[detectedLanguage] || detectedLanguage;
-        const emoji = languageEmojis[detectedLanguage] || '❓';
-
-        // ✅ UI を更新
-        this.app.elements.detectedLanguageDisplay.textContent = `${emoji} ${displayName}`;
-        this.app.elements.detectedLanguageCode.textContent = detectedLanguage || 'auto';
     }
 
     /**

@@ -269,9 +269,7 @@ class VoiceTranslateApp {
         this.elements.sourceLangDisplay = document.getElementById('sourceLangDisplay');
         this.elements.targetLangDisplay = document.getElementById('targetLangDisplay');
 
-        // ✅ 新規: 自動検出言語表示用要素
-        this.elements.detectedLanguageDisplay = document.getElementById('detectedLanguageDisplay');
-        this.elements.detectedLanguageCode = document.getElementById('detectedLanguageCode');
+        // 自動検出言語の表示は左「入力音声」欄の sourceLangDisplay に統合（専用欄は廃止）
 
         // 詳細設定
         this.elements.vadEnabled = document.getElementById('vadEnabled');
@@ -2206,7 +2204,9 @@ class VoiceTranslateApp {
         //   （ループバック）が起きる。同時通訳アプリの標準対策。
         //   （監視/システム音声モードは startSystemAudioCapture 側で別途設定する）
         const config = {
-            sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+            // ★マイクは sampleRate を固定しない（ネイティブ48k等で採集）。24k固定だと
+            //   ブラウザのAEC(APM)が十分働かず、スピーカーの訳音がマイクに乗って認識が崩れる。
+            //   入力AudioContextは24kのため取り込み時に自動で24kへ落ち、送信形式は不変（リサンプル不要）。
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true // 旧トグル既定値(ON)を固定
@@ -2692,11 +2692,56 @@ class VoiceTranslateApp {
         }
     }
 
+    /**
+     * マイク入力をネイティブレートから送信用24kHz(CONFIG.AUDIO.SAMPLE_RATE)へ変換する。
+     * 入力AudioContextをネイティブレート化（AEC有効化）したため、下流(VAD/バッファ/送信)が
+     * 従来どおり24kを受け取れるよう、worklet/Processorの受信直後にここで24kへ落とす。
+     * @param {Float32Array} input - ネイティブレートのモノラルPCM
+     * @param {number} srcRate - 入力サンプルレート（this.state.audioContext.sampleRate）
+     * @returns {Float32Array} 24kHzモノラルPCM（srcRate===24kやデータ空はそのまま返す）
+     */
+    resampleMicTo24k(input, srcRate) {
+        const TARGET = CONFIG.AUDIO.SAMPLE_RATE; // 24000
+        if (!input || input.length === 0 || !srcRate || srcRate === TARGET) {
+            return input;
+        }
+        // 整数倍（48k→2, 96k→4）: グループ平均で間引き（アンチエイリアス付き・長さ厳密）
+        if (srcRate % TARGET === 0) {
+            const factor = srcRate / TARGET;
+            const outLen = Math.floor(input.length / factor);
+            const out = new Float32Array(outLen);
+            for (let i = 0; i < outLen; i++) {
+                let sum = 0;
+                const base = i * factor;
+                for (let j = 0; j < factor; j++) {
+                    sum += input[base + j];
+                }
+                out[i] = sum / factor;
+            }
+            return out;
+        }
+        // 非整数（44.1k等）: フレーム内線形補間（STT用途で十分）
+        const step = srcRate / TARGET;
+        const outLen = Math.max(1, Math.floor(input.length / step));
+        const out = new Float32Array(outLen);
+        for (let i = 0; i < outLen; i++) {
+            const pos = i * step;
+            const idx = Math.floor(pos);
+            const frac = pos - idx;
+            const a = input[idx];
+            const b = idx + 1 < input.length ? input[idx + 1] : a;
+            out[i] = a + (b - a) * frac;
+        }
+        return out;
+    }
+
     async setupAudioProcessing() {
         // AudioContext設定
-        this.state.audioContext = new (globalThis.AudioContext || globalThis.webkitAudioContext)({
-            sampleRate: CONFIG.AUDIO.SAMPLE_RATE
-        });
+        // ★入力はネイティブレートで採集する（sampleRateを固定しない）。
+        //   24k固定だとブラウザのAEC(APM, ネイティブ48k等で動作)が無効化され、スピーカーの
+        //   翻訳音(TTS)がマイクに乗って認識・再翻訳されてしまう（自己ループ）。ネイティブ採集で
+        //   AECを効かせ、送信直前に resampleMicTo24k() で24kへ落とす（下流は従来どおり24k）。
+        this.state.audioContext = new (globalThis.AudioContext || globalThis.webkitAudioContext)();
 
         // AudioContextがサスペンドされている場合、再開
         if (this.state.audioContext.state === 'suspended') {
@@ -2751,7 +2796,11 @@ class VoiceTranslateApp {
                         return;
                     }
 
-                    const inputData = event.data.data;
+                    // ★ネイティブレート採集→送信用24kへ変換（下流は全て24k前提のまま）
+                    const inputData = this.resampleMicTo24k(
+                        event.data.data,
+                        this.state.audioContext.sampleRate
+                    );
 
                     // ✅ Phase 3: 音声データバッファリング（VAD有効無効に関わらず）
                     if (this.isBufferingAudio) {
@@ -2824,7 +2873,11 @@ class VoiceTranslateApp {
                 // ✅ ループバック防止は sendAudioData() で統一的に処理
                 // ここでは録音状態のチェックのみ行う
 
-                const inputData = e.inputBuffer.getChannelData(0);
+                // ★ネイティブレート採集→送信用24kへ変換（下流は全て24k前提のまま）
+                const inputData = this.resampleMicTo24k(
+                    e.inputBuffer.getChannelData(0),
+                    this.state.audioContext.sampleRate
+                );
 
                 // ✅ Phase 3: 音声データバッファリング（VAD有効無効に関わらず）
                 if (this.isBufferingAudio) {

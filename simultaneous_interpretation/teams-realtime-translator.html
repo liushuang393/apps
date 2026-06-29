@@ -1171,20 +1171,6 @@
                     <div class="collapsible-content" id="languageSettingsContent">
                         <!-- ✅ 修正: 自動言語検出 -->
                         <div class="form-group">
-                            <label class="form-label" for="detectedLanguageInput">📥 入力言語（自動検出）</label>
-                            <input type="hidden" id="detectedLanguageInput" name="detectedLanguage" value="auto">
-                            <div class="form-input"
-                                style="background: var(--input-bg); padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-                                <span id="detectedLanguageDisplay" style="font-weight: bold; color: var(--primary);">🔄
-                                    自動検出中...</span>
-                                <span id="detectedLanguageCode"
-                                    style="font-size: 12px; color: var(--text-secondary);">auto</span>
-                            </div>
-                            <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
-                                💡 既定では音声内容から自動判定します。下で話者の言語を指定すると認識精度が上がります。
-                            </small>
-                        </div>
-                        <div class="form-group">
                             <label class="form-label" for="sourceLang">🎙️ 入力言語（話者の言語）</label>
                             <select id="sourceLang" class="form-input">
                                 <option value="auto" selected>自動判定</option>
@@ -1193,6 +1179,9 @@
                                 <option value="zh">简体中文（中国語簡体字）</option>
                                 <option value="vi">Tiếng Việt（ベトナム語）</option>
                             </select>
+                            <small style="color: var(--text-secondary); margin-top: 8px; display: block;">
+                                💡 既定は自動判定（検出結果は左「入力音声」欄に表示）。話者の言語を指定すると認識精度が上がります。
+                            </small>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="targetLang">📤 出力言語（翻訳先）</label>

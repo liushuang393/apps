@@ -821,7 +821,7 @@ const WebSocketMixin = {
 
         // ✅ 重要: actualDuration を先に計算してからバッファをクリア
         // これにより 0.00ms の問題を防ぐ
-        const sampleRate = this.state.audioContext?.sampleRate || 24000;
+        const sampleRate = CONFIG.AUDIO.SAMPLE_RATE; // 入力は境界で24kへリサンプル済み（ctxはネイティブ）
         const actualDuration = (totalLength / sampleRate) * 1000;
 
         // ✅ ここまで来たら音声は有効、バッファをクリア
@@ -909,7 +909,7 @@ const WebSocketMixin = {
             this.clearPendingBuffer();
 
             // ✅ 直接キューに追加（grouped時は同じグループに蓄積）
-            const sampleRate = this.state.audioContext?.sampleRate || 24000;
+            const sampleRate = CONFIG.AUDIO.SAMPLE_RATE; // 入力は境界で24kへリサンプル済み（ctxはネイティブ）
             this.queueOrAccumulateAudioSegment(
                 bufferedAudio,
                 bufferedDuration,
@@ -930,7 +930,7 @@ const WebSocketMixin = {
             this.clearPendingBuffer();
 
             // ✅ 直接キューに追加（grouped時は同じグループに蓄積）
-            const sampleRate = this.state.audioContext?.sampleRate || 24000;
+            const sampleRate = CONFIG.AUDIO.SAMPLE_RATE; // 入力は境界で24kへリサンプル済み（ctxはネイティブ）
             this.queueOrAccumulateAudioSegment(
                 bufferedAudio,
                 bufferedDuration,
@@ -1463,17 +1463,12 @@ const WebSocketMixin = {
         const isSystemMode = this.state.audioSourceType === 'system';
         const isMicrophoneMode = !isSystemMode;
 
-        // 全二重（再生中も連続採集）は訳音がマイクに回り込まない構成でのみ許可する。
-        //   スピーカー運用（ヘッドホン無し）で連続採集すると、スピーカーの訳音をマイクが
-        //   拾い直してサーバへ送り続け、サーバVADが発話境界を切れず本人の発話を取りこぼす
-        //   （＝認識欠落の主因）。入力を24kHz固定で取得しているためブラウザAECも十分効かない。
-        //   → 出力が物理分離（ヘッドホン/別デバイス=setSinkId 有効）のときのみ全二重。
-        //     未分離（既定スピーカー）はターン制前提の半二重にし、再生中はマイク送信を止めて
-        //     エコーを物理的に断つ（認識をクリアに保つ）。
-        const continuousCapture =
-            this.isRealtimeTranslationSession() &&
-            isMicrophoneMode &&
-            this.isOutputDeviceIsolated();
+        // ★同時通訳では訳音の再生中も話者は話し続ける。再生中にマイク送信を止める(半二重)と
+        //   その間の発話を丸ごと取りこぼす（＝左カラム認識の致命的な文落ち）。よってマイク翻訳
+        //   セッションは再生中も常に連続採集する（半二重にしない＝認識を絶対に落とさない）。
+        //   訳音のマイク回り込み(エコー)は getUserMedia の echoCancellation で抑制する。
+        //   完全に断つにはヘッドホン使用が確実（スピーカー運用ではAECで軽減）。
+        const continuousCapture = this.isRealtimeTranslationSession() && isMicrophoneMode;
 
         let shouldSkip;
         if (continuousCapture) {
