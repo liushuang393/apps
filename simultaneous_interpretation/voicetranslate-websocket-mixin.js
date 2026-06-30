@@ -207,22 +207,6 @@ const WebSocketMixin = {
     },
 
     /**
-     * 翻訳音声の出力先が採集源と分離されているか（回灌ループを物理的に断てる状態か）。
-     *
-     * 目的:
-     *   システム音声モードで「再生中も連続採集（不漏訳）」を有効にしてよいかの安全判定。
-     *   出力デバイスが明示選択（setSinkId 有効）されている場合のみ true。
-     *   未選択（既定デバイス＝採集対象の可能性）や setSinkId 非対応環境は false とし、
-     *   従来どおり再生中スキップして翻訳音声の再採集を防ぐ。
-     *
-     * @returns {boolean}
-     */
-    isOutputDeviceIsolated() {
-        const ctx = this.state.outputAudioContext;
-        return !!this.state.outputDeviceId && !!(ctx && typeof ctx.setSinkId === 'function');
-    },
-
-    /**
      * WebSocketメッセージをディスパッチ
      *
      * 目的:
@@ -1525,6 +1509,11 @@ const WebSocketMixin = {
         if (!base64Audio || typeof base64Audio !== 'string') {
             return;
         }
+        // ✅ 音声出力モードが「翻訳音声」以外なら再生しない（原音のみ/字幕のみ）。
+        //    単一の真実源 state.audioOutputMode を直接見るため、トグル不整合で無音化しない。
+        if (this.state.audioOutputMode !== 'translation') {
+            return;
+        }
         // ✅ 順序保証＋出力Context初期化レース回避のためスケジューリングを直列化する。
         //    予約は currentTime ベースの先読みなので、直列でもギャップは生じない。
         this._playbackChain = (this._playbackChain || Promise.resolve())
@@ -1639,8 +1628,7 @@ const WebSocketMixin = {
             )({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
-            // 選択済みの出力先（原声分離用の物理デバイス）を適用
-            await this.applyOutputSink();
+            // 翻訳音声は既定スピーカーで再生（出力先分離は廃止）
         }
 
         // AudioContextがsuspended状態の場合はresume

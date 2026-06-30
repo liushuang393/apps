@@ -73,7 +73,9 @@ function createApp(ctx) {
             outputAudioContext: ctx,
             outputVolume: 1,
             inputGainNode: null,
-            isPlayingAudio: false
+            isPlayingAudio: false,
+            // 翻訳音声再生の検証なので「翻訳音声」モード（playAudioChunk の出力モードガードを通す）
+            audioOutputMode: 'translation'
         },
         audioSourceTracker: {},
         notify() {}

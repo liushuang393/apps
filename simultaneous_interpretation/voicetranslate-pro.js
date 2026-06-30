@@ -44,19 +44,17 @@ class VoiceTranslateApp {
             inputGainNode: null, // 入力音声ミュート用GainNode
             audioSourceType: 'microphone', // 'microphone' or 'system'
             systemAudioSourceId: null, // システム音声のソースID
-            // ✅ 原声出力の連動スイッチ（システム音声モードでのみ意味を持つ）
-            //   true  = 原声を物理スピーカーに出す → スピーカー出力(loopback)を監視
-            //   false = 原声分離（仮想サウンドカードへ） → 仮想カードの入力デバイスを監視
-            playOriginalToSpeaker: true,
-            virtualCardDeviceId: '', // OFF時に監視する仮想サウンドカードの入力デバイスID
+            // ✅ 音声出力モード（聞こえる音）: 'translation'=翻訳音声 / 'original'=原音声のみ / 'off'=字幕のみ
+            //   キャプチャ方式とは独立し、翻訳音声(TTS)の再生可否のみを制御する。
+            audioOutputMode: 'translation',
+            virtualCardDeviceId: '', // システム音声(Electron)で自動検出した仮想サウンドカードの入力デバイスID
             isNewResponse: true, // 新しい応答かどうかのフラグ
             outputVolume: 1, // 出力音量（1 = 通常、クリッピング防止のため2から変更）
             isPlayingAudio: false, // 音声再生中フラグ（ループバック防止用）
             // ✅ 開始/停止のユーザー意図フラグ（自動接続・自動再接続の制御に使用）
             userWantsActive: false, // 「開始」で true、「停止」で false
             isUnloading: false, // ページ/アプリ終了中フラグ（終了時は再接続しない）
-            reconnectAttempt: 0, // 自動再接続のリトライ回数（指数バックオフ用）
-            outputDeviceId: '' // 翻訳音声の出力先デバイスID（''=既定。原声分離用に物理デバイスを選択）
+            reconnectAttempt: 0 // 自動再接続のリトライ回数（指数バックオフ用）
         };
 
         this.vad = null;
@@ -273,18 +271,12 @@ class VoiceTranslateApp {
 
         // 詳細設定
         this.elements.vadEnabled = document.getElementById('vadEnabled');
-        this.elements.translationModeAudio = document.getElementById('translationModeAudio');
         // ノイズ除去/エコー除去/自動ゲインのトグルUIは廃止（getUserMedia制約に既定値を直書き）
         this.elements.vadSensitivity = document.getElementById('vadSensitivity');
         this.elements.showInputTranscript = document.getElementById('showInputTranscript');
         this.elements.showOutputTranscript = document.getElementById('showOutputTranscript');
-        this.elements.audioOutputEnabled = document.getElementById('audioOutputEnabled');
-        this.elements.outputDeviceSelect = document.getElementById('outputDeviceSelect');
-        // ✅ 原声出力の連動スイッチと仮想サウンドカード選択
-        this.elements.playOriginalToSpeaker = document.getElementById('playOriginalToSpeaker');
-        this.elements.loopbackSourceGroup = document.getElementById('loopbackSourceGroup');
-        this.elements.virtualCardGroup = document.getElementById('virtualCardGroup');
-        this.elements.virtualCardDevice = document.getElementById('virtualCardDevice');
+        // ✅ 音声出力モード（翻訳音声 / 原音声のみ / オフ）のセレクタ
+        this.elements.audioOutputMode = document.getElementById('audioOutputMode');
 
         // コントロール
         this.elements.connectBtn = document.getElementById('connectBtn');
@@ -337,11 +329,8 @@ class VoiceTranslateApp {
         // デフォルト状態を設定（ON = 'true', OFF = 'false'）
         const defaultSettings = {
             vadEnabled: 'true', // ON
-            translationModeAudio: 'true', // ON
             showInputTranscript: 'true', // ON
-            showOutputTranscript: 'true', // ON
-            audioOutputEnabled: 'true', // ON
-            playOriginalToSpeaker: 'true' // ON（原声をスピーカーに出す＝loopbackを監視）
+            showOutputTranscript: 'true' // ON
         };
 
         // localStorage に設定を保存
@@ -410,15 +399,12 @@ class VoiceTranslateApp {
             if (sourceType === 'system') {
                 systemAudioSourceGroup.style.display = 'block';
 
-                // ✅ 原声出力スイッチに応じてloopback対象 / 仮想カード選択の表示を同期
-                this.syncOriginalAudioUI();
-
-                if (!this.state.playOriginalToSpeaker) {
-                    // OFF（原声分離）: 仮想サウンドカードの入力デバイス一覧を更新
-                    await this.populateInputDevices();
-                } else if (!this.platform.isElectron) {
-                    // ON（loopback）かつブラウザ環境: 音声ソースを自動検出
-                    // Electron環境ではユーザーが手動で「会議アプリを検出」ボタンをクリックする
+                // キャプチャ方式はプラットフォームで自動決定する
+                //   Electron → 仮想サウンドカード(VB-CABLE)を裏で自動検出
+                //   ブラウザ → getDisplayMedia（タブ音声共有）の会議アプリを自動検出
+                if (this.platform.isElectron) {
+                    await this.autoDetectVirtualCard();
+                } else {
                     await this.detectAudioSources();
                 }
             } else {
@@ -516,31 +502,18 @@ class VoiceTranslateApp {
         });
 
         // 詳細設定トグル
-        [
-            'vadEnabled',
-            'translationModeAudio',
-            'showInputTranscript',
-            'showOutputTranscript',
-            'audioOutputEnabled',
-            'playOriginalToSpeaker'
-        ].forEach((id) => {
+        ['vadEnabled', 'showInputTranscript', 'showOutputTranscript'].forEach((id) => {
             this.elements[id].addEventListener('click', (e) => {
                 this.handleToggleSetting(id, e.currentTarget);
             });
         });
 
-        // 仮想サウンドカード（入力）デバイス選択
-        if (this.elements.virtualCardDevice) {
-            this.elements.virtualCardDevice.addEventListener('change', async (e) => {
-                this.state.virtualCardDeviceId = e.target.value;
-                this.saveToStorage('virtual_card_device_id', e.target.value);
-                // 録音中（かつ原声分離=OFF）なら新デバイスでキャプチャを取り直す
-                if (
-                    this.state.isRecording &&
-                    !this.elements.playOriginalToSpeaker.classList.contains('active')
-                ) {
-                    await this.restartCaptureForSourceChange();
-                }
+        // 音声出力モード（聞こえる音）: 翻訳音声 / 原音声のみ / オフ（字幕のみ）
+        if (this.elements.audioOutputMode) {
+            this.elements.audioOutputMode.addEventListener('change', (e) => {
+                this.state.audioOutputMode = e.target.value;
+                this.saveToStorage('audio_output_mode', e.target.value);
+                this.applyAudioOutputMode();
             });
         }
 
@@ -565,16 +538,6 @@ class VoiceTranslateApp {
         this.elements.disconnectBtn.addEventListener('click', () => this.stop());
         this.elements.startBtn.addEventListener('click', () => this.start());
         this.elements.stopBtn.addEventListener('click', () => this.stop());
-
-        // 翻訳音声の出力先デバイス選択（原声分離: 翻訳だけを物理スピーカーへ）
-        if (this.elements.outputDeviceSelect) {
-            this.elements.outputDeviceSelect.addEventListener('change', async (e) => {
-                this.state.outputDeviceId = e.target.value;
-                this.saveToStorage('output_device_id', e.target.value);
-                await this.applyOutputSink();
-            });
-            this.populateOutputDevices();
-        }
 
         // トランスクリプトクリアボタン
         this.elements.clearInputBtn.addEventListener('click', () => {
@@ -677,18 +640,9 @@ class VoiceTranslateApp {
             case 'vadEnabled':
                 this.handleVadToggle();
                 break;
-            case 'translationModeAudio':
-                this.handleTranslationModeToggle(element);
-                break;
             case 'showInputTranscript':
             case 'showOutputTranscript':
                 this.handleTranscriptToggle(id, element);
-                break;
-            case 'audioOutputEnabled':
-                this.handleAudioOutputToggle(element);
-                break;
-            case 'playOriginalToSpeaker':
-                this.handlePlayOriginalToggle(element);
                 break;
             default:
                 // 個別ハンドラを持たないトグルは状態保存のみ
@@ -697,76 +651,11 @@ class VoiceTranslateApp {
     }
 
     /**
-     * 原声出力スイッチの処理
-     *
-     * 目的:
-     *   原声をPCスピーカーに出すか（loopback監視）／仮想サウンドカードへ分離するか（仮想カード監視）を
-     *   切り替える。監視先が変わるため、録音中なら新しい監視先でキャプチャを取り直す。
-     *
-     * @param {HTMLElement} element - トグル要素
-     */
-    handlePlayOriginalToggle(element) {
-        this.state.playOriginalToSpeaker = element.classList.contains('active');
-
-        // UIの表示切替（loopback対象 ↔ 仮想カード選択）
-        this.syncOriginalAudioUI();
-
-        // OFFに切替時、入力デバイス一覧を更新（仮想カードを選びやすくする）
-        if (!this.state.playOriginalToSpeaker) {
-            this.populateInputDevices();
-        }
-
-        // 録音中（システム音声モード）なら新しい監視先でキャプチャを取り直す
-        if (this.state.isRecording && this.state.audioSourceType === 'system') {
-            this.restartCaptureForSourceChange();
-        }
-    }
-
-    /**
-     * 原声出力スイッチに応じてシステム音声UIの表示を同期する
-     *
-     * 目的:
-     *   ON  → loopbackキャプチャ対象（会議アプリ検出/ソース選択）を表示
-     *   OFF → 仮想サウンドカード（入力）選択を表示
-     */
-    syncOriginalAudioUI() {
-        const isOn = this.state.playOriginalToSpeaker;
-        if (this.elements.loopbackSourceGroup) {
-            this.elements.loopbackSourceGroup.style.display = isOn ? 'block' : 'none';
-        }
-        if (this.elements.virtualCardGroup) {
-            this.elements.virtualCardGroup.style.display = isOn ? 'none' : 'block';
-        }
-    }
-
-    /**
-     * 音声ソース/監視先の変更に伴い、録音を安全に再起動する
-     *
-     * 目的:
-     *   マイク↔システム、loopback↔仮想カードの切替時に共通で使う再起動処理。
-     *   取得API・サーバVAD設定が異なるため、停止→設定更新→開始で確実に切り替える。
-     */
-    async restartCaptureForSourceChange() {
-        try {
-            await this.stopRecording();
-            await this.updateSessionConfig();
-            await this.startRecording();
-        } catch (err) {
-            this.notify(
-                '音声ソース',
-                '監視先の切替に失敗しました。停止→開始で再試行してください。',
-                'error'
-            );
-        }
-    }
-
-    /**
      * 監視先の無音自動検証を開始する
      *
      * 目的:
      *   開始直後の一定時間だけ入力エネルギーを観測し、選んだ監視先が
-     *   実際に音を出しているかを確認する。無音なら警告し、未フォールバック時は
-     *   もう一方の監視先（loopback ↔ 仮想サウンドカード）へ自動切替して穴を塞ぐ。
+     *   実際に音を出しているかを確認する。無音なら設定/配線の確認を促す。
      */
     startSilenceVerification() {
         const VERIFY_WINDOW_MS = 5000; // 観測時間
@@ -805,32 +694,14 @@ class VoiceTranslateApp {
             return;
         }
 
-        // 未フォールバックなら、もう一方の監視先へ自動切替（穴を塞ぐ）
-        if (!this.silenceFallbackDone && this.state.audioSourceType === 'system') {
-            this.silenceFallbackDone = true;
-            const toVirtualCard = this.state.playOriginalToSpeaker; // 現在ON→仮想カードへ
-            this.notify(
-                '監視先が無音です',
-                toVirtualCard
-                    ? 'PCスピーカー出力が無音のため、仮想サウンドカードの監視へ自動切替します。'
-                    : '仮想サウンドカードが無音のため、PCスピーカー出力の監視へ自動切替します。',
-                'warning'
-            );
-            // トグルを反転させてキャプチャを取り直す
-            this.elements.playOriginalToSpeaker.classList.toggle('active');
-            this.saveToStorage(
-                'playOriginalToSpeaker',
-                this.elements.playOriginalToSpeaker.classList.contains('active')
-            );
-            this.handlePlayOriginalToggle(this.elements.playOriginalToSpeaker);
-        } else {
-            // 既にフォールバック済み（両方無音）→ 警告のみ
-            this.notify(
-                '音声が検出できません',
-                '監視先のどちらからも音声が検出できません。音声ソースの設定・原声出力スイッチ・仮想サウンドカードの配線を確認してください。',
-                'error'
-            );
-        }
+        // 監視先が無音（キャプチャ方式はプラットフォーム固定のため自動切替はしない）→ 設定/配線の確認を促す
+        this.notify(
+            '音声が検出できません',
+            this.platform.isElectron
+                ? '仮想サウンドカードから音声が検出できません。会議アプリ/既定の出力先を「CABLE Input」に設定しているか確認してください。'
+                : '共有したタブ/画面から音声が検出できません。「タブ」を選び「タブの音声を共有」にチェックが入っているか確認してください。',
+            'error'
+        );
     }
 
     /**
@@ -843,41 +714,6 @@ class VoiceTranslateApp {
         if (this.state.isConnected) {
             this.updateSession();
         }
-    }
-
-    /**
-     * 音声翻訳モードトグルの処理
-     *
-     * 目的:
-     *   音声翻訳モード（ON: 音声翻訳、OFF: テキスト翻訳）の変更をユーザーに通知
-     *
-     * 入力:
-     *   element: トグル要素
-     */
-    handleTranslationModeToggle(element) {
-        const isActive = element.classList.contains('active');
-        const mode = isActive ? '音声翻訳（高速・高品質）' : 'テキスト翻訳（入力と一対一対応）';
-
-        // ✅ バグ修正（無音対策）: 音声翻訳ONなのに「翻訳音声を出力」がOFFだと
-        //    output_modalities=['text'] となり音声が一切出ない不正状態になる。
-        //    handleAudioOutputToggle の逆方向ガード（OFF→音声翻訳もOFF）と対になる補正。
-        if (isActive) {
-            const audioOutputEnabled = this.elements.audioOutputEnabled;
-            if (audioOutputEnabled && !audioOutputEnabled.classList.contains('active')) {
-                audioOutputEnabled.classList.add('active');
-                this.saveToStorage('audioOutputEnabled', 'true');
-            }
-        }
-
-        // パスプロセッサのモードを同期
-        this.updateProcessorModes();
-
-        // ✅ 接続中ならサーバ側 output_modalities も即時同期（不一致での無音を防ぐ）
-        if (this.state.isConnected) {
-            this.updateSession();
-        }
-
-        this.notify('翻訳モード変更', `翻訳モードを${mode}に変更しました`, 'info');
     }
 
     /**
@@ -897,68 +733,47 @@ class VoiceTranslateApp {
     }
 
     /**
-     * 翻訳音声を出力設定トグルの処理
+     * 音声出力モード（聞こえる音）を再生段へ反映する。
      *
      * 目的:
-     *   翻訳音声を出力設定が変更された場合、セッションを更新
-     *   OFFの場合は「リアルタイム音声翻訳」も自動的にOFFにする
-     *
-     * 入力:
-     *   element: トグル要素
+     *   翻訳音声(TTS)を鳴らすかを state.audioOutputMode に従って制御する（単一の真実源）。
+     *   - 'translation': 翻訳音声を再生（ブラウザ=WebRTCの<audio>を unmute＋play、Electron/WS=playAudioChunk許可）
+     *   - 'original' / 'off': 翻訳音声をミュート（字幕は別ストリームなので影響しない＝底線）
+     *   原音の可聴性は採集方式に依存するため、ここでは制御しない。
      */
-    handleAudioOutputToggle(element) {
-        const isActive = element.classList.contains('active');
-
-        // ✅ バグ修正: 翻訳音声を出力がOFFの場合、リアルタイム音声翻訳も自動的にOFFにする
-        if (!isActive) {
-            const translationModeAudio = this.elements.translationModeAudio;
-            if (translationModeAudio && translationModeAudio.classList.contains('active')) {
-                translationModeAudio.classList.remove('active');
-                this.saveToStorage('translationModeAudio', 'false');
-                this.notify(
-                    '音声出力設定',
-                    '翻訳音声を出力をOFFにしました。リアルタイム音声翻訳も自動的にOFFになりました。',
-                    'info'
-                );
-            } else {
-                this.notify(
-                    '音声出力設定',
-                    `翻訳音声を出力を${isActive ? 'ON' : 'OFF'}にしました`,
-                    'info'
-                );
-            }
-        } else {
-            this.notify('音声出力設定', '翻訳音声を出力をONにしました', 'info');
+    applyAudioOutputMode() {
+        const playTranslation = this.state.audioOutputMode === 'translation';
+        const el = this.state.translatedAudioEl;
+        if (!el) {
+            return;
         }
-
-        // パスプロセッサのモードを同期
-        this.updateProcessorModes();
+        el.muted = !playTranslation;
+        if (playTranslation && typeof el.play === 'function') {
+            const p = el.play();
+            if (p && typeof p.catch === 'function') {
+                p.catch((err) => {
+                    this.notify(
+                        '翻訳音声がブロックされました',
+                        '画面を一度クリックしてから再度お試しください: ' +
+                            this.extractErrorMessage(err),
+                        'warning'
+                    );
+                });
+            }
+        }
     }
 
     /**
-     * ✅ パスプロセッサの動作モードを現在の設定に同期
+     * ✅ パスプロセッサの動作モードを同期
      *
      * 目的:
-     *   UIの設定（リアルタイム音声翻訳、音声出力）に応じて、
-     *   Path1 (Text) と Path2 (Voice) の処理内容を動的に切り替える
+     *   本アプリは音声翻訳モードに固定（Path1: 音声認識のみ＝字幕、Path2: 音声翻訳）。
+     *   「聞こえる音」は audioOutputMode（再生段）で制御し、翻訳生成は常に行う。
+     *   ＝原音/字幕のみモードでも左右カラムの翻訳テキストは落とさない（底線）。
      */
     updateProcessorModes() {
-        const isAudioTranslation = this.elements.translationModeAudio.classList.contains('active');
-        const isAudioOutput = this.elements.audioOutputEnabled.classList.contains('active');
-
-        if (isAudioTranslation) {
-            // ✅ 音声翻訳モード（Path2 優先）
-            // Path1: 音声認識のみ（字幕表示用）
-            this.textPathProcessor.setMode(1);
-            // Path2: 音声翻訳実行
-            this.voicePathProcessor.mode = 1;
-        } else {
-            // ✅ テキスト翻訳モード（Path1 優先）
-            // Path1: 音声認識 + テキスト翻訳
-            this.textPathProcessor.setMode(2);
-            // Path2: 無効化（または待機）
-            this.voicePathProcessor.mode = 0; // 0 は「何もしない」モードとして扱う
-        }
+        this.textPathProcessor.setMode(1);
+        this.voicePathProcessor.mode = 1;
     }
 
     async loadSettings() {
@@ -1006,14 +821,7 @@ class VoiceTranslateApp {
         }
 
         // トグル設定
-        const toggleSettings = [
-            'vadEnabled',
-            'translationModeAudio',
-            'showInputTranscript',
-            'showOutputTranscript',
-            'audioOutputEnabled',
-            'playOriginalToSpeaker'
-        ];
+        const toggleSettings = ['vadEnabled', 'showInputTranscript', 'showOutputTranscript'];
         for (const id of toggleSettings) {
             const value = await this.getFromStorage(id);
             if (value === 'false') {
@@ -1021,17 +829,13 @@ class VoiceTranslateApp {
             }
         }
 
-        // ✅ 原声出力スイッチの状態を state とUIに反映
-        if (this.elements.playOriginalToSpeaker) {
-            this.state.playOriginalToSpeaker =
-                this.elements.playOriginalToSpeaker.classList.contains('active');
-            this.syncOriginalAudioUI();
+        // ✅ 音声出力モード（聞こえる音）を復元（既定: 翻訳音声）。リロード後も選択を保持する。
+        const savedOutputMode = await this.getFromStorage('audio_output_mode');
+        this.state.audioOutputMode = savedOutputMode || 'translation';
+        if (this.elements.audioOutputMode) {
+            this.elements.audioOutputMode.value = this.state.audioOutputMode;
         }
-        // 仮想サウンドカードの選択を復元
-        const savedVirtualCard = await this.getFromStorage('virtual_card_device_id');
-        if (savedVirtualCard) {
-            this.state.virtualCardDeviceId = savedVirtualCard;
-        }
+        this.applyAudioOutputMode();
     }
 
     /**
@@ -1236,118 +1040,42 @@ class VoiceTranslateApp {
     }
 
     /**
-     * 出力デバイス一覧を選択肢に反映する（翻訳音声の出力先用）。
-     * 保存済みの選択があれば復元する。ラベルは権限取得後に表示される。
-     */
-    async populateOutputDevices() {
-        try {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-                return;
-            }
-            const sel = this.elements.outputDeviceSelect;
-            if (!sel) {
-                return;
-            }
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const outputs = devices.filter((d) => d.kind === 'audiooutput');
-            sel.innerHTML = '<option value="">既定のデバイス</option>';
-            for (const d of outputs) {
-                const opt = document.createElement('option');
-                opt.value = d.deviceId;
-                opt.textContent = d.label || `出力デバイス (${d.deviceId.slice(0, 8)})`;
-                sel.appendChild(opt);
-            }
-            // 保存済みの選択を復元
-            const saved = await this.getFromStorage('output_device_id');
-            if (saved) {
-                this.state.outputDeviceId = saved;
-                sel.value = saved;
-            }
-        } catch (err) {
-            this.notify('警告', '出力デバイス一覧の取得に失敗しました', 'error');
-        }
-    }
-
-    /**
-     * 仮想サウンドカード等の入力デバイスを列挙し、選択 UI を埋める。
-     * 原声分離（原声出力OFF）時に監視する入力デバイスを選ぶために使用する。
+     * 仮想サウンドカード（VB-CABLE等）の入力デバイスを名前で自動検出する（手動選択UIは廃止）。
      *
      * 目的:
-     *   - audioinput デバイスを列挙
-     *   - VB-Cable / CABLE Output / VoiceMeeter 等の仮想カードを名前で自動選択
-     *   - 保存済みの選択があれば復元
+     *   システム音声(Electron)の原声分離で監視する入力デバイスを enumerateDevices() から自動選定する。
+     *   見つかれば state.virtualCardDeviceId にセットする。見つからない場合は何もしない
+     *   （呼び出し側 startVirtualCardCapture が明確なエラーと導入手順を案内する）。
      */
-    async populateInputDevices() {
+    async autoDetectVirtualCard() {
         try {
             if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
                 return;
             }
-            const sel = this.elements.virtualCardDevice;
-            if (!sel) {
-                return;
-            }
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const inputs = devices.filter((d) => d.kind === 'audioinput');
-            sel.innerHTML = '<option value="">入力デバイスを選択...</option>';
-            for (const d of inputs) {
-                const opt = document.createElement('option');
-                opt.value = d.deviceId;
-                opt.textContent = d.label || `入力デバイス (${d.deviceId.slice(0, 8)})`;
-                sel.appendChild(opt);
+            let devices = await navigator.mediaDevices.enumerateDevices();
+            let inputs = devices.filter((d) => d.kind === 'audioinput');
+
+            // 権限未付与だと enumerateDevices のラベルが空になり名前マッチできないため、
+            // 一度だけ音声権限を取り再列挙してから解放する（使い捨て・即停止）。
+            const labelsEmpty = inputs.length > 0 && inputs.every((d) => !d.label);
+            if (labelsEmpty) {
+                try {
+                    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    probe.getTracks().forEach((t) => t.stop());
+                    devices = await navigator.mediaDevices.enumerateDevices();
+                    inputs = devices.filter((d) => d.kind === 'audioinput');
+                } catch (permErr) {
+                    // 権限拒否時はラベル無しのまま続行（検出失敗→呼び出し側で案内）
+                }
             }
 
-            // 保存済みの選択を優先的に復元
-            const saved = await this.getFromStorage('virtual_card_device_id');
-            if (saved && inputs.some((d) => d.deviceId === saved)) {
-                this.state.virtualCardDeviceId = saved;
-                sel.value = saved;
-                return;
-            }
-
-            // 仮想サウンドカードを名前で自動選択（VB-Cable / VoiceMeeter 等）
             const virtualPattern = /CABLE|VB-Audio|VoiceMeeter|Virtual|仮想/i;
             const virtual = inputs.find((d) => virtualPattern.test(d.label || ''));
             if (virtual) {
                 this.state.virtualCardDeviceId = virtual.deviceId;
-                sel.value = virtual.deviceId;
             }
         } catch (err) {
-            this.notify('警告', '入力デバイス一覧の取得に失敗しました', 'error');
-        }
-    }
-
-    /**
-     * 翻訳音声の出力先を選択デバイスへ切り替える（AudioContext.setSinkId）。
-     * 原声分離（会議→仮想サウンドカード→翻訳→物理スピーカー）の物理出力側を担う。
-     * setSinkId 非対応環境では既定デバイスのまま（何もしない）。
-     */
-    async applyOutputSink() {
-        const deviceId = this.state.outputDeviceId;
-
-        // WebRTC 経路: 翻訳音声は <audio> 要素で再生されるため、要素側の出力先を切り替える。
-        // （原声分離・回灌防止のため、WS 経路の AudioContext と同様に物理出力を分離する）
-        const audioEl = this.state.translatedAudioEl;
-        if (audioEl && typeof audioEl.setSinkId === 'function') {
-            try {
-                await audioEl.setSinkId(deviceId || '');
-            } catch (err) {
-                // 握り潰すと「切替えても反映されない」原因が分からなくなるため明示通知する。
-                this.notify(
-                    '出力先の切替に失敗',
-                    '翻訳音声の出力先を変更できませんでした: ' + this.extractErrorMessage(err),
-                    'warning'
-                );
-            }
-        }
-
-        const ctx = this.state.outputAudioContext;
-        if (!ctx || typeof ctx.setSinkId !== 'function') {
-            return;
-        }
-        try {
-            await ctx.setSinkId(deviceId || '');
-        } catch (err) {
-            // 出力デバイス切替の失敗は致命的でないため無視（既定デバイスで再生継続）
+            // 検出失敗は致命的でない（呼び出し側が未検出として案内する）
         }
     }
 
@@ -1664,11 +1392,13 @@ class VoiceTranslateApp {
                 document.body.appendChild(audioEl);
                 this.state.translatedAudioEl = audioEl;
             }
-            // 翻訳音声の出力先（原声分離用の物理デバイス）を反映する。
-            await this.applyOutputSink();
+            // 既定スピーカーで再生（出力先分離は廃止）。音声出力モードに応じてミュート/再生を反映。
+            this.applyAudioOutputMode();
             pc.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
                     audioEl.srcObject = event.streams[0];
+                    // トラック着信後にも再生状態を反映（autoplayブロック対策）
+                    this.applyAudioOutputMode();
                 }
             };
 
@@ -2038,10 +1768,10 @@ class VoiceTranslateApp {
      */
     async routeAudioCapture() {
         if (this.state.audioSourceType === 'system') {
-            // ✅ 原声出力スイッチで監視先を分岐
-            //   OFF（原声分離） → 仮想サウンドカード（入力デバイス）を監視
-            //   ON（聞きながら翻訳） → 物理スピーカー出力(loopback)を監視
-            if (!this.state.playOriginalToSpeaker) {
+            // ✅ キャプチャ方式はプラットフォームで自動決定（出力モードとは独立）
+            //   Electron → 仮想サウンドカード(VB-CABLE)を監視（原声分離・回灌に最強）
+            //   ブラウザ → getDisplayMedia（タブ音声共有）で会議タブを監視
+            if (this.platform.isElectron) {
                 await this.startVirtualCardCapture();
             } else {
                 await this.startSystemAudioCapture();
@@ -2063,15 +1793,19 @@ class VoiceTranslateApp {
      * @throws {Error} 仮想サウンドカードが未選択の場合（穴を塞ぐ: 無音監視を防止）
      */
     async startVirtualCardCapture() {
+        // 手動選択UIは廃止。未取得なら自動検出を試みる。
+        if (!this.state.virtualCardDeviceId) {
+            await this.autoDetectVirtualCard();
+        }
         const deviceId = this.state.virtualCardDeviceId;
         if (!deviceId) {
-            // 未選択のまま開始すると無音を監視し続ける穴になるため、明確にブロックする
+            // 仮想カード未検出のまま開始すると無音を監視し続けるため、明確にブロックして導入手順を案内する
             this.notify(
-                '仮想サウンドカード未選択',
-                '原声出力OFF（原声分離）では、監視する仮想サウンドカードの入力デバイスを選択してください。',
+                '仮想サウンドカード未検出',
+                'システム音声の翻訳には仮想サウンドカードが必要です。VB-CABLEを導入し、会議アプリ/既定の出力先を「CABLE Input」に設定してください。',
                 'error'
             );
-            throw new Error('仮想サウンドカードの入力デバイスが選択されていません');
+            throw new Error('仮想サウンドカードが見つかりません（VB-CABLE未導入/未配線）');
         }
 
         const config = {
@@ -2240,8 +1974,11 @@ class VoiceTranslateApp {
 
         const config = {
             sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-            echoCancellation: isBrowserSource,
-            noiseSuppression: isBrowserSource,
+            // ★システム/タブ音声はデジタルのクリーン音源。マイク用の AEC/NS/AGC をかけると
+            //   歪み・減衰で認識が劣化する（タブ捕獲に echoCancellation を当てる典型アンチパターン）。
+            //   生音のまま STT へ渡す＝監視モードの認識強化。マイク採集(別経路)には影響しない。
+            echoCancellation: false,
+            noiseSuppression: false,
             autoGainControl: false
         };
 
@@ -3213,8 +2950,7 @@ class VoiceTranslateApp {
             )({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
-            // 選択済みの出力先（原声分離用の物理デバイス）を適用
-            await this.applyOutputSink();
+            // 翻訳音声は既定スピーカーで再生（出力先分離は廃止）
         }
 
         // AudioContextがsuspended状態の場合はresume

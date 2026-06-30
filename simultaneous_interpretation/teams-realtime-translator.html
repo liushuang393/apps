@@ -1213,12 +1213,6 @@
                                 <span class="toggle-label">自動音声検出</span>
                                 <div class="toggle-switch active" id="vadEnabled"></div>
                             </div>
-                            <!-- 単一モード（音声翻訳）に固定。モード切替は使わないため非表示 -->
-                            <div class="toggle-group legacy-hidden">
-                                <span class="toggle-label">リアルタイム音声翻訳</span>
-                                <div class="toggle-switch active" id="translationModeAudio"
-                                    title="ON: 音声翻訳（高速・高品質）&#10;OFF: テキスト翻訳（入力と一対一対応）"></div>
-                            </div>
                             <div class="toggle-group">
                                 <span class="toggle-label">入力音声を表示</span>
                                 <div class="toggle-switch active" id="showInputTranscript"></div>
@@ -1227,14 +1221,19 @@
                                 <span class="toggle-label">翻訳結果を表示</span>
                                 <div class="toggle-switch active" id="showOutputTranscript"></div>
                             </div>
-                            <div class="toggle-group">
-                                <span class="toggle-label">翻訳音声を出力</span>
-                                <div class="toggle-switch active" id="audioOutputEnabled"></div>
-                            </div>
                         </div>
 
-                        <!-- 翻訳音声は常にPC既定スピーカーへ出力する（出力先選択UIは廃止）。
-                             既定スピーカー固定で回灌(マイクが翻訳音を再採集)を防ぎ、設定を最小化する。 -->
+                        <!-- 音声出力（聞こえる音）。翻訳音声/原音声/オフ を排他で選ぶ。
+                             翻訳音声は常にPC既定スピーカーへ出力（出力先選択UIは廃止）。
+                             原音の可聴性は採集方式（タブ共有/仮想カード）に依存する。 -->
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label class="form-label" for="audioOutputMode">🔊 音声出力</label>
+                            <select id="audioOutputMode" class="form-input">
+                                <option value="translation" selected>翻訳音声（推奨）</option>
+                                <option value="original">原音声のみ（字幕で翻訳を読む）</option>
+                                <option value="off">オフ（字幕のみ）</option>
+                            </select>
+                        </div>
 
                         <!-- 音声検出の感度。クライアント側VAD(this.vad)の閾値を変え、
                              どの音量から音声として拾い送信するかを制御する（聞き取れない時は「高」）。 -->
@@ -1282,15 +1281,8 @@
 
                     <!-- システム音声ソース選択（初期非表示） -->
                     <div id="systemAudioSourceGroup" class="form-group" style="display: none;">
-                        <!-- 原声出力の連動スイッチ。監視先（loopback or 仮想サウンドカード）を切り替える。
-                             ON  = 原声をPCスピーカーに出す → スピーカー出力(loopback)を監視
-                             OFF = 原声分離（仮想サウンドカードへ） → 仮想カードの入力を監視 -->
-                        <div class="toggle-group" style="margin-bottom: 8px;">
-                            <span class="toggle-label">原声をPCスピーカーに出す（OFFで仮想サウンドカードを監視）</span>
-                            <div class="toggle-switch active" id="playOriginalToSpeaker"></div>
-                        </div>
-
-                        <!-- ON時: 物理スピーカー(loopback)のキャプチャ対象 -->
+                        <!-- ブラウザ: getDisplayMedia（タブ音声共有）のキャプチャ対象。
+                             Electron: 仮想サウンドカードを裏で自動検出するため選択不要。 -->
                         <div id="loopbackSourceGroup">
                             <label class="form-label" for="systemAudioSource">
                                 <span>🖥️</span>
@@ -1303,17 +1295,6 @@
                             </button>
                             <select id="systemAudioSource" class="form-input">
                                 <option value="">ソースを選択...</option>
-                            </select>
-                        </div>
-
-                        <!-- OFF時: 監視する仮想サウンドカードの入力デバイス（VB-Cable等） -->
-                        <div id="virtualCardGroup" style="display: none;">
-                            <label class="form-label" for="virtualCardDevice">
-                                <span>🎚️</span>
-                                <span>仮想サウンドカード（入力）</span>
-                            </label>
-                            <select id="virtualCardDevice" class="form-input">
-                                <option value="">入力デバイスを選択...</option>
                             </select>
                         </div>
                     </div>

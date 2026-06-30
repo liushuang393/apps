@@ -275,11 +275,11 @@ const CONFIG = {
         // 音声入力中に翻訳音声/字幕をストリーム返却し、response.create は使わない。
         REALTIME_URL: OPENAI_REALTIME_TRANSLATION_URL,
         REALTIME_MODEL: 'gpt-realtime-translate',
-        CHAT_MODEL: 'gpt-5-2025-08-07',
+        // ↓ モデル名は .env (OPENAI_*_MODEL) で設定・上書きする。ここは env 未読込時のフォールバック既定値。
+        CHAT_MODEL: 'gpt-5.5',
         // テキスト翻訳・言語検出に使う Chat Completions エンドポイント。
         CHAT_URL: OPENAI_CHAT_COMPLETIONS_URL,
-        // ライブ入力音声の並行STT用モデル。
-        // gpt-realtime-whisper は低遅延ストリーミング向け。ファイル/リクエスト式の高精度転写は gpt-4o-transcribe。
+        // ライブ入力音声の並行STT用モデル（低遅延ストリーミング）。
         TRANSCRIBE_MODEL: 'gpt-realtime-whisper',
         TIMEOUT: 30000
     },

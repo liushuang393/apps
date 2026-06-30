@@ -267,7 +267,9 @@ class GPT4oTranscribeProvider(AIProvider):
             # 2. テキスト翻訳（改善点 Q1）
             #    用語集・直近文脈・LLM補正を内包する共通MT経路へ一本化する。
             #    従来はここで素のプロンプト翻訳をしており、これらの品質機能が一切効かなかった。
-            logger.debug(f"[GPT4o-transcribe] 翻訳開始: '{original_text}' -> {target_language}")
+            logger.debug(
+                f"[GPT4o-transcribe] 翻訳開始: '{original_text}' -> {target_language}"
+            )
             from app.translate.routes import translate_text_simple
 
             translated_text = await translate_text_simple(
