@@ -108,6 +108,29 @@
             border-radius: 8px;
         }
 
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .device-badge {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            max-width: 240px;
+            font-size: 11px;
+            line-height: 1.4;
+            color: var(--text-secondary);
+            text-align: right;
+        }
+
+        .device-badge span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .status-dot {
             width: 8px;
             height: 8px;
@@ -1133,9 +1156,15 @@
                     <span class="app-version">v3.0 PRODUCTION</span>
                 </div>
             </div>
-            <div class="status-badge">
-                <span class="status-dot" id="connectionStatus"></span>
-                <span id="connectionText">オフライン</span>
+            <div class="header-right">
+                <div class="device-badge" id="deviceBadge" title="監視中の入力デバイスと翻訳音声の出力先">
+                    <span id="inputDeviceLabel">🎙️ 入力: —</span>
+                    <span id="outputDeviceLabel">🔊 出力: —</span>
+                </div>
+                <div class="status-badge">
+                    <span class="status-dot" id="connectionStatus"></span>
+                    <span id="connectionText">オフライン</span>
+                </div>
             </div>
         </header>
 

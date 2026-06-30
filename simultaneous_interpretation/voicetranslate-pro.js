@@ -49,6 +49,7 @@ class VoiceTranslateApp {
             audioOutputMode: 'translation',
             virtualCardDeviceId: '', // システム音声(Electron)で自動検出した仮想サウンドカードの入力デバイスID
             outputDeviceId: null, // 翻訳音声の出力先(物理スピーカー/ヘッドホン)デバイスID。null=未検出, ''=既定出力
+            outputDeviceLabel: null, // 上記出力先のデバイス名（ヘッダ右上の表示用）。null=未検出
             isNewResponse: true, // 新しい応答かどうかのフラグ
             outputVolume: 1, // 出力音量（1 = 通常、クリッピング防止のため2から変更）
             isPlayingAudio: false, // 音声再生中フラグ（ループバック防止用）
@@ -288,6 +289,10 @@ class VoiceTranslateApp {
         // ステータス
         this.elements.connectionStatus = document.getElementById('connectionStatus');
         this.elements.connectionText = document.getElementById('connectionText');
+
+        // 監視中の入力デバイス／翻訳音声の出力先デバイス表示（ヘッダ右上）
+        this.elements.inputDeviceLabel = document.getElementById('inputDeviceLabel');
+        this.elements.outputDeviceLabel = document.getElementById('outputDeviceLabel');
 
         // 統計
         this.elements.sessionTime = document.getElementById('sessionTime');
@@ -959,6 +964,18 @@ class VoiceTranslateApp {
             return;
         }
 
+        // ✅ IPC リスナの多重購読を防ぐ（字幕の文字重複・音声の結巴の根本原因）。
+        //   preload の _api.on は ipcRenderer.on をラップして「追加」するだけで、
+        //   removeListener はラップ前の関数参照を渡すため実際には外せない。
+        //   そのため connect()→setupElectronWebSocketHandlers() が再接続のたびに走ると
+        //   'realtime-ws-message' リスナが積み上がり、1メッセージが複数回 dispatch され
+        //   delta が二重累積（"你你为为…"）し、response.output_audio.delta も二重再生になる。
+        //   IPCチャネルは再接続をまたいで生存するため、アプリインスタンスにつき一度だけ購読する。
+        if (this._electronWsHandlersBound) {
+            return;
+        }
+        this._electronWsHandlersBound = true;
+
         // Realtime WebSocket イベントをアダプタ経由で購読
         this.platform.subscribeRealtimeEvents({
             onOpen: () => {
@@ -1098,6 +1115,7 @@ class VoiceTranslateApp {
         try {
             if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
                 this.state.outputDeviceId = '';
+                this.state.outputDeviceLabel = '既定出力';
                 return;
             }
             let devices = await navigator.mediaDevices.enumerateDevices();
@@ -1124,9 +1142,12 @@ class VoiceTranslateApp {
             const headphone = physical.find((d) => headphonePattern.test(d.label || ''));
             const chosen = headphone || physical[0] || null;
             this.state.outputDeviceId = chosen != null ? chosen.deviceId : '';
+            this.state.outputDeviceLabel =
+                chosen != null && chosen.label ? chosen.label : '既定出力';
         } catch (err) {
             // 検出失敗は致命的でない（既定出力にフォールバック）
             this.state.outputDeviceId = '';
+            this.state.outputDeviceLabel = '既定出力';
         }
     }
 
@@ -1156,6 +1177,35 @@ class VoiceTranslateApp {
         }
     }
 
+    /**
+     * 監視中の入力デバイスと翻訳音声の出力先デバイスをヘッダ右上に表示する。
+     *
+     * 目的:
+     *   「今どこを監視し、訳音をどこへ出しているか」を可視化し、誤設定（マイク/仮想カードの
+     *   取り違え、訳音が仮想カードへ回り込む等）の切り分けを容易にする。
+     *
+     * 入力デバイス名は実際に取得した MediaStreamTrack のラベル（＝ground truth）から読む。
+     * ローカルapp・ブラウザ拡張は同一の teams-realtime-translator.html を読むため共通で動作する。
+     */
+    updateDeviceIndicator() {
+        const inputEl = this.elements.inputDeviceLabel;
+        if (inputEl) {
+            const track =
+                this.state.mediaStream && this.state.mediaStream.getAudioTracks
+                    ? this.state.mediaStream.getAudioTracks()[0]
+                    : null;
+            const inputLabel = track && track.label ? track.label : '—';
+            inputEl.textContent = '🎙️ 入力: ' + inputLabel;
+            inputEl.title = inputLabel;
+        }
+        const outputEl = this.elements.outputDeviceLabel;
+        if (outputEl) {
+            const outputLabel = this.state.outputDeviceLabel || '既定出力';
+            outputEl.textContent = '🔊 出力: ' + outputLabel;
+            outputEl.title = outputLabel;
+        }
+    }
+
     normalizeRealtimeEndpointModel() {
         const api = CONFIG.API || {};
         const translationUrl = OPENAI_REALTIME_TRANSLATION_URL;
@@ -1182,6 +1232,7 @@ class VoiceTranslateApp {
         // 翻訳音声の出力先(物理スピーカー/ヘッドホン)を毎接続で再検出する。
         // 既定出力が仮想サウンドカードでも、訳音は物理デバイスから聞こえるようにするため。
         await this.autoDetectPhysicalSpeaker();
+        this.updateDeviceIndicator();
 
         try {
             this.updateConnectionStatus('connecting');
@@ -1863,6 +1914,8 @@ class VoiceTranslateApp {
             // マイクキャプチャ（既存機能）
             await this.startMicrophoneCapture();
         }
+        // 実際に掴んだデバイス名をヘッダ右上へ反映
+        this.updateDeviceIndicator();
     }
 
     /**
@@ -2915,6 +2968,8 @@ class VoiceTranslateApp {
         // メディアストリーム／オーディオノードをクリーンアップ（共通処理にまとめる）
         this.stopMediaStreamTracks();
         this.cleanupAudioNodes();
+        // 入力ストリーム解放後、ヘッダ右上の入力デバイス表示を「—」に戻す
+        this.updateDeviceIndicator();
 
         if (this.state.audioContext) {
             try {
