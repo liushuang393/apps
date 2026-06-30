@@ -340,11 +340,11 @@ const CONFIG = {
         VAD_TYPE: 'semantic_vad',
         SEMANTIC_EAGERNESS: 'medium',
         MIN_COMPLETE_SENTENCES: 1,
-        MAX_SENTENCES: 3,
+        MAX_SENTENCES: 1,
         // 1文完結後にポーズ（次発話の有無）を見極める猶予。日中語の文間ポーズは
         // 概ね 300-500ms。短くするほど「1文＝即送信」に近づき実時性が上がる。
-        POST_SENTENCE_HOLD_MS: 350,
-        MAX_BUFFER_MS: 6000
+        POST_SENTENCE_HOLD_MS: 150,
+        MAX_BUFFER_MS: 2500
     },
 
     VAD: {

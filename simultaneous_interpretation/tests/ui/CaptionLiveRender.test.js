@@ -170,6 +170,29 @@ describe('翻訳字幕の増分レンダリング', () => {
         expect(textOf(rows(inputContainer)[0])).toBe('原文');
         expect(textOf(rows(outputContainer)[0])).toBe('訳文');
     });
+
+    it('セグメント先頭の句読点は行頭に置かない（禁則処理）', () => {
+        const { app, outputContainer } = createApp();
+
+        // 1文を確定（サーバ .done 相当）
+        app.handleTranslationTranscriptDelta('output', '你好世界');
+        app.commitTranslationCaption('output');
+
+        // サーバが句末句読点を「次セグメントの先頭 delta」として送るケース。
+        // 句読点のみ → バッファは空のまま、空のライブ行も作らない。
+        app.handleTranslationTranscriptDelta('output', '。');
+        expect(app.translationCaption.output).toBe('');
+        const liveAfterPunct = rows(outputContainer).filter((el) => el.dataset.live === '1');
+        expect(liveAfterPunct).toHaveLength(0);
+
+        // 先頭句読点＋本文 → 先頭句読点を除去して本文から始める。
+        app.handleTranslationTranscriptDelta('output', '。今天天气好');
+        expect(app.translationCaption.output).toBe('今天天气好');
+        const live = rows(outputContainer).filter((el) => el.dataset.live === '1');
+        expect(live).toHaveLength(1);
+        expect(textOf(live[0]).startsWith('。')).toBe(false);
+        expect(textOf(live[0])).toBe('今天天气好');
+    });
 });
 
 describe('履歴保存失敗の通知（BUG4）', () => {

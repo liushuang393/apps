@@ -333,7 +333,17 @@ const WebSocketMixin = {
             this.translationCaption = { input: '', output: '' };
         }
         this.translationCaption[kind] += delta;
+        // 禁則処理: 行頭(セグメント先頭)に句読点を置かない。サーバが句末句読点を次セグメントの
+        //   先頭 delta として送るため、放置すると「。」「、」始まりの確定行ができる。
+        this.translationCaption[kind] = this.translationCaption[kind].replace(
+            /^[\s、。，．,.!?！？;；:：]+/u,
+            ''
+        );
         const buffered = this.translationCaption[kind];
+        if (!buffered) {
+            // 先頭句読点のみを除去して空になった場合は、空のライブ行を作らない。
+            return;
+        }
         // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
         //    （確定時に commitTranslationCaption がライブ行を確定行へ置き換える）
         this.renderLiveCaption(kind, buffered);
