@@ -8,6 +8,9 @@
 # テキストは自動判定し、チェックアウト時もLFを維持
 * text=auto eol=lf
 
+# Windows batch files need CRLF for reliable cmd.exe parsing.
+*.bat text eol=crlf
+
 # バイナリは変換しない
 *.png binary
 *.jpg binary

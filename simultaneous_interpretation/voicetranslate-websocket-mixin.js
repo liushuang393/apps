@@ -1452,7 +1452,13 @@ const WebSocketMixin = {
         //   セッションは再生中も常に連続採集する（半二重にしない＝認識を絶対に落とさない）。
         //   訳音のマイク回り込み(エコー)は getUserMedia の echoCancellation で抑制する。
         //   完全に断つにはヘッドホン使用が確実（スピーカー運用ではAECで軽減）。
-        const continuousCapture = this.isRealtimeTranslationSession() && isMicrophoneMode;
+        // 出力先が物理デバイスへ隔離済み(setSinkId)なら、system(仮想カード)入力でも回灌は起きない。
+        // 仮想カードは会議音声のみを載せ、訳音は別の物理デバイスへ出るため半二重は不要＝文落ちを防ぐ。
+        const outputIsolated =
+            this.state.outputDeviceId != null && this.state.outputDeviceId !== '';
+        const continuousCapture =
+            this.isRealtimeTranslationSession() &&
+            (isMicrophoneMode || (isSystemMode && outputIsolated));
 
         let shouldSkip;
         if (continuousCapture) {
@@ -1551,8 +1557,14 @@ const WebSocketMixin = {
         source.connect(gainNode);
         gainNode.connect(ctx.destination);
 
-        // 直前チャンクの終了時刻へ連結（過去になっていたら現在時刻にリセットして無音連鎖を防ぐ）。
-        const startAt = Math.max(ctx.currentTime, this._nextPlaybackTime || 0);
+        // 直前チャンクの終了時刻へ連結。新しい再生バースト/アンダーラン時のみ先頭にリードを入れ、
+        // 後続チャンクの到着猶予（ジッタ吸収）を作る。バースト内は _nextPlaybackTime で隙間なく連結。
+        // ponytail: 120msリード。短い→磕巴(underrun), 長い→遅延。実測で調整可。
+        const PLAYBACK_LEAD_SEC = 0.12;
+        const startAt =
+            !this._nextPlaybackTime || this._nextPlaybackTime <= ctx.currentTime
+                ? ctx.currentTime + PLAYBACK_LEAD_SEC
+                : this._nextPlaybackTime;
         source.start(startAt);
         this._nextPlaybackTime = startAt + buffer.duration;
 
@@ -1628,7 +1640,11 @@ const WebSocketMixin = {
             )({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
-            // 翻訳音声は既定スピーカーで再生（出力先分離は廃止）
+            // 翻訳音声を物理スピーカー/ヘッドホンへ固定（既定出力が仮想カードでも聞こえるように）
+            // applyOutputSink は pro.js 側の実体。mixin 単体適用(テスト等)では未定義のため guard する。
+            if (typeof this.applyOutputSink === 'function') {
+                await this.applyOutputSink(this.state.outputAudioContext);
+            }
         }
 
         // AudioContextがsuspended状態の場合はresume

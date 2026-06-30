@@ -16,6 +16,7 @@ const vm = require('vm');
 
 const SAMPLES_PER_CHUNK = 2400; // 24kHz で 0.1s 相当
 const CHUNK_DURATION = SAMPLES_PER_CHUNK / 24000; // 0.1
+const PLAYBACK_LEAD = 0.12; // scheduleAudioChunk のジッタ吸収リード（PLAYBACK_LEAD_SEC と一致）
 
 function loadWebSocketMixin() {
     const source = fs.readFileSync(
@@ -97,9 +98,10 @@ describe('ギャップレス翻訳音声再生（D6）', () => {
         await app._playbackChain;
 
         expect(starts).toHaveLength(3);
-        expect(starts[0]).toBeCloseTo(0, 5);
-        expect(starts[1]).toBeCloseTo(CHUNK_DURATION, 5); // 0.1 = ギャップなし
-        expect(starts[2]).toBeCloseTo(CHUNK_DURATION * 2, 5); // 0.2
+        // 先頭はジッタ吸収のリード分だけ後ろ倒し。以降はバースト内で隙間なく連結する。
+        expect(starts[0]).toBeCloseTo(PLAYBACK_LEAD, 5);
+        expect(starts[1]).toBeCloseTo(PLAYBACK_LEAD + CHUNK_DURATION, 5); // ギャップなし
+        expect(starts[2]).toBeCloseTo(PLAYBACK_LEAD + CHUNK_DURATION * 2, 5);
     });
 
     it('全チャンク再生終了で isPlayingAudio と連結カーソルが解除される', async () => {
@@ -117,7 +119,7 @@ describe('ギャップレス翻訳音声再生（D6）', () => {
         expect(app._nextPlaybackTime).toBe(0);
     });
 
-    it('再生が現在時刻より前に取り残されたら現在時刻から予約し直す（無音連鎖防止）', async () => {
+    it('再生が現在時刻より前に取り残されたら現在時刻＋リードから予約し直す（無音連鎖防止）', async () => {
         const { ctx, starts } = createMockCtx();
         const app = createApp(ctx);
 
@@ -128,6 +130,6 @@ describe('ギャップレス翻訳音声再生（D6）', () => {
         app.playAudioChunk('BBBB');
         await app._playbackChain;
 
-        expect(starts[1]).toBeCloseTo(5.0, 5); // 過去の 0.1 ではなく現在時刻 5.0
+        expect(starts[1]).toBeCloseTo(5.0 + PLAYBACK_LEAD, 5); // 過去の 0.22 ではなく現在時刻＋リード
     });
 });

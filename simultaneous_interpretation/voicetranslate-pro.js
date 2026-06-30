@@ -48,6 +48,7 @@ class VoiceTranslateApp {
             //   キャプチャ方式とは独立し、翻訳音声(TTS)の再生可否のみを制御する。
             audioOutputMode: 'translation',
             virtualCardDeviceId: '', // システム音声(Electron)で自動検出した仮想サウンドカードの入力デバイスID
+            outputDeviceId: null, // 翻訳音声の出力先(物理スピーカー/ヘッドホン)デバイスID。null=未検出, ''=既定出力
             isNewResponse: true, // 新しい応答かどうかのフラグ
             outputVolume: 1, // 出力音量（1 = 通常、クリッピング防止のため2から変更）
             isPlayingAudio: false, // 音声再生中フラグ（ループバック防止用）
@@ -1079,6 +1080,82 @@ class VoiceTranslateApp {
         }
     }
 
+    /**
+     * 翻訳音声の出力先（物理スピーカー/ヘッドホン）を名前で自動検出する。
+     *
+     * 目的:
+     *   原声分離構成では既定出力を仮想サウンドカードに向けるため、翻訳音声(TTS)まで
+     *   仮想カードへ流れて物理スピーカー/ヘッドホンから聞こえなくなる。これを避けるため
+     *   出力デバイスを enumerateDevices() から自動選定し、setSinkId で固定する。
+     *
+     * 優先順位: ①ヘッドホン/イヤホン ②物理スピーカー ③物理が無ければ既定のまま('')
+     *   結果は state.outputDeviceId にセットする（'' = 既定出力を使用＝検出済みだが物理なし）。
+     *
+     * ponytail: ラベル一致のヒューリスティック検出。Bluetooth等は製品名表示で耳機判定に漏れ得る。
+     *   接続(connect)毎に再検出するため、途中でデバイスを抜き差ししたら再接続で反映される。
+     */
+    async autoDetectPhysicalSpeaker() {
+        try {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                this.state.outputDeviceId = '';
+                return;
+            }
+            let devices = await navigator.mediaDevices.enumerateDevices();
+            let outputs = devices.filter((d) => d.kind === 'audiooutput');
+
+            // 権限未付与だとラベルが空で名前マッチできないため、一度だけ権限を取り再列挙する。
+            const labelsEmpty = outputs.length > 0 && outputs.every((d) => !d.label);
+            if (labelsEmpty) {
+                try {
+                    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    probe.getTracks().forEach((t) => t.stop());
+                    devices = await navigator.mediaDevices.enumerateDevices();
+                    outputs = devices.filter((d) => d.kind === 'audiooutput');
+                } catch (permErr) {
+                    // 権限拒否時はラベル無しのまま続行（既定出力にフォールバック）
+                }
+            }
+
+            const virtualPattern = /CABLE|VB-Audio|VoiceMeeter|Virtual|仮想/i;
+            const headphonePattern =
+                /ヘッドホン|ヘッドセット|イヤホン|headphone|headset|earphone|earbud/i;
+            // 仮想カードを除外した物理デバイスのみを候補にする（既定が仮想でも物理を選べる）
+            const physical = outputs.filter((d) => !virtualPattern.test(d.label || ''));
+            const headphone = physical.find((d) => headphonePattern.test(d.label || ''));
+            const chosen = headphone || physical[0] || null;
+            this.state.outputDeviceId = chosen != null ? chosen.deviceId : '';
+        } catch (err) {
+            // 検出失敗は致命的でない（既定出力にフォールバック）
+            this.state.outputDeviceId = '';
+        }
+    }
+
+    /**
+     * 翻訳音声の出力先を物理スピーカー/ヘッドホンへ固定する（setSinkId）。
+     *
+     * @param {HTMLMediaElement|AudioContext} target setSinkId を持つ再生ターゲット
+     *   （<audio> 要素 / 出力用 AudioContext のいずれも可）
+     * @returns {Promise<void>}
+     */
+    async applyOutputSink(target) {
+        if (target == null || typeof target.setSinkId !== 'function') {
+            return;
+        }
+        // 未検出（null）なら一度だけ自動検出する（gaplessパスが接続前に走る場合の保険）
+        if (this.state.outputDeviceId == null) {
+            await this.autoDetectPhysicalSpeaker();
+        }
+        const deviceId = this.state.outputDeviceId;
+        if (!deviceId) {
+            return; // 物理デバイス無し→既定出力のまま（仮想カードしか無い環境のフォールバック）
+        }
+        try {
+            await target.setSinkId(deviceId);
+        } catch (err) {
+            // setSinkId 失敗（未対応/権限/デバイス消失）は致命的でない。既定出力にフォールバック。
+        }
+    }
+
     normalizeRealtimeEndpointModel() {
         const api = CONFIG.API || {};
         const translationUrl = OPENAI_REALTIME_TRANSLATION_URL;
@@ -1101,6 +1178,10 @@ class VoiceTranslateApp {
         // 接続開始時にトランスクリプトをクリア
         this.clearTranscript('both');
         this.normalizeRealtimeEndpointModel();
+
+        // 翻訳音声の出力先(物理スピーカー/ヘッドホン)を毎接続で再検出する。
+        // 既定出力が仮想サウンドカードでも、訳音は物理デバイスから聞こえるようにするため。
+        await this.autoDetectPhysicalSpeaker();
 
         try {
             this.updateConnectionStatus('connecting');
@@ -1392,7 +1473,9 @@ class VoiceTranslateApp {
                 document.body.appendChild(audioEl);
                 this.state.translatedAudioEl = audioEl;
             }
-            // 既定スピーカーで再生（出力先分離は廃止）。音声出力モードに応じてミュート/再生を反映。
+            // 翻訳音声を物理スピーカー/ヘッドホンへ固定（既定出力が仮想カードでも聞こえるように）
+            await this.applyOutputSink(audioEl);
+            // 音声出力モードに応じてミュート/再生を反映
             this.applyAudioOutputMode();
             pc.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
