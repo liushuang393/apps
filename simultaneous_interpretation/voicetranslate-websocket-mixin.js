@@ -1057,109 +1057,55 @@ const WebSocketMixin = {
      * 入力音声認識完了イベント処理
      */
     handleTranscriptionCompleted(message) {
-        if (message.transcript) {
-            // ✅ item_id 優先解決: コミット時に結んだ segment へ確実に戻す。
-            //    flush 後に遅れて届く転写でも、commit 時点の正しい segment に入り、
-            //    後続グループを汚染しない（順序非依存の 1:1 対応保証）。
-            if (this.useAudioQueue && this.segmentAlignment && !this.segmentResendDepth) {
-                const boundSegment = this.segmentAlignment.getSegmentByItemId(message.item_id);
-                if (boundSegment) {
-                    const nextText = this.joinSegmentTranscriptText(
-                        boundSegment.input.text,
-                        message.transcript
-                    );
-                    const segment = this.segmentAlignment.updateInput(boundSegment.id, nextText, {
-                        isFinal: true,
-                        source: 'live-sra',
-                        sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(nextText)
-                    });
-                    this.upsertSegmentInput(segment.id, segment.input.text, {
-                        status: 'input-ready'
-                    });
-                    this.upsertSegmentOutput(segment.id, segment.output.text, {
-                        status: segment.output.responseId ? 'responding' : 'collecting',
-                        placeholder: '翻訳待機中...'
-                    });
-                    // 文数計数は「現在 collecting 中のグループ」に属する転写のみ。
-                    // flush 済みグループの遅延転写は次グループの flush を誤って早めない。
-                    if (this.isGroupedTurnMode() && this.groupedSegmentId === boundSegment.id) {
-                        this.addGroupedSentenceCount(message.transcript);
-                    }
-                    return;
-                }
-            }
-            let handledByCurrentGroup = false;
-            // ✅ groupedモード: ライブ入力転写から文数を計数して区切りを判断する。
-            //    Path1 の音声再送で発生する転写は二重計数になるため除外する。
-            if (this.isGroupedTurnMode() && !this.segmentResendDepth) {
-                const belongsToFlushedPendingSegment = !!(
-                    this.useAudioQueue &&
-                    !this.groupedSegmentId &&
-                    this.segmentAlignment?.pendingInputSegments?.length
-                );
-                // ✅ 先に現行グループへ入力転写を確定描画してから文数を計数する。
-                //    addGroupedSentenceCount() は MAX_SENTENCES 到達で flushGroupedAudio() を呼び
-                //    groupedSegmentId を null 化するため、計数を先に行うと本転写が左カラムへ描画されず
-                //    pending へ退避して音声認識が空になる（MAX_SENTENCES=1 では毎発話で発生）。
-                if (this.segmentAlignment && this.groupedSegmentId) {
-                    const existing = this.segmentAlignment.getSegment(this.groupedSegmentId);
-                    const nextText = this.joinSegmentTranscriptText(
-                        existing?.input.text,
-                        message.transcript
-                    );
-                    const segment = this.segmentAlignment.updateInput(
-                        this.groupedSegmentId,
-                        nextText,
-                        {
-                            isFinal: true,
-                            source: 'live-sra',
-                            sourceLang:
-                                this.textPathProcessor?.detectLanguageFromTranscript?.(nextText)
-                        }
-                    );
-                    this.upsertSegmentInput(segment.id, segment.input.text, {
-                        status: 'input-ready'
-                    });
-                    this.upsertSegmentOutput(segment.id, segment.output.text, {
-                        status: 'collecting',
-                        placeholder: '翻訳待機中...'
-                    });
-                    handledByCurrentGroup = true;
-                } else if (!belongsToFlushedPendingSegment) {
-                    this.groupedPendingTranscriptText = this.joinSegmentTranscriptText(
-                        this.groupedPendingTranscriptText,
-                        message.transcript
-                    );
-                    handledByCurrentGroup = true;
-                }
-                // 描画後に文数計数（flush で groupedSegmentId が消えても描画済みで取りこぼさない）。
-                if (!belongsToFlushedPendingSegment) {
-                    this.addGroupedSentenceCount(message.transcript);
-                }
-            }
-            if (handledByCurrentGroup) {
-                return;
-            }
-            if (this.useAudioQueue) {
-                if (this.segmentAlignment && !this.segmentResendDepth) {
-                    const segment = this.segmentAlignment.completeNextInput(message.transcript, {
-                        source: 'live-sra',
-                        sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(
-                            message.transcript
-                        )
-                    });
-                    if (segment) {
-                        this.upsertSegmentInput(segment.id, segment.input.text, {
-                            status: 'input-ready'
-                        });
-                        this.upsertSegmentOutput(segment.id, segment.output.text, {
-                            status: 'queued',
-                            placeholder: '翻訳待機中...'
-                        });
-                    }
-                }
-                return;
-            }
+        if (!message.transcript) {
+            return;
+        }
+        // Path1 の音声再送で発生する転写は二重処理になるため無視する。
+        if (!this.useAudioQueue || !this.segmentAlignment || this.segmentResendDepth) {
+            return;
+        }
+
+        // ✅ 路径1(识别) は grouped の flush 状態から完全に独立して左カラムを確定描画する。
+        //    描画先 segment は「item_id で束ねた segment」を第一に解決する。これは
+        //    flushGroupedAudio() が groupedSegmentId を null 化した後でも生存するため、
+        //    MAX_SENTENCES 等の音声区切り設定を変えても認識表示は一切影響を受けない（不漏）。
+        //    解決順: ①item_idバインド済み → ②収集中グループへ今バインド → ③FIFO確定(fallback)。
+        let segment = this.segmentAlignment.getSegmentByItemId(message.item_id);
+        if (!segment && this.groupedSegmentId) {
+            // 収集中グループへ item_id を束ねる（以後の遅延 completed も同 segment へ戻る）。
+            this.segmentAlignment.bindItemId(message.item_id, this.groupedSegmentId);
+            segment = this.segmentAlignment.getSegment(this.groupedSegmentId);
+        }
+        if (segment) {
+            const nextText = this.joinSegmentTranscriptText(segment.input.text, message.transcript);
+            segment = this.segmentAlignment.updateInput(segment.id, nextText, {
+                isFinal: true,
+                source: 'live-sra',
+                sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(nextText)
+            });
+        } else {
+            // グループ未収集/未バインド → FIFO 先頭を確定（従来 fallback）。
+            segment = this.segmentAlignment.completeNextInput(message.transcript, {
+                source: 'live-sra',
+                sourceLang: this.textPathProcessor?.detectLanguageFromTranscript?.(
+                    message.transcript
+                )
+            });
+        }
+        if (segment) {
+            this.upsertSegmentInput(segment.id, segment.input.text, {
+                status: 'input-ready'
+            });
+            this.upsertSegmentOutput(segment.id, segment.output.text, {
+                status: segment.output.responseId ? 'responding' : 'collecting',
+                placeholder: '翻訳待機中...'
+            });
+        }
+
+        // ✅ 音声経路(路径2)の区切り判定にのみ文数を渡す（表示には一切影響しない）。
+        //    描画は既に済んでいるため、この後 flush が groupedSegmentId を null 化しても取りこぼさない。
+        if (this.isGroupedTurnMode()) {
+            this.addGroupedSentenceCount(message.transcript);
         }
     },
 

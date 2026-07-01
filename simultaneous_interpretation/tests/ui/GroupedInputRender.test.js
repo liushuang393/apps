@@ -99,6 +99,7 @@ function createGroupedApp() {
         groupedSampleRate: 24000,
         segmentAlignment: {
             pendingInputSegments: [],
+            bindItemId: () => {}, // item_id→segment バインド（描画の flush 非依存化で使用）
             getSegmentByItemId: () => null, // grouped 分岐へ落とす（item_id 未バインド経路）
             getSegment: (id) => (id === segment.id ? segment : null),
             updateInput: (id, text, opts) => {
