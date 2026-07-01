@@ -1097,9 +1097,10 @@ const WebSocketMixin = {
                     !this.groupedSegmentId &&
                     this.segmentAlignment?.pendingInputSegments?.length
                 );
-                if (!belongsToFlushedPendingSegment) {
-                    this.addGroupedSentenceCount(message.transcript);
-                }
+                // ✅ 先に現行グループへ入力転写を確定描画してから文数を計数する。
+                //    addGroupedSentenceCount() は MAX_SENTENCES 到達で flushGroupedAudio() を呼び
+                //    groupedSegmentId を null 化するため、計数を先に行うと本転写が左カラムへ描画されず
+                //    pending へ退避して音声認識が空になる（MAX_SENTENCES=1 では毎発話で発生）。
                 if (this.segmentAlignment && this.groupedSegmentId) {
                     const existing = this.segmentAlignment.getSegment(this.groupedSegmentId);
                     const nextText = this.joinSegmentTranscriptText(
@@ -1130,6 +1131,10 @@ const WebSocketMixin = {
                         message.transcript
                     );
                     handledByCurrentGroup = true;
+                }
+                // 描画後に文数計数（flush で groupedSegmentId が消えても描画済みで取りこぼさない）。
+                if (!belongsToFlushedPendingSegment) {
+                    this.addGroupedSentenceCount(message.transcript);
                 }
             }
             if (handledByCurrentGroup) {
