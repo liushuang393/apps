@@ -48,6 +48,7 @@ class VoiceTranslateApp {
             //   キャプチャ方式とは独立し、翻訳音声(TTS)の再生可否のみを制御する。
             audioOutputMode: 'translation',
             virtualCardDeviceId: '', // システム音声(Electron)で自動検出した仮想サウンドカードの入力デバイスID
+            preferredInputDeviceId: '', // ヘッダで選択した入力デバイスID。''=自動（モード既定）、非空=ピン留め
             outputDeviceId: null, // 翻訳音声の出力先(物理スピーカー/ヘッドホン)デバイスID。null=未検出, ''=既定出力
             outputDeviceLabel: null, // 上記出力先のデバイス名（ヘッダ右上の表示用）。null=未検出
             isNewResponse: true, // 新しい応答かどうかのフラグ
@@ -240,6 +241,19 @@ class VoiceTranslateApp {
         this.initVAD(); // ✅ VADを先に初期化
         this.loadSettings(); // ✅ 設定を読み込んでVAD灵敏度を適用
 
+        // ヘッダの入力デバイス一覧を初期表示し、抜き差しに追従する（リスナーは1回だけ登録）
+        await this.populateInputDeviceSelect();
+        if (
+            !this._deviceChangeBound &&
+            navigator.mediaDevices &&
+            typeof navigator.mediaDevices.addEventListener === 'function'
+        ) {
+            this._deviceChangeBound = true;
+            navigator.mediaDevices.addEventListener('devicechange', () => {
+                this.populateInputDeviceSelect();
+            });
+        }
+
         // ブラウザ版とElectronアプリの競合を防ぐ
         this.initCrossInstanceSync();
 
@@ -291,7 +305,7 @@ class VoiceTranslateApp {
         this.elements.connectionText = document.getElementById('connectionText');
 
         // 監視中の入力デバイス／翻訳音声の出力先デバイス表示（ヘッダ右上）
-        this.elements.inputDeviceLabel = document.getElementById('inputDeviceLabel');
+        this.elements.inputDeviceSelect = document.getElementById('inputDeviceSelect');
         this.elements.outputDeviceLabel = document.getElementById('outputDeviceLabel');
 
         // 統計
@@ -342,7 +356,7 @@ class VoiceTranslateApp {
         // 未保存のキーのみデフォルトを書き込む。
         // （毎回上書きするとユーザーのOFF選択がリロードで消える＝設定が保存されないバグの真因）
         for (const [key, value] of Object.entries(defaultSettings)) {
-            if (localStorage.getItem(key) == null) {
+            if (localStorage.getItem(key) === null) {
                 localStorage.setItem(key, value);
             }
         }
@@ -527,6 +541,27 @@ class VoiceTranslateApp {
             });
         }
 
+        // ヘッダの入力デバイス選択（auto=モード既定 / 手動=ピン留め）。録音中は即時切替。
+        if (this.elements.inputDeviceSelect) {
+            this.elements.inputDeviceSelect.addEventListener('change', async (e) => {
+                const value = e.target.value === 'auto' ? '' : e.target.value;
+                this.state.preferredInputDeviceId = value;
+                this.saveToStorage('preferred_input_device', value);
+                if (this.state.isRecording) {
+                    try {
+                        await this.stopRecording();
+                        await this.startRecording();
+                    } catch (error) {
+                        this.notify(
+                            '入力デバイス切替に失敗',
+                            '停止→開始で再試行してください: ' + this.extractErrorMessage(error),
+                            'error'
+                        );
+                    }
+                }
+            });
+        }
+
         // VAD感度（自動音声検出OFF時のクライアントVADのみが参照する。
         //   翻訳エンドポイントは turn_detection を受け付けないため、サーバ更新分岐は廃止）
         this.elements.vadSensitivity.addEventListener('change', (e) => {
@@ -701,6 +736,8 @@ class VoiceTranslateApp {
         if (
             this.platform.isElectron &&
             this.state.audioSourceType === 'system' &&
+            // ピン留め中（ヘッダで明示選択）は自動切替しない＝警告のみ（下の通知に落ちる）
+            !this.state.preferredInputDeviceId &&
             (this._captureFallbackStage === 'virtual-card' ||
                 this._captureFallbackStage === 'loopback')
         ) {
@@ -872,6 +909,20 @@ class VoiceTranslateApp {
             const sourceGroup = document.getElementById('systemAudioSourceGroup');
             if (sourceGroup) {
                 sourceGroup.style.display = savedSourceType === 'system' ? 'block' : 'none';
+            }
+        }
+
+        // ✅ ヘッダの入力デバイス選択を復元（''=自動、非空=ピン留めした deviceId）
+        const savedInputDevice = await this.getFromStorage('preferred_input_device');
+        if (savedInputDevice) {
+            this.state.preferredInputDeviceId = savedInputDevice;
+            const deviceSelect = this.elements.inputDeviceSelect;
+            if (deviceSelect) {
+                deviceSelect.value = savedInputDevice;
+                if (deviceSelect.value !== savedInputDevice) {
+                    // まだ一覧に無い（列挙前/取り外し中）間は auto 表示のまま（設定値は保持）
+                    deviceSelect.value = 'auto';
+                }
             }
         }
 
@@ -1122,6 +1173,68 @@ class VoiceTranslateApp {
     }
 
     /**
+     * ヘッダの入力デバイス選択を enumerateDevices() で再構築する。
+     *
+     * 権限未付与だと label が空になるため（既知の罠）、起動時は権限を強制せず
+     * 「マイク N」で表示し、初回キャプチャ後・devicechange 時の再列挙で実名に更新する。
+     * 選択値（auto / ピン留め deviceId）は再構築後も維持する。
+     */
+    async populateInputDeviceSelect() {
+        const select = this.elements.inputDeviceSelect;
+        if (!select || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+            return;
+        }
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const inputs = devices.filter((d) => d.kind === 'audioinput');
+            const virtualPattern = /CABLE|VB-Audio|VoiceMeeter|Virtual|仮想/i;
+            const current = this.state.preferredInputDeviceId || 'auto';
+
+            select.innerHTML = '';
+            const autoOption = document.createElement('option');
+            autoOption.value = 'auto';
+            autoOption.textContent = '🎙️ 自動（推奨）';
+            select.appendChild(autoOption);
+
+            inputs.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                const label = device.label || `マイク ${index + 1}`;
+                option.textContent = (virtualPattern.test(label) ? '🔌 ' : '🎙️ ') + label;
+                option.title = label;
+                select.appendChild(option);
+            });
+
+            // ピン留め中デバイスが一覧から消えた場合は auto へ戻す（存在しない値のまま固まらない）
+            if (current !== 'auto' && !inputs.some((d) => d.deviceId === current)) {
+                this.state.preferredInputDeviceId = '';
+                this.saveToStorage('preferred_input_device', '');
+                select.value = 'auto';
+            } else {
+                select.value = current;
+            }
+        } catch (enumerateError) {
+            // 列挙失敗は致命的でない（auto のまま動作する）
+        }
+    }
+
+    /**
+     * deviceId から入力デバイスの label を引く（見つからなければ null）。
+     *
+     * @param {string} deviceId
+     * @returns {Promise<string|null>}
+     */
+    async lookupInputDeviceLabel(deviceId) {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const device = devices.find((d) => d.kind === 'audioinput' && d.deviceId === deviceId);
+            return device ? device.label || null : null;
+        } catch (enumerateError) {
+            return null;
+        }
+    }
+
+    /**
      * 仮想サウンドカード（VB-CABLE等）の入力デバイスを名前で自動検出する（手動選択UIは廃止）。
      *
      * 目的:
@@ -1252,15 +1365,21 @@ class VoiceTranslateApp {
      * ローカルapp・ブラウザ拡張は同一の teams-realtime-translator.html を読むため共通で動作する。
      */
     updateDeviceIndicator() {
-        const inputEl = this.elements.inputDeviceLabel;
-        if (inputEl) {
+        const select = this.elements.inputDeviceSelect;
+        if (select) {
             const track =
                 this.state.mediaStream && this.state.mediaStream.getAudioTracks
                     ? this.state.mediaStream.getAudioTracks()[0]
                     : null;
-            const inputLabel = track && track.label ? track.label : '—';
-            inputEl.textContent = '🎙️ 入力: ' + inputLabel;
-            inputEl.title = inputLabel;
+            const inputLabel = track && track.label ? track.label : null;
+            // auto オプションに実際の監視先（ground truth = 取得トラックのlabel）を表示する
+            const autoOption = select.querySelector('option[value="auto"]');
+            if (autoOption) {
+                autoOption.textContent = inputLabel
+                    ? `🎙️ 自動（現在: ${inputLabel}）`
+                    : '🎙️ 自動（推奨）';
+            }
+            select.title = inputLabel || '監視する入力デバイス';
         }
         const outputEl = this.elements.outputDeviceLabel;
         if (outputEl) {
@@ -1985,6 +2104,8 @@ class VoiceTranslateApp {
         }
         // 実際に掴んだデバイス名をヘッダ右上へ反映
         this.updateDeviceIndicator();
+        // キャプチャ成功＝権限付与済みで label が読めるため、デバイス一覧を実名に更新する
+        this.populateInputDeviceSelect();
     }
 
     /**
@@ -1997,6 +2118,11 @@ class VoiceTranslateApp {
      * 次の候補へ自動で切り替える。マイクモードには適用されない（マイク固定）。
      */
     async startSystemCaptureWithFallback() {
+        // ヘッダでピン留めされた入力デバイスがあれば最優先（自動フォールバックはしない）
+        if (this.state.preferredInputDeviceId) {
+            await this.startPinnedDeviceCapture(this.state.preferredInputDeviceId);
+            return;
+        }
         const stage = this._captureFallbackTarget || 'virtual-card';
         this._captureFallbackTarget = null;
 
@@ -2030,7 +2156,51 @@ class VoiceTranslateApp {
         }
         await this.startMicrophoneCapture();
         this.setCaptureFallbackStage('microphone');
-        this.notify('マイク監視へフォールバック', 'システム音声が取得できないためマイクを監視します', 'warning');
+        this.notify(
+            'マイク監視へフォールバック',
+            'システム音声が取得できないためマイクを監視します',
+            'warning'
+        );
+    }
+
+    /**
+     * ヘッダでピン留めされた入力デバイスから取得する（システム音声モード用）。
+     *
+     * デバイス名が仮想カード（virtualPattern）なら原声分離扱い（EC/NS/AGC無効）、
+     * それ以外はマイク扱い（EC/NS/AGC有効・ネイティブレート採集でAECを効かせる）。
+     * ピン留め中は無音でも自動切替しない（ユーザーの明示選択を覆さない）。
+     *
+     * @param {string} deviceId ピン留めされた入力デバイスID
+     */
+    async startPinnedDeviceCapture(deviceId) {
+        const label = await this.lookupInputDeviceLabel(deviceId);
+        const isVirtual = /CABLE|VB-Audio|VoiceMeeter|Virtual|仮想/i.test(label || '');
+        const config = isVirtual
+            ? {
+                  sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+                  // デジタル経路のクリーン音源にはマイク向け処理を掛けない
+                  echoCancellation: false,
+                  noiseSuppression: false,
+                  autoGainControl: false
+              }
+            : {
+                  // マイク系は sampleRate を固定しない（ネイティブレートでAECを有効に保つ）
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true
+              };
+        const strategy = AudioCaptureStrategyFactory.createStrategy({
+            sourceType: 'microphone',
+            config,
+            deviceId
+        });
+        this.state.mediaStream = await strategy.capture();
+        this.setCaptureFallbackStage(isVirtual ? 'virtual-card' : 'microphone');
+        this.notify(
+            '指定デバイスを監視',
+            `${label || '選択デバイス'} から取得します（選択中は自動切替しません）`,
+            'info'
+        );
     }
 
     /**
@@ -2279,10 +2449,11 @@ class VoiceTranslateApp {
             autoGainControl: true // 旧トグル既定値(ON)を固定
         };
 
-        // 戦略を作成
+        // 戦略を作成（ヘッダでピン留めされた入力デバイスがあればそこから取得。auto は既定マイク）
         const strategy = AudioCaptureStrategyFactory.createStrategy({
             sourceType: 'microphone',
-            config: config
+            config: config,
+            deviceId: this.state.preferredInputDeviceId || undefined
         });
 
         // 音声キャプチャを実行

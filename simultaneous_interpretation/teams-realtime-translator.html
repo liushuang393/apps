@@ -131,6 +131,18 @@
             white-space: nowrap;
         }
 
+        /* ヘッダの入力デバイス選択（テキスト表示から昇格したセレクト） */
+        .device-select {
+            max-width: 240px;
+            font-size: 11px;
+            padding: 1px 4px;
+            border: 1px solid rgba(128, 128, 128, 0.4);
+            border-radius: 4px;
+            background: transparent;
+            color: var(--text-secondary);
+            text-overflow: ellipsis;
+        }
+
         .status-dot {
             width: 8px;
             height: 8px;
@@ -1158,7 +1170,11 @@
             </div>
             <div class="header-right">
                 <div class="device-badge" id="deviceBadge" title="監視中の入力デバイスと翻訳音声の出力先">
-                    <span id="inputDeviceLabel">🎙️ 入力: —</span>
+                    <!-- 入力デバイス選択: 自動=モード既定（マイク=既定マイク/システム=仮想カード優先）。
+                         手動選択はピン留め（無音でも自動切替しない）。一覧は enumerateDevices で自動列挙。 -->
+                    <select id="inputDeviceSelect" class="device-select" title="監視する入力デバイス">
+                        <option value="auto" selected>🎙️ 自動（推奨）</option>
+                    </select>
                     <span id="outputDeviceLabel">🔊 出力: —</span>
                 </div>
                 <div class="status-badge">
