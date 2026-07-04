@@ -1252,23 +1252,20 @@
                             </div>
                         </div>
 
-                        <!-- 音声出力（聞こえる音）。翻訳音声/原音声/オフ を排他で選ぶ。
-                             翻訳音声は常にPC既定スピーカーへ出力（出力先選択UIは廃止）。
+                        <!-- 翻訳音声(TTS)の再生 ON/OFF。旧3択（翻訳音声/原音声のみ/オフ）は
+                             'original' と 'off' が同一動作（TTSミュート）だったため2値へ統合。
+                             OFFでも認識・テキスト翻訳（字幕）は動き続ける。
                              原音の可聴性は採集方式（タブ共有/仮想カード）に依存する。 -->
-                        <div class="form-group" style="margin-top: 16px;">
-                            <label class="form-label" for="audioOutputMode">🔊 音声出力</label>
-                            <select id="audioOutputMode" class="form-input">
-                                <option value="translation" selected>翻訳音声（推奨）</option>
-                                <option value="original">原音声のみ（字幕で翻訳を読む）</option>
-                                <option value="off">オフ（字幕のみ）</option>
-                            </select>
+                        <div class="toggle-group" style="margin-top: 16px;">
+                            <span class="toggle-label">🔊 翻訳音声を再生</span>
+                            <div class="toggle-switch active" id="audioOutputMode"></div>
                         </div>
 
-                        <!-- 音声検出の感度。クライアント側VAD(this.vad)の閾値を変え、
-                             どの音量から音声として拾い送信するかを制御する（聞き取れない時は「高」）。 -->
+                        <!-- 音声検出の感度。クライアント側VAD(this.vad)の閾値を変える。
+                             自動音声検出ON中はサーバ側で区切るため無効（JSがdisabledを同期）。 -->
                         <div class="form-group" style="margin-top: 16px;">
-                            <label class="form-label" for="vadSensitivity">音声検出の感度（聞き取りにくい時は「高」）</label>
-                            <select id="vadSensitivity" class="form-input">
+                            <label class="form-label" for="vadSensitivity">音声検出の感度（自動音声検出OFF時のみ有効）</label>
+                            <select id="vadSensitivity" class="form-input" disabled>
                                 <option value="low">低（騒音環境）</option>
                                 <option value="medium" selected>中（標準）</option>
                                 <option value="high">高（静音環境）</option>

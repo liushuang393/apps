@@ -210,6 +210,26 @@ const UIMixin = {
     },
 
     /**
+     * 右カラム行の status だけを変更する（テキストには触れない）。
+     * 路径3(Chat確定訳)の失敗時に 'responding' 放置を解消する用途。
+     *
+     * @param {string} segmentId
+     * @param {string} status
+     */
+    setSegmentOutputStatus(segmentId, status) {
+        if (!segmentId || !status) {
+            return;
+        }
+        const container = this.getTranscriptContainer('output');
+        const message = container?.querySelector(
+            `.transcript-message[data-segment-id="${segmentId}"]`
+        );
+        if (message) {
+            message.dataset.status = status;
+        }
+    },
+
+    /**
      * 空状態要素を削除
      * 目的: 最初のメッセージ追加時に空状態表示を削除
      *
@@ -494,6 +514,10 @@ const UIMixin = {
         if (!this.elements || !this.elements.inputTranscript || !this.elements.outputTranscript) {
             return;
         }
+
+        // 翻訳ストリームのペアリング状態も破棄する。残すと訳文確定待ちキューが
+        // 削除済みセグメントIDを指し、以後の訳文が存在しない行へ描画される。
+        this.resetTranslationStreamState?.();
 
         const clearContainer = (containerType) => {
             const container =

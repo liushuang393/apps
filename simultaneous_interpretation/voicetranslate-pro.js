@@ -339,9 +339,12 @@ class VoiceTranslateApp {
             showOutputTranscript: 'true' // ON
         };
 
-        // localStorage に設定を保存
+        // 未保存のキーのみデフォルトを書き込む。
+        // （毎回上書きするとユーザーのOFF選択がリロードで消える＝設定が保存されないバグの真因）
         for (const [key, value] of Object.entries(defaultSettings)) {
-            localStorage.setItem(key, value);
+            if (localStorage.getItem(key) == null) {
+                localStorage.setItem(key, value);
+            }
         }
     }
 
@@ -514,34 +517,26 @@ class VoiceTranslateApp {
             });
         });
 
-        // 音声出力モード（聞こえる音）: 翻訳音声 / 原音声のみ / オフ（字幕のみ）
+        // 翻訳音声の再生 ON/OFF（再生段の単一スイッチ。OFFでも認識・テキスト翻訳は動き続ける）
         if (this.elements.audioOutputMode) {
-            this.elements.audioOutputMode.addEventListener('change', (e) => {
-                this.state.audioOutputMode = e.target.value;
-                this.saveToStorage('audio_output_mode', e.target.value);
+            this.elements.audioOutputMode.addEventListener('click', (e) => {
+                const active = e.currentTarget.classList.toggle('active');
+                this.state.audioOutputMode = active ? 'translation' : 'off';
+                this.saveToStorage('audio_output_mode', this.state.audioOutputMode);
                 this.applyAudioOutputMode();
             });
         }
 
-        // VAD感度
-        this.elements.vadSensitivity.addEventListener('change', async (e) => {
+        // VAD感度（自動音声検出OFF時のクライアントVADのみが参照する。
+        //   翻訳エンドポイントは turn_detection を受け付けないため、サーバ更新分岐は廃止）
+        this.elements.vadSensitivity.addEventListener('change', (e) => {
             this.updateVADSensitivity(e.target.value);
             this.saveToStorage('vad_sensitivity', e.target.value);
-
-            // ✅ Server VAD有効時は、セッション設定を更新
-            if (this.state.isConnected && this.elements.vadEnabled.classList.contains('active')) {
-                try {
-                    await this.updateSessionConfig();
-                } catch (error) {
-                    this.notify('警告', 'VAD設定の反映に失敗しました', 'error');
-                }
-            }
         });
 
         // コントロールボタン
-        // 「接続/切断」ボタンは廃止（画面上は非表示）。「開始」で自動接続、「停止」で切断する。
-        this.elements.connectBtn.addEventListener('click', () => this.start());
-        this.elements.disconnectBtn.addEventListener('click', () => this.stop());
+        // 「接続/切断」ボタンは廃止（非表示のためリスナーは張らない。要素は接続状態
+        //  表示の互換参照が残るため残置）。「開始」で自動接続、「停止」で切断する。
         this.elements.startBtn.addEventListener('click', () => this.start());
         this.elements.stopBtn.addEventListener('click', () => this.stop());
 
@@ -700,11 +695,36 @@ class VoiceTranslateApp {
             return;
         }
 
-        // 監視先が無音（キャプチャ方式はプラットフォーム固定のため自動切替はしない）→ 設定/配線の確認を促す
+        // 監視先が無音 → システム音声モード(Electron)は次の監視候補へ自動フォールバックする
+        // （優先順位: 仮想カード→ループバック→マイク）。検証は録音開始時の5秒窓でのみ走るため、
+        // 会議中の沈黙で勝手に切り替わることはない。マイクモードは対象外（マイク固定）。
+        if (
+            this.platform.isElectron &&
+            this.state.audioSourceType === 'system' &&
+            (this._captureFallbackStage === 'virtual-card' ||
+                this._captureFallbackStage === 'loopback')
+        ) {
+            const fromLabel =
+                this._captureFallbackStage === 'virtual-card'
+                    ? '仮想サウンドカード'
+                    : 'ループバック';
+            this._captureFallbackTarget =
+                this._captureFallbackStage === 'virtual-card' ? 'loopback' : 'microphone';
+            this.notify(
+                '音声が検出できません',
+                `${fromLabel}が無音のため、次の監視先へ自動で切り替えます`,
+                'warning'
+            );
+            this.fallbackToNextCaptureSource();
+            return;
+        }
+
         this.notify(
             '音声が検出できません',
             this.platform.isElectron
-                ? '仮想サウンドカードから音声が検出できません。会議アプリ/既定の出力先を「CABLE Input」に設定しているか確認してください。'
+                ? this._captureFallbackStage === 'microphone'
+                    ? 'マイクからも音声が検出できません。入力デバイスの設定を確認してください。'
+                    : '仮想サウンドカードから音声が検出できません。会議アプリ/既定の出力先を「CABLE Input」に設定しているか確認してください。'
                 : '共有したタブ/画面から音声が検出できません。「タブ」を選び「タブの音声を共有」にチェックが入っているか確認してください。',
             'error'
         );
@@ -713,13 +733,35 @@ class VoiceTranslateApp {
     /**
      * 自動音声検出トグルの処理
      *
-     * 目的:
-     *   自動音声検出設定が変更された場合、セッションを更新
+     * 注意:
+     *   翻訳エンドポイントは turn_detection を受け付けないため、サーバ設定は更新しない。
+     *   実効果はクライアント側の送信方式の切替:
+     *   ON = 全音声を送信しサーバ側で発話を区切る / OFF = クライアントVADが有音区間のみ送信。
      */
     handleVadToggle() {
-        if (this.state.isConnected) {
-            this.updateSession();
+        const isActive = this.elements.vadEnabled.classList.contains('active');
+        this.updateVadSensitivityAvailability();
+        this.notify(
+            '自動音声検出',
+            isActive
+                ? 'ON: 全音声を送信し、サーバ側で発話を区切ります'
+                : 'OFF: クライアントVADが有音区間のみ送信します（感度設定が有効になります）',
+            'info'
+        );
+    }
+
+    /**
+     * 感度セレクトの有効/無効を自動音声検出トグルに同期する。
+     *
+     * 感度（this.vad.threshold）は自動音声検出OFF時のクライアントVADだけが参照するため、
+     * ON中は無効化して「効かない設定」に見えるのを防ぐ。
+     */
+    updateVadSensitivityAvailability() {
+        if (!this.elements.vadSensitivity || !this.elements.vadEnabled) {
+            return;
         }
+        this.elements.vadSensitivity.disabled =
+            this.elements.vadEnabled.classList.contains('active');
     }
 
     /**
@@ -744,11 +786,18 @@ class VoiceTranslateApp {
      * 目的:
      *   翻訳音声(TTS)を鳴らすかを state.audioOutputMode に従って制御する（単一の真実源）。
      *   - 'translation': 翻訳音声を再生（ブラウザ=WebRTCの<audio>を unmute＋play、Electron/WS=playAudioChunk許可）
-     *   - 'original' / 'off': 翻訳音声をミュート（字幕は別ストリームなので影響しない＝底線）
+     *   - 'off': 翻訳音声を止める（字幕は別ストリームなので影響しない＝底線）
      *   原音の可聴性は採集方式に依存するため、ここでは制御しない。
      */
     applyAudioOutputMode() {
-        const playTranslation = this.state.audioOutputMode === 'translation';
+        // ループバック監視中は回灌防止のため実行時フラグで強制ミュート（ユーザー設定は不変）
+        const playTranslation =
+            this.state.audioOutputMode === 'translation' && !this._ttsSuppressedByLoopback;
+        // OFF: 新規チャンクは playAudioChunk が遮断するが、Web Audioクロックへ先読み予約済みの
+        // 音声は鳴り続けるため、スケジュール済みソースもここで即停止する（Electron/WS経路）。
+        if (!playTranslation && typeof this.clearPlaybackQueue === 'function') {
+            this.clearPlaybackQueue();
+        }
         const el = this.state.translatedAudioEl;
         if (!el) {
             return;
@@ -789,8 +838,7 @@ class VoiceTranslateApp {
             // ✅ 修正: sourceLang は自動検出に変更、ストレージから読む必要なし
             // sourceLang: await this.getFromStorage('source_lang'),
             targetLang: await this.getFromStorage('target_lang'),
-            vadSensitivity: await this.getFromStorage('vad_sensitivity'),
-            outputVolume: await this.getFromStorage('output_volume')
+            vadSensitivity: await this.getFromStorage('vad_sensitivity')
         };
 
         if (settings.apiKey) {
@@ -812,6 +860,21 @@ class VoiceTranslateApp {
 
         // 音色/モデル選択UIは廃止。モデルは CONFIG / .env から決定する。
 
+        // ✅ 音声ソース種別を復元（保存されるのに復元されていなかった）。
+        //    感度プリセットは CONFIG.VAD[sourceType] を参照するため、感度適用より先に復元する。
+        const savedSourceType = await this.getFromStorage('audio_source_type');
+        if (savedSourceType === 'system' || savedSourceType === 'microphone') {
+            this.state.audioSourceType = savedSourceType;
+            const sourceTypeEl = document.getElementById('audioSourceType');
+            if (sourceTypeEl) {
+                sourceTypeEl.value = savedSourceType;
+            }
+            const sourceGroup = document.getElementById('systemAudioSourceGroup');
+            if (sourceGroup) {
+                sourceGroup.style.display = savedSourceType === 'system' ? 'block' : 'none';
+            }
+        }
+
         if (settings.vadSensitivity) {
             this.elements.vadSensitivity.value = settings.vadSensitivity;
             // ✅ VAD灵敏度を適用（initVAD後に呼び出す必要がある）
@@ -819,11 +882,6 @@ class VoiceTranslateApp {
         } else {
             // デフォルト値を適用
             this.updateVADSensitivity('medium');
-        }
-
-        // 出力音量設定を復元
-        if (settings.outputVolume) {
-            this.state.outputVolume = Number.parseFloat(settings.outputVolume);
         }
 
         // トグル設定
@@ -834,12 +892,18 @@ class VoiceTranslateApp {
                 this.elements[id].classList.remove('active');
             }
         }
+        // 感度セレクトの有効/無効を自動音声検出の状態に同期
+        this.updateVadSensitivityAvailability();
 
-        // ✅ 音声出力モード（聞こえる音）を復元（既定: 翻訳音声）。リロード後も選択を保持する。
+        // ✅ 翻訳音声の再生設定を復元（既定: 再生）。旧3択の 'original' は 'off' と同一動作だったため統合。
         const savedOutputMode = await this.getFromStorage('audio_output_mode');
-        this.state.audioOutputMode = savedOutputMode || 'translation';
+        this.state.audioOutputMode =
+            savedOutputMode === 'off' || savedOutputMode === 'original' ? 'off' : 'translation';
         if (this.elements.audioOutputMode) {
-            this.elements.audioOutputMode.value = this.state.audioOutputMode;
+            this.elements.audioOutputMode.classList.toggle(
+                'active',
+                this.state.audioOutputMode === 'translation'
+            );
         }
         this.applyAudioOutputMode();
     }
@@ -1334,6 +1398,8 @@ class VoiceTranslateApp {
         if (this.state.isConnected) {
             await this.closeTranslationSessionGracefully();
         }
+        // 未確定の字幕バッファを確定（WebRTC は session.closed を受けないため必須。WSでは冪等）。
+        this.flushTranslationCaptions?.();
 
         if (this.platform.isElectron) {
             // Electron環境
@@ -1368,6 +1434,9 @@ class VoiceTranslateApp {
 
     handleWSOpen() {
         clearTimeout(this.timers.connectionTimeout);
+
+        // 前セッションの残留ペアリング状態（訳文確定待ちキュー等）を破棄（再接続時の誤結線防止）
+        this.resetTranslationStreamState?.();
 
         this.state.isConnected = true;
         this.updateConnectionStatus('connected');
@@ -1596,6 +1665,9 @@ class VoiceTranslateApp {
     handleWebRtcConnected() {
         clearTimeout(this.timers.connectionTimeout);
 
+        // 前セッションの残留ペアリング状態（訳文確定待ちキュー等）を破棄（再接続時の誤結線防止）
+        this.resetTranslationStreamState?.();
+
         this.state.isConnected = true;
         this.updateConnectionStatus('connected');
         this.elements.connectBtn.disabled = true;
@@ -1715,19 +1787,7 @@ class VoiceTranslateApp {
         // VAD感度/音源切替時のセッション更新は不要。何もしない。
     }
 
-    async sendMessage(message) {
-        if (this.platform.isElectron) {
-            // Electron環境（mainプロセス経由IPC）
-            const result = await this.platform.sendRealtime(message);
-            if (!result.success) {
-            }
-        } else if (this.state.ws && this.state.ws.readyState === WebSocket.OPEN) {
-            // ブラウザ環境
-            this.state.ws.send(JSON.stringify(message));
-        }
-    }
-
-    // handleWSMessage は WebSocketMixin 側が唯一の実体（notifyRealtimeMessageListeners を含む）。
+    // sendMessage / handleWSMessage は WebSocketMixin 側が唯一の実体（notifyRealtimeMessageListeners を含む）。
     // ここに class メソッドを再定義すると Object.assign(prototype, WebSocketMixin) で上書きされ無効になるため定義しない。
     /**
      * 録音を開始
@@ -1911,19 +1971,148 @@ class VoiceTranslateApp {
     async routeAudioCapture() {
         if (this.state.audioSourceType === 'system') {
             // ✅ キャプチャ方式はプラットフォームで自動決定（出力モードとは独立）
-            //   Electron → 仮想サウンドカード(VB-CABLE)を監視（原声分離・回灌に最強）
+            //   Electron → 仮想カード→ループバック→マイクの自動フォールバック付き監視
             //   ブラウザ → getDisplayMedia（タブ音声共有）で会議タブを監視
             if (this.platform.isElectron) {
-                await this.startVirtualCardCapture();
+                await this.startSystemCaptureWithFallback();
             } else {
                 await this.startSystemAudioCapture();
             }
         } else {
-            // マイクキャプチャ（既存機能）
+            // マイクキャプチャ（既存機能）。マイクモードはフォールバック対象外＝マイク固定。
             await this.startMicrophoneCapture();
+            this.setCaptureFallbackStage(null);
         }
         // 実際に掴んだデバイス名をヘッダ右上へ反映
         this.updateDeviceIndicator();
+    }
+
+    /**
+     * システム音声（Electron）の監視ソースを優先順位付きで確保する。
+     *
+     * 優先順位: ①仮想サウンドカード（VB-CABLE、原声分離・回灌に最強）
+     *           ②ループバック（システム既定出力＝ヘッドホン/スピーカーに鳴っている音）
+     *           ③マイク（最終フォールバック）
+     * 開始後の無音検証（5秒窓）で無音だった場合も evaluateSilenceVerification が
+     * 次の候補へ自動で切り替える。マイクモードには適用されない（マイク固定）。
+     */
+    async startSystemCaptureWithFallback() {
+        const stage = this._captureFallbackTarget || 'virtual-card';
+        this._captureFallbackTarget = null;
+
+        if (stage === 'virtual-card') {
+            if (!this.state.virtualCardDeviceId) {
+                await this.autoDetectVirtualCard();
+            }
+            if (this.state.virtualCardDeviceId) {
+                await this.startVirtualCardCapture();
+                this.setCaptureFallbackStage('virtual-card');
+                return;
+            }
+            this.notify(
+                '仮想サウンドカード未検出',
+                '既定出力のループバック監視へ切り替えます（VB-CABLE導入で原声分離監視が可能になります）',
+                'warning'
+            );
+        }
+        if (stage !== 'microphone') {
+            try {
+                await this.startLoopbackCapture();
+                this.setCaptureFallbackStage('loopback');
+                return;
+            } catch (error) {
+                this.notify(
+                    'ループバック監視に失敗',
+                    'マイク監視へ切り替えます: ' + this.extractErrorMessage(error),
+                    'warning'
+                );
+            }
+        }
+        await this.startMicrophoneCapture();
+        this.setCaptureFallbackStage('microphone');
+        this.notify('マイク監視へフォールバック', 'システム音声が取得できないためマイクを監視します', 'warning');
+    }
+
+    /**
+     * システム既定出力のループバック監視を開始する（Electron・フォールバック用）。
+     *
+     * desktopCapturer のウィンドウソース（会議アプリ優先）を掴むと、Windows では
+     * システム既定出力（ヘッドホン/スピーカー）のループバック音声が得られる。
+     * この経路では翻訳音声(TTS)も再取り込みされるため、setCaptureFallbackStage('loopback')
+     * が TTS 再生を自動ミュートする（回灌による認識崩れの防止）。
+     *
+     * @throws {Error} キャプチャソースが1つも取得できない場合
+     */
+    async startLoopbackCapture() {
+        const sources = await this.platform.detectMeetingApps();
+        if (!sources || sources.length === 0) {
+            throw new Error('ループバック用のキャプチャソースが見つかりません');
+        }
+        const meetingPattern = /Teams|Zoom|Meet|Skype|Discord|Slack|Webex/i;
+        const chosen = sources.find((s) => meetingPattern.test(s.name || '')) || sources[0];
+
+        const strategy = AudioCaptureStrategyFactory.createStrategy({
+            sourceType: 'system',
+            config: {
+                sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+                // デジタル経路のクリーン音源にはマイク向け処理を掛けない
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            },
+            sourceId: chosen.id
+        });
+        this.state.mediaStream = await strategy.capture();
+        this.notify(
+            'ループバック監視を開始',
+            `既定出力の音声を監視します（ソース: ${chosen.name}）`,
+            'success'
+        );
+    }
+
+    /**
+     * 現在の監視段を記録し、ループバック段では翻訳音声(TTS)の再生を自動抑止する。
+     *
+     * ループバックはシステム既定出力を丸ごと取り込むため、TTSを鳴らすと訳音声が
+     * 再入力されて認識・翻訳が崩れる（回灌）。抑止は実行時フラグで行い、ユーザーの
+     * audioOutputMode 設定（localStorage）は書き換えない＝段が変われば自動復帰する。
+     *
+     * @param {'virtual-card'|'loopback'|'microphone'|null} stage 監視段（マイクモードは null）
+     */
+    setCaptureFallbackStage(stage) {
+        this._captureFallbackStage = stage;
+        const suppress = stage === 'loopback';
+        if (suppress !== Boolean(this._ttsSuppressedByLoopback)) {
+            this._ttsSuppressedByLoopback = suppress;
+            this.applyAudioOutputMode();
+            if (suppress) {
+                this.notify(
+                    '翻訳音声を一時ミュート',
+                    'ループバック監視中は翻訳音声が再取り込みされ認識が乱れるため、字幕のみで運用します',
+                    'warning'
+                );
+            }
+        }
+    }
+
+    /**
+     * 監視ソースを次の候補で取り直す（録音の停止→再開で確実に配線し直す）。
+     * 呼び出し前に this._captureFallbackTarget へ次段を設定しておくこと。
+     */
+    async fallbackToNextCaptureSource() {
+        if (!this.state.isRecording) {
+            return;
+        }
+        try {
+            await this.stopRecording();
+            await this.startRecording();
+        } catch (error) {
+            this.notify(
+                '音声ソース切替に失敗',
+                '停止→開始で再試行してください: ' + this.extractErrorMessage(error),
+                'error'
+            );
+        }
     }
 
     /**

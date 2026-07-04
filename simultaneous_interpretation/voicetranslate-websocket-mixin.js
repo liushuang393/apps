@@ -395,29 +395,6 @@ const WebSocketMixin = {
         if (!this.translationCaption) {
             this.translationCaption = { input: '', output: '' };
         }
-        // 訳文は原文より遅れて届くため、行対確定（入力確定）の後に前ターンの尻尾が到着する。
-        // 新ターンの入力がまだ始まっていなければ、直前の行対の右セルへ追記する（孤児行を防ぐ）。
-        // まれに次ターンの訳文冒頭を前の行対へ置くことがあるが、路径3の Chat 確定訳が
-        // 両行対の右セルを原文ベースで上書きするため、最終表示は正しくなる。
-        if (
-            kind === 'output' &&
-            !this.translationCaption.input &&
-            !this.translationCaption.output &&
-            this._lastRecognizedSegmentId &&
-            typeof this.upsertSegmentOutput === 'function'
-        ) {
-            let tail = delta;
-            if (!this._outputPreview) {
-                tail = tail.replace(/^[\s、。，．,.!?！？;；:：]+/u, '');
-            }
-            if (tail) {
-                this._outputPreview = (this._outputPreview || '') + tail;
-                this.upsertSegmentOutput(this._lastRecognizedSegmentId, this._outputPreview, {
-                    status: 'responding'
-                });
-            }
-            return;
-        }
         this.translationCaption[kind] += delta;
         // 禁則処理: 行頭(セグメント先頭)に句読点を置かない。サーバが句末句読点を次セグメントの
         //   先頭 delta として送るため、放置すると「。」「、」始まりの確定行ができる。
@@ -430,13 +407,25 @@ const WebSocketMixin = {
             // 先頭句読点のみを除去して空になった場合は、空のライブ行を作らない。
             return;
         }
-        // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
-        //    （確定時に commitTranslationCaption がライブ行を確定行へ置き換える）
-        this.renderLiveCaption(kind, buffered);
+        // ✅ 左右1:1（FIFO）: 訳文は原文より遅れて届くため「入力確定時点のバッファ」をペアに
+        //    すると右列が1行ズレる（旧実装の主因）。訳文デルタは「訳文確定待ちの最古の行対」
+        //    ＝キュー先頭の右セルへ直接描画する。キューが空（先行訳文/転写OFF）の間のみライブ行。
+        if (
+            kind === 'output' &&
+            this._pendingOutputSegments?.length &&
+            typeof this.upsertSegmentOutput === 'function'
+        ) {
+            this.upsertSegmentOutput(this._pendingOutputSegments[0], buffered, {
+                status: 'responding'
+            });
+        } else {
+            // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
+            //    （確定時に commitTranslationCaption がライブ行を確定行へ置き換える）
+            this.renderLiveCaption(kind, buffered);
+        }
         // ✅ BUG1(左右1:1): 確定境界はサーバの session.*_transcript.done に一本化する。
-        //    句読点での早期確定は左右カラムで切る回数が食い違い、対応を崩す主因のため廃止。
-        //    両列が「サーバの .done」という単一ルールで切れるので、順に並べるだけで 1:1。
-        //    .done が来ない場合の取りこぼし防止としてアイドル確定のみ保険で残す(両列同一規則)。
+        //    .done が来ない場合の取りこぼし防止としてアイドル確定のみ保険で残す(両列同一規則。
+        //    output側はキュー先頭行対の確定+dequeueとして働く＝ターンを跨ぐ累積を防ぐ)。
         this.scheduleTranslationCaptionFlush(kind);
     },
 
@@ -454,23 +443,43 @@ const WebSocketMixin = {
         if (!this.translationCaption) {
             return;
         }
-        // 入力の現行ターンが未確定のうちは訳文だけを先に確定しない。行対の境界は
-        // 「入力確定」に一本化し、そのとき右セルへ吸収する（左右1:1の単一ルール）。
-        // 入力側は自身のアイドルタイマーで必ず確定するためデッドロックしない。
-        if (kind === 'output' && this.translationCaption.input) {
-            return;
-        }
         const text = (this.translationCaption[kind] || '').trim();
         this.translationCaption[kind] = '';
-        // ✅ ライブ表示中の暫定行を消し、確定行へ置き換える。
-        this.clearLiveCaption(kind);
-        if (!text) {
-            return;
-        }
         if (kind === 'input') {
+            // ✅ ライブ表示中の暫定行を消し、確定行へ置き換える。
+            this.clearLiveCaption(kind);
+            if (!text) {
+                return;
+            }
             this.commitTranslationPair(text);
             return;
         }
+        // output の確定（サーバ .done またはアイドルflush）
+        if (this._pendingOutputSegments?.length) {
+            // ✅ 左右1:1: 訳文確定待ちの最古の行対（キュー先頭）の訳文として確定し、次へ進む。
+            const segmentId = this._pendingOutputSegments.shift();
+            this.clearLiveCaption(kind);
+            if (text && typeof this.upsertSegmentOutput === 'function') {
+                this.upsertSegmentOutput(segmentId, text, { status: 'stream-final' });
+            }
+            // 空（禁則除去で消えた等）なら placeholder を維持し、路径3(Chat確定訳)が埋める。
+            return;
+        }
+        if (!text) {
+            this.clearLiveCaption(kind);
+            return;
+        }
+        if (this.translationCaption.input) {
+            // 訳文が入力確定より先に完了したターン: 保留し、直後の入力確定が同一行対として回収する
+            // （入力側は自身のアイドルflushで必ず確定するため、保留が滞留することはない）。
+            // ライブ行は残す＝回収まで訳文が画面から消えないようにする。
+            if (!this._heldOutputs) {
+                this._heldOutputs = [];
+            }
+            this._heldOutputs.push(text);
+            return;
+        }
+        this.clearLiveCaption(kind);
         // 入力転写が無い（転写設定OFF・転写失敗）場合の不漏フォールバック: 訳文のみを時系列で確定。
         if (typeof this.addTranscript === 'function') {
             this.addTranscript('output', text, null);
@@ -478,32 +487,25 @@ const WebSocketMixin = {
     },
 
     /**
-     * 入力確定文と、その時点までに届いた訳文プレビューを同じ行対（segment）として確定する。
+     * 入力確定文を新しい行対（segment）として確定し、訳文確定待ちFIFOへ登録する。
      *
      * 翻訳エンドポイントの transcript ストリームには左右対応キー（item_id等）が無いため、
-     * 「入力確定」を行対の境界とし、バッファ中の訳文を同ターンの右セルとみなす。
-     * 確定後に遅れて届く訳文の尻尾は handleTranslationTranscriptDelta が同セルへ追記し、
+     * 「一段一翻译」（サーバ .done = 境界、1入力セグメント↔1訳文）を FIFO の順序で対応付ける。
+     * 訳文側は handleTranslationTranscriptDelta がキュー先頭の右セルへ描画し、
+     * output の .done（commitTranslationCaption）が先頭を確定して次の行対へ進む。
      * 最終的には路径3（Chat 高精度翻訳）が右セルを原文ベースで確定更新する（准）。
      *
      * @param {string} inputText 確定した原文
      */
     commitTranslationPair(inputText) {
-        let outputText = '';
-        if (this.translationCaption) {
-            outputText = (this.translationCaption.output || '').trim();
-            this.translationCaption.output = '';
-        }
-        if (this.captionFlushTimers && this.captionFlushTimers.output) {
-            clearTimeout(this.captionFlushTimers.output);
-            this.captionFlushTimers.output = null;
-        }
-        this.clearLiveCaption('output');
-
         if (!this.segmentAlignment) {
             // アライメント層が無くても表示は落とさない（不漏の底線）: 時系列行で確定する。
             if (typeof this.addTranscript === 'function') {
                 this.addTranscript('input', inputText, null);
+                const outputText = (this.translationCaption?.output || '').trim();
                 if (outputText) {
+                    this.translationCaption.output = '';
+                    this.clearLiveCaption('output');
                     this.addTranscript('output', outputText, null);
                 }
             }
@@ -519,14 +521,34 @@ const WebSocketMixin = {
             sourceLang,
             status: 'input-ready'
         });
-        // 路径2の尻尾追記（output_transcript.delta）を本行対の右セルへ向ける。
-        this._lastRecognizedSegmentId = segment.id;
-        this._outputPreview = outputText;
         this.upsertSegmentInput(segment.id, inputText, { status: 'input-ready' });
-        this.upsertSegmentOutput(segment.id, outputText, {
-            status: outputText ? 'responding' : 'collecting',
-            placeholder: '翻訳中...'
-        });
+
+        if (this._heldOutputs && this._heldOutputs.length) {
+            // 訳文が入力確定より先に完了していたターン: 保留分を本行対の訳文として回収する
+            // （既に確定済みの訳文なので FIFO には積まない）。
+            const held = this._heldOutputs.shift();
+            this.upsertSegmentOutput(segment.id, held, { status: 'stream-final' });
+            if (!(this.translationCaption?.output || '').trim()) {
+                this.clearLiveCaption('output');
+            }
+        } else {
+            // 訳文確定待ちFIFOへ登録。以後の output デルタ/確定はキュー先頭＝最古の行対へ向かう。
+            if (!this._pendingOutputSegments) {
+                this._pendingOutputSegments = [];
+            }
+            this._pendingOutputSegments.push(segment.id);
+            this.upsertSegmentOutput(segment.id, '', {
+                status: 'collecting',
+                placeholder: '翻訳中...'
+            });
+            // 本ターンの訳文が先行ストリーミング中（キューが空だった間のライブ行）なら、
+            // 本行対の右セルへ移す。バッファは output .done での確定用に残す。
+            const buffered = (this.translationCaption?.output || '').trim();
+            if (buffered && this._pendingOutputSegments[0] === segment.id) {
+                this.upsertSegmentOutput(segment.id, buffered, { status: 'responding' });
+                this.clearLiveCaption('output');
+            }
+        }
         // ✅ 路径3(补精度): Chat 高精度翻訳で同じ行対の右セルを確定更新（デバウンス付き・非ブロッキング）。
         this.refineSegmentTranslation(segment.id, inputText, sourceLang);
     },
@@ -557,9 +579,34 @@ const WebSocketMixin = {
         if (!this.translationCaption) {
             return;
         }
-        // input を先に確定する（行対がバッファ中の output を吸収し、残りを output 確定が拾う）。
+        // input を先に確定する（行対がFIFOへ載り、続く output 確定がその行対を埋める）。
         for (const kind of ['input', 'output']) {
             this.commitTranslationCaption(kind);
+        }
+    },
+
+    /**
+     * 翻訳ストリームの表示ペアリング状態を初期化する。
+     *
+     * 接続/再接続時・トランスクリプトクリア時に呼び、前セッションの残留キュー/バッファが
+     * 新しいストリームの行対へ誤って紐づく（削除済みセグメントIDへの描画等）のを防ぐ。
+     */
+    resetTranslationStreamState() {
+        if (this.captionFlushTimers) {
+            for (const kind of ['input', 'output']) {
+                if (this.captionFlushTimers[kind]) {
+                    clearTimeout(this.captionFlushTimers[kind]);
+                    this.captionFlushTimers[kind] = null;
+                }
+            }
+        }
+        this.translationCaption = { input: '', output: '' };
+        this._pendingOutputSegments = [];
+        this._heldOutputs = [];
+        this.latencyTurnStartAt = null;
+        if (typeof this.clearLiveCaption === 'function') {
+            this.clearLiveCaption('input');
+            this.clearLiveCaption('output');
         }
     },
 
@@ -1288,10 +1335,6 @@ const WebSocketMixin = {
             });
         }
         if (segment) {
-            // 路径2の即時プレビュー（output_transcript.delta）を本 segment の右へ向ける。
-            //   新しい認識確定＝新しいターン境界。プレビュー累積はここでリセットする。
-            this._lastRecognizedSegmentId = segment.id;
-            this._outputPreview = '';
             this.upsertSegmentInput(segment.id, segment.input.text, {
                 status: 'input-ready'
             });
@@ -1351,6 +1394,8 @@ const WebSocketMixin = {
     async translateSegmentViaChat(segmentId, text, sourceLang) {
         try {
             if (!this.state.apiKey || typeof fetch !== 'function') {
+                // 補精度が走れない場合はストリーム訳のまま確定扱いにする（'responding' 放置を防ぐ）。
+                this.setSegmentOutputStatus?.(segmentId, 'stream-final');
                 return;
             }
             const targetLangName = Utils.getLanguageName(this.state.targetLang || 'ja');
@@ -1382,7 +1427,9 @@ const WebSocketMixin = {
                 body: JSON.stringify(body)
             });
             if (!res.ok) {
-                return; // placeholder 維持（不漏）
+                // 失敗時はテキストを消さず（不漏）、ストリーム訳のまま確定状態へ落とす。
+                this.setSegmentOutputStatus?.(segmentId, 'stream-final');
+                return;
             }
             const data = await res.json();
             const raw = data?.choices?.[0]?.message?.content || '';
@@ -1391,14 +1438,12 @@ const WebSocketMixin = {
             ).trim();
             if (translated && typeof this.upsertSegmentOutput === 'function') {
                 this.upsertSegmentOutput(segmentId, translated, { status: 'translated' });
-                // 以降に遅れて届く訳文の尻尾（session.output_transcript.delta）が
-                // 確定訳を上書きしないよう、追記先ポインタを閉じる。
-                if (this._lastRecognizedSegmentId === segmentId) {
-                    this._lastRecognizedSegmentId = null;
-                }
+            } else {
+                this.setSegmentOutputStatus?.(segmentId, 'stream-final');
             }
         } catch (error) {
-            // ネットワーク/API エラーは placeholder を維持（表示は消さない＝不漏の底線）。
+            // ネットワーク/API エラー: テキストは消さず（不漏の底線）、確定状態へ落とす。
+            this.setSegmentOutputStatus?.(segmentId, 'stream-final');
         }
     },
 
@@ -1769,9 +1814,9 @@ const WebSocketMixin = {
         if (!base64Audio || typeof base64Audio !== 'string') {
             return;
         }
-        // ✅ 音声出力モードが「翻訳音声」以外なら再生しない（原音のみ/字幕のみ）。
+        // ✅ 音声出力OFF、またはループバック監視中（回灌防止の自動ミュート）は再生しない。
         //    単一の真実源 state.audioOutputMode を直接見るため、トグル不整合で無音化しない。
-        if (this.state.audioOutputMode !== 'translation') {
+        if (this.state.audioOutputMode !== 'translation' || this._ttsSuppressedByLoopback) {
             return;
         }
         // ✅ 順序保証＋出力Context初期化レース回避のためスケジューリングを直列化する。
