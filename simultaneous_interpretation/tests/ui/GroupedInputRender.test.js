@@ -150,6 +150,25 @@ describe('groupedモードの左カラム描画（回帰ガード: MAX_SENTENCES
         expect(segment.input.source).toBe('live-sra');
     });
 
+    it('路径3(补精度): 同一 segment の複数 completed をデバウンスし最終文で1回だけ翻訳起動する', async () => {
+        const { app } = createGroupedApp();
+        const calls = [];
+        // 実 Chat 呼び出しは行わず、起動引数だけ記録（Object.assign 後に差し替え）。
+        app.translateSegmentViaChat = (id, text) => {
+            calls.push({ id, text });
+        };
+
+        // grouped の1 segment に複数 completed が来る状況（短時間に2回）。
+        app.refineSegmentTranslation('segX', '你好', 'zh');
+        app.refineSegmentTranslation('segX', '你好世界', 'zh');
+        expect(calls).toHaveLength(0); // デバウンス中はまだ起動しない
+
+        await new Promise((resolve) => setTimeout(resolve, 650));
+        expect(calls).toHaveLength(1); // 最後の1回だけ起動
+        expect(calls[0].id).toBe('segX');
+        expect(calls[0].text).toBe('你好世界'); // 最終テキスト
+    });
+
     it('連続する複数ターンの転写がすべて左カラムに残る（取りこぼしなし）', () => {
         const { app, inputContainer, segment } = createGroupedApp();
 

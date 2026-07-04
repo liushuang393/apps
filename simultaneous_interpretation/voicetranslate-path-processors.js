@@ -62,6 +62,16 @@ class TextPathProcessor {
             throw new Error('segment は null または undefined です');
         }
 
+        // 翻訳専用セッション（/v1/realtime/translations）は conversation.item.* 転写イベントも
+        // 手動 commit も持たない（公式仕様）。音声再送は未知イベントエラーと STT タイムアウトを
+        // 生むだけなので行わない。左カラムは session.input_transcript ストリームが担う。
+        if (this.app.isRealtimeTranslationSession?.()) {
+            this.audioQueue.markPathComplete(segment.id, 'path1', {
+                skipped: 'translation-session'
+            });
+            return;
+        }
+
         try {
             this.isProcessing = true;
 

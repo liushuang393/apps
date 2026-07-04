@@ -1329,6 +1329,12 @@ class VoiceTranslateApp {
             }
         }
 
+        // 公式手順: 翻訳セッション(WS)は session.close を送り session.closed を待ってから
+        // ソケットを閉じる（残余の翻訳音声・字幕の flush を待つ。応答が無ければタイムアウト）。
+        if (this.state.isConnected) {
+            await this.closeTranslationSessionGracefully();
+        }
+
         if (this.platform.isElectron) {
             // Electron環境
             await this.platform.closeRealtime();
@@ -1782,6 +1788,8 @@ class VoiceTranslateApp {
                 this.startSilenceVerification();
             }
         } catch (error) {
+            // 録音を開始できなかったので消費者ループも戻す（interval リーク防止）
+            this.stopPathConsumers();
             // エラーメッセージを安全に抽出
             const errorMessage = this.extractErrorMessage(error);
             // エラー時もモードロックをクリア
@@ -3593,6 +3601,9 @@ document.addEventListener('DOMContentLoaded', () => {
  * ✅ プル型アーキテクチャ: パス消費者ループを開始
  */
 VoiceTranslateApp.prototype.startPathConsumers = function () {
+    // 再入時（開始失敗→再開始など）に旧 interval を上書きで漏らさないよう、必ず先に停止する。
+    this.stopPathConsumers();
+
     // ✅ Path1 消費者ループ（テキストパス）
     this.path1ConsumerInterval = setInterval(async () => {
         if (this.textPathProcessor.isProcessing) {

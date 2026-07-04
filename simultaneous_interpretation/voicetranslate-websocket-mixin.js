@@ -20,6 +20,12 @@ const REALTIME_MIN_COMMIT_AUDIO_MS = 100;
 // 左カラムの原文STTは句末標点が来ないことが多く、これが無いと累積したまま表示されない。
 const TRANSLATION_CAPTION_IDLE_MS = 1500;
 
+// 公式手順(session.close→session.closed)の応答待ち上限。応答が無くても切断を進める。
+const TRANSLATION_CLOSE_TIMEOUT_MS = 2000;
+
+// 送信失敗通知の間引き間隔。音声チャンクは高頻度のため、通知洪水を避けつつ欠落を可視化する。
+const SEND_FAILURE_NOTIFY_INTERVAL_MS = 30000;
+
 const WebSocketMixin = {
     /**
      * WebSocketメッセージ送信
@@ -29,23 +35,67 @@ const WebSocketMixin = {
      *
      * 入力:
      *   message: 送信するメッセージオブジェクト
+     *   options.silentFailure: true なら失敗通知を出さない（切断処理中の session.close 等）
+     *
+     * @returns {Promise<boolean>} 送信に成功したか。失敗は noteRealtimeSendFailure で可視化する
+     *   （黙って成功扱いにすると音声・字幕の欠落が STT タイムアウトにしか見えなくなるため）。
      */
-    async sendMessage(message) {
+    async sendMessage(message, options = {}) {
         if (this.platform.isElectron) {
             // Electron環境（mainプロセス経由IPC）
             const result = await this.platform.sendRealtime(message);
-            if (!result.success) {
+            if (!result || !result.success) {
+                if (!options.silentFailure) {
+                    this.noteRealtimeSendFailure(result && result.message);
+                }
+                return false;
             }
-        } else if (this.usesWebRtcTransport()) {
+            return true;
+        }
+        if (this.usesWebRtcTransport()) {
             // ブラウザ/拡張機能の翻訳エンドポイント（WebRTC データチャネル）
             const dc = this.state.dataChannel;
             if (dc && dc.readyState === 'open') {
                 dc.send(JSON.stringify(message));
+                return true;
             }
-        } else if (this.state.ws && this.state.ws.readyState === WebSocket.OPEN) {
+            if (!options.silentFailure) {
+                this.noteRealtimeSendFailure('データチャネルが未接続です');
+            }
+            return false;
+        }
+        if (this.state.ws && this.state.ws.readyState === WebSocket.OPEN) {
             // ブラウザ環境
             this.state.ws.send(JSON.stringify(message));
+            return true;
         }
+        if (!options.silentFailure) {
+            this.noteRealtimeSendFailure('WebSocketが未接続です');
+        }
+        return false;
+    },
+
+    /**
+     * 送信失敗をユーザーへ可視化する（静かな取りこぼしの禁止）。
+     * 音声チャンクは高頻度で送信されるため、通知は間引く（欠落の可視化と通知洪水回避の両立）。
+     *
+     * @param {string} [detail] 失敗理由
+     */
+    noteRealtimeSendFailure(detail) {
+        const now = Date.now();
+        if (
+            this._lastSendFailureNotifyAt &&
+            now - this._lastSendFailureNotifyAt < SEND_FAILURE_NOTIFY_INTERVAL_MS
+        ) {
+            return;
+        }
+        this._lastSendFailureNotifyAt = now;
+        const suffix = detail ? `（${detail}）` : '';
+        this.notify?.(
+            '送信エラー',
+            `サーバへの送信に失敗しました。音声・字幕が欠落した可能性があります${suffix}`,
+            'error'
+        );
     },
 
     getRealtimeInputAudioSampleRate() {
@@ -263,25 +313,38 @@ const WebSocketMixin = {
                     this.playAudioChunk(message.delta, { responseId: null, segmentId: null });
                 }
                 break;
-            case 'session.output_transcript.delta':
-                this.handleTranslationTranscriptDelta('output', message.delta);
-                break;
+            // ▼ 3経路分離（公式仕様: /v1/realtime/translations は conversation.item.* /
+            //   response.* を発行しない。字幕は session.*_transcript.delta の連続ストリームで届き、
+            //   item_id 等の左右対応キーは無い）:
+            //   路径1(识别): session.input_transcript.delta → 左カラムへライブ表示、
+            //     入力確定（.done またはアイドル）で行対（segment）として確定する。
+            //   路径2(声音实时翻译): session.output_transcript.delta → 右カラムへライブ表示、
+            //     入力確定時に同じ行対の右セルへ吸収（never-empty＝不漏）。音声は session.output_audio。
+            //   路径3(补精度): 入力確定文を Chat 高精度翻訳し、同じ行対の右セルを確定更新（准）。
             case 'session.input_transcript.delta':
                 this.handleTranslationTranscriptDelta('input', message.delta);
                 break;
+            case 'session.output_transcript.delta':
+                this.handleTranslationTranscriptDelta('output', message.delta);
+                break;
             // セグメント終端イベントで確定する（句末標点に依存しない正規の境界）。
             // API のイベント名揺れに備えて .done / .completed の両方を受ける。
-            case 'session.output_transcript.done':
-            case 'session.output_transcript.completed':
-                this.commitTranslationCaption('output');
-                break;
+            // .done が来ない場合はアイドル確定（scheduleTranslationCaptionFlush）が保険。
             case 'session.input_transcript.done':
             case 'session.input_transcript.completed':
                 this.commitTranslationCaption('input');
                 break;
+            case 'session.output_transcript.done':
+            case 'session.output_transcript.completed':
+                this.commitTranslationCaption('output');
+                break;
             case 'session.closed':
-                // セッション終了時、句読点で確定されなかった末尾の字幕を取りこぼさず確定する。
+                // 公式手順: session.close 後にサーバが残余の翻訳出力を flush してから返す確認応答。
+                // 末尾の字幕を確定し、graceful close の待機を解除する。
                 this.flushTranslationCaptions();
+                if (this._sessionClosedWaiter) {
+                    this._sessionClosedWaiter();
+                }
                 break;
             case 'error':
                 this.handleWSMessageError(message);
@@ -332,6 +395,29 @@ const WebSocketMixin = {
         if (!this.translationCaption) {
             this.translationCaption = { input: '', output: '' };
         }
+        // 訳文は原文より遅れて届くため、行対確定（入力確定）の後に前ターンの尻尾が到着する。
+        // 新ターンの入力がまだ始まっていなければ、直前の行対の右セルへ追記する（孤児行を防ぐ）。
+        // まれに次ターンの訳文冒頭を前の行対へ置くことがあるが、路径3の Chat 確定訳が
+        // 両行対の右セルを原文ベースで上書きするため、最終表示は正しくなる。
+        if (
+            kind === 'output' &&
+            !this.translationCaption.input &&
+            !this.translationCaption.output &&
+            this._lastRecognizedSegmentId &&
+            typeof this.upsertSegmentOutput === 'function'
+        ) {
+            let tail = delta;
+            if (!this._outputPreview) {
+                tail = tail.replace(/^[\s、。，．,.!?！？;；:：]+/u, '');
+            }
+            if (tail) {
+                this._outputPreview = (this._outputPreview || '') + tail;
+                this.upsertSegmentOutput(this._lastRecognizedSegmentId, this._outputPreview, {
+                    status: 'responding'
+                });
+            }
+            return;
+        }
         this.translationCaption[kind] += delta;
         // 禁則処理: 行頭(セグメント先頭)に句読点を置かない。サーバが句末句読点を次セグメントの
         //   先頭 delta として送るため、放置すると「。」「、」始まりの確定行ができる。
@@ -368,13 +454,81 @@ const WebSocketMixin = {
         if (!this.translationCaption) {
             return;
         }
+        // 入力の現行ターンが未確定のうちは訳文だけを先に確定しない。行対の境界は
+        // 「入力確定」に一本化し、そのとき右セルへ吸収する（左右1:1の単一ルール）。
+        // 入力側は自身のアイドルタイマーで必ず確定するためデッドロックしない。
+        if (kind === 'output' && this.translationCaption.input) {
+            return;
+        }
         const text = (this.translationCaption[kind] || '').trim();
         this.translationCaption[kind] = '';
-        // ✅ ライブ表示中の暫定行を消し、確定行を addTranscript() で正式に追加する。
+        // ✅ ライブ表示中の暫定行を消し、確定行へ置き換える。
         this.clearLiveCaption(kind);
-        if (text && typeof this.addTranscript === 'function') {
-            this.addTranscript(kind, text, null);
+        if (!text) {
+            return;
         }
+        if (kind === 'input') {
+            this.commitTranslationPair(text);
+            return;
+        }
+        // 入力転写が無い（転写設定OFF・転写失敗）場合の不漏フォールバック: 訳文のみを時系列で確定。
+        if (typeof this.addTranscript === 'function') {
+            this.addTranscript('output', text, null);
+        }
+    },
+
+    /**
+     * 入力確定文と、その時点までに届いた訳文プレビューを同じ行対（segment）として確定する。
+     *
+     * 翻訳エンドポイントの transcript ストリームには左右対応キー（item_id等）が無いため、
+     * 「入力確定」を行対の境界とし、バッファ中の訳文を同ターンの右セルとみなす。
+     * 確定後に遅れて届く訳文の尻尾は handleTranslationTranscriptDelta が同セルへ追記し、
+     * 最終的には路径3（Chat 高精度翻訳）が右セルを原文ベースで確定更新する（准）。
+     *
+     * @param {string} inputText 確定した原文
+     */
+    commitTranslationPair(inputText) {
+        let outputText = '';
+        if (this.translationCaption) {
+            outputText = (this.translationCaption.output || '').trim();
+            this.translationCaption.output = '';
+        }
+        if (this.captionFlushTimers && this.captionFlushTimers.output) {
+            clearTimeout(this.captionFlushTimers.output);
+            this.captionFlushTimers.output = null;
+        }
+        this.clearLiveCaption('output');
+
+        if (!this.segmentAlignment) {
+            // アライメント層が無くても表示は落とさない（不漏の底線）: 時系列行で確定する。
+            if (typeof this.addTranscript === 'function') {
+                this.addTranscript('input', inputText, null);
+                if (outputText) {
+                    this.addTranscript('output', outputText, null);
+                }
+            }
+            return;
+        }
+
+        const sourceLang =
+            this.textPathProcessor?.detectLanguageFromTranscript?.(inputText) || null;
+        const created = this.segmentAlignment.createSegment({ sourceLang });
+        const segment = this.segmentAlignment.updateInput(created.id, inputText, {
+            isFinal: true,
+            source: 'translation-stream',
+            sourceLang,
+            status: 'input-ready'
+        });
+        // 路径2の尻尾追記（output_transcript.delta）を本行対の右セルへ向ける。
+        this._lastRecognizedSegmentId = segment.id;
+        this._outputPreview = outputText;
+        this.upsertSegmentInput(segment.id, inputText, { status: 'input-ready' });
+        this.upsertSegmentOutput(segment.id, outputText, {
+            status: outputText ? 'responding' : 'collecting',
+            placeholder: '翻訳中...'
+        });
+        // ✅ 路径3(补精度): Chat 高精度翻訳で同じ行対の右セルを確定更新（デバウンス付き・非ブロッキング）。
+        this.refineSegmentTranslation(segment.id, inputText, sourceLang);
     },
 
     /**
@@ -403,9 +557,41 @@ const WebSocketMixin = {
         if (!this.translationCaption) {
             return;
         }
+        // input を先に確定する（行対がバッファ中の output を吸収し、残りを output 確定が拾う）。
         for (const kind of ['input', 'output']) {
             this.commitTranslationCaption(kind);
         }
+    },
+
+    /**
+     * 翻訳セッションを公式手順でクローズする（WebSocket経路のみ）。
+     *
+     * 公式チェックリスト: session.close を送信し、サーバが残余の翻訳音声・字幕を flush して
+     * session.closed を返すまで待ってからソケットを閉じる。即時 close すると
+     * ドレイン中の末尾翻訳が失われる。応答が無い場合はタイムアウトで切断を進める。
+     *
+     * @returns {Promise<void>} session.closed 受信またはタイムアウトで解決
+     */
+    async closeTranslationSessionGracefully() {
+        if (!this.isRealtimeTranslationSession() || this.usesWebRtcTransport()) {
+            return;
+        }
+        // 切断処理中の失敗は通知しない（既に切れている場合の誤報を避ける）。
+        const sent = await this.sendMessage({ type: 'session.close' }, { silentFailure: true });
+        if (!sent) {
+            return;
+        }
+        await new Promise((resolve) => {
+            const timer = setTimeout(() => {
+                this._sessionClosedWaiter = null;
+                resolve();
+            }, TRANSLATION_CLOSE_TIMEOUT_MS);
+            this._sessionClosedWaiter = () => {
+                clearTimeout(timer);
+                this._sessionClosedWaiter = null;
+                resolve();
+            };
+        });
     },
 
     /**
@@ -521,6 +707,11 @@ const WebSocketMixin = {
      * @param {number} now - 現在時刻（ms）
      */
     accumulateGroupedAudio(audio, duration, sampleRate, now) {
+        // 翻訳専用セッションではセグメント消費者が無く、grouped の createSegment も
+        // 残骸 placeholder 行になるだけのため蓄積しない（tryEnqueueAudioSegment と同じ理由）。
+        if (this.isRealtimeTranslationSession()) {
+            return;
+        }
         if (!this.groupedAudioChunks || this.groupedAudioChunks.length === 0) {
             this.groupedAudioChunks = [];
             this.groupedAudioStartTime = now;
@@ -960,7 +1151,11 @@ const WebSocketMixin = {
      * @returns {boolean} 成功した場合は true
      */
     tryEnqueueAudioSegment(combinedAudio, actualDuration, sampleRate, now, options = {}) {
-        // ✅ デバッグ：tryEnqueueAudioSegment 呼び出し確認
+        // 翻訳専用セッションでは双パス消費者が全て skip するため、セグメント enqueue は
+        // 「認識中...」placeholder の残骸行を作るだけになる。字幕は session.*_transcript が担う。
+        if (this.isRealtimeTranslationSession()) {
+            return false;
+        }
 
         // ✅ 新アーキテクチャ有効化フラグを設定
         this.useAudioQueue = true;
@@ -1093,6 +1288,10 @@ const WebSocketMixin = {
             });
         }
         if (segment) {
+            // 路径2の即時プレビュー（output_transcript.delta）を本 segment の右へ向ける。
+            //   新しい認識確定＝新しいターン境界。プレビュー累積はここでリセットする。
+            this._lastRecognizedSegmentId = segment.id;
+            this._outputPreview = '';
             this.upsertSegmentInput(segment.id, segment.input.text, {
                 status: 'input-ready'
             });
@@ -1100,12 +1299,106 @@ const WebSocketMixin = {
                 status: segment.output.responseId ? 'responding' : 'collecting',
                 placeholder: '翻訳待機中...'
             });
+            // ✅ 路径3(补精度): 認識確定文を Chat(高精度)で翻訳し、同 segment の右カラムへ確定描画する。
+            //    左右は segmentId で 1:1（补齐左右一致）＝欠落を作らない（不漏）。非同期・非ブロッキング。
+            this.refineSegmentTranslation(segment.id, segment.input.text, segment.input.sourceLang);
         }
 
         // ✅ 音声経路(路径2)の区切り判定にのみ文数を渡す（表示には一切影響しない）。
         //    描画は既に済んでいるため、この後 flush が groupedSegmentId を null 化しても取りこぼさない。
         if (this.isGroupedTurnMode()) {
             this.addGroupedSentenceCount(message.transcript);
+        }
+    },
+
+    /**
+     * 路径3(补精度): 認識確定文を Chat 翻訳し、同 segment の右カラムを確定描画する。
+     *
+     * grouped の1 segment は複数 completed を集約するため、最終テキストで1回だけ翻訳するよう
+     * segmentId 単位でデバウンスする（重複翻訳・途中翻訳を避ける）。非同期・非ブロッキングで、
+     * 実時表示（左認識・音声）を一切止めない。失敗時は placeholder を維持（不漏の底線）。
+     *
+     * @param {string} segmentId 左右対応の安定キー
+     * @param {string} text 認識確定文（原文）
+     * @param {string} [sourceLang] 検出済みソース言語（無ければ auto）
+     */
+    refineSegmentTranslation(segmentId, text, sourceLang) {
+        if (!segmentId || !text || !text.trim()) {
+            return;
+        }
+        if (!this._segRefineTimers) {
+            this._segRefineTimers = {};
+        }
+        if (this._segRefineTimers[segmentId]) {
+            clearTimeout(this._segRefineTimers[segmentId]);
+        }
+        // ponytail: 500ms デバウンス。grouped の複数 completed を最終文でまとめて1回だけ翻訳する。
+        this._segRefineTimers[segmentId] = setTimeout(() => {
+            delete this._segRefineTimers[segmentId];
+            this.translateSegmentViaChat(segmentId, text, sourceLang);
+        }, 500);
+    },
+
+    /**
+     * Chat Completions で1文を翻訳し、右カラムの segment 行へ in-place 反映する。
+     * 表示・音声を止めない後追い処理。API 失敗時は placeholder を維持して表示を消さない。
+     *
+     * @param {string} segmentId
+     * @param {string} text 原文
+     * @param {string} [sourceLang]
+     * @returns {Promise<void>}
+     */
+    async translateSegmentViaChat(segmentId, text, sourceLang) {
+        try {
+            if (!this.state.apiKey || typeof fetch !== 'function') {
+                return;
+            }
+            const targetLangName = Utils.getLanguageName(this.state.targetLang || 'ja');
+            const srcPrompt =
+                sourceLang && sourceLang !== 'auto'
+                    ? `from ${Utils.getLanguageName(sourceLang)} `
+                    : '';
+            const model = CONFIG.API.CHAT_MODEL;
+            const body = {
+                model,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a professional simultaneous interpreter. Translate the user's text ${srcPrompt}to ${targetLangName}. Output ONLY the translation, no explanations, no commentary.`
+                    },
+                    { role: 'user', content: text }
+                ],
+                max_completion_tokens: 500
+            };
+            if (!String(model).startsWith('gpt-5')) {
+                body.temperature = 0;
+            }
+            const res = await fetch(CONFIG.API.CHAT_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.state.apiKey}`
+                },
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) {
+                return; // placeholder 維持（不漏）
+            }
+            const data = await res.json();
+            const raw = data?.choices?.[0]?.message?.content || '';
+            const translated = (
+                (Utils.stripAssistantBoilerplate ? Utils.stripAssistantBoilerplate(raw) : raw) || ''
+            ).trim();
+            if (translated && typeof this.upsertSegmentOutput === 'function') {
+                this.upsertSegmentOutput(segmentId, translated, { status: 'translated' });
+                // 以降に遅れて届く訳文の尻尾（session.output_transcript.delta）が
+                // 確定訳を上書きしないよう、追記先ポインタを閉じる。
+                if (this._lastRecognizedSegmentId === segmentId) {
+                    this._lastRecognizedSegmentId = null;
+                }
+            }
+        } catch (error) {
+            // ネットワーク/API エラーは placeholder を維持（表示は消さない＝不漏の底線）。
         }
     },
 
