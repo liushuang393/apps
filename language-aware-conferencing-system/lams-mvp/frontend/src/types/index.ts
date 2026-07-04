@@ -84,12 +84,20 @@ export interface SubtitleData {
   sourceLanguage: SupportedLanguage;
   /** 翻訳後テキスト（クライアント側で翻訳した場合） */
   translatedText?: string;
+  /** サーバーがこの受信者向けに用意した翻訳先言語 */
+  targetLanguage?: SupportedLanguage;
   /** ★サーバー側プリ翻訳結果（言語コード → 翻訳テキスト） */
   translations?: Record<string, string>;
   /** 翻訳済みフラグ */
   isTranslated?: boolean;
   /** 翻訳遅延（ms） */
   latencyMs?: number;
+  /** 字幕が最終確定かどうか */
+  isFinal?: boolean;
+  /** どちらの主線から字幕化したか */
+  mainline?: 'hearing' | 'reading';
+  /** 使用プロバイダー */
+  provider?: string | null;
 }
 
 /** WebSocketメッセージ型 */
@@ -117,4 +125,16 @@ export interface InterimSubtitleData {
   text: string;
   /** 最終確定かどうか */
   isFinal: boolean;
+}
+
+/** QoS 警告イベント */
+export interface QosWarningData {
+  type: 'qos_warning';
+  metric: string;
+  mainline?: 'hearing' | 'reading';
+  value?: number;
+  value_ms?: number;
+  target?: number;
+  target_ms?: number;
+  shouldFallbackToSubtitle?: boolean;
 }

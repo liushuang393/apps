@@ -7,6 +7,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { authApi } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { ALL_LANGUAGE_CODES, LANGUAGE_NAMES } from '../constants/languages';
 import { LANGUAGE_DISPLAY_NAMES, SUPPORTED_LANGUAGES, type UILanguage } from '../i18n';
 import type { SupportedLanguage } from '../types';
 
@@ -111,9 +112,9 @@ export function RegisterPage() {
               setNativeLanguage(e.target.value as SupportedLanguage)
             }
           >
-            {SUPPORTED_LANGUAGES.map((lang) => (
+            {ALL_LANGUAGE_CODES.map((lang) => (
               <option key={lang} value={lang}>
-                {t(`language.${lang}`)}
+                {LANGUAGE_NAMES[lang] ?? lang}
               </option>
             ))}
           </select>

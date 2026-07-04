@@ -110,19 +110,26 @@ class RoomManager:
         await self._persist(room_id, participant)
         return participant
 
-    async def remove_participant(self, room_id: str, user_id: str) -> None:
-        """参加者を削除"""
+    async def remove_participant(self, room_id: str, user_id: str) -> int:
+        """参加者を削除し、削除後の参加者数を返す。"""
         r = await self.get_redis()
         await r.hdel(f"room:{room_id}:participants", user_id)
+        remaining = await r.hlen(f"room:{room_id}:participants")
         # 参加者がいなくなったら部屋状態も削除
-        if await r.hlen(f"room:{room_id}:participants") == 0:
+        if remaining == 0:
             await r.delete(f"room:{room_id}", f"room:{room_id}:participants")
+        return int(remaining)
 
     async def get_participants(self, room_id: str) -> dict[str, ParticipantPreference]:
         """全参加者を取得"""
         r = await self.get_redis()
         data = await r.hgetall(f"room:{room_id}:participants")
         return {k: ParticipantPreference(**json.loads(v)) for k, v in data.items()}
+
+    async def count_participants(self, room_id: str) -> int:
+        """現在の参加者数を取得する。"""
+        r = await self.get_redis()
+        return int(await r.hlen(f"room:{room_id}:participants"))
 
     async def get_participant(
         self, room_id: str, user_id: str

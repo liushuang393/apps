@@ -179,8 +179,18 @@ export interface SubtitleRecord {
 export interface TranscriptData {
   roomId: string;
   roomName: string;
+  selectedSessionId: string | null;
+  sessions: SessionSummary[];
   subtitles: SubtitleRecord[];
   total: number;
+}
+
+export interface SessionSummary {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  isActive: boolean;
+  mode: string;
 }
 
 /** バックエンドの字幕レスポンス（snake_case） */
@@ -198,6 +208,14 @@ interface SubtitleApiResponse {
 interface TranscriptApiResponse {
   room_id: string;
   room_name: string;
+  selected_session_id: string | null;
+  sessions: Array<{
+    id: string;
+    started_at: string;
+    ended_at: string | null;
+    is_active: boolean;
+    mode: string;
+  }>;
   subtitles: SubtitleApiResponse[];
   total: number;
 }
@@ -285,12 +303,27 @@ export const roomApi = {
   },
 
   /** 会議記録取得 */
-  getTranscript: async (roomId: string, lang?: string): Promise<TranscriptData> => {
-    const queryParams = lang ? `?lang=${encodeURIComponent(lang)}` : '';
+  getTranscript: async (
+    roomId: string,
+    lang?: string,
+    sessionId?: string
+  ): Promise<TranscriptData> => {
+    const params = new URLSearchParams();
+    if (lang) params.set('lang', lang);
+    if (sessionId) params.set('session_id', sessionId);
+    const queryParams = params.toString() ? `?${params.toString()}` : '';
     const res = await apiFetch<TranscriptApiResponse>(`/rooms/${roomId}/transcript${queryParams}`);
     return {
       roomId: res.room_id,
       roomName: res.room_name,
+      selectedSessionId: res.selected_session_id,
+      sessions: res.sessions.map((session) => ({
+        id: session.id,
+        startedAt: session.started_at,
+        endedAt: session.ended_at,
+        isActive: session.is_active,
+        mode: session.mode,
+      })),
       subtitles: res.subtitles.map(convertSubtitle),
       total: res.total,
     };

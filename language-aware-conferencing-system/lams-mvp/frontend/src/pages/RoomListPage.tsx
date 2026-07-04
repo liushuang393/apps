@@ -4,14 +4,11 @@
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { roomApi, ApiError } from '../api/client';
+import { adminApi, roomApi, ApiError } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { Room, SupportedLanguage, AudioMode } from '../types';
 
 import { LANGUAGE_NAMES, DEFAULT_ENABLED_LANGUAGES } from '../constants/languages';
-
-/** 全対応言語リスト（デフォルト言語を使用） */
-const ALL_LANGUAGES = DEFAULT_ENABLED_LANGUAGES;
 
 /** 会議作成フォームの初期状態 */
 interface CreateFormState {
@@ -23,14 +20,18 @@ interface CreateFormState {
   isPrivate: boolean;
 }
 
-const initialFormState: CreateFormState = {
-  name: '',
-  description: '',
-  allowedLanguages: ['ja', 'en', 'zh', 'vi'],
-  defaultAudioMode: 'original',
-  allowModeSwitch: true,
-  isPrivate: false,
-};
+function createInitialFormState(
+  allowedLanguages: SupportedLanguage[] = DEFAULT_ENABLED_LANGUAGES
+): CreateFormState {
+  return {
+    name: '',
+    description: '',
+    allowedLanguages,
+    defaultAudioMode: 'original',
+    allowModeSwitch: true,
+    isPrivate: false,
+  };
+}
 
 /**
  * 会議カード用の落ち着いた背景色パレット（企業向け）
@@ -64,9 +65,12 @@ export function RoomListPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [formState, setFormState] = useState<CreateFormState>(initialFormState);
+  const [formState, setFormState] = useState<CreateFormState>(
+    createInitialFormState()
+  );
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableLanguages, setAvailableLanguages] = useState<SupportedLanguage[]>(DEFAULT_ENABLED_LANGUAGES);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
 
@@ -80,8 +84,23 @@ export function RoomListPage() {
   const loadRooms = useCallback(async () => {
     try {
       setError(null);
-      const res = await roomApi.list();
+      const [res, languageSettings] = await Promise.all([
+        roomApi.list(),
+        adminApi.getLanguageSettings(),
+      ]);
       setRooms(res.rooms || []); // 空配列の場合も正常に処理
+      const enabled = languageSettings.enabledLanguages as SupportedLanguage[];
+      setAvailableLanguages(enabled);
+      setFormState((prev) => ({
+        ...prev,
+        allowedLanguages: (() => {
+          const filtered =
+            prev.allowedLanguages.length > 0
+              ? prev.allowedLanguages.filter((lang) => enabled.includes(lang))
+              : enabled;
+          return filtered.length > 0 ? filtered : enabled;
+        })(),
+      }));
     } catch (err) {
       // 認証エラー（トークン期限切れ等）: ログアウトしてログイン画面へ
       if (err instanceof ApiError && err.status === 401) {
@@ -139,8 +158,12 @@ export function RoomListPage() {
         isPrivate: formState.isPrivate,
       });
       navigate(`/room/${room.id}`);
-    } catch {
-      // エラーハンドリング
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('会議室の作成に失敗しました');
+      }
     } finally {
       setCreating(false);
     }
@@ -149,7 +172,7 @@ export function RoomListPage() {
   /** フォームをキャンセル */
   const handleCancel = () => {
     setShowCreate(false);
-    setFormState(initialFormState);
+    setFormState(createInitialFormState(availableLanguages));
   };
 
   /** ログアウト処理 */
@@ -222,7 +245,7 @@ export function RoomListPage() {
           <div className="form-group">
             <label>対応言語 *（参加者が選択可能な翻訳先言語）</label>
             <div className="language-checkboxes">
-              {ALL_LANGUAGES.map((lang) => (
+              {availableLanguages.map((lang) => (
                 <label key={lang}>
                   <input
                     type="checkbox"

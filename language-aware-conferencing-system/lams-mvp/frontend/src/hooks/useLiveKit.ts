@@ -14,12 +14,13 @@ import {
   type RemoteTrack,
   type RemoteTrackPublication,
 } from 'livekit-client';
-import { roomApi } from '../api/client';
+import { ApiError, roomApi } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useRoomStore, type ConnectionStatus } from '../store/roomStore';
 import type {
   AudioMode,
   ParticipantPreference,
+  QosWarningData,
   RoomPolicy,
   SubtitleData,
   SupportedLanguage,
@@ -32,6 +33,7 @@ const ATTR_TARGET = 'target_language';
 const ATTR_SUBTITLE = 'subtitle_enabled';
 /** data channel トピック（backend sink と一致させる） */
 const TOPIC_SUBTITLE = 'subtitle';
+const TOPIC_EVENT = 'qos';
 /** 翻訳音声トラック名接頭辞（backend publisher と一致させる） */
 const TRACK_NAME_PREFIX = 'translation-';
 /** サーバ参加者（Agent）の identity 接頭辞（参加者一覧から除外する） */
@@ -55,6 +57,10 @@ interface AudioEntry {
   el: HTMLMediaElement;
   isTranslation: boolean;
   lang?: string;
+}
+
+interface SinkableMediaElement extends HTMLMediaElement {
+  setSinkId?: (sinkId: string) => Promise<void>;
 }
 
 /** Agent 参加者かどうか */
@@ -87,7 +93,25 @@ function toSubtitle(msg: Record<string, unknown>): SubtitleData {
     speakerId: msg.speaker_id as string,
     originalText: msg.original_text as string,
     sourceLanguage: msg.source_language as SupportedLanguage,
+    translatedText: (msg.translated_text as string | null | undefined) || undefined,
+    targetLanguage: msg.target_language as SupportedLanguage | undefined,
     isTranslated: Boolean(msg.is_translated),
+    isFinal: Boolean(msg.is_final ?? true),
+    mainline: msg.mainline as 'hearing' | 'reading' | undefined,
+    provider: (msg.provider as string | null | undefined) ?? null,
+  };
+}
+
+function toQosWarning(msg: Record<string, unknown>): QosWarningData {
+  return {
+    type: 'qos_warning',
+    metric: String(msg.metric ?? 'unknown'),
+    mainline: msg.mainline as 'hearing' | 'reading' | undefined,
+    value: typeof msg.value === 'number' ? msg.value : undefined,
+    value_ms: typeof msg.value_ms === 'number' ? msg.value_ms : undefined,
+    target: typeof msg.target === 'number' ? msg.target : undefined,
+    target_ms: typeof msg.target_ms === 'number' ? msg.target_ms : undefined,
+    shouldFallbackToSubtitle: Boolean(msg.should_fallback_to_subtitle),
   };
 }
 
@@ -126,7 +150,11 @@ export function useLiveKit(roomId: string | null) {
     removeParticipant,
     setActiveSpeaker,
     addSubtitle,
+    addInterimSubtitle,
+    removeInterimSubtitle,
+    addQosWarning,
     setConnectionStatus,
+    setConnectionError,
     reset,
   } = useRoomStore();
 
@@ -134,6 +162,17 @@ export function useLiveKit(roomId: string | null) {
   const myPrefRef = useRef<MyPref | null>(null);
   /** trackSid -> 購読中音声エントリ（原声 / 翻訳音声） */
   const audioEntriesRef = useRef<Map<string, AudioEntry>>(new Map());
+  const outputDeviceIdRef = useRef<string | null>(null);
+
+  const applyOutputDevice = useCallback(async (entry: AudioEntry, deviceId: string | null) => {
+    if (!deviceId) return true;
+    const element = entry.el as SinkableMediaElement;
+    if (typeof element.setSinkId !== 'function') {
+      return false;
+    }
+    await element.setSinkId(deviceId);
+    return true;
+  }, []);
 
   /**
    * 購読中トラックの再生可否を現在設定に合わせて更新する。
@@ -148,6 +187,28 @@ export function useLiveKit(roomId: string | null) {
     });
   }, []);
 
+  const setAudioOutputDevice = useCallback(
+    async (deviceId: string | null): Promise<boolean> => {
+      outputDeviceIdRef.current = deviceId;
+      const entries = Array.from(audioEntriesRef.current.values());
+      if (entries.length === 0 || !deviceId) {
+        return true;
+      }
+      try {
+        const results = await Promise.all(entries.map((entry) => applyOutputDevice(entry, deviceId)));
+        const supported = results.every(Boolean);
+        if (!supported) {
+          setConnectionError('このブラウザはスピーカー切替に対応していません。');
+        }
+        return supported;
+      } catch {
+        setConnectionError('スピーカー出力先の切替に失敗しました。');
+        return false;
+      }
+    },
+    [applyOutputDevice, setConnectionError]
+  );
+
   /** 設定変更を attributes に反映する（agent が受信し主線駆動を更新） */
   const sendPreferenceChange = useCallback(
     (pref: { audioMode?: string; subtitleEnabled?: boolean; targetLanguage?: string }) => {
@@ -160,9 +221,10 @@ export function useLiveKit(roomId: string | null) {
         current.targetLanguage = pref.targetLanguage as SupportedLanguage;
       }
       void room.localParticipant.setAttributes(buildAttributes(current));
+      setConnectionError(null);
       applyAudioRouting();
     },
-    [applyAudioRouting]
+    [applyAudioRouting, setConnectionError]
   );
 
   /** 切断（手動退室） */
@@ -186,6 +248,7 @@ export function useLiveKit(roomId: string | null) {
     // cleanup 時点での ref 変化を避けるため、effect 内でローカルに束縛する
     const audioEntries = audioEntriesRef.current;
     setConnectionStatus('connecting');
+    setConnectionError(null);
 
     room
       .on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
@@ -217,10 +280,14 @@ export function useLiveKit(roomId: string | null) {
           const lang = isTranslation
             ? pub.trackName.slice(TRACK_NAME_PREFIX.length)
             : undefined;
-          audioEntriesRef.current.set(pub.trackSid, {
+          const entry = {
             el: track.attach(),
             isTranslation,
             lang,
+          };
+          audioEntriesRef.current.set(pub.trackSid, entry);
+          void applyOutputDevice(entry, outputDeviceIdRef.current).catch(() => {
+            setConnectionError('スピーカー出力先の適用に失敗しました。');
           });
           applyAudioRouting();
         }
@@ -233,10 +300,27 @@ export function useLiveKit(roomId: string | null) {
         audioEntriesRef.current.delete(pub.trackSid);
       })
       .on(RoomEvent.DataReceived, (payload, _p, _kind, topic) => {
-        if (topic !== TOPIC_SUBTITLE) return;
         try {
           const msg = JSON.parse(new TextDecoder().decode(payload)) as Record<string, unknown>;
-          addSubtitle(toSubtitle(msg));
+          if (topic === TOPIC_SUBTITLE) {
+            if (msg.type === 'subtitle_interim') {
+              addInterimSubtitle({
+                id: String(msg.id ?? ''),
+                speakerId: String(msg.speaker_id ?? ''),
+                text: String(msg.text ?? msg.original_text ?? ''),
+                isFinal: Boolean(msg.is_final),
+              });
+              return;
+            }
+            if (typeof msg.id === 'string') {
+              removeInterimSubtitle(msg.id);
+            }
+            addSubtitle(toSubtitle(msg));
+            return;
+          }
+          if (topic === TOPIC_EVENT) {
+            addQosWarning(toQosWarning(msg));
+          }
         } catch {
           // 不正な payload は無視する
         }
@@ -254,18 +338,22 @@ export function useLiveKit(roomId: string | null) {
           defaultAudioMode: info.defaultAudioMode,
           allowModeSwitch: info.allowModeSwitch,
         };
+        const initialTargetLanguage =
+          policy.allowedLanguages.find((lang) => lang === user.nativeLanguage)
+          ?? policy.allowedLanguages[0]
+          ?? user.nativeLanguage;
         const myPref: ParticipantPreference = {
           userId: user.id,
           displayName: user.displayName,
           nativeLanguage: user.nativeLanguage,
           audioMode: policy.defaultAudioMode,
           subtitleEnabled: true,
-          targetLanguage: user.nativeLanguage,
+          targetLanguage: initialTargetLanguage,
         };
         myPrefRef.current = {
           native: user.nativeLanguage,
           audioMode: myPref.audioMode,
-          targetLanguage: myPref.targetLanguage,
+          targetLanguage: initialTargetLanguage,
           subtitleEnabled: true,
         };
 
@@ -283,9 +371,26 @@ export function useLiveKit(roomId: string | null) {
           }
         });
         setRoomState(info.id, info.name, policy, participants, myPref);
-        void room.startAudio().catch(() => undefined);
-      } catch {
-        if (!cancelled) setConnectionStatus('disconnected');
+        void room.startAudio().catch(() => {
+          setConnectionError('ブラウザの自動再生制限により音声再生を開始できませんでした。画面を操作して再試行してください。');
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setConnectionStatus('disconnected');
+          if (err instanceof ApiError) {
+            if (err.status === 403) {
+              setConnectionError('この会議室へ参加する権限がありません。');
+            } else if (err.status === 404) {
+              setConnectionError('会議室が見つかりません。');
+            } else if (err.status === 503) {
+              setConnectionError(err.message);
+            } else {
+              setConnectionError(err.message);
+            }
+          } else {
+            setConnectionError('会議室への接続に失敗しました。ネットワーク状態を確認してください。');
+          }
+        }
       }
     })();
 
@@ -303,5 +408,12 @@ export function useLiveKit(roomId: string | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, token, user?.id]);
 
-  return { sendPreferenceChange, disconnect, roomRef };
+  return {
+    sendPreferenceChange,
+    disconnect,
+    roomRef,
+    setAudioOutputDevice,
+    audioOutputSelectionSupported:
+      typeof (HTMLMediaElement.prototype as SinkableMediaElement).setSinkId === 'function',
+  };
 }

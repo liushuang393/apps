@@ -42,107 +42,91 @@ function SubtitleDisplayInner() {
   const participants = useRoomStore(selectParticipants);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { translateText, getTranslationById } = useTranslation();
+  const { translateText, getTranslationById, clearCache } = useTranslation();
 
   // 翻訳済み字幕のローカルstate
   const [displaySubtitles, setDisplaySubtitles] = useState<DisplaySubtitle[]>([]);
-  // 処理済み字幕IDを追跡（無限ループ防止）
-  const processedIdsRef = useRef<Set<string>>(new Set());
 
   // ユーザー設定
   const audioMode = myPreference?.audioMode || 'original';
   const targetLanguage = myPreference?.targetLanguage || myPreference?.nativeLanguage || 'ja';
 
-  // 新しい字幕が追加されたら翻訳処理
-  // ★設定変更時も既存字幕は変更しない - 新しい字幕のみ新設定で処理★
+  // 字幕または設定が変わったら、表示用テキストを再計算する。
   useEffect(() => {
-    // 新しい字幕のみを処理（既存字幕はそのまま保持）
-    const subtitlesToProcess = subtitles.filter((sub) => {
-      const subId = sub.id ?? `${sub.speakerId}-${sub.originalText}`;
-      return !processedIdsRef.current.has(subId);
-    });
+    let cancelled = false;
 
-    if (subtitlesToProcess.length === 0) {
-      return;
-    }
-
-    const processSubtitles = async () => {
-      const processed: DisplaySubtitle[] = [];
-
-      for (const sub of subtitlesToProcess) {
-        const subId = sub.id ?? `${sub.speakerId}-${sub.originalText}`;
-
-        // ★原声モード: 翻訳なし、原文をそのまま表示★
-        if (audioMode === 'original') {
-          processed.push({
-            ...sub,
-            displayText: sub.originalText,
-            isTranslating: false,
-            isTranslated: false,
-          });
-          processedIdsRef.current.add(subId);
-          continue;
-        }
-
-        // ★翻訳モード: 同じ言語なら翻訳不要★
-        if (sub.sourceLanguage === targetLanguage) {
-          processed.push({
-            ...sub,
-            displayText: sub.originalText,
-            isTranslating: false,
-            isTranslated: false,
-          });
-          processedIdsRef.current.add(subId);
-          continue;
-        }
-
-        // ★翻訳モード: 異なる言語の場合★
-        // ★最小遅延設計: 字幕IDでサーバーキャッシュから取得
-
-        try {
-          // 字幕IDがあれば、IDベースで翻訳取得（最小遅延）
-          let translated: string | null = null;
-          if (sub.id) {
-            translated = await getTranslationById(sub.id, targetLanguage, true);
-          }
-
-          // IDベースで取得できなければ、テキストベースで翻訳
-          if (!translated) {
-            translated = await translateText(
-              sub.originalText,
-              sub.sourceLanguage,
-              targetLanguage
-            );
-          }
-
-          const isActuallyTranslated = translated !== sub.originalText;
-          processed.push({
-            ...sub,
-            displayText: translated,
-            translatedText: isActuallyTranslated ? translated : undefined,
-            isTranslating: false,
-            isTranslated: isActuallyTranslated,
-          });
-        } catch {
-          // 翻訳失敗時は原文を表示
-          processed.push({
-            ...sub,
-            displayText: sub.originalText,
-            isTranslating: false,
-            isTranslated: false,
-          });
-        }
-        processedIdsRef.current.add(subId);
+    const buildDisplaySubtitle = async (sub: SubtitleData): Promise<DisplaySubtitle> => {
+      if (audioMode === 'original') {
+        return {
+          ...sub,
+          displayText: sub.originalText,
+          isTranslating: false,
+          isTranslated: false,
+        };
       }
 
-      if (processed.length > 0) {
-        // 常に追加（設定変更時も既存字幕は保持）
-        setDisplaySubtitles((prev) => [...prev, ...processed].slice(-50));
+      if (sub.sourceLanguage === targetLanguage) {
+        return {
+          ...sub,
+          displayText: sub.originalText,
+          isTranslating: false,
+          isTranslated: false,
+        };
+      }
+
+      try {
+        let translated = sub.targetLanguage === targetLanguage ? sub.translatedText ?? null : null;
+        if (!translated && sub.id) {
+          translated = await getTranslationById(sub.id, targetLanguage, true);
+        }
+        if (!translated) {
+          translated = await translateText(
+            sub.originalText,
+            sub.sourceLanguage,
+            targetLanguage
+          );
+        }
+        const displayText = translated || sub.originalText;
+        const isActuallyTranslated = displayText !== sub.originalText;
+        return {
+          ...sub,
+          displayText,
+          translatedText: isActuallyTranslated ? displayText : undefined,
+          isTranslating: false,
+          isTranslated: isActuallyTranslated,
+        };
+      } catch {
+        return {
+          ...sub,
+          displayText: sub.originalText,
+          isTranslating: false,
+          isTranslated: false,
+        };
       }
     };
 
-    processSubtitles();
+    const processSubtitles = async () => {
+      if (subtitles.length === 0) {
+        if (!cancelled) {
+          setDisplaySubtitles([]);
+        }
+        return;
+      }
+      const processed = await Promise.all(subtitles.map(buildDisplaySubtitle));
+      if (!cancelled) {
+        setDisplaySubtitles(processed.slice(-50));
+      }
+    };
+
+    void processSubtitles();
+    return () => {
+      cancelled = true;
+    };
   }, [subtitles, audioMode, targetLanguage, translateText, getTranslationById]);
+
+  useEffect(() => {
+    clearCache();
+  }, [clearCache, targetLanguage]);
 
   // 新しい字幕が追加されたら自動スクロール
   useEffect(() => {

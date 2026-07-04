@@ -46,7 +46,7 @@ class MeetingConfig:
     transport 非依存のスナップショット。Agent は発話ごとにこれを参照して主線を選ぶ。
     """
 
-    mode: str = MeetingMode.HYBRID.value  # 実行時モード（a / b / hybrid）
+    mode: str = MeetingMode.A.value  # 実行時モード（a / b / hybrid）
     enable_openai_s2s: bool = True  # 会議レベルの聞く主線（S2S）許可
     language_routes: dict = field(default_factory=dict)  # 言語ペア単位の上書き
 
@@ -74,7 +74,7 @@ async def get_meeting_config(room_id: str) -> MeetingConfig:
             ).scalar_one_or_none()
             mode = session.mode if session is not None else room.default_mode
             return MeetingConfig(
-                mode=mode or MeetingMode.HYBRID.value,
+                mode=mode or MeetingMode.A.value,
                 enable_openai_s2s=bool(room.enable_openai_s2s),
                 language_routes=dict(room.language_routes or {}),
             )
@@ -114,6 +114,7 @@ async def get_or_create_session(room_id: str) -> str:
     if room_id in _active_sessions:
         return _active_sessions[room_id]
     async with async_session() as db:
+        room = (await db.execute(select(Room).where(Room.id == room_id))).scalar_one_or_none()
         result = await db.execute(
             select(MeetingSession).where(
                 MeetingSession.room_id == room_id,
@@ -124,7 +125,10 @@ async def get_or_create_session(room_id: str) -> str:
         if session:
             _active_sessions[room_id] = session.id
             return session.id
-        new_session = MeetingSession(room_id=room_id)
+        new_session = MeetingSession(
+            room_id=room_id,
+            mode=(room.default_mode if room is not None else MeetingMode.A.value),
+        )
         db.add(new_session)
         await db.commit()
         await db.refresh(new_session)
@@ -137,14 +141,25 @@ async def end_session(room_id: str) -> None:
     """会議セッションを終了する（全員退室時に呼び出す）。QoS サマリも永続化する。"""
     session_id = _active_sessions.pop(room_id, None)
     monitor = _session_monitors.pop(room_id, None)
-    if not session_id:
-        return
     async with async_session() as db:
+        if not session_id:
+            result = await db.execute(
+                select(MeetingSession).where(
+                    MeetingSession.room_id == room_id,
+                    MeetingSession.is_active.is_(True),
+                )
+            )
+            active = result.scalar_one_or_none()
+            if active is None:
+                return
+            session_id = active.id
         result = await db.execute(
             select(MeetingSession).where(MeetingSession.id == session_id)
         )
         session = result.scalar_one_or_none()
         if session:
+            if not session.is_active:
+                return
             session.is_active = False
             session.ended_at = datetime.now(timezone.utc)
             # QoS サマリ（改善.md §15）。現状は数字保持率のみ実測可能。
@@ -196,7 +211,9 @@ async def save_transcript_segment(
         provider_by_lang = _providers_by_lang(tags or [])
         # QoS: 数字・日付・金額の保持率を会議単位で累積（改善.md §15）。
         monitor = _session_monitors.setdefault(room_id, HybridQoSMonitor())
-        for translated_text in translations.values():
+        for target_lang, translated_text in translations.items():
+            if target_lang == source_language:
+                continue
             if translated_text:
                 monitor.record_number_retention(text, translated_text)
         async with async_session() as db:
@@ -213,6 +230,8 @@ async def save_transcript_segment(
             await db.flush()  # seg.id 採番のため（FK 紐付けに必要）
             for target_lang, translated_text in translations.items():
                 if not translated_text:
+                    continue
+                if target_lang == source_language:
                     continue
                 db.add(
                     TranslationSegment(

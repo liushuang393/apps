@@ -102,6 +102,9 @@ class HybridOrchestrator:
         gw = self._monitor.evaluate_glossary()
         if gw is not None:
             warnings.append(gw)
+        nw = self._monitor.evaluate_number_retention()
+        if nw is not None:
+            warnings.append(nw)
         if not warnings:
             return
         result.qos_warnings.extend(warnings)
@@ -134,6 +137,8 @@ class HybridOrchestrator:
     async def _converge(
         self,
         *,
+        source_language: str,
+        original_text: str,
         target_lang: str,
         members: list[Listener],
         decision_reason: str,
@@ -151,7 +156,6 @@ class HybridOrchestrator:
         # 字幕は読む主線を権威とし、無ければ聞く主線 delta で代替（§9 縮退）。
         subtitle_text = reading_text or hearing_text
         subtitle_mainline = "reading" if reading_text else "hearing"
-        is_translated = bool(reading_text or hearing_text)
 
         deliveries: list[Awaitable] = []
         for ls in members:
@@ -165,9 +169,16 @@ class HybridOrchestrator:
                     "id": subtitle_id,
                     "seq": seq,
                     "speaker_id": speaker_id,
-                    "original_text": subtitle_text,
-                    "source_language": target_lang,
-                    "is_translated": is_translated,
+                    "original_text": original_text,
+                    "source_language": source_language,
+                    "translated_text": (
+                        subtitle_text if target_lang != source_language else None
+                    ),
+                    "target_language": target_lang,
+                    "is_translated": bool(
+                        target_lang != source_language and subtitle_text
+                    ),
+                    "is_final": True,
                     "mainline": subtitle_mainline,
                     "provider": s2s_provider
                     if subtitle_mainline == "hearing"
@@ -286,6 +297,8 @@ class HybridOrchestrator:
                 reading_text = original_text
 
             await self._converge(
+                source_language=source_language,
+                original_text=original_text,
                 target_lang=target_lang,
                 members=members,
                 decision_reason=reason,

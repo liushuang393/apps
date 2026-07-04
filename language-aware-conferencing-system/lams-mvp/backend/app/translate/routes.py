@@ -24,18 +24,14 @@ from app.ai_pipeline.providers.correction import (
 from app.auth.dependencies import get_current_user
 from app.config import settings
 from app.db.models import User
+from app.languages import LANGUAGE_DISPLAY_NAMES
 from app.translate import glossary, subtitle_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# 言語名マッピング
-LANGUAGE_NAMES = {
-    "ja": "Japanese",
-    "en": "English",
-    "zh": "Chinese",
-    "vi": "Vietnamese",
-}
+# 言語名マッピング（backend の単一ソース）
+LANGUAGE_NAMES = LANGUAGE_DISPLAY_NAMES
 
 # Redisキャッシュ
 _redis: aioredis.Redis | None = None
@@ -521,6 +517,9 @@ async def get_subtitle_translation(
             else:
                 # 翻訳結果が空の場合、原文を返す（フォールバック）
                 logger.warning(f"[SubtitleTranslate] 翻訳結果が空: {subtitle_id}")
+                await subtitle_cache.store_translation(
+                    subtitle_id, target_lang, original_text
+                )
                 return SubtitleTranslationResponse(
                     subtitle_id=subtitle_id,
                     target_language=target_lang,
@@ -529,6 +528,9 @@ async def get_subtitle_translation(
                 )
         except Exception as e:
             logger.error(f"[SubtitleTranslate] 翻訳エラー: {e}")
+            await subtitle_cache.store_translation(
+                subtitle_id, target_lang, original_text
+            )
             return SubtitleTranslationResponse(
                 subtitle_id=subtitle_id,
                 target_language=target_lang,

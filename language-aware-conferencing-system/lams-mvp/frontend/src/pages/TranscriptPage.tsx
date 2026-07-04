@@ -4,14 +4,11 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { roomApi, ApiError, type SubtitleRecord, type TranscriptData } from '../api/client';
+import { adminApi, roomApi, ApiError, type SubtitleRecord, type TranscriptData } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
-import { LANGUAGE_NAMES, DEFAULT_ENABLED_LANGUAGES } from '../constants/languages';
-
-/** 全対応言語リスト */
-const ALL_LANGUAGES = DEFAULT_ENABLED_LANGUAGES;
+import { LANGUAGE_NAMES } from '../constants/languages';
 
 export function TranscriptPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -19,6 +16,8 @@ export function TranscriptPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedLang, setSelectedLang] = useState<string>('');
+  const [selectedSessionId, setSelectedSessionId] = useState<string>('');
+  const [availableLanguages, setAvailableLanguages] = useState<SupportedLanguage[]>([]);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
 
@@ -31,8 +30,12 @@ export function TranscriptPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await roomApi.getTranscript(roomId, selectedLang || undefined);
+      const [data, languageSettings] = await Promise.all([
+        roomApi.getTranscript(roomId, selectedLang || undefined, selectedSessionId || undefined),
+        adminApi.getLanguageSettings(),
+      ]);
       setTranscript(data);
+      setAvailableLanguages(languageSettings.enabledLanguages as SupportedLanguage[]);
     } catch (err) {
       // 認証エラー（トークン期限切れ等）: ログアウトしてログイン画面へ
       if (err instanceof ApiError && err.status === 401) {
@@ -44,7 +47,7 @@ export function TranscriptPage() {
     } finally {
       setLoading(false);
     }
-  }, [roomId, selectedLang, logout, navigate]);
+  }, [roomId, selectedLang, selectedSessionId, logout, navigate]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -137,9 +140,24 @@ export function TranscriptPage() {
             onChange={(e) => setSelectedLang(e.target.value)}
           >
             <option value="">原文</option>
-            {ALL_LANGUAGES.map((lang) => (
+            {availableLanguages.map((lang) => (
               <option key={lang} value={lang}>
                 {LANGUAGE_NAMES[lang]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="language-selector">
+          <label>会議回:</label>
+          <select
+            value={selectedSessionId}
+            onChange={(e) => setSelectedSessionId(e.target.value)}
+          >
+            <option value="">最新 / 進行中</option>
+            {transcript?.sessions.map((session) => (
+              <option key={session.id} value={session.id}>
+                {new Date(session.startedAt).toLocaleString('ja-JP')}
+                {session.isActive ? '（進行中）' : ''}
               </option>
             ))}
           </select>
@@ -161,6 +179,14 @@ export function TranscriptPage() {
           <div className="transcript-list">
             <div className="transcript-summary">
               <span>発言数: {transcript.total}</span>
+              {transcript.selectedSessionId && (
+                <span>
+                  会議回: {new Date(
+                    transcript.sessions.find((session) => session.id === transcript.selectedSessionId)?.startedAt
+                    ?? Date.now()
+                  ).toLocaleString('ja-JP')}
+                </span>
+              )}
             </div>
             {transcript.subtitles.map((sub) => (
               <div key={sub.id} className="transcript-item">

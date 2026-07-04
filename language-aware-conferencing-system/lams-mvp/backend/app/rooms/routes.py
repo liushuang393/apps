@@ -3,7 +3,9 @@ LAMS 会議室APIルート
 会議室の作成・一覧・取得
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,18 +16,35 @@ from app.auth.dependencies import get_current_user
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import (
+    MeetingSession,
     MeetingMode,
     Room,
     TranscriptSegment,
     User,
 )
+from app.languages import get_enabled_languages
 from app.rooms.manager import room_manager
+from app.webrtc.persistence import get_or_create_session
 from app.webrtc.supervisor import agent_supervisor
 from app.webrtc.token import LiveKitNotConfiguredError, create_join_token
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _VALID_MODES = {m.value for m in MeetingMode}
+
+
+def _validate_language_routes(routes: dict | None) -> dict:
+    """language_routes の最小検証。"""
+    if not routes:
+        return {}
+    for key, override in routes.items():
+        if not isinstance(override, dict):
+            raise ValueError(f"language_routes['{key}'] は object である必要があります")
+        mode = override.get("mode")
+        if mode is not None and mode not in _VALID_MODES:
+            raise ValueError(f"language_routes['{key}'].mode が不正です: {mode}")
+    return routes
 
 
 class RoomCreate(BaseModel):
@@ -33,7 +52,7 @@ class RoomCreate(BaseModel):
 
     name: str
     description: str | None = None
-    allowed_languages: list[str] = ["ja", "en", "zh", "vi"]
+    allowed_languages: list[str] | None = None
     default_audio_mode: str = "original"  # デフォルトは原声
     allow_mode_switch: bool = True
     is_private: bool = False  # 私有会議（他ユーザーの一覧に非表示）
@@ -50,6 +69,11 @@ class RoomCreate(BaseModel):
         if v not in _VALID_MODES:
             raise ValueError(f"default_mode は {sorted(_VALID_MODES)} のいずれかです")
         return v
+
+    @field_validator("language_routes")
+    @classmethod
+    def _check_routes(cls, v: dict) -> dict:
+        return _validate_language_routes(v)
 
 
 class RoomResponse(BaseModel):
@@ -74,6 +98,14 @@ class RoomResponse(BaseModel):
         from_attributes = True
 
 
+async def _safe_participant_count(room_id: str) -> int:
+    """Redis 障害時でも部屋APIを落とさない参加者数取得。"""
+    try:
+        return await room_manager.count_participants(room_id)
+    except Exception:
+        return 0
+
+
 @router.post("", response_model=RoomResponse, status_code=status.HTTP_201_CREATED)
 async def create_room(
     data: RoomCreate,
@@ -81,11 +113,24 @@ async def create_room(
     db: AsyncSession = Depends(get_db),
 ) -> RoomResponse:
     """新規会議室作成"""
+    enabled_languages = await get_enabled_languages(db)
+    allowed_languages = data.allowed_languages or enabled_languages
+    invalid_languages = [
+        lang for lang in allowed_languages if lang not in set(enabled_languages)
+    ]
+    if invalid_languages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "会議室で許可する言語はシステム有効言語の範囲内で指定してください: "
+                + ", ".join(invalid_languages)
+            ),
+        )
     room = Room(
         name=data.name,
         description=data.description,
         creator_id=user.id,
-        allowed_languages=data.allowed_languages,
+        allowed_languages=allowed_languages,
         default_audio_mode=data.default_audio_mode,
         allow_mode_switch=data.allow_mode_switch,
         is_private=data.is_private,
@@ -98,7 +143,16 @@ async def create_room(
     await db.refresh(room)
 
     # Redis に会議室状態を作成
-    await room_manager.create_room_state(room.id)
+    try:
+        await room_manager.create_room_state(room.id)
+    except Exception as e:
+        logger.error("[Room] state 初期化失敗のため会議室作成を取り消します: room=%s err=%s", room.id, e)
+        await db.delete(room)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="会議室状態の初期化に失敗しました。時間をおいて再試行してください。",
+        ) from e
 
     return RoomResponse(
         id=room.id,
@@ -137,7 +191,6 @@ async def list_rooms(
 
     response_rooms = []
     for room in rooms:
-        participants = await room_manager.get_participants(room.id)
         response_rooms.append(
             RoomResponse(
                 id=room.id,
@@ -149,7 +202,7 @@ async def list_rooms(
                 allow_mode_switch=room.allow_mode_switch,
                 is_private=room.is_private,
                 is_active=room.is_active,
-                participant_count=len(participants),
+                participant_count=await _safe_participant_count(room.id),
                 default_mode=room.default_mode,
                 enable_openai_s2s=room.enable_openai_s2s,
                 language_routes=room.language_routes or {},
@@ -184,8 +237,6 @@ async def get_room(
             detail="この会議室にはアクセスできません",
         )
 
-    participants = await room_manager.get_participants(room.id)
-
     return RoomResponse(
         id=room.id,
         name=room.name,
@@ -196,7 +247,7 @@ async def get_room(
         allow_mode_switch=room.allow_mode_switch,
         is_private=room.is_private,
         is_active=room.is_active,
-        participant_count=len(participants),
+        participant_count=await _safe_participant_count(room.id),
         default_mode=room.default_mode,
         enable_openai_s2s=room.enable_openai_s2s,
         language_routes=room.language_routes or {},
@@ -250,6 +301,7 @@ async def issue_livekit_token(
 
     # 音声フォーク Gateway（Agent worker）を対象 room に常駐させる（冪等・非同期）。
     # autostart 無効時は no-op。トークン発行は Agent 起動の成否に依存しない。
+    await get_or_create_session(room.id)
     agent_supervisor.ensure_running(room.id)
 
     return JoinTokenResponse(
@@ -275,27 +327,86 @@ class SubtitleResponse(BaseModel):
         from_attributes = True
 
 
+class SessionSummaryResponse(BaseModel):
+    """会議回の要約情報。"""
+
+    id: str
+    started_at: str
+    ended_at: str | None
+    is_active: bool
+    mode: str
+
+
 class TranscriptResponse(BaseModel):
     """会議記録レスポンス"""
 
     room_id: str
     room_name: str
+    selected_session_id: str | None
+    sessions: list[SessionSummaryResponse]
     subtitles: list[SubtitleResponse]
     total: int
 
 
-async def _load_segments(db: AsyncSession, room_id: str) -> list[TranscriptSegment]:
+async def _load_room_sessions(
+    db: AsyncSession, room_id: str
+) -> list[MeetingSession]:
+    """room 配下の会議回一覧を新しい順で取得する。"""
+    result = await db.execute(
+        select(MeetingSession)
+        .where(MeetingSession.room_id == room_id)
+        .order_by(MeetingSession.started_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def _resolve_session_id(
+    db: AsyncSession, room_id: str, session_id: str | None
+) -> tuple[str | None, list[MeetingSession]]:
+    """対象 session_id を解決する。未指定時は active、無ければ最新を選ぶ。"""
+    sessions = await _load_room_sessions(db, room_id)
+    if session_id is not None:
+        if not any(session.id == session_id for session in sessions):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="指定された会議セッションが見つかりません",
+            )
+        return session_id, sessions
+    active = next((session for session in sessions if session.is_active), None)
+    if active is not None:
+        return active.id, sessions
+    latest = sessions[0] if sessions else None
+    return (latest.id if latest is not None else None), sessions
+
+
+def _to_session_summary(session: MeetingSession) -> SessionSummaryResponse:
+    """会議回モデルをレスポンスへ変換する。"""
+    return SessionSummaryResponse(
+        id=session.id,
+        started_at=session.started_at.isoformat(),
+        ended_at=session.ended_at.isoformat() if session.ended_at else None,
+        is_active=session.is_active,
+        mode=session.mode,
+    )
+
+
+async def _load_segments(
+    db: AsyncSession, room_id: str, session_id: str | None
+) -> list[TranscriptSegment]:
     """会議室の文字起こしセグメントを時系列順に取得する（翻訳を eager load）。
 
     改善.md §13.3/§13.4 の正規化テーブル（TranscriptSegment 1:N TranslationSegment）を
     旧 Subtitle の代替として読む。async では遅延ロード不可のため selectinload を使う。
     """
-    result = await db.execute(
+    query = (
         select(TranscriptSegment)
         .where(TranscriptSegment.room_id == room_id)
         .options(selectinload(TranscriptSegment.translations))
         .order_by(TranscriptSegment.created_at.asc())
     )
+    if session_id is not None:
+        query = query.where(TranscriptSegment.session_id == session_id)
+    result = await db.execute(query)
     return list(result.scalars().all())
 
 
@@ -303,6 +414,7 @@ async def _load_segments(db: AsyncSession, room_id: str) -> list[TranscriptSegme
 async def get_room_transcript(
     room_id: str,
     lang: str | None = None,  # 出力言語（指定しない場合は全言語）
+    session_id: str | None = Query(default=None, description="対象の会議セッションID"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TranscriptResponse:
@@ -327,8 +439,9 @@ async def get_room_transcript(
             detail="この会議室にはアクセスできません",
         )
 
+    selected_session_id, sessions = await _resolve_session_id(db, room_id, session_id)
     # 文字起こしセグメントを取得（時系列順、翻訳付き）
-    segments = await _load_segments(db, room_id)
+    segments = await _load_segments(db, room_id, selected_session_id)
 
     # ユーザー情報を取得してマッピング
     user_ids = list({s.speaker_id for s in segments})
@@ -343,15 +456,19 @@ async def get_room_transcript(
     subtitle_responses = []
     for s in segments:
         translations = {t.target_language: t.translated_text for t in s.translations}
-        # 指定言語がある場合は翻訳テキストを使用
-        text = translations[lang] if lang and lang in translations else s.text
+        if lang:
+            translations = (
+                {lang: translations[lang]}
+                if lang in translations
+                else {}
+            )
 
         subtitle_responses.append(
             SubtitleResponse(
                 id=s.id,
                 speaker_id=s.speaker_id,
                 speaker_name=users_map.get(s.speaker_id, "不明"),
-                original_text=s.text if not lang else text,
+                original_text=s.text,
                 original_language=s.source_language,
                 translations=translations,
                 timestamp=s.created_at.isoformat(),
@@ -361,6 +478,8 @@ async def get_room_transcript(
     return TranscriptResponse(
         room_id=room.id,
         room_name=room.name,
+        selected_session_id=selected_session_id,
+        sessions=[_to_session_summary(session) for session in sessions],
         subtitles=subtitle_responses,
         total=len(subtitle_responses),
     )
@@ -371,6 +490,7 @@ class MinutesResponse(BaseModel):
 
     room_id: str
     room_name: str
+    session_id: str | None
     output_language: str
     summary: str
     decisions: list[str]
@@ -395,6 +515,7 @@ def _build_transcript_text(
 async def get_room_minutes(
     room_id: str,
     lang: str = "ja",  # 議事録の出力言語
+    session_id: str | None = Query(default=None, description="対象の会議セッションID"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MinutesResponse:
@@ -422,8 +543,9 @@ async def get_room_minutes(
             detail="議事録生成は現在無効です（LLM 未設定）",
         )
 
+    selected_session_id, _sessions = await _resolve_session_id(db, room_id, session_id)
     # 文字起こしセグメントを時系列順に取得し話者名でマッピングする
-    segments = await _load_segments(db, room_id)
+    segments = await _load_segments(db, room_id, selected_session_id)
     user_ids = list({s.speaker_id for s in segments})
     if user_ids:
         result = await db.execute(select(User).where(User.id.in_(user_ids)))
@@ -446,6 +568,7 @@ async def get_room_minutes(
     return MinutesResponse(
         room_id=room.id,
         room_name=room.name,
+        session_id=selected_session_id,
         output_language=lang,
         summary=minutes.summary,
         decisions=minutes.decisions,

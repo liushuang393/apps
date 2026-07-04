@@ -23,10 +23,10 @@
 | プロバイダー | パイプライン / モデル | 用途 |
 |---|---|---|
 | `gpt4o_transcribe` | GPT-4o-transcribe ASR + GPT-4o-mini 翻訳 + tts-1 | 推奨（デフォルト） |
-| `gpt_realtime` | GPT-Realtime S2S（gpt-realtime-1.5, 音声直接翻訳） | 最低遅延 |
+| `gpt_realtime` | GPT-Realtime S2S（GA対応が必要な実験経路） | 最低遅延 |
 | `deepgram` | Deepgram Nova-3 ASR + GPT-4o-mini 翻訳 + tts-1 | 高精度ASR |
 | `google` | Google Chirp 3 ASR + Cloud Translation v3（Mode B） | 高精度・正式記録 |
-| `gemini_live` | Gemini Live S2S（gemini-3.5-live-translate-preview） | S2S 代替 |
+| `gemini_live` | Gemini Live S2S（鍵整備後に再検証する実験経路） | S2S 代替 |
 
 > `google` / `gemini_live` はキー・認証未整備時、起動を止めず `gpt4o_transcribe` へ自動フォールバックする。
 > ASR / MT / TTS は `ASR_PROVIDER` / `MT_PROVIDER` / `TTS_PROVIDER` で独立に差し替え可能（Composite。既定 `auto`）。
@@ -188,8 +188,8 @@ LLM_MINUTES_PROVIDER=auto         # auto（GPT優先・Gemini fallback） / gpt 
 | `PATCH /api/meetings/{id}/mode` | モード切替（主線の選択） |
 | `PATCH /api/meetings/{id}/participants/{pid}/voice-translation` | ユーザー単位の翻訳音声 ON/OFF |
 | `POST /api/rooms/{id}/token` | LiveKit 参加トークン発行（WebRTC 接続用） |
-| `GET /api/rooms/{id}/transcript` | 会議記録（言語別）取得 |
-| `GET /api/rooms/{id}/minutes` | 議事録（要約・決定事項・ToDo）生成 |
+| `GET /api/rooms/{id}/transcript` | 会議記録取得（`session_id` 指定で会議回単位に絞込可能） |
+| `GET /api/rooms/{id}/minutes` | 議事録生成（`session_id` 指定で会議回単位に絞込可能） |
 | `POST/GET/PATCH/DELETE /api/glossaries/terms` | 術語庫 CRUD（要admin） |
 
 ### 9. 品質ゲート（最低基準）
@@ -224,9 +224,9 @@ LLM_MINUTES_PROVIDER=auto         # auto（GPT優先・Gemini fallback） / gpt 
 
 | Phase | 内容 | 現状 |
 |---|---|---|
-| **Phase 1（MVP・主線2優先）** | Chirp 3 ASR → Cloud Translation + 術語庫 → 字幕 → 議事録 | 実装済み（`google` provider・`glossary` CRUD・議事録 API） |
-| **Phase 2（主線1追加）** | OpenAI Realtime S2S + ユーザー翻訳音声 ON/OFF + Mode Router | 実装済み（`gpt_realtime` / `gemini_live`・`mode_router.py`） |
-| **Phase 3（ハイブリッド）** | 同一音声を両主線へ複製（聞く=S2S / 読む=ASR+MT） | 実装済み（`orchestrator.py` + WebRTC SFU(LiveKit) Agent） |
+| **Phase 1（MVP・主線2優先）** | Chirp 3 ASR → Cloud Translation + 術語庫 → 字幕 → 議事録 | 実装済み（現行の出荷基線） |
+| **Phase 2（主線1追加）** | OpenAI Realtime S2S + ユーザー翻訳音声 ON/OFF + Mode Router | 実装あり（`mode1` は再検証/再設計対象） |
+| **Phase 3（ハイブリッド）** | 同一音声を両主線へ複製（聞く=S2S / 読む=ASR+MT） | 実装あり（QoS・実機検証は継続中） |
 
 > **通信レイヤー**：WebSocket は廃止済みで、WebRTC（LiveKit）へ一本化済み。
 > バックエンドは（1）参加トークン発行（`POST /api/rooms/{id}/token`）と

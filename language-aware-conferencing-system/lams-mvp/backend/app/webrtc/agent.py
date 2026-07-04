@@ -21,7 +21,7 @@ from livekit import rtc
 
 from app.config import settings
 from app.rooms.manager import ParticipantPreference, room_manager
-from app.webrtc.persistence import MeetingConfig, get_meeting_config
+from app.webrtc.persistence import MeetingConfig, end_session, get_meeting_config
 from app.webrtc.processor import SegmentProcessor
 from app.webrtc.publisher import LiveKitPublisher
 from app.webrtc.segmenter import SpeechSegmenter
@@ -90,6 +90,7 @@ class LiveKitAgent:
         disconnected = asyncio.Event()
         self._register_handlers(disconnected)
         await self._room.connect(url, token)
+        await self._sync_existing_participants()
         logger.info("[Agent] 接続完了: room=%s", self._room_id)
         await disconnected.wait()
         logger.info("[Agent] 切断: room=%s", self._room_id)
@@ -112,13 +113,28 @@ class LiveKitAgent:
 
         @self._room.on("participant_disconnected")
         def _on_leave(participant) -> None:  # noqa: ANN001
-            self._spawn(
-                room_manager.remove_participant(self._room_id, participant.identity)
-            )
+            self._spawn(self._handle_participant_leave(participant.identity))
 
         @self._room.on("disconnected")
         def _on_disc(*_args) -> None:
+            self._spawn(self._finalize_if_room_empty())
             disconnected.set()
+
+    async def _handle_participant_leave(self, participant_id: str) -> None:
+        """参加者退室後、最後の1人なら session を終了する。"""
+        remaining = await room_manager.remove_participant(self._room_id, participant_id)
+        if remaining == 0:
+            await end_session(self._room_id)
+
+    async def _finalize_if_room_empty(self) -> None:
+        """Agent 切断時に人間参加者が残っていなければ session を閉じる。"""
+        try:
+            remaining = await room_manager.count_participants(self._room_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[Agent] 退室後参加者数の確認に失敗: room=%s err=%s", self._room_id, e)
+            return
+        if remaining == 0:
+            await end_session(self._room_id)
 
     async def _sync_participant(self, participant) -> None:  # noqa: ANN001
         """participant attributes を room_manager の preference へ反映する。"""
@@ -136,6 +152,12 @@ class LiveKitAgent:
             await room_manager.update_preference(
                 self._room_id, participant.identity, target_language=target
             )
+
+    async def _sync_existing_participants(self) -> None:
+        """接続時点ですでに room にいる参加者を初期同期する。"""
+        remote_participants = getattr(self._room, "remote_participants", {}) or {}
+        for participant in remote_participants.values():
+            await self._sync_participant(participant)
 
     async def _ingest(self, track, participant) -> None:  # noqa: ANN001
         """1 話者トラックを 16kHz モノで購読し、発話単位に切り出して処理する。"""

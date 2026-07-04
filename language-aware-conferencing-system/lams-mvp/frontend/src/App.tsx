@@ -73,6 +73,18 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const user = useAuthStore((s) => s.user);
+  const hasHydrated = useAuthStore((s) => s.hasHydrated);
+  if (!hasHydrated) {
+    return null;
+  }
+  if (user?.role !== 'admin') {
+    return <Navigate to="/menu" replace />;
+  }
+  return <>{children}</>;
+}
+
 export function App() {
   return (
     <BrowserRouter>
@@ -118,7 +130,9 @@ export function App() {
           path="/admin"
           element={
             <PrivateRoute>
-              <AdminPage />
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
             </PrivateRoute>
           }
         />
@@ -126,7 +140,9 @@ export function App() {
           path="/admin/languages"
           element={
             <PrivateRoute>
-              <LanguageSettingsPage />
+              <AdminRoute>
+                <LanguageSettingsPage />
+              </AdminRoute>
             </PrivateRoute>
           }
         />

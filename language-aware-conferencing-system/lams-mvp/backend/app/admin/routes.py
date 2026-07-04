@@ -20,21 +20,13 @@ from app.db.models import (
     UserRole,
     utc_now,
 )
-
-# 対応可能な全言語リスト（OpenAI高精度言語）
-ALL_SUPPORTED_LANGUAGES = [
-    "en",
-    "ja",
-    "zh",
-    "ko",
-    "vi",
-    "fr",
-    "de",
-    "ru",
-    "es",
-    "pt",
-]
-MAX_ENABLED_LANGUAGES = 4
+from app.languages import (
+    ALL_SUPPORTED_LANGUAGES,
+    LANGUAGE_DISPLAY_NAMES,
+    LANGUAGE_TIERS,
+    MAX_ENABLED_LANGUAGES,
+    get_enabled_languages,
+)
 
 router = APIRouter()
 
@@ -267,16 +259,12 @@ class LanguageSettingsResponse(BaseModel):
 
 # 全言語オプション定義
 ALL_LANGUAGE_OPTIONS: list[LanguageOption] = [
-    LanguageOption(code="en", name="English", tier=1),
-    LanguageOption(code="ja", name="日本語", tier=2),
-    LanguageOption(code="zh", name="中文", tier=2),
-    LanguageOption(code="ko", name="한국어", tier=2),
-    LanguageOption(code="vi", name="Tiếng Việt", tier=3),
-    LanguageOption(code="fr", name="Français", tier=1),
-    LanguageOption(code="de", name="Deutsch", tier=1),
-    LanguageOption(code="ru", name="Русский", tier=2),
-    LanguageOption(code="es", name="Español", tier=1),
-    LanguageOption(code="pt", name="Português", tier=1),
+    LanguageOption(
+        code=code,
+        name=LANGUAGE_DISPLAY_NAMES[code],
+        tier=LANGUAGE_TIERS[code],
+    )
+    for code in ALL_SUPPORTED_LANGUAGES
 ]
 
 
@@ -289,11 +277,7 @@ async def get_language_settings(
     現在の言語設定を取得
     全ユーザーがアクセス可能
     """
-    result = await db.execute(
-        select(SystemConfig).where(SystemConfig.key == "enabled_languages")
-    )
-    row = result.scalar_one_or_none()
-    enabled = json.loads(row.value) if row else ["ja", "en", "zh", "vi"]
+    enabled = await get_enabled_languages(db)
 
     return LanguageSettingsResponse(
         enabled_languages=enabled,
@@ -325,7 +309,7 @@ async def update_language_settings(
         db.add(
             SystemConfig(
                 key="enabled_languages",
-                value=json.dumps(data.enabled_languages),
+                value=json.dumps(data.enabled_languages, ensure_ascii=False),
                 updated_by=admin.id,
             )
         )

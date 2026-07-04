@@ -15,8 +15,14 @@ import { ParticipantList } from '../components/ParticipantList';
 export function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
-  const { connectionStatus, roomName, policy } = useRoomStore();
-  const { sendPreferenceChange, disconnect, roomRef } = useLiveKit(roomId || null);
+  const { connectionStatus, connectionError, qosWarnings, roomName, policy } = useRoomStore();
+  const {
+    sendPreferenceChange,
+    disconnect,
+    roomRef,
+    setAudioOutputDevice,
+    audioOutputSelectionSupported,
+  } = useLiveKit(roomId || null);
 
   // 音声デバイス管理
   const {
@@ -45,6 +51,11 @@ export function RoomPage() {
 
   // メインエリア波形Canvas
   const mainWaveformRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!selectedSpeakerId) return;
+    void setAudioOutputDevice(selectedSpeakerId);
+  }, [selectedSpeakerId, setAudioOutputDevice]);
 
   // メインエリア波形描画
   useEffect(() => {
@@ -139,7 +150,7 @@ export function RoomPage() {
               <select
                 value={selectedSpeakerId || ''}
                 onChange={(e) => selectSpeaker(e.target.value)}
-                disabled={speakers.length === 0}
+                disabled={speakers.length === 0 || !audioOutputSelectionSupported}
               >
                 {speakers.map((spk) => (
                   <option key={spk.deviceId} value={spk.deviceId}>
@@ -159,6 +170,24 @@ export function RoomPage() {
           <button className="leave-btn" onClick={handleLeave}>退室</button>
         </div>
       </header>
+
+      {connectionError && (
+        <div className="error" role="alert">
+          {connectionError}
+        </div>
+      )}
+      {qosWarnings.length > 0 && (
+        <div className="warning" role="status">
+          {qosWarnings[qosWarnings.length - 1].shouldFallbackToSubtitle
+            ? '翻訳音声の品質が低下しています。字幕を優先して利用してください。'
+            : '字幕品質に関する警告が発生しています。'}
+        </div>
+      )}
+      {!audioOutputSelectionSupported && (
+        <div className="hint-text">
+          このブラウザではスピーカー切替に対応していないため、既定の出力先を使用します。
+        </div>
+      )}
 
       <div className="room-content">
         <aside className="sidebar">

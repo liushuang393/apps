@@ -163,8 +163,8 @@ class MeetingSession(Base):
     # 進行中に PATCH /api/meetings/{id}/mode で切替可能（Phase 3 Mode Router の入力）。
     mode: Mapped[str] = mapped_column(
         String(10),
-        default=MeetingMode.HYBRID.value,
-        server_default=MeetingMode.HYBRID.value,
+        default=MeetingMode.A.value,
+        server_default=MeetingMode.A.value,
     )
 
     # 会議終了時に書き込む QoS サマリ（改善.md §15）。
@@ -207,8 +207,8 @@ class Room(Base):
     # 会議の既定モード（a / b / hybrid）。新規 MeetingSession.mode の初期値。
     default_mode: Mapped[str] = mapped_column(
         String(10),
-        default=MeetingMode.HYBRID.value,
-        server_default=MeetingMode.HYBRID.value,
+        default=MeetingMode.A.value,
+        server_default=MeetingMode.A.value,
     )
     # 聞く主線（OpenAI/Gemini S2S 翻訳音声）を会議レベルで許可するか。
     # False の場合 hybrid でも読む主線（字幕）のみに縮退する。

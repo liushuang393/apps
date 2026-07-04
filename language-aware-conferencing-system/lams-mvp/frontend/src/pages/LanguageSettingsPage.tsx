@@ -43,6 +43,9 @@ export function LanguageSettingsPage() {
 
   // 初期データ取得
   useEffect(() => {
+    if (!user || user.role !== 'admin') {
+      return;
+    }
     const fetchSettings = async () => {
       try {
         const data = await adminApi.getLanguageSettings();
@@ -54,8 +57,8 @@ export function LanguageSettingsPage() {
         setIsLoading(false);
       }
     };
-    fetchSettings();
-  }, []);
+    void fetchSettings();
+  }, [user]);
 
   /** 言語選択/解除 */
   const handleToggleLanguage = useCallback((code: string) => {

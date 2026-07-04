@@ -173,12 +173,14 @@ class HybridQoSMonitor:
         value = self.p95(mainline)
         if target is None or value is None or value <= target:
             return None
+        fallback = mainline == "hearing"
         return {
             "type": "qos_warning",
             "metric": "latency_p95",
             "mainline": mainline,
             "value_ms": round(value, 1),
             "target_ms": target,
+            "should_fallback_to_subtitle": fallback,
         }
 
     def evaluate_glossary(self) -> dict | None:
@@ -191,6 +193,7 @@ class HybridQoSMonitor:
             "metric": "glossary_hit_rate",
             "value": round(rate, 4),
             "target": self._glossary_target,
+            "should_fallback_to_subtitle": False,
         }
 
     def evaluate_number_retention(self) -> dict | None:
@@ -203,6 +206,7 @@ class HybridQoSMonitor:
             "metric": "number_retention_rate",
             "value": round(rate, 4),
             "target": self._number_target,
+            "should_fallback_to_subtitle": False,
         }
 
     def snapshot(self) -> HybridQoSSnapshot:

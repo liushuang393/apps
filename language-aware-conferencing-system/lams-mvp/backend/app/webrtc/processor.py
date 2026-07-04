@@ -19,10 +19,11 @@ from app.ai_pipeline.orchestrator import (
     HybridOrchestrator,
     OrchestrationResult,
     OutputSink,
-    hybrid_orchestrator,
 )
+from app.ai_pipeline.qos import HybridQoSMonitor
 from app.audio.pcm import wrap_wav16
 from app.rooms.manager import ParticipantPreference
+from app.translate import subtitle_cache
 from app.webrtc.listeners import build_listeners
 from app.webrtc.persistence import (
     MeetingConfig,
@@ -37,6 +38,12 @@ logger = logging.getLogger(__name__)
 _INPUT_SAMPLE_RATE = 16000
 # 言語検出失敗を表す値（この場合は話者ヒント言語へフォールバック）。
 _UNKNOWN_LANG = "multi"
+_ERROR_PREFIXES = (
+    "[ASRエラー",
+    "[ASR error",
+    "[Transcription error",
+    "[Speech error",
+)
 
 # 注入可能な言語検出関数（wav, hint）→（認識テキスト, 検出言語）。
 DetectFn = Callable[[bytes, str], Awaitable[tuple[str, str]]]
@@ -50,15 +57,27 @@ class SegmentProcessor:
     def __init__(
         self,
         *,
-        orchestrator: HybridOrchestrator = hybrid_orchestrator,
+        orchestrator: HybridOrchestrator | None = None,
         sequencer: SubtitleSequencer | None = None,
         detect_fn: DetectFn | None = None,
         input_sample_rate: int = _INPUT_SAMPLE_RATE,
     ) -> None:
-        self._orchestrator = orchestrator
+        self._orchestrator = orchestrator or HybridOrchestrator(
+            monitor=HybridQoSMonitor()
+        )
         self._sequencer = sequencer or SubtitleSequencer()
         self._detect_fn = detect_fn
         self._input_sample_rate = input_sample_rate
+
+    @staticmethod
+    def _is_provider_error_text(text: str) -> bool:
+        """ASR 失敗を示す疑似テキストを通常字幕として流さない。"""
+        normalized = text.strip()
+        if not normalized:
+            return False
+        if normalized.startswith(_ERROR_PREFIXES):
+            return True
+        return normalized.startswith("[") and normalized.endswith("]") and "エラー" in normalized
 
     async def _detect(self, wav: bytes, hint: str) -> tuple[str, str]:
         """言語検出（既定は ai_pipeline.detect_language を遅延束縛）。"""
@@ -96,6 +115,14 @@ class SegmentProcessor:
                 "[Agent] 認識結果なし(room=%s, speaker=%s)", room_id, speaker_id
             )
             return None
+        if self._is_provider_error_text(original_text):
+            logger.warning(
+                "[Agent] 認識エラー文字列を字幕化せず破棄: room=%s speaker=%s text=%s",
+                room_id,
+                speaker_id,
+                original_text,
+            )
+            return None
 
         # 連続同一テキストは字幕を発行しない（採番もしない）。
         if self._sequencer.is_duplicate(room_id, speaker_id, original_text):
@@ -107,6 +134,7 @@ class SegmentProcessor:
         listeners, user_language = build_listeners(participants, speaker_id)
         sink = sink_factory(user_language)
         subtitle_id = generate_subtitle_id()
+        await subtitle_cache.store_original(subtitle_id, original_text, detected_lang)
 
         result = await self._orchestrator.orchestrate(
             audio_bytes=wav,

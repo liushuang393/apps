@@ -43,19 +43,32 @@ def _participants() -> dict[str, ParticipantPreference]:
     }
 
 
-def _make(detect, monkeypatch) -> tuple[SegmentProcessor, _RecordingOrchestrator, list]:
+def _make(
+    detect, monkeypatch
+) -> tuple[SegmentProcessor, _RecordingOrchestrator, list, list]:
     """検出関数を注入し save_subtitle を捕捉する Processor を組み立てる。"""
     saved: list[dict] = []
+    originals: list[dict] = []
 
     async def fake_save(**kwargs) -> None:
         saved.append(kwargs)
 
+    async def fake_store_original(subtitle_id: str, original_text: str, source_language: str) -> None:
+        originals.append(
+            {
+                "subtitle_id": subtitle_id,
+                "original_text": original_text,
+                "source_language": source_language,
+            }
+        )
+
     monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
+    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
     orch = _RecordingOrchestrator()
     proc = SegmentProcessor(
         orchestrator=orch, sequencer=SubtitleSequencer(), detect_fn=detect
     )
-    return proc, orch, saved
+    return proc, orch, saved, originals
 
 
 def _sink_factory(captured: list):
@@ -73,7 +86,7 @@ async def test_empty_pcm_returns_none(monkeypatch) -> None:
     async def detect(_wav: bytes, _hint: str) -> tuple[str, str]:
         return ("text", "ja")
 
-    proc, orch, saved = _make(detect, monkeypatch)
+    proc, orch, saved, _originals = _make(detect, monkeypatch)
     result = await proc.process(
         room_id="r",
         speaker_id="spk",
@@ -92,7 +105,7 @@ async def test_empty_recognition_returns_none(monkeypatch) -> None:
     async def detect(_wav: bytes, _hint: str) -> tuple[str, str]:
         return ("", "ja")
 
-    proc, orch, saved = _make(detect, monkeypatch)
+    proc, orch, saved, _originals = _make(detect, monkeypatch)
     result = await proc.process(
         room_id="r",
         speaker_id="spk",
@@ -111,7 +124,7 @@ async def test_happy_path_drives_orchestrator_and_persists(monkeypatch) -> None:
         return ("こんにちは", "ja")
 
     captured: list = []
-    proc, orch, saved = _make(detect, monkeypatch)
+    proc, orch, saved, originals = _make(detect, monkeypatch)
     result = await proc.process(
         room_id="r",
         speaker_id="spk",
@@ -127,6 +140,7 @@ async def test_happy_path_drives_orchestrator_and_persists(monkeypatch) -> None:
     assert call["mode"] == "hybrid" and call["seq"] == 1 and call["speaker_id"] == "spk"
     assert captured[0]["lis"] == "en"  # 受聴者の目標言語が sink へ渡る
     assert saved[0]["source_language"] == "ja" and saved[0]["text"] == "こんにちは"
+    assert originals[0]["original_text"] == "こんにちは"
 
 
 @pytest.mark.asyncio
@@ -134,7 +148,7 @@ async def test_duplicate_text_skips_second(monkeypatch) -> None:
     async def detect(_wav: bytes, _hint: str) -> tuple[str, str]:
         return ("同じ", "ja")
 
-    proc, orch, _saved = _make(detect, monkeypatch)
+    proc, orch, _saved, _originals = _make(detect, monkeypatch)
     kwargs = {
         "room_id": "r",
         "speaker_id": "spk",
@@ -154,7 +168,7 @@ async def test_multi_detection_falls_back_to_hint(monkeypatch) -> None:
     async def detect(_wav: bytes, _hint: str) -> tuple[str, str]:
         return ("hello", "multi")
 
-    proc, orch, _saved = _make(detect, monkeypatch)
+    proc, orch, _saved, _originals = _make(detect, monkeypatch)
     await proc.process(
         room_id="r",
         speaker_id="spk",
@@ -165,3 +179,24 @@ async def test_multi_detection_falls_back_to_hint(monkeypatch) -> None:
         config=MeetingConfig(),
     )
     assert orch.calls[0]["source_language"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_provider_error_text_is_dropped(monkeypatch) -> None:
+    async def detect(_wav: bytes, _hint: str) -> tuple[str, str]:
+        return ("[ASRエラー: timeout]", "ja")
+
+    proc, orch, saved, originals = _make(detect, monkeypatch)
+    result = await proc.process(
+        room_id="r",
+        speaker_id="spk",
+        pcm16=_PCM,
+        speaker_lang_hint="ja",
+        participants=_participants(),
+        sink_factory=_sink_factory([]),
+        config=MeetingConfig(),
+    )
+    assert result is None
+    assert orch.calls == []
+    assert saved == []
+    assert originals == []

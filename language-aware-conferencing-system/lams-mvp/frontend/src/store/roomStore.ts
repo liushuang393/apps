@@ -7,6 +7,7 @@ import type {
   RoomPolicy,
   SubtitleData,
   InterimSubtitleData,
+  QosWarningData,
 } from '../types';
 
 /** 接続状態タイプ */
@@ -25,6 +26,10 @@ interface RoomState {
   isConnected: boolean;
   /** 詳細な接続状態 */
   connectionStatus: ConnectionStatus;
+  /** 接続エラーの詳細 */
+  connectionError: string | null;
+  /** QoS 警告履歴（最新数件） */
+  qosWarnings: QosWarningData[];
 
   // アクション
   setRoomState: (
@@ -48,6 +53,8 @@ interface RoomState {
   clearSubtitles: () => void;
   setConnected: (connected: boolean) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
+  setConnectionError: (message: string | null) => void;
+  addQosWarning: (warning: QosWarningData) => void;
   reset: () => void;
 }
 
@@ -62,6 +69,8 @@ export const useRoomStore = create<RoomState>((set) => ({
   interimSubtitles: new Map(),
   isConnected: false,
   connectionStatus: 'disconnected',
+  connectionError: null,
+  qosWarnings: [],
 
   setRoomState: (roomId, roomName, policy, participants, myPreference) =>
     set({
@@ -72,6 +81,8 @@ export const useRoomStore = create<RoomState>((set) => ({
       myPreference,
       isConnected: true,
       connectionStatus: 'connected',
+      connectionError: null,
+      qosWarnings: [],
     }),
 
   addParticipant: (p) =>
@@ -118,17 +129,6 @@ export const useRoomStore = create<RoomState>((set) => ({
         }
       }
 
-      // 同じ話者の連続した同一テキストを除外（バックエンドの重複チェックの補完）
-      const lastSubtitle = state.subtitles[state.subtitles.length - 1];
-      if (
-        lastSubtitle &&
-        lastSubtitle.speakerId === subtitle.speakerId &&
-        lastSubtitle.originalText === subtitle.originalText
-      ) {
-        // 同じ話者の同じテキストは無視
-        return state;
-      }
-
       // 新しい字幕を追加（最新50件を保持）
       const newSubtitles = [...state.subtitles, subtitle].slice(-50);
 
@@ -168,6 +168,13 @@ export const useRoomStore = create<RoomState>((set) => ({
   setConnectionStatus: (status) =>
     set({ connectionStatus: status, isConnected: status === 'connected' }),
 
+  setConnectionError: (message) => set({ connectionError: message }),
+
+  addQosWarning: (warning) =>
+    set((state) => ({
+      qosWarnings: [...state.qosWarnings, warning].slice(-5),
+    })),
+
   reset: () =>
     set({
       roomId: null,
@@ -180,5 +187,7 @@ export const useRoomStore = create<RoomState>((set) => ({
       interimSubtitles: new Map(),
       isConnected: false,
       connectionStatus: 'disconnected',
+      connectionError: null,
+      qosWarnings: [],
     }),
 }));
