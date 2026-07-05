@@ -20,6 +20,10 @@ const REALTIME_MIN_COMMIT_AUDIO_MS = 100;
 // 左カラムの原文STTは句末標点が来ないことが多く、これが無いと累積したまま表示されない。
 const TRANSLATION_CAPTION_IDLE_MS = 1500;
 
+// 観測トレース（リングバッファ）の上限件数。実セッションのイベント列とペアリング判断を
+// 後から検証するための基盤（推測駆動の再発防止。判定は体感でなく計測で行う）。
+const TRANSLATION_TRACE_MAX = 500;
+
 // 公式手順(session.close→session.closed)の応答待ち上限。応答が無くても切断を進める。
 const TRANSLATION_CLOSE_TIMEOUT_MS = 2000;
 
@@ -266,6 +270,14 @@ const WebSocketMixin = {
      *   message: WebSocketメッセージオブジェクト
      */
     dispatchWSMessage(message) {
+        // 観測トレース: 全受信イベントを記録（本文テキストは保存しない。長さのみ）
+        const traceLen =
+            typeof message.delta === 'string'
+                ? message.delta.length
+                : typeof message.transcript === 'string'
+                  ? message.transcript.length
+                  : undefined;
+        this.traceTranslation(message.type || 'unknown', { len: traceLen });
         switch (message.type) {
             case 'session.updated':
                 this.handleSessionUpdated(message);
@@ -350,7 +362,97 @@ const WebSocketMixin = {
                 this.handleWSMessageError(message);
                 break;
             default:
+                // 未処理イベントの取り漏らし検出（完了系イベントに対する失敗イベント等）。
+                // トレースに unhandled として残し、実機検証ループで発見できるようにする。
+                this.traceTranslation('unhandled:' + message.type);
         }
+    },
+
+    /**
+     * 観測トレースへ1行記録する（リングバッファ、上限 TRANSLATION_TRACE_MAX 件）。
+     *
+     * 目的:
+     *   実セッションのイベント列とペアリング判断を後から検証可能にする（推測駆動の再発防止）。
+     *   プライバシーのため本文テキストは保存せず、種別・長さ・segmentId 等の小データのみ記録。
+     *
+     * @param {string} kind イベントtype または ペアリング判断名（pair:enqueue 等）
+     * @param {Object} [detail] 追加の小データ（len/seg/queue 等）
+     */
+    traceTranslation(kind, detail) {
+        if (!this._translationTrace) {
+            this._translationTrace = [];
+        }
+        const entry = { t: Date.now(), kind };
+        if (detail) {
+            Object.assign(entry, detail);
+        }
+        this._translationTrace.push(entry);
+        if (this._translationTrace.length > TRANSLATION_TRACE_MAX) {
+            this._translationTrace.shift();
+        }
+    },
+
+    /**
+     * 観測トレースの要約を作成しコンソールへ出力する（実機検証ループの判定材料）。
+     *
+     * 要約: イベント種別ごとの件数 / 認識delta数と左右行数の整合 / 行対ごとの段階レイテンシ
+     * （入力確定→ストリーム確定、入力確定→Chat確定）の中央値・最大。切断時に自動で呼ばれるほか、
+     * DevTools から window.app.dumpTranslationTrace() で随時取得できる。
+     *
+     * @returns {Object} 要約オブジェクト（貼り付け共有用）
+     */
+    dumpTranslationTrace() {
+        const trace = this._translationTrace || [];
+        const counts = {};
+        for (const entry of trace) {
+            counts[entry.kind] = (counts[entry.kind] || 0) + 1;
+        }
+        const bySeg = {};
+        for (const entry of trace) {
+            if (!entry.seg) {
+                continue;
+            }
+            if (!bySeg[entry.seg]) {
+                bySeg[entry.seg] = {};
+            }
+            const seg = bySeg[entry.seg];
+            if (
+                (entry.kind === 'pair:enqueue' || entry.kind === 'pair:claim-held') &&
+                seg.committed == null
+            ) {
+                seg.committed = entry.t;
+            }
+            if (entry.kind === 'output:finalize' && seg.streamDone == null) {
+                seg.streamDone = entry.t;
+            }
+            if (entry.kind === 'refine:apply' && seg.refined == null) {
+                seg.refined = entry.t;
+            }
+        }
+        const collect = (key) =>
+            Object.values(bySeg)
+                .filter((s) => s.committed != null && s[key] != null)
+                .map((s) => s[key] - s.committed)
+                .sort((a, b) => a - b);
+        const stats = (arr) =>
+            arr.length
+                ? { n: arr.length, median: arr[Math.floor(arr.length / 2)], max: arr[arr.length - 1] }
+                : { n: 0 };
+        // console へは一切出力しない（ユーザー方針）。DevTools で app.dumpTranslationTrace() を
+        // 実行すれば戻り値として表示される。直近のイベント列も recent に含めて返す。
+        return {
+            events: counts,
+            inputDeltaCount: counts['session.input_transcript.delta'] || 0,
+            leftRows:
+                this.getTranscriptContainer?.('input')?.querySelectorAll('.transcript-message')
+                    .length ?? null,
+            rightRows:
+                this.getTranscriptContainer?.('output')?.querySelectorAll('.transcript-message')
+                    .length ?? null,
+            latencyStreamMs: stats(collect('streamDone')),
+            latencyRefineMs: stats(collect('refined')),
+            recent: trace.slice(-50)
+        };
     },
 
     /**
@@ -435,7 +537,7 @@ const WebSocketMixin = {
      *
      * @param {'input'|'output'} kind
      */
-    commitTranslationCaption(kind) {
+    commitTranslationCaption(kind, options = {}) {
         if (this.captionFlushTimers && this.captionFlushTimers[kind]) {
             clearTimeout(this.captionFlushTimers[kind]);
             this.captionFlushTimers[kind] = null;
@@ -457,10 +559,19 @@ const WebSocketMixin = {
         // output の確定（サーバ .done またはアイドルflush）
         if (this._pendingOutputSegments?.length) {
             // ✅ 左右1:1: 訳文確定待ちの最古の行対（キュー先頭）の訳文として確定し、次へ進む。
+            //    アイドルflush由来（ターン途中の停滞の可能性がある）は 'stream-final' にせず
+            //    'responding' のまま dequeue し、最終確定は路径3(Chat)に委ねる（早期確定の無害化）。
             const segmentId = this._pendingOutputSegments.shift();
             this.clearLiveCaption(kind);
+            this.traceTranslation?.('output:finalize', {
+                seg: segmentId,
+                len: text.length,
+                idle: Boolean(options.fromIdle)
+            });
             if (text && typeof this.upsertSegmentOutput === 'function') {
-                this.upsertSegmentOutput(segmentId, text, { status: 'stream-final' });
+                this.upsertSegmentOutput(segmentId, text, {
+                    status: options.fromIdle ? 'responding' : 'stream-final'
+                });
             }
             // 空（禁則除去で消えた等）なら placeholder を維持し、路径3(Chat確定訳)が埋める。
             return;
@@ -470,17 +581,19 @@ const WebSocketMixin = {
             return;
         }
         if (this.translationCaption.input) {
-            // 訳文が入力確定より先に完了したターン: 保留し、直後の入力確定が同一行対として回収する
-            // （入力側は自身のアイドルflushで必ず確定するため、保留が滞留することはない）。
+            // 訳文が入力確定より先に完了したターン: 保留し、直後の入力確定が同一行対として回収する。
+            // 回収されない残余は flushTranslationCaptions が必ず排出する（不漏）。
             // ライブ行は残す＝回収まで訳文が画面から消えないようにする。
             if (!this._heldOutputs) {
                 this._heldOutputs = [];
             }
             this._heldOutputs.push(text);
+            this.traceTranslation?.('output:hold', { len: text.length });
             return;
         }
         this.clearLiveCaption(kind);
         // 入力転写が無い（転写設定OFF・転写失敗）場合の不漏フォールバック: 訳文のみを時系列で確定。
+        this.traceTranslation?.('output:orphan', { len: text.length });
         if (typeof this.addTranscript === 'function') {
             this.addTranscript('output', text, null);
         }
@@ -527,6 +640,7 @@ const WebSocketMixin = {
             // 訳文が入力確定より先に完了していたターン: 保留分を本行対の訳文として回収する
             // （既に確定済みの訳文なので FIFO には積まない）。
             const held = this._heldOutputs.shift();
+            this.traceTranslation?.('pair:claim-held', { seg: segment.id, len: held.length });
             this.upsertSegmentOutput(segment.id, held, { status: 'stream-final' });
             if (!(this.translationCaption?.output || '').trim()) {
                 this.clearLiveCaption('output');
@@ -536,7 +650,18 @@ const WebSocketMixin = {
             if (!this._pendingOutputSegments) {
                 this._pendingOutputSegments = [];
             }
+            // ✅ ズレ有界化: 訳文が一度も来ないターンが先頭に滞留すると以後の右列が恒久的に
+            //    1行ズレる。新しい行対を積む時点で待ちが2件以上あれば、最古の先頭は
+            //    「訳文なし」とみなして placeholder のまま外す（最終的に路径3が埋める）。
+            while (this._pendingOutputSegments.length >= 2) {
+                const stale = this._pendingOutputSegments.shift();
+                this.traceTranslation?.('pair:stale-dequeue', { seg: stale });
+            }
             this._pendingOutputSegments.push(segment.id);
+            this.traceTranslation?.('pair:enqueue', {
+                seg: segment.id,
+                queue: this._pendingOutputSegments.length
+            });
             this.upsertSegmentOutput(segment.id, '', {
                 status: 'collecting',
                 placeholder: '翻訳中...'
@@ -567,7 +692,8 @@ const WebSocketMixin = {
         }
         this.captionFlushTimers[kind] = setTimeout(() => {
             this.captionFlushTimers[kind] = null;
-            this.commitTranslationCaption(kind);
+            this.traceTranslation?.('idle-flush', { kind });
+            this.commitTranslationCaption(kind, { fromIdle: true });
         }, TRANSLATION_CAPTION_IDLE_MS);
     },
 
@@ -582,6 +708,14 @@ const WebSocketMixin = {
         // input を先に確定する（行対がFIFOへ載り、続く output 確定がその行対を埋める）。
         for (const kind of ['input', 'output']) {
             this.commitTranslationCaption(kind);
+        }
+        // ✅ 不漏: 入力確定が来ないまま保留された訳文（_heldOutputs 残余）を必ず排出する。
+        //    ここで捨てると受信済みの翻訳が黙って消える（切断・session.closed 時の底線）。
+        if (this._heldOutputs && this._heldOutputs.length && typeof this.addTranscript === 'function') {
+            for (const heldText of this._heldOutputs.splice(0)) {
+                this.traceTranslation?.('output:orphan-held', { len: heldText.length });
+                this.addTranscript('output', heldText, null);
+            }
         }
     },
 
@@ -604,6 +738,14 @@ const WebSocketMixin = {
         this._pendingOutputSegments = [];
         this._heldOutputs = [];
         this.latencyTurnStartAt = null;
+        // ✅ ゴースト行防止: 保留中の路径3(refine)デバウンスタイマーも破棄する。
+        //    残すとクリア/再接続後に発火し、消去済み segmentId の行を再生成してしまう。
+        if (this._segRefineTimers) {
+            for (const segmentId of Object.keys(this._segRefineTimers)) {
+                clearTimeout(this._segRefineTimers[segmentId]);
+            }
+            this._segRefineTimers = {};
+        }
         if (typeof this.clearLiveCaption === 'function') {
             this.clearLiveCaption('input');
             this.clearLiveCaption('output');
@@ -1375,11 +1517,12 @@ const WebSocketMixin = {
         if (this._segRefineTimers[segmentId]) {
             clearTimeout(this._segRefineTimers[segmentId]);
         }
-        // ponytail: 500ms デバウンス。grouped の複数 completed を最終文でまとめて1回だけ翻訳する。
+        // ponytail: 250ms デバウンス。複数 completed を最終文でまとめて1回だけ翻訳する
+        // （確定訳の体感遅延を下げるため 500→250ms。連投抑止の効果は維持）。
         this._segRefineTimers[segmentId] = setTimeout(() => {
             delete this._segRefineTimers[segmentId];
             this.translateSegmentViaChat(segmentId, text, sourceLang);
-        }, 500);
+        }, 250);
     },
 
     /**
@@ -1437,7 +1580,16 @@ const WebSocketMixin = {
                 (Utils.stripAssistantBoilerplate ? Utils.stripAssistantBoilerplate(raw) : raw) || ''
             ).trim();
             if (translated && typeof this.upsertSegmentOutput === 'function') {
+                // クリア/再接続で行が消えている場合は適用しない（ゴースト行の再生成防止）。
+                const row = this.getTranscriptContainer?.('output')?.querySelector(
+                    `.transcript-message[data-segment-id="${segmentId}"]`
+                );
+                if (!row) {
+                    this.traceTranslation?.('refine:stale-drop', { seg: segmentId });
+                    return;
+                }
                 this.upsertSegmentOutput(segmentId, translated, { status: 'translated' });
+                this.traceTranslation?.('refine:apply', { seg: segmentId });
             } else {
                 this.setSegmentOutputStatus?.(segmentId, 'stream-final');
             }

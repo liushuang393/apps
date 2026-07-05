@@ -319,6 +319,81 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         expect(orphans).toHaveLength(1);
         expect(textOf(orphans[0])).toBe('新訳');
     });
+
+    it('Chat確定訳(translated)は後続ストリームのdelta/doneに上書きされない（乱改根絶）', () => {
+        const { app, outputContainer } = createTranslationApp();
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'A原文' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        const right = committedRows(outputContainer);
+        const segId = right[0].dataset.segmentId;
+
+        // 路径3のChat確定訳が先に到着
+        app.upsertSegmentOutput(segId, 'Chat確定訳', { status: 'translated' });
+        // 遅れて届くストリームのdelta/doneは降格上書きとして拒否される
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '流訳' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+
+        expect(textOf(right[0])).toBe('Chat確定訳');
+        expect(right[0].dataset.status).toBe('translated');
+        expect(app._pendingOutputSegments).toHaveLength(0); // キュー自体は正しく進む
+    });
+
+    it('訳文ゼロのターンが先頭に滞留しても後続の右列がズレ続けない（キュー有界化）', () => {
+        const { app, inputContainer, outputContainer } = createTranslationApp();
+
+        // ターンA/Bは訳文が一切来ない。Cの確定時に最古の滞留分が外れる。
+        for (const text of ['A原文', 'B原文', 'C原文']) {
+            app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: text });
+            app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        }
+        expect(app._pendingOutputSegments.length).toBeLessThanOrEqual(2);
+
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'B訳' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+
+        // 訳文は最古の未確定ターンの行へ着地する（segmentIdの対応が保たれる）
+        const rowB = committedRows(outputContainer).find((el) => textOf(el) === 'B訳');
+        const leftB = committedRows(inputContainer).find((el) => textOf(el) === 'B原文');
+        expect(rowB).toBeTruthy();
+        expect(rowB.dataset.segmentId).toBe(leftB.dataset.segmentId);
+    });
+
+    it('入力確定が来ないまま保留された訳文も flush で必ず排出される（不漏）', () => {
+        const { app, outputContainer } = createTranslationApp();
+
+        // 1入力ターンに対し訳文確定が2回来るケース（キュー空・入力ストリーミング中）
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'X原文' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'Y1' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'Y2' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' }); // Y1 を回収
+        app.dispatchWSMessage({ type: 'session.closed' }); // 残余 Y2 を排出
+
+        const texts = committedRows(outputContainer).map(textOf);
+        expect(texts).toContain('Y1');
+        expect(texts).toContain('Y2'); // 旧実装では黙って破棄されていた
+        expect(app._heldOutputs).toHaveLength(0);
+    });
+
+    it('アイドルflushの早期確定は responding のままで、後からChat確定訳が上書きできる', async () => {
+        const { app, outputContainer } = createTranslationApp();
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'A原文' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '部分訳' });
+        await sleep(1700); // .done が来ないままアイドルflush
+
+        const right = committedRows(outputContainer);
+        expect(right[0].dataset.status).toBe('responding'); // stream-final で固定しない
+        expect(textOf(right[0])).toBe('部分訳');
+
+        app.upsertSegmentOutput(right[0].dataset.segmentId, 'Chat確定訳', {
+            status: 'translated'
+        });
+        expect(textOf(right[0])).toBe('Chat確定訳'); // 昇格上書きは許可される
+    }, 5000);
 });
 
 describe('翻訳セッションの graceful close（P1: session.close ハンドシェイク）', () => {

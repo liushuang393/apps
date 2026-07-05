@@ -12,6 +12,15 @@
  *   Object.assign(VoiceTranslateApp.prototype, UIMixin);
  */
 
+// 右カラム行 status の優先順位（低→高）。上書きは同順位以上へのみ許可＝表示は単調に良くなる。
+// 特に 'translated'（路径3のChat確定訳）を後続ストリームが低位statusで改変する「乱改」を構造的に防ぐ。
+const SEGMENT_STATUS_RANK = {
+    collecting: 0,
+    responding: 1,
+    'stream-final': 2,
+    translated: 3
+};
+
 const UIMixin = {
     /**
      * 重複するトランスクリプトをチェック
@@ -157,6 +166,18 @@ const UIMixin = {
             message.dataset.responseId = options.responseId;
         }
         if (options.status) {
+            // ✅ 乱改防止: status は単調にしか進めない（SEGMENT_STATUS_RANK）。確定済みの行
+            //    （特に translated=Chat確定訳）への低位statusの上書きは、テキストごと拒否する。
+            const currentRank = SEGMENT_STATUS_RANK[message.dataset.status];
+            const nextRank = SEGMENT_STATUS_RANK[options.status];
+            if (currentRank !== undefined && nextRank !== undefined && nextRank < currentRank) {
+                this.traceTranslation?.('render:downgrade-blocked', {
+                    seg: segmentId,
+                    from: message.dataset.status,
+                    to: options.status
+                });
+                return message;
+            }
             message.dataset.status = options.status;
         }
 

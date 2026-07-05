@@ -171,3 +171,49 @@ describe('startPinnedDeviceCapture', () => {
         expect(stages).toEqual(['microphone']);
     });
 });
+
+describe('restartCapture', () => {
+    it('複数の再起動要求を直列化し、stop→start が交錯しない（二重パイプライン防止）', async () => {
+        const { App } = loadProApp();
+        const calls = [];
+        const fake = {
+            state: { isRecording: true },
+            notify() {},
+            extractErrorMessage(e) {
+                return String(e);
+            },
+            restartCapture: App.prototype.restartCapture,
+            async stopRecording() {
+                calls.push('stop');
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            },
+            async startRecording() {
+                calls.push('start');
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+        };
+
+        await Promise.all([fake.restartCapture('切替A'), fake.restartCapture('切替B')]);
+
+        // 交錯すると ['stop','stop','start','start'] になる（旧実装の二重パイプライン）
+        expect(calls).toEqual(['stop', 'start', 'stop', 'start']);
+    });
+
+    it('録音中でなければ何もしない', async () => {
+        const { App } = loadProApp();
+        const calls = [];
+        const fake = {
+            state: { isRecording: false },
+            restartCapture: App.prototype.restartCapture,
+            async stopRecording() {
+                calls.push('stop');
+            },
+            async startRecording() {
+                calls.push('start');
+            }
+        };
+
+        await fake.restartCapture('切替');
+        expect(calls).toEqual([]);
+    });
+});

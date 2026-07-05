@@ -239,7 +239,9 @@ class VoiceTranslateApp {
         this.initEventListeners();
         this.initVisualizer();
         this.initVAD(); // ✅ VADを先に初期化
-        this.loadSettings(); // ✅ 設定を読み込んでVAD灵敏度を適用
+        // ✅ 設定の復元を待ってから後続を実行する（デバイス一覧の構築より先に
+        //    preferred_input_device 等が state に入っていないと、消失デバイスの検証が素通りする）
+        await this.loadSettings();
 
         // ヘッダの入力デバイス一覧を初期表示し、抜き差しに追従する（リスナーは1回だけ登録）
         await this.populateInputDeviceSelect();
@@ -439,23 +441,8 @@ class VoiceTranslateApp {
             this.updateVADSensitivity(currentVadLevel);
 
             // ✅ #1 録音中にソースを変更した場合は、新ソースでキャプチャを取り直す（即時切替）。
-            //    マイク↔システムで取得APIもサーバVADのsilence_durationも異なるため、再起動が必要。
-            if (this.state.isRecording) {
-                try {
-                    await this.stopRecording();
-                    await this.updateSessionConfig(); // 新ソース用のserver VADへ更新
-                    await this.startRecording();
-                } catch (err) {
-                    this.notify(
-                        '音声ソース',
-                        'ソース切替に失敗しました。停止→開始で再試行してください。',
-                        'error'
-                    );
-                }
-            } else if (this.state.isConnected) {
-                // 接続中（待機）なら server VAD 設定のみ更新
-                await this.updateSessionConfig();
-            }
+            //    再起動は restartCapture に一本化（3経路の同時実行による二重パイプラインを防ぐ）。
+            await this.restartCapture('音声ソース切替に失敗');
         });
 
         // 会議アプリ検出ボタン
@@ -542,23 +529,13 @@ class VoiceTranslateApp {
         }
 
         // ヘッダの入力デバイス選択（auto=モード既定 / 手動=ピン留め）。録音中は即時切替。
+        // 再起動は restartCapture に一本化（3経路の同時実行による二重パイプラインを防ぐ）。
         if (this.elements.inputDeviceSelect) {
             this.elements.inputDeviceSelect.addEventListener('change', async (e) => {
                 const value = e.target.value === 'auto' ? '' : e.target.value;
                 this.state.preferredInputDeviceId = value;
                 this.saveToStorage('preferred_input_device', value);
-                if (this.state.isRecording) {
-                    try {
-                        await this.stopRecording();
-                        await this.startRecording();
-                    } catch (error) {
-                        this.notify(
-                            '入力デバイス切替に失敗',
-                            '停止→開始で再試行してください: ' + this.extractErrorMessage(error),
-                            'error'
-                        );
-                    }
-                }
+                await this.restartCapture('入力デバイス切替に失敗');
             });
         }
 
@@ -752,7 +729,7 @@ class VoiceTranslateApp {
                 `${fromLabel}が無音のため、次の監視先へ自動で切り替えます`,
                 'warning'
             );
-            this.fallbackToNextCaptureSource();
+            this.restartCapture('無音フォールバックに失敗');
             return;
         }
 
@@ -1186,7 +1163,9 @@ class VoiceTranslateApp {
         }
         try {
             const devices = await navigator.mediaDevices.enumerateDevices();
-            const inputs = devices.filter((d) => d.kind === 'audioinput');
+            // deviceId が空のエントリ（権限未付与時の既定デバイス）は除外する。
+            // value='' は「自動」の番兵と衝突し、選んでも auto と同義になってしまうため。
+            const inputs = devices.filter((d) => d.kind === 'audioinput' && d.deviceId);
             const virtualPattern = /CABLE|VB-Audio|VoiceMeeter|Virtual|仮想/i;
             const current = this.state.preferredInputDeviceId || 'auto';
 
@@ -2102,10 +2081,11 @@ class VoiceTranslateApp {
             await this.startMicrophoneCapture();
             this.setCaptureFallbackStage(null);
         }
-        // 実際に掴んだデバイス名をヘッダ右上へ反映
+        // キャプチャ成功＝権限付与済みで label が読めるため、先に一覧を実名へ再構築し、
+        // その後に実監視デバイス名（ground truth）を auto オプションへ反映する
+        // （順序が逆だと一覧の再構築で「自動（現在: ...）」表示が消える）。
+        await this.populateInputDeviceSelect();
         this.updateDeviceIndicator();
-        // キャプチャ成功＝権限付与済みで label が読めるため、デバイス一覧を実名に更新する
-        this.populateInputDeviceSelect();
     }
 
     /**
@@ -2266,23 +2246,35 @@ class VoiceTranslateApp {
     }
 
     /**
-     * 監視ソースを次の候補で取り直す（録音の停止→再開で確実に配線し直す）。
-     * 呼び出し前に this._captureFallbackTarget へ次段を設定しておくこと。
+     * 録音の停止→再開を直列化して行う（キャプチャ再配線の唯一の入口）。
+     *
+     * 目的:
+     *   デバイス切替・音源切替・無音フォールバックの3経路が同時に stop→start を走らせると
+     *   二重キャプチャパイプライン（二重音声送信→認識崩壊・音声結巴）になるため、
+     *   promiseチェーンで排他し「前の再起動が完全に終わってから」次を実行する。
+     *   録音中でなければ何もしない（実行時点の状態で判定）。
+     *
+     * @param {string} reason 失敗通知のタイトル
+     * @returns {Promise<void>} この再起動（キュー分含む）の完了で解決
      */
-    async fallbackToNextCaptureSource() {
-        if (!this.state.isRecording) {
-            return;
-        }
-        try {
-            await this.stopRecording();
-            await this.startRecording();
-        } catch (error) {
-            this.notify(
-                '音声ソース切替に失敗',
-                '停止→開始で再試行してください: ' + this.extractErrorMessage(error),
-                'error'
-            );
-        }
+    restartCapture(reason) {
+        const run = async () => {
+            if (!this.state.isRecording) {
+                return;
+            }
+            try {
+                await this.stopRecording();
+                await this.startRecording();
+            } catch (error) {
+                this.notify(
+                    reason,
+                    '停止→開始で再試行してください: ' + this.extractErrorMessage(error),
+                    'error'
+                );
+            }
+        };
+        this._restartChain = (this._restartChain || Promise.resolve()).then(run);
+        return this._restartChain;
     }
 
     /**
