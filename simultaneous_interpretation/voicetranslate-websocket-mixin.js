@@ -436,7 +436,11 @@ const WebSocketMixin = {
                 .sort((a, b) => a - b);
         const stats = (arr) =>
             arr.length
-                ? { n: arr.length, median: arr[Math.floor(arr.length / 2)], max: arr[arr.length - 1] }
+                ? {
+                      n: arr.length,
+                      median: arr[Math.floor(arr.length / 2)],
+                      max: arr[arr.length - 1]
+                  }
                 : { n: 0 };
         // console へは一切出力しない（ユーザー方針）。DevTools で app.dumpTranslationTrace() を
         // 実行すれば戻り値として表示される。直近のイベント列も recent に含めて返す。
@@ -711,7 +715,11 @@ const WebSocketMixin = {
         }
         // ✅ 不漏: 入力確定が来ないまま保留された訳文（_heldOutputs 残余）を必ず排出する。
         //    ここで捨てると受信済みの翻訳が黙って消える（切断・session.closed 時の底線）。
-        if (this._heldOutputs && this._heldOutputs.length && typeof this.addTranscript === 'function') {
+        if (
+            this._heldOutputs &&
+            this._heldOutputs.length &&
+            typeof this.addTranscript === 'function'
+        ) {
             for (const heldText of this._heldOutputs.splice(0)) {
                 this.traceTranslation?.('output:orphan-held', { len: heldText.length });
                 this.addTranscript('output', heldText, null);
