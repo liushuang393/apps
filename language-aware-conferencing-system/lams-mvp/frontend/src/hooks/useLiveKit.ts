@@ -59,9 +59,10 @@ interface AudioEntry {
   lang?: string;
 }
 
-interface SinkableMediaElement extends HTMLMediaElement {
+/** setSinkId 非対応ブラウザ向けに optional 化したメディア要素型 */
+type SinkableMediaElement = Omit<HTMLMediaElement, 'setSinkId'> & {
   setSinkId?: (sinkId: string) => Promise<void>;
-}
+};
 
 /** Agent 参加者かどうか */
 function isAgent(identity: string): boolean {

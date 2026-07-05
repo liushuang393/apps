@@ -75,7 +75,8 @@ async def test_hybrid_forks_both_mainlines_and_converges() -> None:
     # 字幕は読む主線が権威（混ぜない）
     assert len(sink.subtitles) == 1
     _, msg = sink.subtitles[0]
-    assert msg["original_text"] == "R:en"
+    assert msg["original_text"] == "こんにちは"
+    assert msg["translated_text"] == "R:en"
     assert msg["mainline"] == "reading"
     assert msg["provider"] == "asr_mt"
     assert res.translations == {"en": "R:en"}
@@ -101,7 +102,8 @@ async def test_mode_a_audio_only_subtitle_falls_back_to_hearing_delta() -> None:
     assert calls == {"hearing": 1, "reading": 0}
     assert sink.audio == [("u1", b"AUDIO")]
     _, msg = sink.subtitles[0]
-    assert msg["original_text"] == "H:en"
+    assert msg["original_text"] == "text"
+    assert msg["translated_text"] == "H:en"
     assert msg["mainline"] == "hearing"
 
 
@@ -191,7 +193,8 @@ async def test_runtime_fallback_hearing_failure_to_reading() -> None:
     assert calls == {"hearing": 1, "reading": 1}
     assert sink.audio == []  # 翻訳音声は生成されない
     _, msg = sink.subtitles[0]
-    assert msg["original_text"] == "R:en"
+    assert msg["original_text"] == "text"
+    assert msg["translated_text"] == "R:en"
     assert msg["mainline"] == "reading"
     assert res.tags[0]["reason"] == "hearing_failed_runtime_fallback_reading"
 

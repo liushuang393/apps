@@ -4,6 +4,7 @@ LAMS 会議室APIルート
 """
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
@@ -16,8 +17,8 @@ from app.auth.dependencies import get_current_user
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import (
-    MeetingSession,
     MeetingMode,
+    MeetingSession,
     Room,
     TranscriptSegment,
     User,
@@ -414,7 +415,9 @@ async def _load_segments(
 async def get_room_transcript(
     room_id: str,
     lang: str | None = None,  # 出力言語（指定しない場合は全言語）
-    session_id: str | None = Query(default=None, description="対象の会議セッションID"),
+    session_id: Annotated[
+        str | None, Query(description="対象の会議セッションID")
+    ] = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TranscriptResponse:
@@ -515,7 +518,9 @@ def _build_transcript_text(
 async def get_room_minutes(
     room_id: str,
     lang: str = "ja",  # 議事録の出力言語
-    session_id: str | None = Query(default=None, description="対象の会議セッションID"),
+    session_id: Annotated[
+        str | None, Query(description="対象の会議セッションID")
+    ] = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MinutesResponse:

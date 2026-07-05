@@ -12,7 +12,14 @@ from datetime import timedelta
 import pytest
 from fastapi import HTTPException
 
-from app.db.models import MeetingSession, Room, TranscriptSegment, TranslationSegment, User, utc_now
+from app.db.models import (
+    MeetingSession,
+    Room,
+    TranscriptSegment,
+    TranslationSegment,
+    User,
+    utc_now,
+)
 from app.rooms import routes as room_routes
 from app.rooms.routes import get_room_transcript, issue_livekit_token
 
@@ -81,6 +88,7 @@ def _segment(session_id: str) -> TranscriptSegment:
         speaker_id="speaker1",
         source_language="ja",
         text="こんにちは",
+        created_at=utc_now(),
     )
     segment.translations = [
         TranslationSegment(

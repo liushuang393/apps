@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from jose import jwt
 
 from app.db.models import Room, User
+from app.rooms import routes as room_routes
 from app.rooms.routes import issue_livekit_token
 from app.webrtc import token as tk
 from app.webrtc.token import LiveKitNotConfiguredError, create_join_token
@@ -80,6 +81,13 @@ async def test_endpoint_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """成功時は server_url と token を返す。"""
     _enable(monkeypatch)
     monkeypatch.setattr(tk.settings, "livekit_ws_url", "wss://edge.example")
+
+    async def fake_get_or_create_session(_room_id: str) -> str:
+        return "sess-active"
+
+    monkeypatch.setattr(room_routes, "get_or_create_session", fake_get_or_create_session)
+    monkeypatch.setattr(room_routes.agent_supervisor, "ensure_running", lambda _room_id: None)
+
     db = _FakeSession([_room(is_private=False)])
     res = await issue_livekit_token("room1", user=_user("owner"), db=db)
     assert res.server_url == "wss://edge.example"
