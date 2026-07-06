@@ -63,9 +63,7 @@ class GPTRealtimeProvider(AIProvider):
             session.update イベント辞書（turn_detection: None を含む）
         """
         # zh / multi はモデルが自動言語検出するため language を指定しない
-        lang_for_transcribe = (
-            language if language not in ("zh", "multi") else None
-        )
+        lang_for_transcribe = language if language not in ("zh", "multi") else None
         transcription_config: dict = {"model": settings.openai_transcribe_model}
         if lang_for_transcribe:
             transcription_config["language"] = lang_for_transcribe
