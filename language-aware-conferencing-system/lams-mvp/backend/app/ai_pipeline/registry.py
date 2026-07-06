@@ -121,23 +121,20 @@ class CompositeAIProvider(AIProvider):
             text = await self._asr.transcribe_audio(audio_data, source_language)
             return TranslationResult(source_language, target_language, text, text, None)
         original = await self._asr.transcribe_audio(audio_data, source_language)
-        if not original or original.startswith("["):
-            return TranslationResult(
-                source_language, target_language, original or "", "", None
-            )
+        if not original:
+            return TranslationResult(source_language, target_language, "", "", None)
         translated = await self._mt.translate_text(
             original, source_language, target_language
         )
-        if not translated:
-            translated = "[翻訳失敗]"
         audio_out: bytes | None = None
-        if self._tts is not None:
+        # 空訳（失敗）はセンチネル化せず TTS もスキップする（欠陥 #8）。
+        if translated and self._tts is not None:
             try:
                 audio_out = await self._tts.synthesize(translated, target_language)
             except Exception as e:  # noqa: BLE001 - TTS 失敗は字幕継続のため握り潰す
                 logger.warning("[Composite] TTS 失敗: %s", e)
         return TranslationResult(
-            source_language, target_language, original, translated, audio_out
+            source_language, target_language, original, translated or "", audio_out
         )
 
 

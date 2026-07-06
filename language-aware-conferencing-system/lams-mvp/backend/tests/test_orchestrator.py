@@ -200,6 +200,47 @@ async def test_runtime_fallback_hearing_failure_to_reading() -> None:
 
 
 @pytest.mark.asyncio
+async def test_hearing_empty_string_triggers_reading_fallback() -> None:
+    """欠陥 #8: 例外でなくとも hearing が空文字列を返せば hearing_failed 縮退が発動する。
+
+    センチネル文字列（例: "[エラー: ...]"）は非空のため縮退を素通りしていた。
+    「失敗 = 空文字列」契約により、空文字列を返すだけで縮退が正しく起動することを保証する。
+    """
+    calls: dict[str, int] = {"hearing": 0, "reading": 0}
+
+    async def hearing(_a: bytes, _s: str, _t: str, _spk: str) -> object:
+        calls["hearing"] += 1
+        # 例外を投げず、失敗を空文字列（+ 音声なし）で表現する（空文字列プロトコル）。
+        return _FakeProcessed(audio_data=None, translated_text="")
+
+    async def reading(_text: str, _src: str, tgt: str) -> str:
+        calls["reading"] += 1
+        return f"R:{tgt}"
+
+    orch = HybridOrchestrator(hearing_fn=hearing, reading_fn=reading)
+    sink = _FakeSink()
+    listener = Listener("u1", "en", wants_audio=True, subtitle_enabled=True)
+
+    res = await orch.orchestrate(
+        audio_bytes=b"x",
+        source_language="ja",
+        original_text="text",
+        listeners=[listener],
+        sink=sink,
+        mode="a",
+        speaker_id="spk",
+    )
+
+    # mode A では読む主線は未駆動だが、hearing の空文字列で縮退起動される
+    assert calls == {"hearing": 1, "reading": 1}
+    assert sink.audio == []  # 翻訳音声は生成されない
+    _, msg = sink.subtitles[0]
+    assert msg["translated_text"] == "R:en"
+    assert msg["mainline"] == "reading"
+    assert res.tags[0]["reason"] == "hearing_failed_runtime_fallback_reading"
+
+
+@pytest.mark.asyncio
 async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
     """§9: 目標逸脱時に qos_warning が result と deliver_event へ反映される。"""
 

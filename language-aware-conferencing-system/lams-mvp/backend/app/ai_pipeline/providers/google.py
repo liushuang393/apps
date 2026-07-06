@@ -188,7 +188,8 @@ class GoogleProvider(AIProvider):
             return text, detected
         except Exception as e:
             logger.error(f"[Google] ASRエラー: {e}", exc_info=True)
-            return f"[ASRエラー: {type(e).__name__}]", language
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return "", language
 
     async def transcribe_audio(self, audio_data: bytes, language: str) -> str:
         """Chirp 3 で音声認識（テキストのみ返す）"""
@@ -303,11 +304,11 @@ class GoogleProvider(AIProvider):
                 audio_data=None,
             )
         original_text = await self.transcribe_audio(audio_data, source_language)
-        if not original_text or original_text.startswith("["):
+        if not original_text:
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text=original_text or "",
+                original_text="",
                 translated_text="",
                 audio_data=None,
             )
@@ -315,10 +316,11 @@ class GoogleProvider(AIProvider):
             original_text, source_language, target_language
         )
         logger.info(f"[Google] 翻訳完了: '{original_text}' -> '{translated_text}'")
+        # 失敗 = 空文字列の契約（欠陥 #8）。翻訳失敗時もセンチネルを返さない。
         return TranslationResult(
             source_language=source_language,
             target_language=target_language,
             original_text=original_text,
-            translated_text=translated_text or "[翻訳失敗]",
+            translated_text=translated_text or "",
             audio_data=None,
         )

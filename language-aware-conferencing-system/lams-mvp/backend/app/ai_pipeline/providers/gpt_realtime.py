@@ -242,7 +242,8 @@ class GPTRealtimeProvider(AIProvider):
             return response.text.strip() if response.text else ""
         except Exception as e:
             logger.error(f"[GPT-Realtime] フォールバックASRエラー: {e}")
-            return f"[ASRエラー: {type(e).__name__}]"
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return ""
 
     async def transcribe_with_detection(
         self,
@@ -640,11 +641,11 @@ class GPTRealtimeProvider(AIProvider):
 
             # 1. ASR
             original_text = await self.transcribe_audio(audio_data, source_language)
-            if not original_text or original_text.startswith("["):
+            if not original_text:
                 return TranslationResult(
                     source_language=source_language,
                     target_language=target_language,
-                    original_text=original_text or "",
+                    original_text="",
                     translated_text="",
                     audio_data=None,
                 )
@@ -706,10 +707,11 @@ class GPTRealtimeProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[GPT-Realtime Fallback] エラー: {e}", exc_info=True)
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text=f"[エラー: {type(e).__name__}]",
-                translated_text=f"[エラー: {type(e).__name__}]",
+                original_text="",
+                translated_text="",
                 audio_data=None,
             )

@@ -303,7 +303,8 @@ async def _call_openai_translate(
 
         if not translated:
             logger.warning(f"[Translate] 翻訳結果が空: {text[:30]}...")
-            return "[翻訳失敗]"
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return ""
 
         # ★LLM 補正（任意・既定OFF）。失敗時は暫定訳を維持し既存挙動を壊さない
         translated = await _maybe_correct_translation(

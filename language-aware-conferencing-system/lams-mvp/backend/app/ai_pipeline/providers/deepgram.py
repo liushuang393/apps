@@ -215,10 +215,11 @@ class DeepgramProvider(AIProvider):
                 f"[Deepgram] API HTTPエラー: {e.response.status_code} - "
                 f"{e.response.text}"
             )
-            return f"[APIエラー: {e.response.status_code}]", language
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return "", language
         except Exception as e:
             logger.error(f"[Deepgram] ASRエラー: {e}", exc_info=True)
-            return f"[ASRエラー: {type(e).__name__}]", language
+            return "", language
 
     async def translate_audio(
         self,
@@ -251,11 +252,11 @@ class DeepgramProvider(AIProvider):
         try:
             # 1. Deepgram ASR
             original_text = await self.transcribe_audio(audio_data, source_language)
-            if not original_text or original_text.startswith("["):
+            if not original_text:
                 return TranslationResult(
                     source_language=source_language,
                     target_language=target_language,
-                    original_text=original_text or "",
+                    original_text="",
                     translated_text="",
                     audio_data=None,
                 )
@@ -296,7 +297,18 @@ class DeepgramProvider(AIProvider):
             translated_text = translated_text.strip() if translated_text else ""
 
             if not translated_text:
-                translated_text = "[翻訳失敗]"
+                # 失敗 = 空文字列の契約。センチネルを TTS へ流さない（欠陥 #8）。
+                logger.warning(
+                    f"[Deepgram] 翻訳結果が空のため TTS をスキップ: "
+                    f"'{original_text[:30]}'"
+                )
+                return TranslationResult(
+                    source_language=source_language,
+                    target_language=target_language,
+                    original_text=original_text,
+                    translated_text="",
+                    audio_data=None,
+                )
 
             logger.info(
                 f"[Deepgram] 翻訳完了: '{original_text}' -> '{translated_text}'"
@@ -326,10 +338,11 @@ class DeepgramProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[Deepgram] 翻訳エラー: {e}", exc_info=True)
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text=f"[エラー: {type(e).__name__}]",
-                translated_text=f"[エラー: {type(e).__name__}]",
+                original_text="",
+                translated_text="",
                 audio_data=None,
             )

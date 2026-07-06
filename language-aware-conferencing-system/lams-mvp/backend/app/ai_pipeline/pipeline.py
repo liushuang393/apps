@@ -175,12 +175,13 @@ class AIPipeline:
         except Exception as e:
             logger.error(f"AI処理エラー: {e}")
             metrics = self._qos.end_measurement(metrics)
+            # 失敗 = 空文字列（センチネル禁止）。orchestrator の縮退判定が依存する。
             return ProcessedAudio(
                 speaker_id=speaker_id,
                 source_language=source_language,
                 target_language=target_language,
-                original_text="[処理エラー]",
-                translated_text="[処理エラー]",
+                original_text="",
+                translated_text="",
                 audio_data=None,
                 metrics=metrics,
             )

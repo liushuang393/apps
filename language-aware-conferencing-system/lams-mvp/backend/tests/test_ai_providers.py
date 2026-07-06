@@ -15,6 +15,8 @@ import os
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from app.ai_pipeline.providers.base import TranslationResult
 from app.ai_pipeline.providers.gemini_live import (
     GeminiLiveProvider,
@@ -330,6 +332,43 @@ def test_transcribe_with_detection() -> None:
     text, lang = asyncio.run(provider.transcribe_with_detection(MIN_VALID_AUDIO, "ja"))
     assert text == "テスト発話です"
     assert lang == "ja"
+
+
+# ------------------------------------------------------------
+# 失敗 = 空文字列プロトコル（欠陥 #8: センチネル文字列の全廃）
+# ------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_transcribe_error_returns_empty(monkeypatch):
+    """ASR 例外時はセンチネル文字列ではなく空文字列を返す（欠陥 #8）。"""
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    provider._client = None
+
+    async def boom():
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(provider, "_get_client", boom)
+    text = await provider.transcribe_audio(b"\x00" * 9000, "ja")
+    assert text == ""
+
+
+@pytest.mark.asyncio
+async def test_translate_audio_error_returns_empty_result(monkeypatch):
+    """translate_audio 例外時は両テキスト空の結果を返す（TTS 読み上げ禁止）。"""
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    provider._client = None
+
+    async def boom():
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(provider, "_get_client", boom)
+    result = await provider.translate_audio(b"\x00" * 9000, "ja", "en")
+    assert result.original_text == ""
+    assert result.translated_text == ""
+    assert result.audio_data is None
 
 
 if __name__ == "__main__":
