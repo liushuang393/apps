@@ -402,5 +402,63 @@ async def test_process_audio_no_cache():
     assert r2.audio_data == b"WAVDATA"  # 音声がキャッシュヒットで消えない
 
 
+# ------------------------------------------------------------
+# S2S タイムアウトの例外化（欠陥 #4: フォールバック発動）
+# ------------------------------------------------------------
+class _FakeWs:
+    """スクリプト化されたイベントを返す WebSocket スタブ。"""
+
+    def __init__(self, events: list[dict], hang_after: bool = False) -> None:
+        self._events = list(events)
+        self._hang_after = hang_after
+
+    async def recv(self) -> str:
+        import asyncio
+        import json
+
+        if self._events:
+            return json.dumps(self._events.pop(0))
+        if self._hang_after:
+            await asyncio.sleep(10)  # タイムアウトさせる
+        raise AssertionError("イベント枯渇")
+
+
+def _realtime_provider():
+    from app.ai_pipeline.providers.gpt_realtime import GPTRealtimeProvider
+
+    provider = GPTRealtimeProvider.__new__(GPTRealtimeProvider)
+    provider._client = None
+    return provider
+
+
+@pytest.mark.asyncio
+async def test_collect_response_timeout_raises():
+    """応答ゼロのタイムアウトは TimeoutError（フォールバック発動条件、欠陥 #4）。"""
+    provider = _realtime_provider()
+    ws = _FakeWs([], hang_after=True)
+    with pytest.raises(TimeoutError):
+        await provider._collect_response(ws, timeout=0.3)
+
+
+@pytest.mark.asyncio
+async def test_collect_response_happy_path():
+    """delta を蓄積し response.done で完了する。"""
+    import base64
+
+    provider = _realtime_provider()
+    ws = _FakeWs(
+        [
+            {"type": "response.audio.delta",
+             "delta": base64.b64encode(b"\x01\x02").decode()},
+            {"type": "response.audio_transcript.delta", "delta": "Hel"},
+            {"type": "response.audio_transcript.delta", "delta": "lo"},
+            {"type": "response.done"},
+        ]
+    )
+    text, chunks = await provider._collect_response(ws, timeout=5.0)
+    assert text == "Hello"
+    assert chunks == [b"\x01\x02"]
+
+
 if __name__ == "__main__":
     sys.exit(asyncio.run(main()))

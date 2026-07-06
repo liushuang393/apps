@@ -540,45 +540,8 @@ class GPTRealtimeProvider(AIProvider):
             # レスポンス生成を要求
             await ws.send(json.dumps({"type": "response.create"}))
 
-            # レスポンスを収集
-            translated_text = ""
-            audio_chunks: list[bytes] = []
-            timeout = 15.0
-            start_time = asyncio.get_event_loop().time()
-
-            while True:
-                if asyncio.get_event_loop().time() - start_time > timeout:
-                    logger.warning("[GPT-Realtime] S2Sタイムアウト")
-                    break
-
-                try:
-                    msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                    event = json.loads(msg)
-                    event_type = event.get("type", "")
-
-                    # 音声データ（デルタ）
-                    if event_type == "response.audio.delta":
-                        delta = event.get("delta", "")
-                        if delta:
-                            audio_chunks.append(base64.b64decode(delta))
-
-                    # 翻訳テキスト（デルタ）
-                    elif event_type == "response.audio_transcript.delta":
-                        delta = event.get("delta", "")
-                        translated_text += delta
-
-                    # レスポンス完了
-                    elif event_type == "response.done":
-                        break
-
-                    # エラー
-                    elif event_type == "error":
-                        error_msg = event.get("error", {}).get("message", "Unknown")
-                        logger.error(f"[GPT-Realtime] APIエラー: {error_msg}")
-                        raise RuntimeError(f"Realtime API error: {error_msg}")
-
-                except asyncio.TimeoutError:
-                    break
+            # レスポンスを収集（応答ゼロのタイムアウトは TimeoutError → フォールバック）
+            translated_text, audio_chunks = await self._collect_response(ws)
 
             # 音声データを結合してWAV形式に変換
             translated_audio = None
@@ -596,6 +559,56 @@ class GPTRealtimeProvider(AIProvider):
                 translated_text=translated_text.strip(),
                 audio_data=translated_audio,
             )
+
+    async def _collect_response(
+        self, ws, timeout: float = 15.0
+    ) -> tuple[str, list[bytes]]:
+        """S2S 応答（テキスト delta + 音声 delta）を response.done まで収集する。
+
+        Returns:
+            (翻訳テキスト, 音声チャンク列)
+        Raises:
+            TimeoutError: 期限内に応答が一切得られなかった場合
+                （呼び出し側の 3 段階フォールバックを発動させる。欠陥 #4）
+            RuntimeError: API がエラーイベントを返した場合
+        """
+        translated_text = ""
+        audio_chunks: list[bytes] = []
+        done = False
+        start_time = asyncio.get_event_loop().time()
+
+        while True:
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                logger.warning("[GPT-Realtime] S2Sタイムアウト")
+                break
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, timeout))
+            except asyncio.TimeoutError:
+                continue
+            event = json.loads(msg)
+            event_type = event.get("type", "")
+
+            # 音声データ（デルタ）
+            if event_type == "response.audio.delta":
+                delta = event.get("delta", "")
+                if delta:
+                    audio_chunks.append(base64.b64decode(delta))
+            # 翻訳テキスト（デルタ）
+            elif event_type == "response.audio_transcript.delta":
+                translated_text += event.get("delta", "")
+            # レスポンス完了
+            elif event_type == "response.done":
+                done = True
+                break
+            # エラー
+            elif event_type == "error":
+                error_msg = event.get("error", {}).get("message", "Unknown")
+                logger.error(f"[GPT-Realtime] APIエラー: {error_msg}")
+                raise RuntimeError(f"Realtime API error: {error_msg}")
+
+        if not done and not translated_text and not audio_chunks:
+            raise TimeoutError("Realtime API 応答タイムアウト（response.done 未受信）")
+        return translated_text.strip(), audio_chunks
 
     def _pcm16_to_wav(self, pcm_data: bytes, sample_rate: int = 24000) -> bytes:
         """PCM16データをWAV形式に変換"""
