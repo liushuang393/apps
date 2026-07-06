@@ -126,6 +126,29 @@ function buildAttributes(p: MyPref): Record<string, string> {
   };
 }
 
+/**
+ * ブラウザから到達可能な LiveKit URL に補正する。
+ * .env の HOST_IP が古い Docker/LAN IP のままだと localhost から接続できないため。
+ */
+function resolveLiveKitServerUrl(serverUrl: string): string {
+  const pageHost = window.location.hostname;
+  try {
+    const url = new URL(serverUrl);
+    if (pageHost === 'localhost' || pageHost === '127.0.0.1') {
+      url.hostname = '127.0.0.1';
+      return url.toString();
+    }
+    // LAN 経由アクセス時はページのホスト名を優先（HOST_IP ずれ対策）
+    if (/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(pageHost)) {
+      url.hostname = pageHost;
+      return url.toString();
+    }
+  } catch {
+    return serverUrl;
+  }
+  return serverUrl;
+}
+
 /** LiveKit ConnectionState を UI の ConnectionStatus へ写像する */
 function toStatus(state: ConnectionState): ConnectionStatus {
   switch (state) {
@@ -358,7 +381,8 @@ export function useLiveKit(roomId: string | null) {
           subtitleEnabled: true,
         };
 
-        await room.connect(join.serverUrl, join.token);
+        const liveKitUrl = resolveLiveKitServerUrl(join.serverUrl);
+        await room.connect(liveKitUrl, join.token);
         if (cancelled) {
           void room.disconnect();
           return;
