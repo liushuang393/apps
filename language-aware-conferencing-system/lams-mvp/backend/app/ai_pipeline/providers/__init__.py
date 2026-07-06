@@ -61,15 +61,23 @@ def get_ai_provider() -> AIProvider:
         APIKeyError: 必要なAPIキーが未設定の場合
         ValueError: 不明なプロバイダーが指定された場合
     """
-    # ステージ別スロット（ASR/MT/TTS）がいずれか指定されていれば Composite を使う。
-    # 3スロットとも "auto"（既定）なら従来の一体型 provider をそのまま使う（後方互換）。
+    # ステージ別スロット（ASR/MT/TTS）はカスケード（Mode B 系）専用。
+    # S2S プリセットとはコードパスを共有しない（registry.py の絶対原則。欠陥 #13）。
     from app.ai_pipeline.registry import build_composite_provider, composite_enabled
 
-    if composite_enabled():
-        logger.info("[AI Provider] ステージ別スロット指定により Composite を使用")
-        return build_composite_provider()
-
     provider = settings.ai_provider
+    _S2S_PRESETS = ("gpt_realtime", "gemini_live")
+
+    if composite_enabled():
+        if provider in _S2S_PRESETS:
+            logger.warning(
+                "[AI Provider] ASR/MT/TTS スロット指定は S2S プリセット(%s)では"
+                "無効です（無視して S2S を維持します）",
+                provider,
+            )
+        else:
+            logger.info("[AI Provider] ステージ別スロット指定により Composite を使用")
+            return build_composite_provider()
 
     if provider == "gpt4o_transcribe":
         from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider

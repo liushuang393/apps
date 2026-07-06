@@ -144,3 +144,22 @@ def test_build_composite_raises_when_asr_unresolvable(monkeypatch):
 
     with pytest.raises(APIKeyError):
         reg.build_composite_provider()
+
+
+# ============================================================
+# S2S プリセット保護（欠陥 #13）
+# ============================================================
+def test_s2s_preset_not_replaced_by_slots(monkeypatch):
+    """S2S プリセットはスロット指定で黙って置換されない（欠陥 #13）。"""
+    from app.ai_pipeline.providers import get_ai_provider
+    from app.ai_pipeline.providers.gpt_realtime import GPTRealtimeProvider
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ai_provider", "gpt_realtime")
+    monkeypatch.setattr(
+        settings, "tts_provider", "none"
+    )  # composite_enabled() を真にする
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+
+    provider = get_ai_provider()
+    assert isinstance(provider, GPTRealtimeProvider)
