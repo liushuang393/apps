@@ -341,3 +341,46 @@ async def test_hearing_receives_original_text():
         speaker_id="sp",
     )
     assert received["text"] == "こんにちは"
+
+
+@pytest.mark.asyncio
+async def test_subtitle_not_blocked_by_slow_hearing():
+    """字幕（読む主線）は聞く主線の完了を待たずに配信される（欠陥 #10）。"""
+    import asyncio
+    import time
+
+    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+
+    times: dict[str, float] = {}
+
+    async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
+        await asyncio.sleep(0.5)  # 遅い S2S を模擬
+
+        class Out:
+            audio_data = b"wav"
+            translated_text = "hello"
+
+        return Out()
+
+    async def reading_fn(_text, _src, _tgt):
+        return "hello"
+
+    class RecordingSink:
+        async def deliver_audio(self, _user_id, _audio):
+            times.setdefault("audio", time.perf_counter())
+
+        async def deliver_subtitle(self, _user_id, _message):
+            times.setdefault("subtitle", time.perf_counter())
+
+    orch = HybridOrchestrator(hearing_fn=hearing_fn, reading_fn=reading_fn)
+    await orch.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=RecordingSink(),
+        mode="hybrid",
+        speaker_id="sp",
+    )
+    assert "subtitle" in times and "audio" in times
+    assert times["audio"] - times["subtitle"] > 0.3  # 字幕が hearing を待っていない
