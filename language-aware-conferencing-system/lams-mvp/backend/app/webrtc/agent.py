@@ -226,11 +226,14 @@ class LiveKitAgent:
         hint = speaker.native_language if speaker is not None else _DEFAULT_LANG
         config = await self._get_config()
 
-        def sink_factory(user_language: dict[str, str]) -> LiveKitOutputSink:
+        def sink_factory(
+            user_language: dict[str, str], seg_speaker_id: str
+        ) -> LiveKitOutputSink:
             return LiveKitOutputSink(
                 user_language=user_language,
-                capture_audio=publisher.capture_audio,
+                capture_audio=publisher.capture_segment,
                 send_data=publisher.send_data,
+                speaker_id=seg_speaker_id,
             )
 
         await self._processor.process(

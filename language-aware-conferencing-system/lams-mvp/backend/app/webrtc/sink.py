@@ -2,7 +2,7 @@
 LiveKitOutputSink（Phase 3 C1）：HybridOrchestrator の OutputSink を LiveKit へ橋渡し。
 
 収束結果を「混ぜずに」配信する境界:
-    - 聞く主線（翻訳音声）= 目標言語ごとの音声トラックへ capture（48kHz int16）。
+    - 聞く主線（翻訳音声）= (話者, 目標言語) ごとの音声トラックへ capture（48kHz int16）。
     - 読む主線（字幕）/ QoS イベント = data channel（受信者 identity 宛て）。
 
 設計:
@@ -10,8 +10,13 @@ LiveKitOutputSink（Phase 3 C1）：HybridOrchestrator の OutputSink を LiveKi
     コールバックへ委譲する（agent が実体を渡す）。これにより I/O 非依存で
     単体テスト可能。受信者 identity→目標言語の対応は構築時に受け取る。
 
+    トラックは言語ごと 1 本の共有ではなく (話者, 言語) 単位に分離する。共有トラックは
+    同時発話のフレームが交互に混入して破綻し（欠陥 #3）、話者本人の除外も不可能で
+    自声翻訳がエコーとして返ってしまう（欠陥 #6）。フレーム分割は publisher 側の
+    責務とし、本 sink はセグメント単位の 48kHz PCM を capture コールバックへ渡すのみ。
+
     orchestrator は目標言語グループ内の全受信者へ同一 audio オブジェクトを渡す。
-    トラックは言語単位で 1 本のため、同一 payload は最初の 1 回のみ capture する
+    本 sink は話者単位のため、同一 payload は最初の 1 回のみ capture する
     （オブジェクト同一性で重複排除）。
 """
 
@@ -19,21 +24,21 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 
-from app.audio.pcm import chunk16, parse_wav16, resample16
+from app.audio.pcm import parse_wav16, resample16
 
 logger = logging.getLogger(__name__)
 
-# LiveKit publish 用の出力フォーマット（WebRTC 標準の 48kHz / 10ms フレーム）。
+# LiveKit publish 用の出力フォーマット（WebRTC 標準の 48kHz）。
 OUTPUT_SAMPLE_RATE = 48000
 FRAME_MS = 10
 OUTPUT_FRAME_SAMPLES = OUTPUT_SAMPLE_RATE * FRAME_MS // 1000  # 480 標本/10ms
 
-# data channel のトピック（フロントはトピックで購読を振り分ける）。
+# data channel のトピック（フロントはトピックで振り分ける）。
 TOPIC_SUBTITLE = "subtitle"
 TOPIC_EVENT = "qos"
 
 # 注入コールバック型
-AudioCapture = Callable[[str, bytes], Awaitable[None]]  # (target_language, 48k frame)
+AudioCapture = Callable[[str, str, bytes], Awaitable[None]]  # (speaker, lang, pcm48)
 DataSend = Callable[[bytes, list[str], str], Awaitable[None]]  # (payload, ids, topic)
 
 
@@ -46,17 +51,19 @@ class LiveKitOutputSink:
         user_language: dict[str, str],
         capture_audio: AudioCapture,
         send_data: DataSend,
+        speaker_id: str,
         hearing_sample_rate: int = 24000,
     ) -> None:
         self._user_language = user_language
         self._capture_audio = capture_audio
         self._send_data = send_data
+        self._speaker_id = speaker_id
         self._hearing_sample_rate = hearing_sample_rate
         # 言語ごとに「直近 capture 済みオブジェクト」を保持し重複 capture を防ぐ。
         self._last_audio: dict[str, bytes] = {}
 
     async def deliver_audio(self, user_id: str, audio: bytes) -> None:
-        """翻訳音声を受信者の目標言語トラックへ送る（言語単位で重複排除）。"""
+        """翻訳音声を (話者, 目標言語) トラックへ送る（言語単位で重複排除）。"""
         lang = self._user_language.get(user_id)
         if lang is None or not audio:
             return
@@ -69,9 +76,7 @@ class LiveKitOutputSink:
         # ヘッダを剥がし、ヘッダ記載の実レートで 48kHz へ変換する（欠陥 #2 付随）。
         pcm, rate = parse_wav16(audio, fallback_rate=self._hearing_sample_rate)
         pcm48 = resample16(pcm, rate, OUTPUT_SAMPLE_RATE)
-        frames, _remainder = chunk16(pcm48, OUTPUT_FRAME_SAMPLES)
-        for frame in frames:
-            await self._capture_audio(lang, frame)
+        await self._capture_audio(self._speaker_id, lang, pcm48)
 
     async def deliver_subtitle(self, user_id: str, message: dict) -> None:
         """字幕を受信者宛てに data channel で配信する。"""

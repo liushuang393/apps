@@ -57,6 +57,8 @@ interface AudioEntry {
   el: HTMLMediaElement;
   isTranslation: boolean;
   lang?: string;
+  /** 翻訳音声の元話者 identity（自分由来のエコー抑止に使う） */
+  speakerId?: string;
 }
 
 /** setSinkId 非対応ブラウザ向けに optional 化したメディア要素型 */
@@ -204,12 +206,17 @@ export function useLiveKit(roomId: string | null) {
    */
   const applyAudioRouting = useCallback(() => {
     const pref = myPrefRef.current;
+    const myId = user?.id;
     audioEntriesRef.current.forEach((entry) => {
       entry.el.muted = entry.isTranslation
-        ? !(pref?.audioMode === 'translated' && entry.lang === pref.targetLanguage)
+        ? !(
+            pref?.audioMode === 'translated' &&
+            entry.lang === pref.targetLanguage &&
+            entry.speakerId !== myId // 自分の発話の翻訳は再生しない（エコー抑止）
+          )
         : pref?.audioMode !== 'original';
     });
-  }, []);
+  }, [user?.id]);
 
   const setAudioOutputDevice = useCallback(
     async (deviceId: string | null): Promise<boolean> => {
@@ -301,14 +308,16 @@ export function useLiveKit(roomId: string | null) {
           if (track.kind !== Track.Kind.Audio) return;
           const isTranslation =
             isAgent(p.identity) && pub.trackName.startsWith(TRACK_NAME_PREFIX);
-          const lang = isTranslation
-            ? pub.trackName.slice(TRACK_NAME_PREFIX.length)
-            : undefined;
-          const entry = {
-            el: track.attach(),
-            isTranslation,
-            lang,
-          };
+          let lang: string | undefined;
+          let speakerId: string | undefined;
+          if (isTranslation) {
+            // 形式: translation-{lang}-{speakerId}（旧形式 translation-{lang} も許容）
+            const rest = pub.trackName.slice(TRACK_NAME_PREFIX.length);
+            const sep = rest.indexOf('-');
+            lang = sep === -1 ? rest : rest.slice(0, sep);
+            speakerId = sep === -1 ? undefined : rest.slice(sep + 1);
+          }
+          const entry = { el: track.attach(), isTranslation, lang, speakerId };
           audioEntriesRef.current.set(pub.trackSid, entry);
           void applyOutputDevice(entry, outputDeviceIdRef.current).catch(() => {
             setConnectionError('スピーカー出力先の適用に失敗しました。');
