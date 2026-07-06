@@ -371,5 +371,36 @@ async def test_translate_audio_error_returns_empty_result(monkeypatch):
     assert result.audio_data is None
 
 
+@pytest.mark.asyncio
+async def test_process_audio_no_cache():
+    """同一音声でも毎回プロバイダーを呼ぶ（音声ハッシュキャッシュ廃止、欠陥 #4）。"""
+    from app.ai_pipeline.pipeline import AIPipeline
+    from app.ai_pipeline.providers.base import TranslationResult
+
+    class FakeProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def translate_audio(self, _audio: bytes, src: str, tgt: str):
+            self.calls += 1
+            return TranslationResult(src, tgt, "こんにちは", "hello", b"WAVDATA")
+
+        async def transcribe_audio(self, _audio: bytes, _lang: str):
+            return "こんにちは"
+
+    pipeline = AIPipeline.__new__(AIPipeline)
+    from app.ai_pipeline.qos import QoSController
+
+    pipeline._qos = QoSController()
+    fake = FakeProvider()
+    pipeline._provider = fake
+
+    r1 = await pipeline.process_audio(b"\x01" * 100, "ja", "en")
+    r2 = await pipeline.process_audio(b"\x01" * 100, "ja", "en")
+    assert fake.calls == 2  # キャッシュで 2 回目が飛ばされない
+    assert r1.audio_data == b"WAVDATA"
+    assert r2.audio_data == b"WAVDATA"  # 音声がキャッシュヒットで消えない
+
+
 if __name__ == "__main__":
     sys.exit(asyncio.run(main()))
