@@ -139,11 +139,7 @@ def parse_wav16(data: bytes, fallback_rate: int = 24000) -> tuple[bytes, int]:
     # ponytail: 追加チャンク付き WAV は非対応。外部入力を受けるようになったら
     # チャンク走査に拡張する。
     """
-    if (
-        len(data) < _WAV_HEADER_LEN
-        or data[:4] != b"RIFF"
-        or data[8:12] != b"WAVE"
-    ):
+    if len(data) < _WAV_HEADER_LEN or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
         return data, fallback_rate
     sample_rate = struct.unpack_from("<I", data, _WAV_RATE_OFFSET)[0]
     return data[_WAV_HEADER_LEN:], sample_rate
