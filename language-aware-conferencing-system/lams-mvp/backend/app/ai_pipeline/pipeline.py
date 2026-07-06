@@ -68,6 +68,7 @@ class AIPipeline:
         source_language: str,
         target_language: str,
         speaker_id: str = "unknown",
+        original_text: str | None = None,
     ) -> ProcessedAudio:
         """
         音声を処理（翻訳）
@@ -77,6 +78,7 @@ class AIPipeline:
             source_language: 話者の言語
             target_language: 翻訳先言語
             speaker_id: 話者ID
+            original_text: 上流で ASR 済みの原文（あれば再 ASR をスキップ。欠陥 #1）
 
         Returns:
             処理済み音声データ
@@ -85,7 +87,9 @@ class AIPipeline:
 
         # 同じ言語の場合は翻訳不要
         if source_language == target_language:
-            result = await self._provider.transcribe_audio(audio_data, source_language)
+            result = original_text or await self._provider.transcribe_audio(
+                audio_data, source_language
+            )
             metrics = self._qos.end_measurement(metrics)
             return ProcessedAudio(
                 speaker_id=speaker_id,
@@ -102,7 +106,10 @@ class AIPipeline:
         # translate_text_simple 層に存在する）
         try:
             result = await self._provider.translate_audio(
-                audio_data, source_language, target_language
+                audio_data,
+                source_language,
+                target_language,
+                original_text=original_text,
             )
             metrics = self._qos.end_measurement(metrics)
             return ProcessedAudio(

@@ -275,8 +275,12 @@ class GeminiLiveProvider(AIProvider):
         audio_data: bytes,
         source_language: str,
         target_language: str,
+        original_text: str | None = None,  # noqa: ARG002
     ) -> TranslationResult:
-        """Speech-to-Speech 翻訳（Gemini Live API）"""
+        """Speech-to-Speech 翻訳（Gemini Live API）
+
+        S2S は音声から直接翻訳するため original_text は使用しない。
+        """
         if source_language == target_language:
             text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(

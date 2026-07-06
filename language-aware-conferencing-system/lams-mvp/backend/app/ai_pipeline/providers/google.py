@@ -286,16 +286,22 @@ class GoogleProvider(AIProvider):
         return await self._translate_text(text, source_language, target_language)
 
     async def translate_audio(
-        self, audio_data: bytes, source_language: str, target_language: str
+        self,
+        audio_data: bytes,
+        source_language: str,
+        target_language: str,
+        original_text: str | None = None,
     ) -> TranslationResult:
         """
         Mode B 音声翻訳（Chirp 3 ASR → Cloud Translation）。
 
         Mode B は字幕が主役のため audio_data は付与しない（S2S は Mode A の責務）。
-        同一言語時は ASR のみ。
+        同一言語時は ASR のみ。original_text（上流で ASR 済みの原文）があれば
+        再 ASR をスキップする（欠陥 #1）。
         """
         if source_language == target_language:
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            if original_text is None:
+                original_text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
@@ -303,7 +309,8 @@ class GoogleProvider(AIProvider):
                 translated_text=original_text,
                 audio_data=None,
             )
-        original_text = await self.transcribe_audio(audio_data, source_language)
+        if original_text is None:
+            original_text = await self.transcribe_audio(audio_data, source_language)
         if not original_text:
             return TranslationResult(
                 source_language=source_language,

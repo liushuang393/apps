@@ -116,7 +116,9 @@ async def test_orchestrator_drives_livekit_sink() -> None:
     rec = _Recorder()
     sink = _sink(rec)
 
-    async def hearing(_a: bytes, _s: str, _t: str, _spk: str) -> object:
+    async def hearing(
+        _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
+    ) -> object:
         from dataclasses import make_dataclass
 
         proc = make_dataclass("P", ["audio_data", "translated_text"])

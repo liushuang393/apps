@@ -231,6 +231,7 @@ class GPT4oTranscribeProvider(AIProvider):
         audio_data: bytes,
         source_language: str,
         target_language: str,
+        original_text: str | None = None,
     ) -> TranslationResult:
         """
         音声翻訳（ASR → 翻訳 → TTS）
@@ -239,13 +240,15 @@ class GPT4oTranscribeProvider(AIProvider):
             audio_data: WAV形式の音声データ
             source_language: 元言語コード
             target_language: 翻訳先言語コード
+            original_text: 上流で ASR 済みの原文（あれば再 ASR をスキップ。欠陥 #1）
 
         Returns:
             翻訳結果
         """
-        # 同一言語の場合はASRのみ
+        # 同一言語の場合はASRのみ（原文供給済みなら再 ASR しない）
         if source_language == target_language:
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            if original_text is None:
+                original_text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
@@ -257,8 +260,9 @@ class GPT4oTranscribeProvider(AIProvider):
         try:
             client = await self._get_client()
 
-            # 1. ASR
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            # 1. ASR（上流で検出済みならスキップ。欠陥 #1: 二重 ASR 根絶）
+            if original_text is None:
+                original_text = await self.transcribe_audio(audio_data, source_language)
             if not original_text:
                 return TranslationResult(
                     source_language=source_language,

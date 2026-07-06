@@ -115,12 +115,20 @@ class CompositeAIProvider(AIProvider):
         return await self._asr.transcribe_with_detection(audio_data, hint_language)
 
     async def translate_audio(
-        self, audio_data: bytes, source_language: str, target_language: str
+        self,
+        audio_data: bytes,
+        source_language: str,
+        target_language: str,
+        original_text: str | None = None,
     ) -> TranslationResult:
         if source_language == target_language:
-            text = await self._asr.transcribe_audio(audio_data, source_language)
+            text = original_text or await self._asr.transcribe_audio(
+                audio_data, source_language
+            )
             return TranslationResult(source_language, target_language, text, text, None)
-        original = await self._asr.transcribe_audio(audio_data, source_language)
+        original = original_text or await self._asr.transcribe_audio(
+            audio_data, source_language
+        )
         if not original:
             return TranslationResult(source_language, target_language, "", "", None)
         translated = await self._mt.translate_text(

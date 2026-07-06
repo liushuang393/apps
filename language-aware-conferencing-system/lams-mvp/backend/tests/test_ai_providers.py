@@ -431,7 +431,13 @@ async def test_process_audio_no_cache():
         def __init__(self) -> None:
             self.calls = 0
 
-        async def translate_audio(self, _audio: bytes, src: str, tgt: str):
+        async def translate_audio(
+            self,
+            _audio: bytes,
+            src: str,
+            tgt: str,
+            original_text: str | None = None,  # noqa: ARG002
+        ):
             self.calls += 1
             return TranslationResult(src, tgt, "こんにちは", "hello", b"WAVDATA")
 
@@ -523,6 +529,46 @@ def test_session_configs_disable_turn_detection():
     assert s2s_cfg["type"] == "session.update"
     assert s2s_cfg["session"]["turn_detection"] is None
     assert "instructions" in s2s_cfg["session"]
+
+
+@pytest.mark.asyncio
+async def test_translate_audio_skips_asr_when_text_given(monkeypatch):
+    """original_text 供給時はカスケード実装が再 ASR しない（欠陥 #1）。"""
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    provider._client = None
+    asr_calls = {"n": 0}
+
+    async def fake_transcribe(_audio, _lang):
+        asr_calls["n"] += 1
+        return "should not be used"
+
+    async def fake_translate(_text, _src, _tgt):
+        return "hello"
+
+    monkeypatch.setattr(provider, "transcribe_audio", fake_transcribe)
+    monkeypatch.setattr(
+        "app.translate.routes.translate_text_simple", fake_translate
+    )
+
+    async def no_client():
+        from types import SimpleNamespace
+
+        class FakeSpeech:
+            async def create(self, **_kwargs):
+                return SimpleNamespace(content=b"RIFFwav")
+
+        return SimpleNamespace(audio=SimpleNamespace(speech=FakeSpeech()))
+
+    monkeypatch.setattr(provider, "_get_client", no_client)
+
+    result = await provider.translate_audio(
+        b"\x00" * 9000, "ja", "en", original_text="こんにちは"
+    )
+    assert asr_calls["n"] == 0
+    assert result.original_text == "こんにちは"
+    assert result.translated_text == "hello"
 
 
 if __name__ == "__main__":

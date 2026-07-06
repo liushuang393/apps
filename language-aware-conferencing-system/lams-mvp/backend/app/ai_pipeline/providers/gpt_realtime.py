@@ -440,6 +440,7 @@ class GPTRealtimeProvider(AIProvider):
         audio_data: bytes,
         source_language: str,
         target_language: str,
+        original_text: str | None = None,  # noqa: ARG002
     ) -> TranslationResult:
         """
         Speech-to-Speech 翻訳（WebSocket Realtime API）
@@ -448,6 +449,7 @@ class GPTRealtimeProvider(AIProvider):
             audio_data: WAV形式の音声データ
             source_language: 元言語コード
             target_language: 翻訳先言語コード
+            original_text: S2S は音声から直接翻訳するため使用しない（欠陥 #1）
 
         Returns:
             翻訳結果（音声 + テキスト）

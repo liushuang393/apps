@@ -56,8 +56,8 @@ class OrchestrationResult:
     qos_warnings: list[dict] = field(default_factory=list)
 
 
-# 注入可能な主線実体のシグネチャ
-HearingFn = Callable[[bytes, str, str, str], Awaitable[object]]
+# 注入可能な主線実体のシグネチャ（第5引数 = 検出済み原文。欠陥 #1）
+HearingFn = Callable[[bytes, str, str, str, str | None], Awaitable[object]]
 ReadingFn = Callable[[str, str, str], Awaitable[str]]
 
 
@@ -118,13 +118,17 @@ class HybridOrchestrator:
         if events:
             await asyncio.gather(*events, return_exceptions=True)
 
-    async def _hearing(self, audio: bytes, src: str, tgt: str, speaker: str) -> object:
-        """聞く主線（S2S）。既定は ai_pipeline.process_audio を遅延束縛。"""
+    async def _hearing(
+        self, audio: bytes, src: str, tgt: str, speaker: str, original_text: str | None
+    ) -> object:
+        """聞く主線（S2S/カスケード）。既定は ai_pipeline.process_audio を遅延束縛。"""
         if self._hearing_fn is not None:
-            return await self._hearing_fn(audio, src, tgt, speaker)
+            return await self._hearing_fn(audio, src, tgt, speaker, original_text)
         from app.ai_pipeline.pipeline import ai_pipeline
 
-        return await ai_pipeline.process_audio(audio, src, tgt, speaker)
+        return await ai_pipeline.process_audio(
+            audio, src, tgt, speaker, original_text=original_text
+        )
 
     async def _reading(self, text: str, src: str, tgt: str) -> str:
         """読む主線の MT。既定は translate_text_simple を遅延束縛。"""
@@ -247,7 +251,11 @@ class HybridOrchestrator:
                     self._run_timed(
                         "hearing",
                         self._hearing(
-                            audio_bytes, source_language, target_lang, speaker_id
+                            audio_bytes,
+                            source_language,
+                            target_lang,
+                            speaker_id,
+                            original_text,
                         ),
                     )
                 )

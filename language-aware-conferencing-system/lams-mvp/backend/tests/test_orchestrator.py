@@ -40,7 +40,7 @@ def _make_orchestrator() -> tuple[HybridOrchestrator, dict]:
     calls: dict[str, int] = {"hearing": 0, "reading": 0}
 
     async def hearing(
-        _audio: bytes, _src: str, tgt: str, _speaker: str
+        _audio: bytes, _src: str, tgt: str, _speaker: str, _original_text: str | None
     ) -> _FakeProcessed:
         calls["hearing"] += 1
         return _FakeProcessed(audio_data=b"AUDIO", translated_text=f"H:{tgt}")
@@ -167,7 +167,9 @@ async def test_runtime_fallback_hearing_failure_to_reading() -> None:
     """§10: mode A で聞く主線が失敗すると、字幕のため読む主線へ縮退する。"""
     calls: dict[str, int] = {"hearing": 0, "reading": 0}
 
-    async def hearing(_a: bytes, _s: str, _t: str, _spk: str) -> object:
+    async def hearing(
+        _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
+    ) -> object:
         calls["hearing"] += 1
         raise RuntimeError("s2s down")
 
@@ -208,7 +210,9 @@ async def test_hearing_empty_string_triggers_reading_fallback() -> None:
     """
     calls: dict[str, int] = {"hearing": 0, "reading": 0}
 
-    async def hearing(_a: bytes, _s: str, _t: str, _spk: str) -> object:
+    async def hearing(
+        _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
+    ) -> object:
         calls["hearing"] += 1
         # 例外を投げず、失敗を空文字列（+ 音声なし）で表現する（空文字列プロトコル）。
         return _FakeProcessed(audio_data=None, translated_text="")
@@ -244,7 +248,9 @@ async def test_hearing_empty_string_triggers_reading_fallback() -> None:
 async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
     """§9: 目標逸脱時に qos_warning が result と deliver_event へ反映される。"""
 
-    async def hearing(_a: bytes, _s: str, _t: str, _spk: str) -> object:
+    async def hearing(
+        _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
+    ) -> object:
         return _FakeProcessed(audio_data=b"A", translated_text="H")
 
     async def reading(_text: str, _src: str, tgt: str) -> str:
@@ -296,3 +302,42 @@ async def test_no_monitor_means_no_qos_warnings() -> None:
 
     assert res.qos_warnings == []
     assert sink.events == []
+
+
+@pytest.mark.asyncio
+async def test_hearing_receives_original_text():
+    """orchestrator は検出済み原文を hearing 主線へ引き渡す（欠陥 #1）。"""
+    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+
+    received: dict = {}
+
+    async def hearing_fn(_audio, _src, _tgt, _speaker, original_text):
+        received["text"] = original_text
+
+        class Out:
+            audio_data = b"wav"
+            translated_text = "hello"
+
+        return Out()
+
+    async def reading_fn(_text, _src, _tgt):
+        return "hello"
+
+    class NullSink:
+        async def deliver_audio(self, user_id, audio):
+            pass
+
+        async def deliver_subtitle(self, user_id, message):
+            pass
+
+    orch = HybridOrchestrator(hearing_fn=hearing_fn, reading_fn=reading_fn)
+    await orch.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=NullSink(),
+        mode="hybrid",
+        speaker_id="sp",
+    )
+    assert received["text"] == "こんにちは"
