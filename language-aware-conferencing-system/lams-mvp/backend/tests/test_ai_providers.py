@@ -354,6 +354,56 @@ async def test_transcribe_error_returns_empty(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_detection_uses_whisper_model(monkeypatch):
+    """言語検出は verbose_json 対応の whisper-1 を使う（欠陥 #7）。"""
+    from types import SimpleNamespace
+
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "language_detection_mode", "auto")
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    seen: dict = {}
+
+    class FakeTranscriptions:
+        async def create(self, **kwargs):
+            seen.update(kwargs)
+            return SimpleNamespace(text="hello", language="english")
+
+    class FakeClient:
+        audio = SimpleNamespace(transcriptions=FakeTranscriptions())
+
+    async def get_client():
+        return FakeClient()
+
+    provider._client = None
+    monkeypatch.setattr(provider, "_get_client", get_client)
+
+    text, lang = await provider.transcribe_with_detection(b"\x00" * 9000, "multi")
+    assert seen["model"] == settings.openai_detect_model == "whisper-1"
+    assert text == "hello"
+    assert lang == "en"
+
+
+@pytest.mark.asyncio
+async def test_detection_failure_no_ja_hardcode(monkeypatch):
+    """検出失敗 + hint=multi のとき 'ja' を捏造しない（欠陥 #7）。"""
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "language_detection_mode", "auto")
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    provider._client = None
+
+    async def boom():
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(provider, "_get_client", boom)
+    _text, lang = await provider.transcribe_with_detection(b"\x00" * 9000, "multi")
+    assert lang == ""  # processor が話者ヒントへ解決する
+
+
+@pytest.mark.asyncio
 async def test_translate_audio_error_returns_empty_result(monkeypatch):
     """translate_audio 例外時は両テキスト空の結果を返す（TTS 読み上げ禁止）。"""
     from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider

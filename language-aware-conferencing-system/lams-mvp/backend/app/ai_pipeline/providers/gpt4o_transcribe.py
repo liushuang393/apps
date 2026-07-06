@@ -156,7 +156,8 @@ class GPT4oTranscribeProvider(AIProvider):
 
             # verbose_json形式で言語情報を取得
             transcribe_params: dict = {
-                "model": settings.openai_transcribe_model,
+                # verbose_json は whisper-1 のみ対応（gpt-4o-transcribe は 400 になる）
+                "model": settings.openai_detect_model,
                 "file": audio_file,
                 "response_format": "verbose_json",
                 "prompt": asr_prompt,
@@ -199,9 +200,11 @@ class GPT4oTranscribeProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[GPT4o-transcribe] 言語検出ASRエラー: {e}", exc_info=True)
-            # フォールバック: 通常のASR
+            # フォールバック: 通常のASR（検出言語は捏造しない。欠陥 #7）
+            if hint_language == "multi":
+                return "", ""
             text = await self.transcribe_audio(audio_data, hint_language)
-            return text, hint_language if hint_language != "multi" else "ja"
+            return text, hint_language
 
     def _normalize_language_code(self, lang: str) -> str:
         """

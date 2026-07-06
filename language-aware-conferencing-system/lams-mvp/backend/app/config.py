@@ -148,6 +148,9 @@ class Settings(BaseSettings):
     # 最新モデル: gpt-4o-transcribe, gpt-4o-mini-transcribe
     openai_transcribe_model: str = "gpt-4o-transcribe"
 
+    # 言語自動検出専用モデル。verbose_json（language フィールド）対応は whisper-1 のみ。
+    openai_detect_model: str = "whisper-1"
+
     # GPT-Realtime S2S 設定（音声直接翻訳、WebSocket API）
     # 最新モデル: gpt-realtime-1.5（推奨）, gpt-realtime, gpt-realtime-mini
     # gpt-realtime-1.5: +7%命令追従、+10%英数字精度、多言語対応向上
