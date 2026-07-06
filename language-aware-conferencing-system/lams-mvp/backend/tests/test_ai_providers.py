@@ -460,5 +460,20 @@ async def test_collect_response_happy_path():
     assert chunks == [b"\x01\x02"]
 
 
+def test_session_configs_disable_turn_detection():
+    """手動 commit/response.create 運用のため server_vad を無効化する（欠陥 #5）。"""
+    provider = _realtime_provider()
+
+    asr_cfg = provider._build_transcribe_session_config("ja")
+    assert asr_cfg["type"] == "session.update"
+    assert asr_cfg["session"]["turn_detection"] is None
+    assert asr_cfg["session"]["input_audio_transcription"]["language"] == "ja"
+
+    s2s_cfg = provider._build_translate_session_config("ja", "en")
+    assert s2s_cfg["type"] == "session.update"
+    assert s2s_cfg["session"]["turn_detection"] is None
+    assert "instructions" in s2s_cfg["session"]
+
+
 if __name__ == "__main__":
     sys.exit(asyncio.run(main()))

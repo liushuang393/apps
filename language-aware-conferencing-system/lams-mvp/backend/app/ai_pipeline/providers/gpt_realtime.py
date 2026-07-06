@@ -48,6 +48,82 @@ class GPTRealtimeProvider(AIProvider):
         self._client = None  # REST API用（フォールバック）
         check_api_key(settings.openai_api_key, "OpenAI")
 
+    def _build_transcribe_session_config(self, language: str) -> dict:
+        """
+        transcription セッション設定（手動 commit 運用のため VAD 無効）。
+
+        Args:
+            language: 言語コード（ja, en, zh, vi など）
+
+        Returns:
+            session.update イベント辞書（turn_detection: None を含む）
+        """
+        # zh / multi はモデルが自動言語検出するため language を指定しない
+        lang_for_transcribe = (
+            language if language not in ("zh", "multi") else None
+        )
+        transcription_config: dict = {"model": settings.openai_transcribe_model}
+        if lang_for_transcribe:
+            transcription_config["language"] = lang_for_transcribe
+        return {
+            "type": "session.update",
+            "session": {
+                "input_audio_format": "pcm16",
+                "input_audio_transcription": transcription_config,
+                # 手動 commit と自動 VAD の競合防止（欠陥 #5）
+                "turn_detection": None,
+            },
+        }
+
+    def _build_translate_session_config(
+        self, source_language: str, target_language: str
+    ) -> dict:
+        """
+        S2S（Speech-to-Speech）翻訳セッション設定（手動 commit/response.create 運用のため VAD 無効）。
+
+        Args:
+            source_language: 元言語コード
+            target_language: 翻訳先言語コード
+
+        Returns:
+            session.update イベント辞書（turn_detection: None を含む）
+        """
+        src_name = LANGUAGE_NAMES.get(source_language, source_language)
+        tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
+        return {
+            "type": "session.update",
+            "session": {
+                "modalities": ["text", "audio"],
+                "instructions": (
+                    f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
+                    f"[CRITICAL WARNING] You are a TRANSLATION MACHINE, NOT a conversation partner.\n\n"
+                    f"ABSOLUTE RULES - VIOLATION IS FORBIDDEN:\n"
+                    f"1. TRANSLATE ONLY: Convert {src_name} speech to {tgt_name}. Nothing else.\n"
+                    f"2. NO CONVERSATION: NEVER respond, reply, acknowledge, or engage.\n"
+                    f"3. NO GREETINGS: NEVER say hello, goodbye, or any pleasantries.\n"
+                    f"4. NO COMMENTS: NEVER add explanations, notes, or your opinions.\n"
+                    f"5. NO ACKNOWLEDGMENT: NEVER say 'I understand', 'OK', 'Sure', etc.\n"
+                    f"6. SILENCE ON NOISE: If audio is unclear/silent, output NOTHING.\n"
+                    f"7. LITERAL TRANSLATION: Output ONLY the direct translation of spoken words.\n\n"
+                    f"FORBIDDEN PHRASES (never output these):\n"
+                    f"- 'はい、承知しました' / 'I understand' / '好的，我明白了'\n"
+                    f"- 'どうぞお話しください' / 'Please continue' / '请继续说'\n"
+                    f"- Any response that is not a translation of the input audio\n\n"
+                    f"Remember: You are a machine that converts {src_name} audio to {tgt_name}. "
+                    f"If someone says '今日は会議があります', output ONLY the translation like "
+                    f"'There is a meeting today' - NEVER add 'I understand' or any response."
+                ),
+                "voice": settings.openai_tts_voice,
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
+                "input_audio_transcription": {
+                    "model": settings.openai_transcribe_model,
+                },
+                # 手動 commit と自動 VAD の競合防止（欠陥 #5）
+                "turn_detection": None,
+            },
+        }
+
     async def _get_client(self):
         """OpenAI REST APIクライアント取得（フォールバック用）"""
         if self._client is None:
@@ -145,20 +221,7 @@ class GPTRealtimeProvider(AIProvider):
                         logger.debug("[GPT-Realtime] セッション準備完了")
 
                 # セッション設定（transcriptionモード）
-                # 注意: session.type は存在しないパラメータ
-                lang_for_transcribe = (
-                    language if language not in ("zh", "multi") else None
-                )
-                transcription_config: dict = {"model": settings.openai_transcribe_model}
-                if lang_for_transcribe:
-                    transcription_config["language"] = lang_for_transcribe
-                session_config = {
-                    "type": "session.update",
-                    "session": {
-                        "input_audio_format": "pcm16",
-                        "input_audio_transcription": transcription_config,
-                    },
-                }
+                session_config = self._build_transcribe_session_config(language)
                 await ws.send(json.dumps(session_config))
 
                 # session.updated を待機
@@ -459,8 +522,6 @@ class GPTRealtimeProvider(AIProvider):
 
         model = settings.openai_realtime_model
         url = f"{REALTIME_API_URL}?model={model}"
-        src_name = LANGUAGE_NAMES.get(source_language, source_language)
-        tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
 
         headers = {
             "Authorization": f"Bearer {settings.openai_api_key}",
@@ -480,40 +541,9 @@ class GPTRealtimeProvider(AIProvider):
                     logger.debug("[GPT-Realtime] S2Sセッション準備完了")
 
             # セッション設定（realtimeモード = S2S）
-            # 重要: プロンプトで厳格に翻訳のみを指示し、幻覚を防止
-            # 注意: session.type は存在しないパラメータ
-            # ★★★ 強化された翻訳専用指示（AI乱話防止）★★★
-            session_config = {
-                "type": "session.update",
-                "session": {
-                    "modalities": ["text", "audio"],
-                    "instructions": (
-                        f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
-                        f"[CRITICAL WARNING] You are a TRANSLATION MACHINE, NOT a conversation partner.\n\n"
-                        f"ABSOLUTE RULES - VIOLATION IS FORBIDDEN:\n"
-                        f"1. TRANSLATE ONLY: Convert {src_name} speech to {tgt_name}. Nothing else.\n"
-                        f"2. NO CONVERSATION: NEVER respond, reply, acknowledge, or engage.\n"
-                        f"3. NO GREETINGS: NEVER say hello, goodbye, or any pleasantries.\n"
-                        f"4. NO COMMENTS: NEVER add explanations, notes, or your opinions.\n"
-                        f"5. NO ACKNOWLEDGMENT: NEVER say 'I understand', 'OK', 'Sure', etc.\n"
-                        f"6. SILENCE ON NOISE: If audio is unclear/silent, output NOTHING.\n"
-                        f"7. LITERAL TRANSLATION: Output ONLY the direct translation of spoken words.\n\n"
-                        f"FORBIDDEN PHRASES (never output these):\n"
-                        f"- 'はい、承知しました' / 'I understand' / '好的，我明白了'\n"
-                        f"- 'どうぞお話しください' / 'Please continue' / '请继续说'\n"
-                        f"- Any response that is not a translation of the input audio\n\n"
-                        f"Remember: You are a machine that converts {src_name} audio to {tgt_name}. "
-                        f"If someone says '今日は会議があります', output ONLY the translation like "
-                        f"'There is a meeting today' - NEVER add 'I understand' or any response."
-                    ),
-                    "voice": settings.openai_tts_voice,
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
-                    "input_audio_transcription": {
-                        "model": settings.openai_transcribe_model,
-                    },
-                },
-            }
+            session_config = self._build_translate_session_config(
+                source_language, target_language
+            )
             await ws.send(json.dumps(session_config))
 
             # session.updated を待機
