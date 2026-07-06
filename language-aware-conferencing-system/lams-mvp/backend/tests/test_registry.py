@@ -123,3 +123,24 @@ def test_composite_transcribe_delegates_to_asr() -> None:
     comp = CompositeAIProvider(_FakeASR(), _FakeMT(), None)
     assert asyncio.run(comp.transcribe_audio(b"x", "en")) == "hello"
     assert asyncio.run(comp.transcribe_with_detection(b"x")) == ("hello", "en")
+
+
+# ============================================================
+# build_composite_provider（フェイルファスト）
+# ============================================================
+def test_build_composite_raises_when_asr_unresolvable(monkeypatch):
+    """ASR スロット解決不能時は起動時に APIKeyError（実行時 AttributeError 禁止）。"""
+    import pytest
+
+    from app.ai_pipeline import registry as reg
+    from app.ai_pipeline.providers.base import APIKeyError
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "deepgram_api_key", "", raising=False)
+    monkeypatch.setattr(settings, "asr_provider", "gpt4o")
+    monkeypatch.setattr(settings, "mt_provider", "auto")
+    monkeypatch.setattr(settings, "tts_provider", "auto")
+
+    with pytest.raises(APIKeyError):
+        reg.build_composite_provider()

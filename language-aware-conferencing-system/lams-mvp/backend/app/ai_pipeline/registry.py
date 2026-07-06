@@ -20,7 +20,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from app.ai_pipeline.providers.base import AIProvider, TranslationResult
+from app.ai_pipeline.providers.base import AIProvider, APIKeyError, TranslationResult
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -298,6 +298,18 @@ def build_composite_provider() -> AIProvider:
     tts = registry.resolve(
         STAGE_TTS, _slot_name(STAGE_TTS, settings.tts_provider, defaults)
     )
+    # None ステージの実行時 AttributeError を防ぐ（欠陥 #12: フェイルファスト）
+    if asr is None or mt is None:
+        raise APIKeyError(
+            "Composite 構成を解決できません"
+            f"（asr解決={asr is not None}, mt解決={mt is not None}）。"
+            "OPENAI_API_KEY 等、各スロットの必要な環境変数を設定してください。"
+        )
+    if tts is None:
+        from app.ai_pipeline.providers.stages import NullTTSStage
+
+        logger.warning("[Registry] TTS スロット解決不能のため無音運用へ縮退")
+        tts = NullTTSStage()
     logger.info(
         "[Registry] Composite 構成: asr=%s, mt=%s, tts=%s",
         getattr(asr, "name", None),
