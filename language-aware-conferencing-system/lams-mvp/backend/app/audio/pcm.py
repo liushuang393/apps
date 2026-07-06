@@ -124,3 +124,26 @@ def chunk16(data: bytes, samples_per_frame: int) -> tuple[list[bytes], bytes]:
     ]
     remainder = data[n_full * bytes_per_frame :]
     return frames, remainder
+
+
+# WAV ヘッダ内サンプルレートのオフセット（RIFF 標準 44 バイトヘッダ）。
+_WAV_RATE_OFFSET = 24
+_WAV_HEADER_LEN = 44
+
+
+def parse_wav16(data: bytes, fallback_rate: int = 24000) -> tuple[bytes, int]:
+    """RIFF/WAVE(int16 PCM) から (PCM バイト列, サンプルレート) を取り出す。
+
+    wrap_wav16 / OpenAI TTS(wav) / _pcm16_to_wav の出力（標準 44 バイトヘッダ）を
+    想定する。ヘッダが無ければ生 PCM とみなし fallback_rate を返す。
+    # ponytail: 追加チャンク付き WAV は非対応。外部入力を受けるようになったら
+    # チャンク走査に拡張する。
+    """
+    if (
+        len(data) < _WAV_HEADER_LEN
+        or data[:4] != b"RIFF"
+        or data[8:12] != b"WAVE"
+    ):
+        return data, fallback_rate
+    sample_rate = struct.unpack_from("<I", data, _WAV_RATE_OFFSET)[0]
+    return data[_WAV_HEADER_LEN:], sample_rate

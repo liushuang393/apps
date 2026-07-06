@@ -138,3 +138,27 @@ async def test_orchestrator_drives_livekit_sink() -> None:
     )
     assert len(rec.audio) == 10  # 翻訳音声が 48k フレームで capture
     assert any(topic == TOPIC_SUBTITLE for _, _, topic in rec.data)
+
+
+@pytest.mark.asyncio
+async def test_deliver_audio_strips_wav_header():
+    """WAV ヘッダ付き音声はヘッダを除去し実レートで 48kHz 化する。"""
+    from app.audio.pcm import wrap_wav16
+    from app.webrtc.sink import OUTPUT_FRAME_SAMPLES, LiveKitOutputSink
+
+    captured: list[tuple[str, bytes]] = []
+
+    async def capture(lang: str, frame: bytes) -> None:
+        captured.append((lang, frame))
+
+    async def send(payload: bytes, ids: list[str], topic: str) -> None:
+        pass
+
+    sink = LiveKitOutputSink(
+        user_language={"u1": "en"}, capture_audio=capture, send_data=send
+    )
+    pcm24k = b"\x01\x00" * 2400  # 24kHz で 100ms
+    await sink.deliver_audio("u1", wrap_wav16(pcm24k, 24000))
+    total = sum(len(f) for _, f in captured)
+    # 100ms @48kHz int16 = 4800 標本 = 9600 バイト（フレーム 480 標本単位）
+    assert total == (4800 // OUTPUT_FRAME_SAMPLES) * OUTPUT_FRAME_SAMPLES * 2

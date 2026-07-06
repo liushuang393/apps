@@ -19,7 +19,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 
-from app.audio.pcm import chunk16, resample16
+from app.audio.pcm import chunk16, parse_wav16, resample16
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,10 @@ class LiveKitOutputSink:
             return
         self._last_audio[lang] = audio
 
-        pcm48 = resample16(audio, self._hearing_sample_rate, OUTPUT_SAMPLE_RATE)
+        # provider の出力は WAV ヘッダ付きのことがある（TTS / S2S とも）。
+        # ヘッダを剥がし、ヘッダ記載の実レートで 48kHz へ変換する（欠陥 #2 付随）。
+        pcm, rate = parse_wav16(audio, fallback_rate=self._hearing_sample_rate)
+        pcm48 = resample16(pcm, rate, OUTPUT_SAMPLE_RATE)
         frames, _remainder = chunk16(pcm48, OUTPUT_FRAME_SAMPLES)
         for frame in frames:
             await self._capture_audio(lang, frame)

@@ -24,12 +24,16 @@ from app.ai_pipeline.providers.base import (
     TranslationResult,
     check_api_key,
 )
+from app.audio.pcm import parse_wav16, resample16
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # WebSocket Realtime API エンドポイント
 REALTIME_API_URL = "wss://api.openai.com/v1/realtime"
+
+# Realtime API の pcm16 入力が前提とするサンプルレート（欠陥 #2）。
+REALTIME_INPUT_RATE = 24000
 
 
 class GPTRealtimeProvider(AIProvider):
@@ -155,10 +159,12 @@ class GPTRealtimeProvider(AIProvider):
             return ""
 
         try:
-            # WAVからPCM16データを抽出
-            pcm_data = self._wav_to_pcm16(audio_data)
+            # WAV から PCM と実レートを取り出し、Realtime API 要求の 24kHz へ揃える
+            # （16kHz のまま送ると 1.5 倍速解釈で品質が崩壊する。欠陥 #2）
+            pcm_data, src_rate = parse_wav16(audio_data)
             if not pcm_data:
                 return ""
+            pcm_data = resample16(pcm_data, src_rate, REALTIME_INPUT_RATE)
 
             audio_base64 = base64.b64encode(pcm_data).decode("utf-8")
             lang_name = LANGUAGE_NAMES.get(language, language)
@@ -182,18 +188,6 @@ class GPTRealtimeProvider(AIProvider):
             logger.error(f"[GPT-Realtime] ASRエラー: {e}", exc_info=True)
             # フォールバック: gpt-4o-transcribe
             return await self._transcribe_fallback(audio_data, language)
-
-    def _wav_to_pcm16(self, wav_data: bytes) -> bytes:
-        """WAVデータからPCM16データを抽出"""
-        try:
-            # WAVヘッダーをスキップ（44バイト）
-            if len(wav_data) < 44:
-                return b""
-            # 簡易的にヘッダーをスキップ
-            return wav_data[44:]
-        except Exception as e:
-            logger.warning(f"[GPT-Realtime] WAV解析エラー: {e}")
-            return b""
 
     async def _realtime_transcribe(self, audio_base64: str, language: str) -> str:
         """WebSocket Realtime APIで音声認識"""
@@ -473,8 +467,9 @@ class GPTRealtimeProvider(AIProvider):
             src_name = LANGUAGE_NAMES.get(source_language, source_language)
             tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
 
-            # WAVからPCM16データを抽出
-            pcm_data = self._wav_to_pcm16(audio_data)
+            # WAV から PCM と実レートを取り出し、Realtime API 要求の 24kHz へ揃える
+            # （16kHz のまま送ると 1.5 倍速解釈で品質が崩壊する。欠陥 #2）
+            pcm_data, src_rate = parse_wav16(audio_data)
             if not pcm_data:
                 return TranslationResult(
                     source_language=source_language,
@@ -483,6 +478,7 @@ class GPTRealtimeProvider(AIProvider):
                     translated_text="",
                     audio_data=None,
                 )
+            pcm_data = resample16(pcm_data, src_rate, REALTIME_INPUT_RATE)
 
             audio_base64 = base64.b64encode(pcm_data).decode("utf-8")
 
