@@ -114,7 +114,9 @@ async def get_or_create_session(room_id: str) -> str:
     if room_id in _active_sessions:
         return _active_sessions[room_id]
     async with async_session() as db:
-        room = (await db.execute(select(Room).where(Room.id == room_id))).scalar_one_or_none()
+        room = (
+            await db.execute(select(Room).where(Room.id == room_id))
+        ).scalar_one_or_none()
         result = await db.execute(
             select(MeetingSession).where(
                 MeetingSession.room_id == room_id,

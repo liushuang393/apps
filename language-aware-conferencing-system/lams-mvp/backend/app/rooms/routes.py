@@ -147,7 +147,11 @@ async def create_room(
     try:
         await room_manager.create_room_state(room.id)
     except Exception as e:
-        logger.error("[Room] state 初期化失敗のため会議室作成を取り消します: room=%s err=%s", room.id, e)
+        logger.error(
+            "[Room] state 初期化失敗のため会議室作成を取り消します: room=%s err=%s",
+            room.id,
+            e,
+        )
         await db.delete(room)
         await db.commit()
         raise HTTPException(
@@ -349,9 +353,7 @@ class TranscriptResponse(BaseModel):
     total: int
 
 
-async def _load_room_sessions(
-    db: AsyncSession, room_id: str
-) -> list[MeetingSession]:
+async def _load_room_sessions(db: AsyncSession, room_id: str) -> list[MeetingSession]:
     """room 配下の会議回一覧を新しい順で取得する。"""
     result = await db.execute(
         select(MeetingSession)
@@ -460,11 +462,7 @@ async def get_room_transcript(
     for s in segments:
         translations = {t.target_language: t.translated_text for t in s.translations}
         if lang:
-            translations = (
-                {lang: translations[lang]}
-                if lang in translations
-                else {}
-            )
+            translations = {lang: translations[lang]} if lang in translations else {}
 
         subtitle_responses.append(
             SubtitleResponse(
