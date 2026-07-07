@@ -38,8 +38,17 @@ class LiveKitPublisher:
         self._create_lock = asyncio.Lock()
 
     async def _get_source(self, speaker_id: str, language: str) -> rtc.AudioSource:
-        """(話者, 言語) の AudioSource を取得（未作成ならトラックを生成・publish）。"""
+        """(話者, 言語) の AudioSource を取得（未作成ならトラックを生成・publish）。
+
+        publish_track はネットワーク待ちを伴うため、既存キーの高速経路では
+        _create_lock を握らない（他話者/言語の capture_segment を止めないため）。
+        未作成の場合のみロックを取得し、ロック待ち中に他コルーチンが同じキーを
+        publish 済みにしていないか再確認する（double-checked locking）。
+        """
         key = (speaker_id, language)
+        source = self._sources.get(key)
+        if source is not None:
+            return source
         async with self._create_lock:
             source = self._sources.get(key)
             if source is not None:
