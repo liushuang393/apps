@@ -26,7 +26,7 @@ interface SubtitleTranslationResponse {
   subtitle_id: string;
   target_language: string;
   translated_text: string | null;
-  status: 'ready' | 'pending' | 'not_found';
+  status: 'ready' | 'pending' | 'not_found' | 'error';
 }
 
 /** キャッシュキー生成 */

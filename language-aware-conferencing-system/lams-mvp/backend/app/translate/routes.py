@@ -452,7 +452,7 @@ class SubtitleTranslationResponse(BaseModel):
     subtitle_id: str
     target_language: str
     translated_text: str | None
-    status: str  # "ready" | "pending" | "not_found"
+    status: str  # "ready" | "pending" | "not_found" | "error"
 
 
 @router.get(
@@ -541,28 +541,24 @@ async def get_subtitle_translation(
                     translated_text=translated,
                     status="ready",
                 )
-            else:
-                # 翻訳結果が空の場合、原文を返す（フォールバック）
-                logger.warning(f"[SubtitleTranslate] 翻訳結果が空: {subtitle_id}")
-                await subtitle_cache.store_translation(
-                    subtitle_id, target_lang, original_text
-                )
-                return SubtitleTranslationResponse(
-                    subtitle_id=subtitle_id,
-                    target_language=target_lang,
-                    translated_text=original_text,  # 原文をフォールバック
-                    status="ready",
-                )
-        except Exception as e:
-            logger.error(f"[SubtitleTranslate] 翻訳エラー: {e}")
-            await subtitle_cache.store_translation(
-                subtitle_id, target_lang, original_text
-            )
+            # 翻訳結果が空: 原文を ready でキャッシュ固定化しない（欠陥 #15）。
+            # マーカーを解放し、次回リクエストで再試行させる。
+            logger.warning(f"[SubtitleTranslate] 翻訳結果が空: {subtitle_id}")
+            await subtitle_cache.release_claim(subtitle_id, target_lang)
             return SubtitleTranslationResponse(
                 subtitle_id=subtitle_id,
                 target_language=target_lang,
-                translated_text=original_text,  # エラー時も原文を返す
-                status="ready",
+                translated_text=original_text,  # 表示用フォールバック（非キャッシュ）
+                status="error",
+            )
+        except Exception as e:
+            logger.error(f"[SubtitleTranslate] 翻訳エラー: {e}")
+            await subtitle_cache.release_claim(subtitle_id, target_lang)
+            return SubtitleTranslationResponse(
+                subtitle_id=subtitle_id,
+                target_language=target_lang,
+                translated_text=original_text,  # 表示用フォールバック（非キャッシュ）
+                status="error",
             )
 
     # 他のリクエストが翻訳中 → 待機

@@ -190,6 +190,15 @@ async def mark_translation_pending(subtitle_id: str, target_lang: str) -> bool:
         return False
 
 
+async def release_claim(subtitle_id: str, target_lang: str) -> None:
+    """翻訳中マーカーを解放する（翻訳失敗時に他リクエストへ再試行させる）。"""
+    try:
+        r = await _get_redis()
+        await r.delete(_pending_key(subtitle_id, target_lang))
+    except Exception as e:
+        logger.warning(f"[SubtitleCache] マーカー解放エラー: {e}")
+
+
 async def get_all_translations(subtitle_id: str) -> dict[str, str]:
     """
     字幕IDの全翻訳結果を取得
