@@ -21,6 +21,7 @@ from app.auth.dependencies import require_admin
 from app.db.database import get_db
 from app.db.models import GlossaryTerm, User
 from app.translate import glossary
+from app.translate.routes import bump_glossary_version
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -104,6 +105,7 @@ async def create_term(
     await db.commit()
     await db.refresh(term)
     glossary.invalidate_cache()
+    await bump_glossary_version()
     logger.info(f"[Glossary] 用語登録: {term.source_term} ({term.id})")
     return term
 
@@ -167,6 +169,7 @@ async def update_term(
     await db.commit()
     await db.refresh(term)
     glossary.invalidate_cache()
+    await bump_glossary_version()
     logger.info(f"[Glossary] 用語更新: {term.id}")
     return term
 
@@ -182,4 +185,5 @@ async def delete_term(
     await db.delete(term)
     await db.commit()
     glossary.invalidate_cache()
+    await bump_glossary_version()
     logger.info(f"[Glossary] 用語削除: {term_id}")

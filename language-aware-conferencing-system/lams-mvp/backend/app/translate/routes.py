@@ -50,10 +50,31 @@ async def _get_redis() -> aioredis.Redis:
     return _redis
 
 
-def _cache_key(text: str, src: str, tgt: str) -> str:
-    """キャッシュキー生成（テキストハッシュベース）"""
+_GLOSSARY_VERSION_KEY = "glossary:version"
+
+
+def _cache_key(text: str, src: str, tgt: str, glossary_version: str) -> str:
+    """キャッシュキー生成（用語集世代を含む。世代更新で旧訳を一括無効化）"""
     text_hash = hashlib.md5(text.encode()).hexdigest()
-    return f"text_translate:{src}:{tgt}:{text_hash}"
+    return f"text_translate:v{glossary_version}:{src}:{tgt}:{text_hash}"
+
+
+async def _glossary_version() -> str:
+    """現在の用語集バージョン（未設定/障害時は "0"）"""
+    try:
+        r = await _get_redis()
+        return await r.get(_GLOSSARY_VERSION_KEY) or "0"
+    except Exception:
+        return "0"
+
+
+async def bump_glossary_version() -> None:
+    """用語集 CRUD 後に呼び、text_translate キャッシュを世代ごと無効化する"""
+    try:
+        r = await _get_redis()
+        await r.incr(_GLOSSARY_VERSION_KEY)
+    except Exception as e:
+        logger.warning(f"[Translate] 用語集バージョン更新エラー: {e}")
 
 
 def _context_key(user_id: str, room_id: str | None) -> str:
@@ -159,7 +180,10 @@ async def translate_text(
         )
 
     # キャッシュチェック
-    cache_key = _cache_key(req.text, req.source_language, req.target_language)
+    glossary_version = await _glossary_version()
+    cache_key = _cache_key(
+        req.text, req.source_language, req.target_language, glossary_version
+    )
     try:
         r = await _get_redis()
         cached = await r.get(cache_key)
@@ -188,12 +212,13 @@ async def translate_text(
     # ★コンテキストに追加
     await _add_context(user.id, req.room_id, req.text, translated_text)
 
-    # キャッシュ保存
-    try:
-        r = await _get_redis()
-        await r.setex(cache_key, CACHE_TTL, translated_text)
-    except Exception as e:
-        logger.warning(f"[Translate] キャッシュ保存エラー: {e}")
+    # キャッシュ保存（文脈付き訳文は共有キャッシュへ入れない。欠陥 #14: 部屋間流出防止）
+    if not context:
+        try:
+            r = await _get_redis()
+            await r.setex(cache_key, CACHE_TTL, translated_text)
+        except Exception as e:
+            logger.warning(f"[Translate] キャッシュ保存エラー: {e}")
 
     return TranslateResponse(
         original_text=req.text,
@@ -386,7 +411,8 @@ async def translate_text_simple(
         return text
 
     # キャッシュチェック
-    cache_key = _cache_key(text, source_language, target_language)
+    glossary_version = await _glossary_version()
+    cache_key = _cache_key(text, source_language, target_language, glossary_version)
     try:
         r = await _get_redis()
         cached = await r.get(cache_key)

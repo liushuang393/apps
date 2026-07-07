@@ -158,3 +158,13 @@ def test_measure_hits_partial_ratio() -> None:
         GlossaryMatch("部長", "部长", do_not_translate=False, priority=100),
     ]
     assert measure_glossary_hits(matches, "审批を依頼") == (1, 2)
+
+
+def test_cache_key_includes_glossary_version() -> None:
+    """キャッシュキーは用語集バージョンを含む（欠陥 #14: 旧訳の残存防止）。"""
+    from app.translate.routes import _cache_key
+
+    k1 = _cache_key("こんにちは", "ja", "en", "3")
+    k2 = _cache_key("こんにちは", "ja", "en", "4")
+    assert k1 != k2
+    assert k1.startswith("text_translate:v3:ja:en:")
