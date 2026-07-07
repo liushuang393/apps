@@ -222,6 +222,11 @@ class HybridOrchestrator:
         for ls in listeners:
             groups.setdefault(ls.target_language, []).append(ls)
 
+        # §9 実配線: hearing P95 超過中は聞く主線を止め、字幕へ縮退させる（欠陥 #9）
+        s2s_available = True
+        if self._monitor is not None:
+            s2s_available = not self._monitor.hearing_degraded()
+
         async def run_group(target_lang: str, members: list[Listener]) -> None:
             ctx = RouteContext(
                 mode=mode,
@@ -229,6 +234,7 @@ class HybridOrchestrator:
                 target_language=target_lang,
                 enable_openai_s2s=enable_openai_s2s,
                 language_routes=language_routes or {},
+                s2s_available=s2s_available,
             )
             decision = self._router.decide(ctx)
 

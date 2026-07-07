@@ -384,3 +384,53 @@ async def test_subtitle_not_blocked_by_slow_hearing():
     )
     assert "subtitle" in times and "audio" in times
     assert times["audio"] - times["subtitle"] > 0.3  # 字幕が hearing を待っていない
+
+
+@pytest.mark.asyncio
+async def test_degraded_monitor_suppresses_hearing():
+    """hearing 縮退中は聞く主線を駆動せず読む主線のみで収束する（欠陥 #9）。"""
+    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+    from app.ai_pipeline.qos import HybridQoSMonitor
+
+    monitor = HybridQoSMonitor(window=10)
+    for _ in range(10):
+        monitor.record_latency("hearing", 9000.0)
+
+    hearing_called = {"n": 0}
+
+    async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
+        hearing_called["n"] += 1
+
+        class Out:
+            audio_data = b"wav"
+            translated_text = "x"
+
+        return Out()
+
+    async def reading_fn(_text, _src, _tgt):
+        return "hello"
+
+    class NullSink:
+        async def deliver_audio(self, _user_id, _audio):
+            pass
+
+        async def deliver_subtitle(self, _user_id, _message):
+            pass
+
+        async def deliver_event(self, _user_id, _message):
+            pass
+
+    orch = HybridOrchestrator(
+        hearing_fn=hearing_fn, reading_fn=reading_fn, monitor=monitor
+    )
+    result = await orch.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=NullSink(),
+        mode="hybrid",
+        speaker_id="sp",
+    )
+    assert hearing_called["n"] == 0
+    assert result.translations["en"] == "hello"

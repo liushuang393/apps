@@ -17,6 +17,23 @@ from app.ai_pipeline.qos import (
 )
 
 
+def test_hearing_degraded_and_retry() -> None:
+    """P95 超過で縮退し、クールダウン後に窓を捨てて再試行する（欠陥 #9）。"""
+    now = {"t": 0.0}
+    monitor = HybridQoSMonitor(
+        window=10, retry_cooldown_s=60.0, clock=lambda: now["t"]
+    )
+    assert monitor.hearing_degraded() is False  # 未計測は正常扱い
+
+    for _ in range(10):
+        monitor.record_latency("hearing", 9000.0)  # 目標 5000ms を大幅超過
+    assert monitor.hearing_degraded() is True
+
+    now["t"] = 61.0  # クールダウン経過 → 再試行（窓クリア）
+    assert monitor.hearing_degraded() is False
+    assert monitor.p95("hearing") is None
+
+
 def test_extract_numbers_handles_dates_money_and_time() -> None:
     """日付・金額・時刻・単桁を 1 トークンずつ抽出する"""
     nums = extract_numbers("2026-06-24 に 1,200 円を 12:30 へ。残り 5")
