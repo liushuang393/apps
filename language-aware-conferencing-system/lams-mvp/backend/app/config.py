@@ -131,12 +131,115 @@ class Settings(BaseSettings):
     # "auto"（既定）の場合は ai_provider プリセットから既定名を導出し、3スロットとも
     # "auto" なら従来の一体型 provider をそのまま使う（完全な後方互換・非介入）。
     # いずれか1つでも非 "auto" を指定すると CompositeAIProvider が有効化される。
-    #   - asr_provider: auto / gpt4o / deepgram / google
-    #   - mt_provider : auto / openai / google
-    #   - tts_provider: auto / openai / none
-    asr_provider: Literal["auto", "gpt4o", "deepgram", "google"] = "auto"
-    mt_provider: Literal["auto", "openai", "google"] = "auto"
-    tts_provider: Literal["auto", "openai", "none"] = "auto"
+    #   - asr_provider: auto / gpt4o / deepgram / google / local
+    #   - mt_provider : auto / openai / google / local
+    #   - tts_provider: auto / openai / none / local
+    # "local" は Lite 本地栈（faster-whisper / OPUS-MT-CT2 / Kokoro）。ランタイム
+    # 未導入時は registry の available() が False を返し雲へ自動フォールバックする。
+    asr_provider: Literal["auto", "gpt4o", "deepgram", "google", "local"] = "auto"
+    mt_provider: Literal["auto", "openai", "google", "local"] = "auto"
+    tts_provider: Literal["auto", "openai", "none", "local"] = "auto"
+
+    # -------------------------------------------
+    # Lite 本地モデル設定（改善案 §4 / §6：faster-whisper・OPUS-MT・Kokoro・VAD）
+    # -------------------------------------------
+    # GPU 予算（MB）。VRAM Broker がこの範囲でモデル常駐を調停する（12GB の目安）。
+    vram_budget_mb: int = 11000
+    # VAD バックエンド: energy（既定・CPU エネルギー閾値）/ silero（Silero VAD）。
+    # silero 指定時にランタイム未導入なら energy へ自動フォールバックする。
+    vad_backend: Literal["energy", "silero"] = "energy"
+
+    # 本地 ASR（faster-whisper / CTranslate2）
+    local_asr_model: str = "large-v3-turbo"
+    local_asr_device: str = "cuda"  # cuda / cpu
+    local_asr_compute_type: str = "int8"  # int8 / int8_float16 / float16
+    local_asr_size_mb: int = 1600  # VRAM Broker 会計用の概算常駐サイズ
+
+    # 本地 MT（OPUS-MT / Marian + CTranslate2）。model_dir は言語対別モデルの
+    # 親ディレクトリ（例: {dir}/opus-mt-ja-en）。未設定なら local MT は利用不可。
+    local_mt_model_dir: str | None = None
+    local_mt_device: str = "cpu"  # 軽量翻訳は CPU 常駐が既定（§6.1）
+    local_mt_compute_type: str = "int8"
+    local_mt_size_mb: int = 300  # 1 言語対あたりの概算サイズ
+
+    # 本地 TTS（Kokoro-82M / Piper）。Lite の訳音は任意（字幕優先）。
+    local_tts_model: str = "kokoro-82m"
+    local_tts_voice: str = "af_heart"
+    local_tts_device: str = "cpu"
+    local_tts_size_mb: int = 400
+
+    # -------------------------------------------
+    # ストリーミング字幕（P2：partial/final 事件協議）
+    # -------------------------------------------
+    # 発話確定前に ASR 原文の暫定字幕（interim）を配信し首字遅延を短縮する。
+    # 既定 False（従来どおり final のみ。有効化は本地/低遅延 ASR 環境向け）。
+    enable_partial_subtitles: bool = False
+    # 暫定字幕を出す発話中の累積音声間隔（ms）。この長さ毎に interim を1回出す。
+    partial_ms: int = 700
+
+    # -------------------------------------------
+    # 離線高質量重跑・音声アーカイブ（P3-D：改善案 §5.3）
+    # -------------------------------------------
+    # 音声の暗号化アーカイブを有効化する。既定 False（プライバシー既定オフ）。
+    # 有効時のみ発話音声を audio_archive_dir へ AES-GCM で暗号化保存し、DB には
+    # audio_hash 参照のみを持つ。会議の同意ポリシーに従って有効化すること。
+    enable_audio_archive: bool = False
+    # 暗号化アーカイブの保存先ディレクトリ。
+    audio_archive_dir: str = "/data/audio_archive"
+    # AES-GCM 鍵（base64 で 32 バイト）。未設定なら暗号化不可でアーカイブは無効化される。
+    audio_archive_key: str | None = None
+    # アーカイブ保持日数（この日数を超えた音声は purge 対象。0 以下で無期限）。
+    audio_retention_days: int = 30
+    # 中間パイプライン事件（回放ログ）を DB に記録する。既定 True（重跑の前提）。
+    # 音声アーカイブ無効でも MT 再処理のため事件は記録する価値がある。
+    enable_pipeline_event_log: bool = True
+
+    # -------------------------------------------
+    # 話者分離 diarization（P4-A：改善案 §4）
+    # -------------------------------------------
+    # 声紋 embedding による話者識別/クラスタリングを有効化する。既定 False。
+    # 有効時のみ発話音声から embedding を抽出し、consent 済み登録話者と照合、
+    # 未登録は会議内クラスタリングで "Speaker N" を付与する（speaker_id は不変）。
+    enable_diarization: bool = False
+    # 声紋 embedding バックエンド: none（無効）/ resemblyzer（Resemblyzer）。
+    # resemblyzer 指定でランタイム未導入なら diarization は自動無効化される。
+    speaker_embed_backend: Literal["none", "resemblyzer"] = "none"
+    # 登録話者と一致とみなす余弦類似度の閾値（この値以上で登録話者に帰属）。
+    speaker_match_threshold: float = 0.75
+    # 会議内クラスタリングで同一話者とみなす余弦類似度の閾値。
+    speaker_cluster_threshold: float = 0.70
+
+    # -------------------------------------------
+    # A/B テスト配信（P4-C：改善案 §5.1）
+    # -------------------------------------------
+    # モデル候補の A/B 実験配信を有効化する。既定 False（無効時は常に既定モデル）。
+    enable_ab_testing: bool = False
+    # 実験定義の JSON 文字列（配列）。各要素は
+    # {"key","stage","unit","enabled","variants":[{"name","model_id","weight"}]}。
+    # 例: '[{"key":"asr_ab","stage":"asr","unit":"session","enabled":true,
+    #   "variants":[{"name":"control","model_id":"asr-openai-transcribe","weight":50},
+    #   {"name":"treatment","model_id":"asr-faster-whisper","weight":50}]}]'
+    # JSON 不正・個別実験不正は fail-safe で空/当該のみスキップ（ライブを壊さない）。
+    experiments_config: str | None = None
+
+    # -------------------------------------------
+    # プロバイダー・プラグイン SDK（P4-D：改善案 §5.1）
+    # -------------------------------------------
+    # 外部 ASR/MT/TTS プラグインの読み込みを有効化する。既定 False（信頼境界）。
+    enable_provider_plugins: bool = False
+    # 読み込むプラグインモジュールの import パス（カンマ区切り）。各モジュールは
+    # register(registry) 関数または PLUGINS(list) を公開する。import 失敗・不正定義は
+    # fail-safe で当該のみスキップし、コア（既定プロバイダー）を壊さない。
+    # 例: "myorg.lams_plugins.whisperx, myorg.lams_plugins.elevenlabs"
+    provider_plugins: str | None = None
+
+    # -------------------------------------------
+    # モデル治理カタログのランタイム選択（P4-wiring：改善案 §5.1）
+    # -------------------------------------------
+    # 有効時、各ステージの "auto" スロットを model_registry の production カード
+    # （provider_name）で解決する。既定 False＝従来のプリセット既定で解決（挙動不変）。
+    # これにより治理カタログの production 昇格が実行時プロバイダー選択へ反映される。
+    use_model_registry_selection: bool = False
 
     # -------------------------------------------
     # OpenAI API 設定（gpt4o_transcribe, gpt_realtime共通）

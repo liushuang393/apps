@@ -212,12 +212,67 @@ function shouldSkipCapture(profile, { isPlayingAudio, outputEndTime, bufferWindo
     return timeSincePlaybackEnd < bufferWindowMs;
 }
 
+/**
+ * 実効デバイス種別ごとの getUserMedia 音声制約（EC/NS/AGC）を返す（2行の決定表）。
+ *
+ *   - microphone → 全ON。翻訳音声が同一マシンのスピーカーから出るため、AEC 無しだと
+ *     マイクが訳音を拾い直して認識が崩れる（同時通訳アプリの標準対策）。
+ *   - それ以外（virtual-card / loopback / tab）→ 全OFF。デジタルのクリーン音源に
+ *     マイク用の AEC/NS/AGC をかけると歪み・減衰で認識が劣化する（監視モードの認識強化）。
+ *
+ * sampleRate は決して設定しない（ネイティブレートで採集し、送信直前の resampleMicTo24k で
+ * 一度だけ24kへ変換する。固定すると共有 AudioContext との間で二重リサンプルが起きる）。
+ *
+ * @param {'microphone'|'virtual-card'|'loopback'|'tab'} effectiveDevice 実効デバイス種別
+ * @returns {{echoCancellation: boolean, noiseSuppression: boolean, autoGainControl: boolean}}
+ */
+function captureConstraintsFor(effectiveDevice) {
+    const isMicrophone = effectiveDevice === 'microphone';
+    return {
+        echoCancellation: isMicrophone,
+        noiseSuppression: isMicrophone,
+        autoGainControl: isMicrophone
+    };
+}
+
+/**
+ * 採集の入口戦略を決める決定表（routeAudioCapture のディスパッチ根拠）。
+ *
+ * 行為コード(routeAudioCapture)にモード if を書かず、本関数の戻り値でハンドラを引く
+ * （判定はこの決定表1箇所に集約）。
+ *   - 'microphone':       マイク固定（フォールバック対象外）。
+ *   - 'monitor-fallback': Electron のシステム監視（仮想カード→ループバック→マイクの自動段）。
+ *   - 'monitor-display':  ブラウザのシステム監視（getDisplayMedia のタブ音声共有・段なし）。
+ *
+ * @param {Object} input
+ * @param {boolean} input.isElectron - Electron 環境か
+ * @param {string} input.audioSourceType - 'microphone' | 'system'
+ * @returns {'microphone'|'monitor-fallback'|'monitor-display'}
+ */
+function captureEntryFor({ isElectron, audioSourceType }) {
+    if (audioSourceType !== 'system') {
+        return 'microphone';
+    }
+    return isElectron ? 'monitor-fallback' : 'monitor-display';
+}
+
+/**
+ * 会議アプリのウィンドウ名判定パターン（監視ソースの優先選択で使用）。
+ * ※ 下拉のアイコン表示(detectMeetingApps 側)は表示専用の別リスト(Slack を含まない)を
+ *   使い続ける。ここへ寄せると cosmetic な表示が変わるため統合しない。
+ * @type {RegExp}
+ */
+const MEETING_APP_PATTERN = /Teams|Zoom|Meet|Skype|Discord|Slack|Webex/i;
+
 // エクスポート（ブラウザ: グローバル / Node(Jest): module.exports の両対応）
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         CAPTURE_PROFILE_IDS,
         deriveCaptureProfileId,
         buildCaptureProfile,
-        shouldSkipCapture
+        shouldSkipCapture,
+        captureConstraintsFor,
+        captureEntryFor,
+        MEETING_APP_PATTERN
     };
 }

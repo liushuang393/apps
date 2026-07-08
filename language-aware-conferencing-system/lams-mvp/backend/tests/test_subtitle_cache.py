@@ -25,12 +25,10 @@ async def test_release_claim_deletes_pending_marker(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_translation_error_not_cached(monkeypatch) -> None:
     """翻訳例外時に store_translation（原文の ready 固定化）を呼ばない。"""
-    from app.translate import routes
+    from app.translate import subtitle_routes
 
     stored: list = []
-    monkeypatch.setattr(
-        subtitle_cache, "get_translation", AsyncMock(return_value=None)
-    )
+    monkeypatch.setattr(subtitle_cache, "get_translation", AsyncMock(return_value=None))
     monkeypatch.setattr(
         subtitle_cache,
         "get_original",
@@ -50,9 +48,9 @@ async def test_translation_error_not_cached(monkeypatch) -> None:
     async def boom(_text: str, _src: str, _tgt: str) -> str:
         raise RuntimeError("api down")
 
-    monkeypatch.setattr(routes, "translate_text_simple", boom)
+    monkeypatch.setattr(subtitle_routes, "translate_text_simple", boom)
 
-    resp = await routes.get_subtitle_translation("sub-1", "en", wait=True)
+    resp = await subtitle_routes.get_subtitle_translation("sub-1", "en", wait=True)
     assert resp.status == "error"
     assert stored == []  # 原文が翻訳としてキャッシュされない
     released.assert_awaited_once()

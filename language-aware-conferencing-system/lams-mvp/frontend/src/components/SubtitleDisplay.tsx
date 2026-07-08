@@ -31,6 +31,7 @@ interface DisplaySubtitle extends SubtitleData {
  */
 const selectSubtitles = (s: ReturnType<typeof useRoomStore.getState>) => s.subtitles;
 const selectInterimSubtitles = (s: ReturnType<typeof useRoomStore.getState>) => s.interimSubtitles;
+const selectInterimBySpeaker = (s: ReturnType<typeof useRoomStore.getState>) => s.interimBySpeaker;
 const selectMyPreference = (s: ReturnType<typeof useRoomStore.getState>) => s.myPreference;
 const selectParticipants = (s: ReturnType<typeof useRoomStore.getState>) => s.participants;
 
@@ -38,6 +39,7 @@ function SubtitleDisplayInner() {
   // ★パフォーマンス最適化: 個別セレクターで購読★
   const subtitles = useRoomStore(selectSubtitles);
   const interimSubtitles = useRoomStore(selectInterimSubtitles);
+  const interimBySpeaker = useRoomStore(selectInterimBySpeaker);
   const myPreference = useRoomStore(selectMyPreference);
   const participants = useRoomStore(selectParticipants);
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -128,12 +130,15 @@ function SubtitleDisplayInner() {
     clearCache();
   }, [clearCache, targetLanguage]);
 
-  // 新しい字幕が追加されたら自動スクロール
+  // 新しい字幕・暫定字幕が追加されたら自動スクロール
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [displaySubtitles]);
+  }, [displaySubtitles, interimBySpeaker]);
+
+  // ★暫定字幕（partial）の話者ごとの最新行。原文のみを低遅延で表示する
+  const partialSubtitles = Object.values(interimBySpeaker);
 
   // 字幕無効の場合は最小表示
   if (!myPreference?.subtitleEnabled) {
@@ -150,7 +155,9 @@ function SubtitleDisplayInner() {
   return (
     <div className="subtitle-display" ref={scrollRef}>
       <h4>📝 字幕・会議記録</h4>
-      {displaySubtitles.length === 0 && interimSubtitles.size === 0 ? (
+      {displaySubtitles.length === 0 &&
+      interimSubtitles.size === 0 &&
+      partialSubtitles.length === 0 ? (
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
           発言を待っています...
         </p>
@@ -161,7 +168,11 @@ function SubtitleDisplayInner() {
             const isMyMessage = sub.speakerId === currentUserId;
             // 話者が見つからない場合は「不明」と表示
             const displayName = speaker?.displayName || '不明';
-            const subtitleKey = sub.id ?? `${sub.speakerId}-${idx}-${sub.originalText.slice(0, 10)}`;
+            // React key は (id, 言語) 複合で安定化（改善点 D1: 同一 id でも言語別に
+            // 別要素として扱い、キー衝突を避ける）。id 欠落時は従来フォールバック。
+            const subtitleKey = sub.id
+              ? `${sub.id}:${sub.targetLanguage ?? ''}`
+              : `${sub.speakerId}-${idx}-${sub.originalText.slice(0, 10)}`;
 
             return (
               <div
@@ -196,6 +207,26 @@ function SubtitleDisplayInner() {
                 <span className="interim-badge" style={{ marginLeft: '0.5rem', fontSize: '0.8em', color: '#888' }}>
                   認識中...
                 </span>
+              </div>
+            );
+          })}
+          {/* ★暫定字幕（partial）: 話者ごとに1行、原文のみを低遅延表示。
+              確定字幕と区別するため斜体＋不透明度↓＋末尾"…"で示す */}
+          {partialSubtitles.map((partial) => {
+            const speaker = participants.get(partial.speakerId);
+            const displayName = speaker?.displayName || '不明';
+            const isMyMessage = partial.speakerId === currentUserId;
+            return (
+              <div
+                key={`partial-${partial.speakerId}`}
+                className={`subtitle-item interim-partial ${isMyMessage ? 'my-message' : ''}`}
+                style={{ opacity: 0.55, fontStyle: 'italic' }}
+              >
+                <span className="speaker-name">
+                  {displayName}
+                  {isMyMessage && ' (自分)'}：
+                </span>
+                <span className="subtitle-text">{partial.originalText}…</span>
               </div>
             );
           })}

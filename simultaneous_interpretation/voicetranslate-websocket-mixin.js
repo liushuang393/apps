@@ -45,7 +45,9 @@ const WebSocketMixin = {
      *   （黙って成功扱いにすると音声・字幕の欠落が STT タイムアウトにしか見えなくなるため）。
      */
     async sendMessage(message, options = {}) {
-        if (this.platform.isElectron) {
+        // transport 種別はセッション開始時に確定した記述子(this.transport.kind)を1箇所で読む。
+        // isElectron/usesWebRtcTransport をここで再導出しない（送信機構の分岐を単一源化）。
+        if (this.transport.kind === TRANSPORT_KINDS.ELECTRON_IPC) {
             // Electron環境（mainプロセス経由IPC）
             const result = await this.platform.sendRealtime(message);
             if (!result || !result.success) {
@@ -56,7 +58,7 @@ const WebSocketMixin = {
             }
             return true;
         }
-        if (this.usesWebRtcTransport()) {
+        if (this.transport.kind === TRANSPORT_KINDS.BROWSER_WEBRTC) {
             // ブラウザ/拡張機能の翻訳エンドポイント（WebRTC データチャネル）
             const dc = this.state.dataChannel;
             if (dc && dc.readyState === 'open') {
@@ -68,8 +70,8 @@ const WebSocketMixin = {
             }
             return false;
         }
+        // BROWSER_WS（ブラウザ WebSocket）
         if (this.state.ws && this.state.ws.readyState === WebSocket.OPEN) {
-            // ブラウザ環境
             this.state.ws.send(JSON.stringify(message));
             return true;
         }
@@ -244,10 +246,10 @@ const WebSocketMixin = {
      * @returns {boolean}
      */
     isRealtimeTransportReady() {
-        if (this.platform?.isElectron) {
+        if (this.transport.kind === TRANSPORT_KINDS.ELECTRON_IPC) {
             return !!this.state.isConnected;
         }
-        if (this.usesWebRtcTransport()) {
+        if (this.transport.kind === TRANSPORT_KINDS.BROWSER_WEBRTC) {
             return !!(this.state.dataChannel && this.state.dataChannel.readyState === 'open');
         }
         return !!(this.state.ws && this.state.ws.readyState === WebSocket.OPEN);
@@ -321,7 +323,7 @@ const WebSocketMixin = {
                 // ※ WebRTC 経路では翻訳音声はリモートメディアトラックで再生されるため、
                 //   ここで PCM 再生すると二重になる。WebRTC のときはスキップする。
                 this.recordTranslationLatency('output');
-                if (message.delta && !this.usesWebRtcTransport()) {
+                if (message.delta && !this.transport.playsRemoteAudioTrack) {
                     this.playAudioChunk(message.delta, { responseId: null, segmentId: null });
                 }
                 break;
@@ -770,7 +772,9 @@ const WebSocketMixin = {
      * @returns {Promise<void>} session.closed 受信またはタイムアウトで解決
      */
     async closeTranslationSessionGracefully() {
-        if (!this.isRealtimeTranslationSession() || this.usesWebRtcTransport()) {
+        // 優雅クローズ(session.close→session.closed)は WS ベース翻訳セッションのみ対応
+        // （WebRTC は session.closed を受けない／非翻訳セッションは本手順を持たない）。
+        if (!this.transport.supportsGracefulClose) {
             return;
         }
         // 切断処理中の失敗は通知しない（既に切れている場合の誤報を避ける）。
@@ -1868,8 +1872,8 @@ const WebSocketMixin = {
      */
     sendAudioData(audioData, options = {}) {
         const force = !!options.force;
-        // ✅ WebRTC 経路では音声はメディアトラックで送るため PCM append は不要（送らない）
-        if (this.usesWebRtcTransport()) {
+        // ✅ PCM append を受けない経路（WebRTC はメディアトラックで音声送信）では送らない。
+        if (this.transport.audioInput !== 'pcm-event') {
             return false;
         }
         // 接続状態チェック

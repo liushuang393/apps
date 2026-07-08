@@ -24,6 +24,7 @@ const INCLUDE_FILES = [
     'voicetranslate-segment-alignment.js',
     'voicetranslate-audio-capture-strategy.js',
     'voicetranslate-capture-profile.js',
+    'voicetranslate-transport-config.js',
     'voicetranslate-audio-queue.js',
     'voicetranslate-path-processors.js',
     'voicetranslate-ui-mixin.js',

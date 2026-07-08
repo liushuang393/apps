@@ -380,6 +380,51 @@ const UIMixin = {
         if (!this.shouldShowTranscript(kind)) {
             return;
         }
+        // D2「字が跳ねる」対策: delta 毎に textContent を書き換えると高頻度リフローで字が
+        // ちらつく/跳ねる。最新テキストだけ保持し、実描画は requestAnimationFrame で
+        // 1フレーム1回に合流させる（同フレームの複数 delta は最後の1回だけ描画）。
+        // rAF の無い環境（テスト/一部ランタイム）は即時描画にフォールバックし挙動を変えない。
+        if (!this._pendingCaptionText) {
+            this._pendingCaptionText = { input: null, output: null };
+        }
+        this._pendingCaptionText[kind] = text;
+
+        const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null;
+        if (!raf) {
+            this.flushLiveCaption(kind);
+            return;
+        }
+        if (!this._captionRafId) {
+            this._captionRafId = { input: null, output: null };
+        }
+        if (this._captionRafId[kind] != null) {
+            return; // このフレームの描画は予約済み。最新テキストは上で更新済み。
+        }
+        this._captionRafId[kind] = raf(() => {
+            this._captionRafId[kind] = null;
+            this.flushLiveCaption(kind);
+        });
+    },
+
+    /**
+     * 保留中のライブ字幕テキストを実 DOM へ反映する（renderLiveCaption の描画本体）。
+     * rAF 合流と即時フォールバックの共通経路。確定（clearLiveCaption）でキャンセルされた
+     * 後は _pendingCaptionText が null のため何もしない（確定行の遅延上書きを防ぐ）。
+     *
+     * @param {'input'|'output'} kind
+     */
+    flushLiveCaption(kind) {
+        const text = this._pendingCaptionText ? this._pendingCaptionText[kind] : null;
+        if (text == null) {
+            return;
+        }
+        // 予約から実描画までの約1フレームの間に表示トグルが OFF された場合は描画しない
+        // （OFF 列にライブ行が残り、以降の delta が renderLiveCaption のガードで素通りして
+        //   消えなくなるのを防ぐ）。
+        if (!this.shouldShowTranscript(kind)) {
+            this._pendingCaptionText[kind] = null;
+            return;
+        }
         const container = this.getTranscriptContainer(kind);
         if (!container) {
             return;
@@ -412,6 +457,20 @@ const UIMixin = {
      * @param {'input'|'output'} kind
      */
     clearLiveCaption(kind) {
+        // 保留中の rAF 描画をキャンセルし、確定行の後にライブ字幕が遅れて再描画されるのを防ぐ。
+        if (
+            this._captionRafId &&
+            this._captionRafId[kind] != null &&
+            typeof cancelAnimationFrame === 'function'
+        ) {
+            cancelAnimationFrame(this._captionRafId[kind]);
+        }
+        if (this._captionRafId) {
+            this._captionRafId[kind] = null;
+        }
+        if (this._pendingCaptionText) {
+            this._pendingCaptionText[kind] = null;
+        }
         if (!this.liveCaptionEl) {
             return;
         }

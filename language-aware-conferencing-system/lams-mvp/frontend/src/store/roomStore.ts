@@ -21,8 +21,14 @@ interface RoomState {
   myPreference: ParticipantPreference | null;
   activeSpeaker: string | null;
   subtitles: SubtitleData[];
-  /** ★ストリーミング字幕（認識中） */
+  /** ★ストリーミング字幕（認識中、id キー・レガシー経路） */
   interimSubtitles: Map<string, InterimSubtitleData>;
+  /**
+   * ★暫定字幕（partial）: 話者IDごとに最新の1行を保持する。
+   * backend の partial 字幕は id が空のため speaker_id をキーにし、
+   * revision で上書き更新する（P2 低遅延の首字表示）。
+   */
+  interimBySpeaker: Record<string, SubtitleData>;
   isConnected: boolean;
   /** 詳細な接続状態 */
   connectionStatus: ConnectionStatus;
@@ -67,6 +73,7 @@ export const useRoomStore = create<RoomState>((set) => ({
   activeSpeaker: null,
   subtitles: [],
   interimSubtitles: new Map(),
+  interimBySpeaker: {},
   isConnected: false,
   connectionStatus: 'disconnected',
   connectionError: null,
@@ -120,9 +127,28 @@ export const useRoomStore = create<RoomState>((set) => ({
 
   addSubtitle: (subtitle) =>
     set((state) => {
-      // IDがある場合は重複チェック
+      // ★暫定字幕（partial）: 話者ごとに1行を revision で上書き更新する。
+      // id が空のため speaker_id をキーにし、確定字幕とは別状態で管理する。
+      if (subtitle.isPartial === true) {
+        const prev = state.interimBySpeaker[subtitle.speakerId];
+        const prevRevision = prev?.revision ?? -1;
+        const nextRevision = subtitle.revision ?? 0;
+        // 順序逆転ガード: revision がより大きい時のみ上書き（古い partial は破棄）
+        if (prev && nextRevision <= prevRevision) {
+          return state;
+        }
+        return {
+          interimBySpeaker: { ...state.interimBySpeaker, [subtitle.speakerId]: subtitle },
+        };
+      }
+
+      // IDがある場合は重複チェック（改善点 D1: id は発話単位で全言語グループ共通の
+      // ため、同一 id でも targetLanguage が異なれば別字幕。(id, 言語) 複合キーで
+      // 判定し、言語切替時に新言語の字幕を取りこぼさない）。
       if (subtitle.id) {
-        const isDuplicate = state.subtitles.some((s) => s.id === subtitle.id);
+        const isDuplicate = state.subtitles.some(
+          (s) => s.id === subtitle.id && s.targetLanguage === subtitle.targetLanguage,
+        );
         if (isDuplicate) {
           // 重複字幕は無視
           return state;
@@ -135,6 +161,13 @@ export const useRoomStore = create<RoomState>((set) => ({
       // シーケンス番号がある場合はソート（順序保証）
       if (subtitle.seq !== undefined) {
         newSubtitles.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+      }
+
+      // 確定字幕が届いたら、その話者の暫定字幕行を消す（確定行へ置き換わる）
+      if (state.interimBySpeaker[subtitle.speakerId]) {
+        const nextInterim = { ...state.interimBySpeaker };
+        delete nextInterim[subtitle.speakerId];
+        return { subtitles: newSubtitles, interimBySpeaker: nextInterim };
       }
 
       return { subtitles: newSubtitles };
@@ -161,7 +194,8 @@ export const useRoomStore = create<RoomState>((set) => ({
       return { interimSubtitles: newMap };
     }),
 
-  clearSubtitles: () => set({ subtitles: [], interimSubtitles: new Map() }),
+  clearSubtitles: () =>
+    set({ subtitles: [], interimSubtitles: new Map(), interimBySpeaker: {} }),
 
   setConnected: (connected) => set({ isConnected: connected }),
 
@@ -185,6 +219,7 @@ export const useRoomStore = create<RoomState>((set) => ({
       activeSpeaker: null,
       subtitles: [],
       interimSubtitles: new Map(),
+      interimBySpeaker: {},
       isConnected: false,
       connectionStatus: 'disconnected',
       connectionError: null,

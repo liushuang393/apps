@@ -3,6 +3,7 @@ const path = require('path');
 const vm = require('vm');
 
 const { TextPathProcessor } = require('../../voicetranslate-path-processors.js');
+const { buildTransportDescriptor } = require('../../voicetranslate-transport-config.js');
 
 function loadWebSocketMixin() {
     // sendAudioData が参照するキャプチャプロファイル決定表も同一コンテキストへ読み込む
@@ -12,6 +13,11 @@ function loadWebSocketMixin() {
     );
     const source = fs.readFileSync(
         path.join(__dirname, '../../voicetranslate-websocket-mixin.js'),
+        'utf8'
+    );
+    // sendMessage が参照するトランスポート決定表（TRANSPORT_KINDS）も同一コンテキストへ読み込む
+    const transportSource = fs.readFileSync(
+        path.join(__dirname, '../../voicetranslate-transport-config.js'),
         'utf8'
     );
 
@@ -38,7 +44,10 @@ function loadWebSocketMixin() {
         }
     };
 
-    vm.runInNewContext(`${profileSource}\n${source}\nmodule.exports = WebSocketMixin;`, sandbox);
+    vm.runInNewContext(
+        `${transportSource}\n${profileSource}\n${source}\nmodule.exports = WebSocketMixin;`,
+        sandbox
+    );
     return sandbox.module.exports;
 }
 
@@ -69,6 +78,8 @@ function createApp() {
         },
         // usesWebRtcTransport は pro.js 側の実体。本テストは mixin のみ読み込むためスタブ化（非WebRTC=WS経路を検証）。
         usesWebRtcTransport: () => false,
+        // ブラウザ WS 経路（非翻訳セッション相当）の transport 記述子。sendMessage の分岐源。
+        transport: buildTransportDescriptor({ isElectron: false, isTranslationSession: false }),
         sentMessages
     };
 

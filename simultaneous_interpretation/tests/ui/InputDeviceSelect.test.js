@@ -43,6 +43,8 @@ function loadProApp() {
     vm.runInNewContext(
         [
             read('voicetranslate-utils.js'),
+            // startPinnedDeviceCapture が参照する captureConstraintsFor 決定表を同一コンテキストへ
+            read('voicetranslate-capture-profile.js'),
             read('voicetranslate-ui-mixin.js'),
             read('voicetranslate-websocket-mixin.js'),
             read('voicetranslate-pro.js'),

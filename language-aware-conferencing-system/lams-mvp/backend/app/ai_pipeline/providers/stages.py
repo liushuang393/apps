@@ -19,6 +19,7 @@ from app.ai_pipeline.providers.base import (
     LANGUAGE_NAMES,
     AIProvider,
     check_api_key,
+    dynamic_max_tokens,
 )
 from app.config import settings
 
@@ -89,7 +90,7 @@ class OpenAIMTStage:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text},
             ],
-            max_tokens=500,
+            max_tokens=dynamic_max_tokens(text),  # 改善点 Q3: 長文の訳文切れ防止
             temperature=0.2,
         )
         out = response.choices[0].message.content

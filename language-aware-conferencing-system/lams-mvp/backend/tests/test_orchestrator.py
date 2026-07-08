@@ -245,6 +245,67 @@ async def test_hearing_empty_string_triggers_reading_fallback() -> None:
 
 
 @pytest.mark.asyncio
+async def test_all_mainlines_fail_delivers_original_placeholder() -> None:
+    """改善点 M4: 翻訳必要かつ全主線失敗でも原文プレースホルダを配信する。"""
+
+    async def reading(_text: str, _src: str, _tgt: str) -> str:
+        return ""  # 失敗 = 空文字列
+
+    # mode b は hearing を駆動しない。reading も空 → 全主線失敗。
+    orch = HybridOrchestrator(reading_fn=reading)
+    sink = _FakeSink()
+    listener = Listener("u1", "en", wants_audio=False, subtitle_enabled=True)
+
+    res = await orch.orchestrate(
+        audio_bytes=b"x",
+        source_language="ja",
+        original_text="重要な数字は42です",
+        listeners=[listener],
+        sink=sink,
+        mode="b",
+        speaker_id="spk",
+    )
+
+    # 原文プレースホルダが配信される（発話の存在を保証）
+    assert len(sink.subtitles) == 1
+    _, msg = sink.subtitles[0]
+    assert msg["original_text"] == "重要な数字は42です"
+    assert msg["degraded"] is True
+    assert msg["is_translated"] is False
+    assert msg["translated_text"] is None
+    assert msg["mainline"] == "degraded"
+    # 原文は訳文でないため DB 記録（translations）には入れない
+    assert res.translations == {}
+
+
+@pytest.mark.asyncio
+async def test_partial_success_does_not_emit_placeholder() -> None:
+    """M4 は正常/部分成功時には発火しない（回帰防止）。"""
+
+    async def reading(_text: str, _src: str, tgt: str) -> str:
+        return f"R:{tgt}"
+
+    orch = HybridOrchestrator(reading_fn=reading)
+    sink = _FakeSink()
+    listener = Listener("u1", "en", wants_audio=False, subtitle_enabled=True)
+
+    await orch.orchestrate(
+        audio_bytes=b"x",
+        source_language="ja",
+        original_text="text",
+        listeners=[listener],
+        sink=sink,
+        mode="b",
+        speaker_id="spk",
+    )
+
+    assert len(sink.subtitles) == 1
+    _, msg = sink.subtitles[0]
+    assert msg["degraded"] is False
+    assert msg["translated_text"] == "R:en"
+
+
+@pytest.mark.asyncio
 async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
     """§9: 目標逸脱時に qos_warning が result と deliver_event へ反映される。"""
 

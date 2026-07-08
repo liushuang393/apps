@@ -9,6 +9,7 @@
 
 import asyncio
 
+from app.ai_pipeline.providers.base import dynamic_max_tokens
 from app.ai_pipeline.providers.stages import OpenAIMTStage, OpenAITTSStage
 from app.ai_pipeline.registry import composite_enabled, default_slot_names
 from app.config import settings
@@ -89,6 +90,29 @@ def test_openai_mt_empty_input_skips_api() -> None:
     out = asyncio.run(stage.translate_text("   ", "ja", "zh"))
     assert out == ""
     assert client.chat.completions.calls == []
+
+
+# ============================================================
+# 動的 max_tokens（改善点 Q3）
+# ============================================================
+def test_dynamic_max_tokens_floor_and_ceil() -> None:
+    """短文は下限、長文は上限で飽和し、中間は入力長に比例する。"""
+    assert dynamic_max_tokens("") == 256  # 下限
+    assert dynamic_max_tokens("あ" * 5) == 256  # 短文 → 下限
+    assert dynamic_max_tokens("あ" * 2000) == 4000  # 長文 → 上限
+    mid = dynamic_max_tokens("あ" * 200)  # 200*4=800（下限と上限の間）
+    assert mid == 800
+
+
+def test_openai_mt_uses_dynamic_max_tokens() -> None:
+    """長文翻訳では max_tokens が固定 500 でなく動的値で呼ばれる（切れ防止）。"""
+    client = _FakeOpenAIClient(chat_content="訳文")
+    stage = OpenAIMTStage(client=client, model="m")
+    long_text = "これは非常に長い複文の発話です。" * 30
+    asyncio.run(stage.translate_text(long_text, "ja", "en"))
+    sent = client.chat.completions.calls[0]["max_tokens"]
+    assert sent == dynamic_max_tokens(long_text)
+    assert sent > 500  # 固定 500 を超えている
 
 
 # ============================================================

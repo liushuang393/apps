@@ -11,7 +11,8 @@ const {
     CAPTURE_PROFILE_IDS,
     deriveCaptureProfileId,
     buildCaptureProfile,
-    shouldSkipCapture
+    shouldSkipCapture,
+    captureEntryFor
 } = require('../../voicetranslate-capture-profile.js');
 
 describe('deriveCaptureProfileId / buildCaptureProfile（決定表）', () => {
@@ -299,5 +300,17 @@ describe('shouldSkipCapture（半二重ゲート・D1回帰）', () => {
                 now: NOW
             })
         ).toBe(false);
+    });
+});
+
+describe('captureEntryFor（採集入口の決定表・routeAudioCapture のディスパッチ根拠）', () => {
+    it.each([
+        // [isElectron, audioSourceType, 期待エントリ]
+        [true, 'microphone', 'microphone'],
+        [false, 'microphone', 'microphone'],
+        [true, 'system', 'monitor-fallback'],
+        [false, 'system', 'monitor-display']
+    ])('isElectron=%s source=%s → %s', (isElectron, audioSourceType, entry) => {
+        expect(captureEntryFor({ isElectron, audioSourceType })).toBe(entry);
     });
 });

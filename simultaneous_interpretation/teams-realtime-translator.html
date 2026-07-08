@@ -623,6 +623,15 @@
             transform: translateX(20px);
         }
 
+        /* D1: ループバック/仮想カード監視で回灌防止のため翻訳音声を自動ミュート中の状態。
+           ユーザーが選んだ OFF と区別できるよう琥珀色＋薄表示＋操作不可カーソルにする
+           （設定値は保持され、監視段が変われば自動復帰。理由は title 属性で表示）。 */
+        .toggle-switch.suppressed {
+            background: var(--warning, #d9822b);
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
         /* リアルタイム音声翻訳（単一モード）では使わない設定を非表示にする。
            既定値のまま動作する。復元するには下記 1 行をコメントアウトするだけ。 */
         .legacy-hidden {
@@ -1462,8 +1471,10 @@
     <script src="voicetranslate-platform-adapter.js"></script>
     <!-- ユーティリティモジュール -->
     <script src="voicetranslate-utils.js"></script>
-    <!-- ✅ キャプチャプロファイル決定表（モード判定の単一集約点） -->
+    <!-- ✅ キャプチャプロファイル決定表（入力モード判定の単一集約点） -->
     <script src="voicetranslate-capture-profile.js"></script>
+    <!-- ✅ トランスポート決定表（transport 種別・セッション設定の単一集約点） -->
+    <script src="voicetranslate-transport-config.js"></script>
     <!-- STS/SRA セグメント対齐モジュール -->
     <script src="voicetranslate-segment-alignment.js"></script>
     <!-- ✅ 双路径异步处理架构模块 -->

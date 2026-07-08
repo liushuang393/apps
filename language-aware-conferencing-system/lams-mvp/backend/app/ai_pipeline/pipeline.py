@@ -11,6 +11,12 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from app.ai_pipeline.ab_runtime import (
+    ABContext,
+    get_ab_context,
+    reset_ab_context,
+    set_ab_context,
+)
 from app.ai_pipeline.providers import get_ai_provider
 from app.ai_pipeline.qos import QoSController, QoSMetrics
 
@@ -85,55 +91,70 @@ class AIPipeline:
         """
         metrics = self._qos.start_measurement()
 
-        # 同じ言語の場合は翻訳不要
-        if source_language == target_language:
-            result = original_text or await self._provider.transcribe_audio(
-                audio_data, source_language
+        # A/B 実験の配信単位を発話文脈として設定する（CompositeAIProvider が発話ごとに
+        # 参照）。上流（processor）が room_id/session_id を設定済みなら保持し、user_id を
+        # 当該話者で補う（unit=user/room/session をライブで解決可能にする）。selector
+        # 無効時は無害。
+        _outer = get_ab_context()
+        ab_token = set_ab_context(
+            ABContext(
+                user_id=speaker_id,
+                room_id=_outer.room_id if _outer else None,
+                session_id=_outer.session_id if _outer else None,
             )
-            metrics = self._qos.end_measurement(metrics)
-            return ProcessedAudio(
-                speaker_id=speaker_id,
-                source_language=source_language,
-                target_language=target_language,
-                original_text=result,
-                translated_text=result,
-                audio_data=None,
-                metrics=metrics,
-            )
-
-        # AI翻訳実行（キャッシュなし: 生PCMのMD5一致は実運用でほぼ発生せず、
-        # 空結果汚染・音声消失の温床だったため撤去。テキスト翻訳キャッシュは
-        # translate_text_simple 層に存在する）
+        )
         try:
-            result = await self._provider.translate_audio(
-                audio_data,
-                source_language,
-                target_language,
-                original_text=original_text,
-            )
-            metrics = self._qos.end_measurement(metrics)
-            return ProcessedAudio(
-                speaker_id=speaker_id,
-                source_language=source_language,
-                target_language=target_language,
-                original_text=result.original_text,
-                translated_text=result.translated_text,
-                audio_data=result.audio_data,
-                metrics=metrics,
-            )
-        except Exception as e:
-            logger.error(f"AI処理エラー: {e}")
-            metrics = self._qos.end_measurement(metrics)
-            # 失敗 = 空文字列（センチネル禁止）。orchestrator の縮退判定が依存する。
-            return ProcessedAudio(
-                speaker_id=speaker_id,
-                source_language=source_language,
-                target_language=target_language,
-                original_text="",
-                translated_text="",
-                audio_data=None,
-                metrics=metrics,
-            )
+            # 同じ言語の場合は翻訳不要
+            if source_language == target_language:
+                result = original_text or await self._provider.transcribe_audio(
+                    audio_data, source_language
+                )
+                metrics = self._qos.end_measurement(metrics)
+                return ProcessedAudio(
+                    speaker_id=speaker_id,
+                    source_language=source_language,
+                    target_language=target_language,
+                    original_text=result,
+                    translated_text=result,
+                    audio_data=None,
+                    metrics=metrics,
+                )
+
+            # AI翻訳実行（キャッシュなし: 生PCMのMD5一致は実運用でほぼ発生せず、
+            # 空結果汚染・音声消失の温床だったため撤去。テキスト翻訳キャッシュは
+            # translate_text_simple 層に存在する）
+            try:
+                result = await self._provider.translate_audio(
+                    audio_data,
+                    source_language,
+                    target_language,
+                    original_text=original_text,
+                )
+                metrics = self._qos.end_measurement(metrics)
+                return ProcessedAudio(
+                    speaker_id=speaker_id,
+                    source_language=source_language,
+                    target_language=target_language,
+                    original_text=result.original_text,
+                    translated_text=result.translated_text,
+                    audio_data=result.audio_data,
+                    metrics=metrics,
+                )
+            except Exception as e:
+                logger.error(f"AI処理エラー: {e}")
+                metrics = self._qos.end_measurement(metrics)
+                # 失敗 = 空文字列（センチネル禁止）。orchestrator の縮退判定が依存する。
+                return ProcessedAudio(
+                    speaker_id=speaker_id,
+                    source_language=source_language,
+                    target_language=target_language,
+                    original_text="",
+                    translated_text="",
+                    audio_data=None,
+                    metrics=metrics,
+                )
+        finally:
+            reset_ab_context(ab_token)
 
     async def process_for_multiple_targets(
         self,

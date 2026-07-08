@@ -94,6 +94,10 @@ export interface SubtitleData {
   latencyMs?: number;
   /** 字幕が最終確定かどうか */
   isFinal?: boolean;
+  /** 暫定字幕（partial/interim）かどうか。true の場合は原文のみの低遅延表示 */
+  isPartial?: boolean;
+  /** 暫定字幕の版番号（大きいほど新しい。順序逆転ガードに使用） */
+  revision?: number;
   /** どちらの主線から字幕化したか */
   mainline?: 'hearing' | 'reading';
   /** 使用プロバイダー */

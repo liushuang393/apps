@@ -27,6 +27,8 @@ dependencies = [
     # Authentication
     "python-jose[cryptography]==3.3.0",
     "bcrypt>=4.0.0",
+    # 音声アーカイブの AES-GCM 暗号化（P3-D）。jose 経由で既に導入されるが明示依存化。
+    "cryptography>=42.0",
     # AI Providers
     # 2.8.0+ は Gemini Live 翻訳（TranslationConfig / translation_config）対応に必須
     "google-genai==2.8.0",
@@ -49,6 +51,24 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "ruff==0.8.4",
+]
+# Lite 本地スタック（P1）。GPU/大容量モデルを伴うため既定では導入しない。
+# 有効化する環境でのみ `pip install .[local]` で追加する（未導入時は雲へ縮退）。
+#   - faster-whisper/ctranslate2: 本地 ASR・MT（CTranslate2 int8）
+#   - torch/silero-vad: Silero VAD
+#   - kokoro/soundfile: 本地 TTS（Kokoro-82M）
+#   - transformers/sentencepiece: OPUS-MT トークナイズ
+local = [
+    "faster-whisper>=1.0",
+    "ctranslate2>=4.0",
+    "torch>=2.2",
+    "silero-vad>=5.1",
+    "kokoro>=0.9",
+    "soundfile>=0.12",
+    "transformers>=4.44",
+    "sentencepiece>=0.2",
+    # 話者分離 diarization（P4-A）: 声紋 embedding
+    "resemblyzer>=0.1.4",
 ]
 
 # ===========================================

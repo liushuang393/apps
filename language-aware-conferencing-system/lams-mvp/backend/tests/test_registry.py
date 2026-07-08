@@ -84,6 +84,33 @@ def test_registry_unavailable_no_fallback_returns_none() -> None:
     assert reg.resolve(STAGE_TTS, "x") is None
 
 
+def test_default_registry_has_local_slots() -> None:
+    """Lite 本地栈（local）が全 3 ステージに登録されている（§P1）。"""
+    from app.ai_pipeline.registry import registry
+
+    assert "local" in registry.names(STAGE_ASR)
+    assert "local" in registry.names(STAGE_MT)
+    assert "local" in registry.names(STAGE_TTS)
+
+
+def test_local_slot_falls_back_when_runtime_absent() -> None:
+    """本地ランタイム未導入時、local は雲プロバイダーへ委譲する（None ではない委譲確認）。"""
+    reg = ProviderRegistry()
+    reg.register(
+        ProviderSpec(
+            name="local",
+            stage=STAGE_MT,
+            factory=lambda: (_ for _ in ()).throw(
+                AssertionError("未導入 local の factory は呼ばれてはならない")
+            ),
+            available=lambda: False,
+            fallback="openai",
+        )
+    )
+    reg.register(ProviderSpec(name="openai", stage=STAGE_MT, factory=_FakeMT))
+    assert isinstance(reg.resolve(STAGE_MT, "local"), _FakeMT)
+
+
 def test_registry_unknown_name_raises() -> None:
     reg = ProviderRegistry()
     try:
@@ -163,3 +190,110 @@ def test_s2s_preset_not_replaced_by_slots(monkeypatch):
 
     provider = get_ai_provider()
     assert isinstance(provider, GPTRealtimeProvider)
+
+
+# ============================================================
+# 治理カタログのランタイム選択（P4-wiring）
+# ============================================================
+def test_composite_enabled_by_model_registry_flag(monkeypatch) -> None:
+    """全スロット auto でも use_model_registry_selection で Composite 有効化。"""
+    from app.ai_pipeline import registry as reg_mod
+
+    monkeypatch.setattr(reg_mod.settings, "asr_provider", "auto")
+    monkeypatch.setattr(reg_mod.settings, "mt_provider", "auto")
+    monkeypatch.setattr(reg_mod.settings, "tts_provider", "auto")
+    monkeypatch.setattr(reg_mod.settings, "use_model_registry_selection", False)
+    assert reg_mod.composite_enabled() is False
+    monkeypatch.setattr(reg_mod.settings, "use_model_registry_selection", True)
+    assert reg_mod.composite_enabled() is True
+
+
+def test_slot_name_priority_explicit_over_catalog(monkeypatch) -> None:
+    """明示スロット指定はカタログ選択より優先される。"""
+    from app.ai_pipeline import registry as reg_mod
+
+    monkeypatch.setattr(reg_mod.settings, "use_model_registry_selection", True)
+    # 明示指定 "deepgram" はカタログを参照せずそのまま採用。
+    assert reg_mod._slot_name(STAGE_ASR, "deepgram", {STAGE_ASR: "gpt4o"}, "ja") == (
+        "deepgram"
+    )
+
+
+def test_slot_name_uses_catalog_when_auto(monkeypatch) -> None:
+    """auto かつフラグ有効ならカタログ選択（production の provider_name）を使う。"""
+    from app.ai_pipeline import registry as reg_mod
+
+    monkeypatch.setattr(reg_mod.settings, "use_model_registry_selection", True)
+    # asr の production は provider_name="gpt4o"（既定レジストリに登録済み）。
+    assert reg_mod._slot_name(STAGE_ASR, "auto", {STAGE_ASR: "local"}, "ja") == "gpt4o"
+
+
+def test_slot_name_falls_back_to_default_when_flag_off(monkeypatch) -> None:
+    """フラグ OFF なら auto はプリセット既定へ（挙動不変）。"""
+    from app.ai_pipeline import registry as reg_mod
+
+    monkeypatch.setattr(reg_mod.settings, "use_model_registry_selection", False)
+    assert reg_mod._slot_name(STAGE_ASR, "auto", {STAGE_ASR: "local"}, "ja") == "local"
+
+
+def test_catalog_slot_name_ignores_unregistered(monkeypatch) -> None:
+    """カタログが未登録の名を返しても採用せず None（既定へ縮退）。"""
+    from app.ai_pipeline import model_registry
+    from app.ai_pipeline import registry as reg_mod
+
+    monkeypatch.setattr(reg_mod.settings, "use_model_registry_selection", True)
+    monkeypatch.setattr(
+        model_registry, "production_provider_name", lambda _s, _l: "nonexistent"
+    )
+    assert reg_mod._catalog_slot_name(STAGE_ASR, "ja") is None
+
+
+# ============================================================
+# CompositeAIProvider の A/B セレクタ統合（P4-wiring ②）
+# ============================================================
+class _RecordingSelector:
+    """select で指定実体を返し、note を同期捕捉するテスト用セレクタ。"""
+
+    def __init__(self, mt_instance) -> None:
+        self._mt = mt_instance
+        self.notes: list = []
+
+    def select(self, stage: str, default):
+        if stage == STAGE_MT:
+            return self._mt, "exp1", "treatment"
+        return default, None, None
+
+    def note(self, **kw) -> None:
+        self.notes.append(kw)
+
+
+def test_composite_uses_selector_mt_and_records() -> None:
+    """selector 指定時、translate_audio は variant の MT を使い指標を記録する。"""
+
+    class _AltMT:
+        name = "altmt"
+
+        async def translate_text(self, text: str, _src: str, tgt: str) -> str:
+            return f"ALT[{tgt}]{text}"
+
+    alt = _AltMT()
+    sel = _RecordingSelector(alt)
+    comp = CompositeAIProvider(_FakeASR(), _FakeMT(), _FakeTTS(), selector=sel)
+    r = asyncio.run(
+        comp.translate_audio(b"AUDIO", "ja", "en", original_text="12 個")
+    )
+    # 既定 _FakeMT ではなく selector の _AltMT が使われる。
+    assert r.translated_text == "ALT[en]12 個"
+    # MT レイテンシと数字保持率が記録される（数字 "12" を含むため）。
+    metrics = {n["metric_name"] for n in sel.notes}
+    assert "latency_ms" in metrics
+    assert "number_retention" in metrics
+
+
+def test_composite_without_selector_unchanged() -> None:
+    """selector 無しなら従来どおり固定 MT（挙動不変）。"""
+    comp = CompositeAIProvider(_FakeASR(), _FakeMT(), _FakeTTS())
+    r = asyncio.run(
+        comp.translate_audio(b"AUDIO", "ja", "en", original_text="hello")
+    )
+    assert r.translated_text == "[en]hello"

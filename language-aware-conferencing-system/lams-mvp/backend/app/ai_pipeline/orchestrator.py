@@ -150,24 +150,98 @@ class HybridOrchestrator:
         subtitle_text: str,
         mainline: str,
         s2s_provider: str | None,
+        degraded: bool = False,
+        is_partial: bool = False,
+        revision: int = 0,
+        trace_id: str | None = None,
+        model_id: str | None = None,
     ) -> dict:
-        """字幕 data channel ペイロードを組み立てる（純ロジック）。"""
+        """字幕 data channel ペイロード（typed 事件）を組み立てる（純ロジック）。
+
+        改善案 §3 事件協議: revision / is_partial / trace_id / model_id を持たせ、
+        partial 更新・可観測・A/B・回放の基盤とする（既存フィールドは後方互換で保持）。
+        degraded=True は全主線失敗時の縮退（原文プレースホルダ）を表す。この場合は
+        訳文が無いため is_translated=False とし、原文のみを届ける（M4）。
+        is_partial=True は確定前の暫定字幕（同一 seq を revision で上書き更新する）。
+        """
         return {
             "type": "subtitle",
             "id": subtitle_id,
             "seq": seq,
+            # sequence_id は seq の別名（§3 事件協議の正式名。前端は seq を継続利用可）。
+            "sequence_id": seq,
+            "revision": revision,
             "speaker_id": speaker_id,
             "original_text": original_text,
             "source_language": source_language,
             "translated_text": (
-                subtitle_text if target_lang != source_language else None
+                subtitle_text
+                if (
+                    not degraded
+                    and not is_partial
+                    and target_lang != source_language
+                    and subtitle_text
+                )
+                else None
             ),
             "target_language": target_lang,
-            "is_translated": bool(target_lang != source_language and subtitle_text),
-            "is_final": True,
+            "is_translated": bool(
+                not degraded and target_lang != source_language and subtitle_text
+            ),
+            "is_partial": is_partial,
+            "is_final": not is_partial,
+            "degraded": degraded,
             "mainline": mainline,
             "provider": s2s_provider if mainline == "hearing" else "asr_mt",
+            "trace_id": trace_id,
+            "model_id": model_id,
         }
+
+    async def deliver_partial_subtitle(
+        self,
+        *,
+        sink: OutputSink,
+        listeners: list[Listener],
+        subtitle_id: str,
+        seq: int,
+        revision: int,
+        speaker_id: str,
+        partial_text: str,
+        source_language: str,
+        trace_id: str | None = None,
+        model_id: str | None = None,
+    ) -> None:
+        """確定前の暫定字幕（原文 interim）を全購読者へ配信する（§P2 首字遅延）。
+
+        partial は ASR 原文のみ（翻訳しない＝低遅延・低コスト）。target_language は
+        受聴者ごとの目標言語を設定するが translated_text=None・is_partial=True とし、
+        前端は同一 seq を revision で上書きする。DB へは永続化しない（final のみ記録）。
+        """
+        if not partial_text:
+            return
+        groups: dict[str, list[Listener]] = {}
+        for ls in listeners:
+            groups.setdefault(ls.target_language, []).append(ls)
+        for target_lang, members in groups.items():
+            await self._deliver_subtitle_group(
+                sink,
+                members,
+                self._subtitle_message(
+                    subtitle_id=subtitle_id,
+                    seq=seq,
+                    speaker_id=speaker_id,
+                    original_text=partial_text,
+                    source_language=source_language,
+                    target_lang=target_lang,
+                    subtitle_text="",
+                    mainline="partial",
+                    s2s_provider=None,
+                    is_partial=True,
+                    revision=revision,
+                    trace_id=trace_id,
+                    model_id=model_id,
+                ),
+            )
 
     async def _deliver_subtitle_group(
         self, sink: OutputSink, members: list[Listener], message: dict
@@ -344,6 +418,32 @@ class HybridOrchestrator:
                         subtitle_text=subtitle_text,
                         mainline=mainline,
                         s2s_provider=decision.s2s_provider,
+                    ),
+                )
+            elif not subtitle_sent and decision.needs_translation and original_text:
+                # 全主線失敗（hearing/reading/縮退すべて空）: 原文プレースホルダを
+                # 配信し「発話があった事実」を受聴者に必ず届ける（改善点 M4）。
+                # 原文は訳文でないため result.translations には入れない（DB/数字保持
+                # 統計を汚染しない）。
+                logger.warning(
+                    "[Hybrid] 全主線失敗のため原文プレースホルダを配信(%s): '%s'",
+                    target_lang,
+                    original_text[:30],
+                )
+                await self._deliver_subtitle_group(
+                    sink,
+                    members,
+                    self._subtitle_message(
+                        subtitle_id=subtitle_id,
+                        seq=seq,
+                        speaker_id=speaker_id,
+                        original_text=original_text,
+                        source_language=source_language,
+                        target_lang=target_lang,
+                        subtitle_text=original_text,
+                        mainline="degraded",
+                        s2s_provider=decision.s2s_provider,
+                        degraded=True,
                     ),
                 )
 

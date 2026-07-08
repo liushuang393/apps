@@ -20,12 +20,13 @@ from collections.abc import Awaitable, Callable
 
 from livekit import rtc
 
+from app.audio.vad import SILERO_FRAME_MS, build_vad, resolve_backend
 from app.config import settings
 from app.rooms.manager import ParticipantPreference, room_manager
 from app.webrtc.persistence import MeetingConfig, end_session, get_meeting_config
 from app.webrtc.processor import SegmentProcessor
 from app.webrtc.publisher import LiveKitPublisher
-from app.webrtc.segmenter import SpeechSegmenter
+from app.webrtc.segmenter import SegmentEvent, SpeechSegmenter
 from app.webrtc.sink import LiveKitOutputSink
 from app.webrtc.token import create_join_token
 
@@ -47,6 +48,47 @@ ParticipantsProvider = Callable[[], Awaitable[dict[str, ParticipantPreference]]]
 ConfigProvider = Callable[[], Awaitable[MeetingConfig]]
 
 
+def _build_default_processor() -> SegmentProcessor:
+    """設定に応じて回放ログ・音声アーカイブを配線した SegmentProcessor を構築する。
+
+    P3-D: enable_pipeline_event_log 有効時のみ回放ログを記録し、enable_audio_archive
+    かつ鍵が有効な時のみ音声を暗号化アーカイブする。いずれも既定は安全側（記録あり・
+    アーカイブなし）で、失敗はライブを壊さない。
+    """
+    record_fn = None
+    if settings.enable_pipeline_event_log:
+        from app.db.replay import record_pipeline_event
+
+        record_fn = record_pipeline_event
+    archive = None
+    if settings.enable_audio_archive:
+        from app.audio.archive import build_audio_archive
+
+        archive = build_audio_archive()
+    embedder = None
+    identifier = None
+    loader = None
+    if settings.enable_diarization:
+        from app.ai_pipeline.diarization import SpeakerIdentifier
+        from app.audio.speaker_embedding import build_speaker_embedder
+        from app.db.training import export_speaker_enrollments
+
+        embedder = build_speaker_embedder()
+        if embedder is not None:
+            identifier = SpeakerIdentifier(
+                match_threshold=settings.speaker_match_threshold,
+                cluster_threshold=settings.speaker_cluster_threshold,
+            )
+            loader = export_speaker_enrollments
+    return SegmentProcessor(
+        audio_archive=archive,
+        record_event_fn=record_fn,
+        speaker_embedder=embedder,
+        speaker_identifier=identifier,
+        enrollment_loader=loader,
+    )
+
+
 class LiveKitAgent:
     """room の音声を購読し発話単位で 2 主線を駆動する rtc Agent（収束は processor）。"""
 
@@ -60,12 +102,14 @@ class LiveKitAgent:
         room: rtc.Room | None = None,
     ) -> None:
         self._room_id = room_id
-        self._processor = processor or SegmentProcessor()
+        self._processor = processor or _build_default_processor()
         self._get_participants = get_participants or self._default_participants
         self._get_config = get_config or self._default_config
         self._room = room or rtc.Room()
         self._publisher: LiveKitPublisher | None = None
         self._tasks: set[asyncio.Task] = set()
+        # 話者別の partial リビジョン（暫定字幕を単調増加で上書き。final でリセット）。
+        self._partial_rev: dict[str, int] = {}
 
     async def _default_participants(self) -> dict[str, ParticipantPreference]:
         """既定の受聴者供給（room_manager / Redis）。"""
@@ -125,9 +169,13 @@ class LiveKitAgent:
 
     async def _handle_participant_leave(self, participant_id: str) -> None:
         """参加者退室後、最後の1人なら session を終了する。"""
+        # 退室者の partial リビジョンを破棄（残留防止＋再入室で 1 から再開させる）。
+        self._partial_rev.pop(participant_id, None)
         remaining = await room_manager.remove_participant(self._room_id, participant_id)
         if remaining == 0:
             await end_session(self._room_id)
+            # room が空になったら採番・重複排除状態を破棄する（改善点 M5）。
+            self._processor.forget_room(self._room_id)
 
     async def _finalize_if_room_empty(self) -> None:
         """Agent 切断時に人間参加者が残っていなければ session を閉じる。"""
@@ -140,6 +188,9 @@ class LiveKitAgent:
             return
         if remaining == 0:
             await end_session(self._room_id)
+            # room が空になったら採番・重複排除状態を破棄する（改善点 M5）。
+            self._processor.forget_room(self._room_id)
+            self._partial_rev.clear()
 
     async def _sync_participant(self, participant) -> None:  # noqa: ANN001
         """participant attributes を room_manager の preference へ反映する。"""
@@ -171,18 +222,37 @@ class LiveKitAgent:
         """
         speaker_id = participant.identity
         stream = rtc.AudioStream(track, sample_rate=_AI_SAMPLE_RATE, num_channels=1)
-        segmenter = SpeechSegmenter(sample_rate=_AI_SAMPLE_RATE)
-        queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=_SEGMENT_QUEUE_MAX)
+        # VAD は設定に従い選択（既定 energy / silero 指定かつ導入時のみ Silero）。
+        # Silero は RNN 状態を持つため話者トラック毎に独立インスタンスを注入する。
+        # silero 有効時はフレーム長を窓長(32ms=512標本)へ整合し確率希釈を防ぐ。
+        seg_kwargs: dict[str, object] = {"sample_rate": _AI_SAMPLE_RATE}
+        if resolve_backend() == "silero":
+            seg_kwargs["frame_ms"] = SILERO_FRAME_MS
+        # partial 有効時のみ暫定字幕を切り出す（既定 0＝final のみ＝従来動作）。
+        if settings.enable_partial_subtitles:
+            seg_kwargs["partial_ms"] = settings.partial_ms
+        segmenter = SpeechSegmenter(
+            is_speech=build_vad(sample_rate=_AI_SAMPLE_RATE),
+            **seg_kwargs,
+        )
+        queue: asyncio.Queue[SegmentEvent | None] = asyncio.Queue(
+            maxsize=_SEGMENT_QUEUE_MAX
+        )
         worker = asyncio.ensure_future(self._segment_worker(speaker_id, queue))
         try:
             async for event in stream:
                 pcm = bytes(event.frame.data)
-                for segment in segmenter.push(pcm):
-                    self._enqueue_segment(speaker_id, queue, segment)
-            tail = segmenter.flush()
-            if tail:
-                self._enqueue_segment(speaker_id, queue, tail)
+                # push_events は partial/final を返す（partial_ms=0 なら final のみ＝従来）。
+                for seg_event in segmenter.push_events(pcm):
+                    self._enqueue_segment(speaker_id, queue, seg_event)
         finally:
+            # tail flush は finally 内で行い、正常終了・例外・キャンセルの全離脱
+            # 経路で末尾発話を必ず emit する（改善点 M3）。flush 自身の失敗が
+            # worker 回収を妨げないよう suppress する。
+            with contextlib.suppress(Exception):
+                tail = segmenter.flush()
+                if tail:
+                    self._enqueue_segment(speaker_id, queue, SegmentEvent(tail, False))
             await queue.put(None)  # 終端シグナル（worker を確実に畳む）
             await worker
             aclose = getattr(stream, "aclose", None)
@@ -190,41 +260,47 @@ class LiveKitAgent:
                 await aclose()
 
     def _enqueue_segment(
-        self, speaker_id: str, queue: asyncio.Queue, segment: bytes
+        self, speaker_id: str, queue: asyncio.Queue, event: SegmentEvent
     ) -> None:
-        """キュー満杯時は最古を破棄して新しい発話を優先する（過負荷保護）。"""
+        """キュー投入（過負荷保護）。partial は使い捨てのため満杯時は破棄する。
+        final（確定発話）は必ず載せる（満杯時は最古を1件退避。単一 producer/
+        consumer のため退避後は必ず空きができ新規 final は落ちない）。
+        注: 有効化時、partial ASR は final と同一直列 worker を通るため過負荷時は
+        final 遅延要因になり得る（既定 OFF。緩和は将来の partial 専用レーンで対応）。"""
         try:
-            queue.put_nowait(segment)
+            queue.put_nowait(event)
         except asyncio.QueueFull:
+            if event.is_partial:
+                # 暫定字幕は捨てても後続 partial/final が上書きするため破棄で良い。
+                return
             with contextlib.suppress(asyncio.QueueEmpty):
                 queue.get_nowait()
             logger.warning(
                 "[Agent] 過負荷のため最古セグメントを破棄: speaker=%s", speaker_id
             )
-            queue.put_nowait(segment)
+            with contextlib.suppress(asyncio.QueueFull):
+                queue.put_nowait(event)
 
     async def _segment_worker(self, speaker_id: str, queue: asyncio.Queue) -> None:
         """話者ごとの直列ワーカー（発話順を保ちつつ ingest を塞がない）。"""
         while True:
-            segment = await queue.get()
-            if segment is None:
+            event = await queue.get()
+            if event is None:
                 return
             try:
-                await self._handle_segment(speaker_id, segment)
+                if event.is_partial:
+                    await self._handle_partial(speaker_id, event.pcm)
+                else:
+                    await self._handle_segment(speaker_id, event.pcm)
             except Exception as e:  # noqa: BLE001
                 logger.error(
                     "[Agent] セグメント処理エラー: speaker=%s err=%s", speaker_id, e
                 )
 
-    async def _handle_segment(self, speaker_id: str, pcm16: bytes) -> None:
-        """1 発話セグメントを SegmentProcessor へ渡し 2 主線を駆動する。"""
-        publisher = self._publisher
-        if publisher is None:
-            return
-        participants = await self._get_participants()
-        speaker = participants.get(speaker_id)
-        hint = speaker.native_language if speaker is not None else _DEFAULT_LANG
-        config = await self._get_config()
+    def _make_sink_factory(
+        self, publisher: LiveKitPublisher
+    ) -> Callable[[dict[str, str], str], LiveKitOutputSink]:
+        """publisher を束ねた OutputSink ファクトリを返す（partial/final 共用）。"""
 
         def sink_factory(
             user_language: dict[str, str], seg_speaker_id: str
@@ -236,13 +312,47 @@ class LiveKitAgent:
                 speaker_id=seg_speaker_id,
             )
 
+        return sink_factory
+
+    async def _handle_partial(self, speaker_id: str, pcm16: bytes) -> None:
+        """確定前の暫定字幕（ASR 原文 interim）を配信する（§P2 首字遅延短縮）。"""
+        publisher = self._publisher
+        if publisher is None:
+            return
+        participants = await self._get_participants()
+        speaker = participants.get(speaker_id)
+        hint = speaker.native_language if speaker is not None else _DEFAULT_LANG
+        rev = self._partial_rev.get(speaker_id, 0) + 1
+        self._partial_rev[speaker_id] = rev
+        await self._processor.process_partial(
+            room_id=self._room_id,
+            speaker_id=speaker_id,
+            pcm16=pcm16,
+            speaker_lang_hint=hint,
+            participants=participants,
+            sink_factory=self._make_sink_factory(publisher),
+            revision=rev,
+        )
+
+    async def _handle_segment(self, speaker_id: str, pcm16: bytes) -> None:
+        """1 発話セグメントを SegmentProcessor へ渡し 2 主線を駆動する。"""
+        publisher = self._publisher
+        if publisher is None:
+            return
+        participants = await self._get_participants()
+        speaker = participants.get(speaker_id)
+        hint = speaker.native_language if speaker is not None else _DEFAULT_LANG
+        config = await self._get_config()
+        # 発話確定でこの話者の partial リビジョンを畳む（前端は final で interim を消す）。
+        self._partial_rev.pop(speaker_id, None)
+
         await self._processor.process(
             room_id=self._room_id,
             speaker_id=speaker_id,
             pcm16=pcm16,
             speaker_lang_hint=hint,
             participants=participants,
-            sink_factory=sink_factory,
+            sink_factory=self._make_sink_factory(publisher),
             config=config,
         )
 

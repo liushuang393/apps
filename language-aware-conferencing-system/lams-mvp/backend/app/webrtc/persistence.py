@@ -12,7 +12,9 @@ transport 非依存で呼べる永続化境界を提供する。WS 廃止（C1-8
 """
 
 import logging
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -83,12 +85,29 @@ async def get_meeting_config(room_id: str) -> MeetingConfig:
         return MeetingConfig()
 
 
-class SubtitleSequencer:
-    """room ごとの字幕シーケンス採番と連続同一テキストの重複排除（純ロジック）。"""
+# 直前と同一テキストを重複とみなす時間窓（秒）。この窓を超えた同一発話は
+# 正当な反復（「はい、はい」/時間的に離れた同句）として通す（改善点 M2）。
+_DEDUP_WINDOW_S = 2.0
 
-    def __init__(self) -> None:
+
+class SubtitleSequencer:
+    """room ごとの字幕シーケンス採番と連続同一テキストの重複排除（純ロジック）。
+
+    重複排除は「直前と同一テキストかつ時間窓内」のみ抑制する。防ぐべきは
+    同一発話の二重処理であり、時間的に離れた正当な反復は漏らさない（M2）。
+    時刻取得は clock で注入でき（既定 time.monotonic）、単体テストで制御可能。
+    """
+
+    def __init__(
+        self,
+        clock: Callable[[], float] = time.monotonic,
+        window_s: float = _DEDUP_WINDOW_S,
+    ) -> None:
         self._seq: dict[str, int] = {}
-        self._last_text: dict[str, dict[str, str]] = {}
+        # room -> speaker -> (直近テキスト, 記録時刻)
+        self._last_text: dict[str, dict[str, tuple[str, float]]] = {}
+        self._clock = clock
+        self._window_s = window_s
 
     def next_seq(self, room_id: str) -> int:
         """room の字幕シーケンス番号を単調増加で発行する。"""
@@ -96,12 +115,18 @@ class SubtitleSequencer:
         return self._seq[room_id]
 
     def is_duplicate(self, room_id: str, speaker_id: str, text: str) -> bool:
-        """直前と同一話者・同一テキストなら True（連続重複の抑制）。"""
-        return self._last_text.get(room_id, {}).get(speaker_id) == text
+        """直前と同一話者・同一テキストかつ時間窓内なら True（連続重複の抑制）。"""
+        last = self._last_text.get(room_id, {}).get(speaker_id)
+        if last is None:
+            return False
+        last_text, last_ts = last
+        if last_text != text:
+            return False
+        return (self._clock() - last_ts) <= self._window_s
 
     def remember(self, room_id: str, speaker_id: str, text: str) -> None:
-        """話者ごとの直近テキストを記録する。"""
-        self._last_text.setdefault(room_id, {})[speaker_id] = text
+        """話者ごとの直近テキストと記録時刻を保存する。"""
+        self._last_text.setdefault(room_id, {})[speaker_id] = (text, self._clock())
 
     def forget_room(self, room_id: str) -> None:
         """room 終了時に採番・重複排除の状態を破棄する。"""
@@ -203,10 +228,14 @@ async def save_transcript_segment(
     text: str,
     translations: dict[str, str],
     tags: list[dict] | None = None,
-) -> None:
+    speaker_label: str | None = None,
+) -> str | None:
     """発話を TranscriptSegment 1 件＋言語別 TranslationSegment N 件へ正規化保存する。
 
     改善.md §13.3/§13.4 の正式記録基盤。失敗はログのみ（既存挙動踏襲）。
+
+    Returns:
+        保存した TranscriptSegment.id（回放ログの紐付けに用いる）。失敗時 None。
     """
     try:
         session_id = await get_or_create_session(room_id)
@@ -223,6 +252,7 @@ async def save_transcript_segment(
                 room_id=room_id,
                 session_id=session_id,
                 speaker_id=speaker_id,
+                speaker_label=speaker_label,
                 source_language=source_language,
                 text=text,
                 # ponytail: confidence/provider は ASR 層から安価に取れないため null。
@@ -246,9 +276,12 @@ async def save_transcript_segment(
                         # 未計測のため null。評価ハーネス整備時に充填する。
                     )
                 )
+            seg_id = seg.id
             await db.commit()
+            return seg_id
     except Exception as e:  # noqa: BLE001
         logger.warning("[PERSIST] segment DB保存エラー(room=%s): %s", room_id, e)
+        return None
 
 
 async def _active_session_id(db: AsyncSession, room_id: str) -> str | None:

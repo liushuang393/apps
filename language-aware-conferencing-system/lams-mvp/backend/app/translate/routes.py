@@ -6,7 +6,10 @@ LAMS 翻訳プロキシAPIルート
 - クライアント側で翻訳を行うが、APIキーは公開しない
 - サーバー側でキャッシュし、同じテキストの重複翻訳を防ぐ
 - ★改善: 会話コンテキストを考慮した翻訳で一貫性向上
-- ★改善: 字幕IDベースの翻訳取得（最小遅延）
+
+注意:
+    字幕IDベースの翻訳取得API（最小遅延）は subtitle_routes.py へ分離した
+    （ファイルサイズ規約: 500行推奨）。本モジュールは翻訳プロキシ本体に専念する。
 """
 
 import hashlib
@@ -14,18 +17,20 @@ import json
 import logging
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from app.ai_pipeline.providers.base import dynamic_max_tokens
 from app.ai_pipeline.providers.correction import (
     CorrectionRequest,
     get_correction_provider,
 )
+from app.ai_pipeline.qos import number_retention
 from app.auth.dependencies import get_current_user
 from app.config import settings
 from app.db.models import User
 from app.languages import LANGUAGE_DISPLAY_NAMES
-from app.translate import glossary, subtitle_cache
+from app.translate import glossary, translation_memory
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -319,7 +324,7 @@ async def _call_openai_translate(
                 },
                 {"role": "user", "content": text},
             ],
-            max_tokens=500,
+            max_tokens=dynamic_max_tokens(text),  # 改善点 Q3: 長文の訳文切れ防止
             temperature=0.1,  # 低温度で翻訳一致性向上
         )
 
@@ -340,6 +345,20 @@ async def _call_openai_translate(
             glossary_hint,
             context_str,
         )
+
+        # 数字・日付・金額の保持を後処理検証（改善点 Q5）。原文に数字があり最終訳で
+        # 欠落した場合は WARNING を残す（訳文は改変しない＝純観測）。補正後の最終訳を
+        # 対象とし配信内容と一致させる。集計指標は persistence 側が別途担う。
+        rate = number_retention(text, translated)
+        if rate is not None and rate < 1.0:
+            logger.warning(
+                "[Translate] 数字保持率<1.0 (%.2f) %s->%s: '%s' -> '%s'",
+                rate,
+                source_language,
+                target_language,
+                text[:40],
+                translated[:40],
+            )
 
         logger.info(f"[Translate] 翻訳完了: '{text[:20]}...' -> '{translated[:20]}...'")
         return translated
@@ -410,7 +429,7 @@ async def translate_text_simple(
     if not text.strip():
         return text
 
-    # キャッシュチェック
+    # キャッシュチェック（用語集世代付き md5 完全一致）
     glossary_version = await _glossary_version()
     cache_key = _cache_key(text, source_language, target_language, glossary_version)
     try:
@@ -422,161 +441,34 @@ async def translate_text_simple(
     except Exception as e:
         logger.warning(f"[PreTranslate] キャッシュ取得エラー: {e}")
 
+    # 翻訳記憶（TM）チェック（正規化完全一致 + fuzzy。表記ゆれの跨会議再利用。§4.3）
+    tm_hit = await translation_memory.lookup(
+        text, source_language, target_language, version=glossary_version
+    )
+    if tm_hit:
+        logger.debug(f"[PreTranslate] TMヒット: {text[:20]}...")
+        return tm_hit
+
     # 翻訳実行
     try:
         translated = await _call_openai_translate(
             text, source_language, target_language
         )
 
-        # キャッシュ保存
-        try:
-            r = await _get_redis()
-            await r.setex(cache_key, CACHE_TTL, translated)
-        except Exception as e:
-            logger.warning(f"[PreTranslate] キャッシュ保存エラー: {e}")
+        # キャッシュ保存（空訳=失敗は保存しない）
+        if translated:
+            try:
+                r = await _get_redis()
+                await r.setex(cache_key, CACHE_TTL, translated)
+            except Exception as e:
+                logger.warning(f"[PreTranslate] キャッシュ保存エラー: {e}")
+            # TM へも登録（跨会議再利用の蓄積）
+            await translation_memory.store(
+                text, source_language, target_language, translated,
+                version=glossary_version,
+            )
 
         return translated
     except Exception as e:
         logger.warning(f"[PreTranslate] 翻訳エラー: {e}")
         return ""
-
-
-# ============================================================
-# 字幕IDベースの翻訳API（最小遅延設計）
-# ============================================================
-
-
-class SubtitleTranslationResponse(BaseModel):
-    """字幕翻訳レスポンス"""
-
-    subtitle_id: str
-    target_language: str
-    translated_text: str | None
-    status: str  # "ready" | "pending" | "not_found" | "error"
-
-
-@router.get(
-    "/subtitle/{subtitle_id}/{target_lang}", response_model=SubtitleTranslationResponse
-)
-async def get_subtitle_translation(
-    subtitle_id: str,
-    target_lang: str,
-    wait: bool = Query(default=True, description="翻訳中の場合に待機するか"),
-    _user: User = Depends(get_current_user),
-) -> SubtitleTranslationResponse:
-    """
-    字幕IDで翻訳を取得
-
-    ★最小遅延設計★
-    - Redisに翻訳結果があれば即返却
-    - 翻訳中の場合はwait=trueで完了を待機
-    - 翻訳がリクエストされていない場合は即時翻訳を開始
-
-    Args:
-        subtitle_id: 字幕の一意識別子
-        target_lang: 目標言語（ja/en/zh/vi）
-        wait: 翻訳中の場合に待機するか（デフォルト: true）
-
-    Returns:
-        翻訳結果とステータス
-    """
-    # 言語バリデーション
-    if target_lang not in LANGUAGE_NAMES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"未対応の言語: {target_lang}",
-        )
-
-    # キャッシュから取得を試みる
-    translated = await subtitle_cache.get_translation(
-        subtitle_id, target_lang, wait=False
-    )
-    if translated:
-        return SubtitleTranslationResponse(
-            subtitle_id=subtitle_id,
-            target_language=target_lang,
-            translated_text=translated,
-            status="ready",
-        )
-
-    # 原文を取得
-    original = await subtitle_cache.get_original(subtitle_id)
-    if not original:
-        return SubtitleTranslationResponse(
-            subtitle_id=subtitle_id,
-            target_language=target_lang,
-            translated_text=None,
-            status="not_found",
-        )
-
-    original_text, source_lang = original
-
-    # 同じ言語なら翻訳不要
-    if source_lang == target_lang:
-        return SubtitleTranslationResponse(
-            subtitle_id=subtitle_id,
-            target_language=target_lang,
-            translated_text=original_text,
-            status="ready",
-        )
-
-    # 翻訳中マーカーをチェック/設定
-    should_translate = await subtitle_cache.mark_translation_pending(
-        subtitle_id, target_lang
-    )
-
-    if should_translate:
-        # このリクエストが翻訳を担当
-        try:
-            translated = await translate_text_simple(
-                original_text, source_lang, target_lang
-            )
-            if translated:
-                await subtitle_cache.store_translation(
-                    subtitle_id, target_lang, translated
-                )
-                return SubtitleTranslationResponse(
-                    subtitle_id=subtitle_id,
-                    target_language=target_lang,
-                    translated_text=translated,
-                    status="ready",
-                )
-            # 翻訳結果が空: 原文を ready でキャッシュ固定化しない（欠陥 #15）。
-            # マーカーを解放し、次回リクエストで再試行させる。
-            logger.warning(f"[SubtitleTranslate] 翻訳結果が空: {subtitle_id}")
-            await subtitle_cache.release_claim(subtitle_id, target_lang)
-            return SubtitleTranslationResponse(
-                subtitle_id=subtitle_id,
-                target_language=target_lang,
-                translated_text=original_text,  # 表示用フォールバック（非キャッシュ）
-                status="error",
-            )
-        except Exception as e:
-            logger.error(f"[SubtitleTranslate] 翻訳エラー: {e}")
-            await subtitle_cache.release_claim(subtitle_id, target_lang)
-            return SubtitleTranslationResponse(
-                subtitle_id=subtitle_id,
-                target_language=target_lang,
-                translated_text=original_text,  # 表示用フォールバック（非キャッシュ）
-                status="error",
-            )
-
-    # 他のリクエストが翻訳中 → 待機
-    if wait:
-        translated = await subtitle_cache.get_translation(
-            subtitle_id, target_lang, wait=True
-        )
-        if translated:
-            return SubtitleTranslationResponse(
-                subtitle_id=subtitle_id,
-                target_language=target_lang,
-                translated_text=translated,
-                status="ready",
-            )
-
-    return SubtitleTranslationResponse(
-        subtitle_id=subtitle_id,
-        target_language=target_lang,
-        translated_text=None,
-        status="pending",
-    )

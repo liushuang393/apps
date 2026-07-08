@@ -194,7 +194,7 @@ def _register_listener_handlers(
     def _on_track(
         track: rtc.Track,
         publication: rtc.RemoteTrackPublication,
-        participant: rtc.RemoteParticipant,
+        _participant: rtc.RemoteParticipant,
     ) -> None:
         name = publication.name or ""
         if track.kind != rtc.TrackKind.KIND_AUDIO:

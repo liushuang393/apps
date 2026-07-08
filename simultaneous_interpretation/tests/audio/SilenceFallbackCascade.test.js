@@ -11,6 +11,8 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+const { buildCaptureProfile } = require('../../voicetranslate-capture-profile.js');
+
 function loadProApp() {
     const root = path.join(__dirname, '../..');
     const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
@@ -69,7 +71,18 @@ function makeApp(App, overrides = {}) {
     app.silenceVerifyTimer = null;
     app.notify = jest.fn();
     app.restartCapture = jest.fn();
-    return Object.assign(app, overrides);
+    Object.assign(app, overrides);
+    // 実コードは refreshCaptureProfile で決定表からプロファイルを構築する。
+    // 無音ゲート判定は captureProfile（inputMode / silenceFallbackNext）を参照するため、
+    // 解決済みの audioSourceType・段からフィクスチャでも同じく構築する。
+    app.captureProfile = buildCaptureProfile({
+        isElectron: app.platform.isElectron,
+        audioSourceType: app.state.audioSourceType,
+        fallbackStage: app._captureFallbackStage,
+        outputIsolated: false,
+        realtimeSession: true
+    });
+    return app;
 }
 
 describe('evaluateSilenceVerification（D4: 連鎖降格の制限）', () => {
@@ -123,7 +136,15 @@ describe('evaluateSilenceVerification（D4: 連鎖降格の制限）', () => {
 
     it('マイクモード: 自動切替の対象外', () => {
         const app = makeApp(App, { _captureFallbackStage: null });
+        // マイクモードへ切替 → 実コードは refreshCaptureProfile でプロファイルを更新する
         app.state.audioSourceType = 'microphone';
+        app.captureProfile = buildCaptureProfile({
+            isElectron: true,
+            audioSourceType: 'microphone',
+            fallbackStage: null,
+            outputIsolated: false,
+            realtimeSession: true
+        });
 
         app.evaluateSilenceVerification();
 

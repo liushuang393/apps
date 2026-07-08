@@ -101,6 +101,15 @@ class VoiceTranslateApp {
         // ✅ プラットフォーム差分アダプタ（Electron/拡張/ブラウザの個別部分を隔離）
         this.platform = VoiceTranslatePlatform.getPlatform();
 
+        // ✅ トランスポート能力記述子（会話の実現方式を1度だけ選び app 生命でキャッシュ）。
+        //    行為コードは this.transport.{kind,audioInput,playsRemoteAudioTrack,supportsGracefulClose}
+        //    を読むだけにし、isElectron/usesWebRtcTransport を各所で再導出しない（散在分岐の排除）。
+        //    connect() 冒頭で正規化後の実効セッション種別に基づき再構築する（下記参照）。
+        this.transport = buildTransportDescriptor({
+            isElectron: this.platform.isElectron,
+            isTranslationSession: this.isRealtimeTranslationSession()
+        });
+
         // ✅ P1-2: 会話コンテキスト管理（Electron環境のみ）
         // ブラウザ・拡張機能では使用しない
         this.conversationEnabled = this.platform.supportsConversation;
@@ -526,11 +535,8 @@ class VoiceTranslateApp {
 
         // 翻訳音声の再生 ON/OFF（再生段の単一スイッチ。OFFでも認識・テキスト翻訳は動き続ける）
         if (this.elements.audioOutputMode) {
-            this.elements.audioOutputMode.addEventListener('click', (e) => {
-                const active = e.currentTarget.classList.toggle('active');
-                this.state.audioOutputMode = active ? 'translation' : 'off';
-                this.saveToStorage('audio_output_mode', this.state.audioOutputMode);
-                this.applyAudioOutputMode();
+            this.elements.audioOutputMode.addEventListener('click', () => {
+                this.handleAudioOutputToggleClick();
             });
         }
 
@@ -718,19 +724,19 @@ class VoiceTranslateApp {
         // マイクモードは対象外（マイク固定）。
         if (
             this.platform.isElectron &&
-            this.state.audioSourceType === 'system' &&
+            this.captureProfile?.inputMode === 'monitor' &&
             // ピン留め中（ヘッダで明示選択）は自動切替しない＝警告のみ（下の通知に落ちる）
             !this.state.preferredInputDeviceId &&
             !this.silenceFallbackDone &&
-            (this._captureFallbackStage === 'virtual-card' ||
-                this._captureFallbackStage === 'loopback')
+            // 無音フォールバック先が定義された段（仮想カード/ループバック）でのみ自動降格する。
+            // マイク段/タブ共有は決定表で silenceFallbackNext=null ＝下の警告のみに落ちる。
+            this.captureProfile.silenceFallbackNext != null
         ) {
             const fromLabel =
                 this._captureFallbackStage === 'virtual-card'
                     ? '仮想サウンドカード'
                     : 'ループバック';
-            this._captureFallbackTarget =
-                this._captureFallbackStage === 'virtual-card' ? 'loopback' : 'microphone';
+            this._captureFallbackTarget = this.captureProfile.silenceFallbackNext;
             // 自動切替の実績を記録（このセッションではこれ以降は警告のみ）
             this.silenceFallbackDone = true;
             this.notify(
@@ -812,10 +818,45 @@ class VoiceTranslateApp {
      *   - 'off': 翻訳音声を止める（字幕は別ストリームなので影響しない＝底線）
      *   原音の可聴性は採集方式に依存するため、ここでは制御しない。
      */
+    /**
+     * 🔊再生トグルのクリック処理（再生段 ON/OFF）。
+     *
+     * 単一の真実源 state.audioOutputMode から次状態を導く（DOM の active クラスは読まない）。
+     * 抑止中（loopback/仮想カード未隔離で自動ミュート）はユーザー設定を据え置き理由だけ通知する
+     * （「OFFのつもりが保存はON」等の不整合と、抑止解除後の意図しない再生/回灌を防ぐ）。
+     * 見た目の反映は applyAudioOutputMode（active クラスの唯一の書き手）に一任する。
+     */
+    handleAudioOutputToggleClick() {
+        if (this._ttsSuppressedByLoopback) {
+            this.notify(
+                '翻訳音声は自動ミュート中',
+                'ループバック/仮想カード監視では回灌防止のため字幕のみで運用します（監視段が変われば自動復帰）。',
+                'info'
+            );
+            return;
+        }
+        this.state.audioOutputMode =
+            this.state.audioOutputMode === 'translation' ? 'off' : 'translation';
+        this.saveToStorage('audio_output_mode', this.state.audioOutputMode);
+        this.applyAudioOutputMode();
+    }
+
     applyAudioOutputMode() {
         // ループバック監視中は回灌防止のため実行時フラグで強制ミュート（ユーザー設定は不変）
         const playTranslation =
             this.state.audioOutputMode === 'translation' && !this._ttsSuppressedByLoopback;
+        // 画面の再生トグルを「実際に鳴っているか」に一致させる（D1: 設定ONでも回灌抑止中は
+        // 無音のため OFF 表示＋理由ツールチップを出す）。ユーザー設定 state.audioOutputMode は
+        // 変えない＝抑止が解除されれば applyAudioOutputMode 再実行で自動的に ON 表示へ復帰する。
+        // ※ Electron/WS 経路は translatedAudioEl を持たず下で早期returnするため、その前で更新する。
+        const outputToggle = this.elements?.audioOutputMode;
+        if (outputToggle) {
+            outputToggle.classList.toggle('active', playTranslation);
+            outputToggle.classList.toggle('suppressed', Boolean(this._ttsSuppressedByLoopback));
+            outputToggle.title = this._ttsSuppressedByLoopback
+                ? 'ループバック/仮想カード監視中は回灌防止のため翻訳音声を自動ミュート中です（字幕は継続。監視段が変われば自動復帰します）。'
+                : '';
+        }
         // OFF: 新規チャンクは playAudioChunk が遮断するが、Web Audioクロックへ先読み予約済みの
         // 音声は鳴り続けるため、スケジュール済みソースもここで即停止する（Electron/WS経路）。
         if (!playTranslation && typeof this.clearPlaybackQueue === 'function') {
@@ -936,12 +977,7 @@ class VoiceTranslateApp {
         const savedOutputMode = await this.getFromStorage('audio_output_mode');
         this.state.audioOutputMode =
             savedOutputMode === 'off' || savedOutputMode === 'original' ? 'off' : 'translation';
-        if (this.elements.audioOutputMode) {
-            this.elements.audioOutputMode.classList.toggle(
-                'active',
-                this.state.audioOutputMode === 'translation'
-            );
-        }
+        // active クラスの反映は applyAudioOutputMode が唯一の書き手（抑止状態も誠実に反映する）。
         this.applyAudioOutputMode();
     }
 
@@ -1410,6 +1446,11 @@ class VoiceTranslateApp {
         // 接続開始時にトランスクリプトをクリア
         this.clearTranscript('both');
         this.normalizeRealtimeEndpointModel();
+        // 実効エンドポイント正規化後にトランスポート記述子を確定（再接続でもここで再構築）。
+        this.transport = buildTransportDescriptor({
+            isElectron: this.platform.isElectron,
+            isTranslationSession: this.isRealtimeTranslationSession()
+        });
 
         // 翻訳音声の出力先(物理スピーカー/ヘッドホン)を毎接続で再検出する。
         // 既定出力が仮想サウンドカードでも、訳音は物理デバイスから聞こえるようにするため。
@@ -1606,17 +1647,17 @@ class VoiceTranslateApp {
         //   本メソッドは呼ばない（handleWebRtcConnected を参照）。
         // 入力転写（audio.input.transcription）を設定することで session.input_transcript.delta
         // （＝左カラムの音声認識）が返るようになる（公式仕様）。
+        // セッション設定はトランスポート決定表(buildTranslationSessionConfig)に集約する。
+        // ※ noise_reduction はこの session.update には付けない。/v1/realtime/translations は
+        //   未知フィールドを 400 で拒否し得る厳格EPで、付与は未検証のため実機確認後に有効化する
+        //   （去噪改善は Phase D4 の live 検証項目）。
         const targetLang = this.state.targetLang || 'ja';
         this.sendMessage({
             type: 'session.update',
-            session: {
-                audio: {
-                    input: {
-                        transcription: this.buildInputTranscriptionConfig()
-                    },
-                    output: { language: targetLang }
-                }
-            }
+            session: buildTranslationSessionConfig({
+                targetLang,
+                transcription: this.buildInputTranscriptionConfig()
+            })
         });
     }
 
@@ -1629,7 +1670,14 @@ class VoiceTranslateApp {
      * @returns {boolean} 非Electron かつ翻訳セッションのとき true
      */
     usesWebRtcTransport() {
-        return !this.platform.isElectron && this.isRealtimeTranslationSession();
+        // transport 種別判定はトランスポート決定表(voicetranslate-transport-config.js)へ集約。
+        // ここは「WebRTC 経路か」の真偽アダプタ（判定ロジックは再実装しない）。
+        return (
+            selectTransportKind({
+                isElectron: this.platform.isElectron,
+                isTranslationSession: this.isRealtimeTranslationSession()
+            }) === TRANSPORT_KINDS.BROWSER_WEBRTC
+        );
     }
 
     /**
@@ -1659,13 +1707,13 @@ class VoiceTranslateApp {
         const body = {
             session: {
                 model: CONFIG.API.REALTIME_MODEL,
-                audio: {
-                    input: {
-                        transcription: this.buildInputTranscriptionConfig(),
-                        noise_reduction: { type: 'near_field' }
-                    },
-                    output: { language: targetLang }
-                }
+                // 設定本体はトランスポート決定表に集約。WebRTC 発行 body は near_field 去噪を渡す
+                // （この client_secret 経路では従来から実績あり）。
+                ...buildTranslationSessionConfig({
+                    targetLang,
+                    transcription: this.buildInputTranscriptionConfig(),
+                    noiseReduction: { type: 'near_field' }
+                })
             }
         };
         const res = await fetch(`${this.getTranslationRestBase()}/client_secrets`, {
@@ -1954,15 +2002,15 @@ class VoiceTranslateApp {
             // 共通の録音開始処理
             await this.setupAudioProcessing();
 
-            // ✅ WebRTC 経路では、取得したマイクトラックを送信側へ接続する
-            //    （音声は session.input_audio_buffer.append ではなくメディアトラックで送る）
-            if (this.usesWebRtcTransport()) {
+            // ✅ マイク音声をメディアトラックで送る経路（WebRTC）では、取得したトラックを送信側へ接続する
+            //    （PCM の session.input_audio_buffer.append は送らない＝transport.audioInput が示す）
+            if (this.transport.audioInput === 'media-track') {
                 await this.attachMicToWebRtc();
             }
 
             // ✅ システム音声モードでは、選んだ監視先が実際に鳴っているかを自動検証する
             //    （誤設定で無音を監視し続ける穴を塞ぐ）
-            if (this.state.audioSourceType === 'system') {
+            if (this.captureProfile?.inputMode === 'monitor') {
                 this.startSilenceVerification();
             }
         } catch (error) {
@@ -2087,20 +2135,24 @@ class VoiceTranslateApp {
      *   音声ソースタイプに応じて、マイクまたはシステム音声のキャプチャを開始
      */
     async routeAudioCapture() {
-        if (this.state.audioSourceType === 'system') {
-            // ✅ キャプチャ方式はプラットフォームで自動決定（出力モードとは独立）
-            //   Electron → 仮想カード→ループバック→マイクの自動フォールバック付き監視
-            //   ブラウザ → getDisplayMedia（タブ音声共有）で会議タブを監視
-            if (this.platform.isElectron) {
-                await this.startSystemCaptureWithFallback();
-            } else {
-                await this.startSystemAudioCapture();
+        // 採集の入口はプロファイル決定表(captureEntryFor)で選ぶ。
+        // この階層ではモード if を書かない（判定は capture-profile.js の決定表へ集約）。
+        //   monitor-fallback: Electron → 仮想カード→ループバック→マイクの自動フォールバック監視
+        //   monitor-display : ブラウザ → getDisplayMedia（タブ音声共有）で会議タブを監視
+        //   microphone      : マイク固定（フォールバック対象外）
+        const entryHandlers = {
+            'monitor-fallback': () => this.startSystemCaptureWithFallback(),
+            'monitor-display': () => this.startSystemAudioCapture(),
+            microphone: async () => {
+                await this.startMicrophoneCapture();
+                this.setCaptureFallbackStage(null);
             }
-        } else {
-            // マイクキャプチャ（既存機能）。マイクモードはフォールバック対象外＝マイク固定。
-            await this.startMicrophoneCapture();
-            this.setCaptureFallbackStage(null);
-        }
+        };
+        const entry = captureEntryFor({
+            isElectron: this.platform.isElectron,
+            audioSourceType: this.state.audioSourceType
+        });
+        await entryHandlers[entry]();
         // キャプチャ成功＝権限付与済みで label が読めるため、先に一覧を実名へ再構築し、
         // その後に実監視デバイス名（ground truth）を auto オプションへ反映する
         // （順序が逆だと一覧の再構築で「自動（現在: ...）」表示が消える）。
@@ -2178,20 +2230,7 @@ class VoiceTranslateApp {
     async startPinnedDeviceCapture(deviceId) {
         const label = await this.lookupInputDeviceLabel(deviceId);
         const isVirtual = /CABLE|VB-Audio|VoiceMeeter|Virtual|仮想/i.test(label || '');
-        const config = isVirtual
-            ? {
-                  // ネイティブレートで採集し、送信直前の resampleMicTo24k で一度だけ24kへ変換する
-                  // （固定するとネイティブレートAudioContextとの間で二重リサンプルが発生する）
-                  echoCancellation: false,
-                  noiseSuppression: false,
-                  autoGainControl: false
-              }
-            : {
-                  // マイク系は sampleRate を固定しない（ネイティブレートでAECを有効に保つ）
-                  echoCancellation: true,
-                  noiseSuppression: true,
-                  autoGainControl: true
-              };
+        const config = captureConstraintsFor(isVirtual ? 'virtual-card' : 'microphone');
         const strategy = AudioCaptureStrategyFactory.createStrategy({
             sourceType: 'microphone',
             config,
@@ -2221,17 +2260,11 @@ class VoiceTranslateApp {
         if (!sources || sources.length === 0) {
             throw new Error('ループバック用のキャプチャソースが見つかりません');
         }
-        const meetingPattern = /Teams|Zoom|Meet|Skype|Discord|Slack|Webex/i;
-        const chosen = sources.find((s) => meetingPattern.test(s.name || '')) || sources[0];
+        const chosen = sources.find((s) => MEETING_APP_PATTERN.test(s.name || '')) || sources[0];
 
         const strategy = AudioCaptureStrategyFactory.createStrategy({
             sourceType: 'system',
-            config: {
-                // ネイティブレートで採集し、送信直前の resampleMicTo24k で一度だけ24kへ変換する
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false
-            },
+            config: captureConstraintsFor('loopback'),
             sourceId: chosen.id
         });
         this.state.mediaStream = await strategy.capture();
@@ -2362,13 +2395,7 @@ class VoiceTranslateApp {
             throw new Error('仮想サウンドカードが見つかりません（VB-CABLE未導入/未配線）');
         }
 
-        const config = {
-            // ネイティブレートで採集し、送信直前の resampleMicTo24k で一度だけ24kへ変換する
-            // 仮想カードの原声はそのまま取り込む（エコー除去等は無効）
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-        };
+        const config = captureConstraintsFor('virtual-card');
 
         const strategy = AudioCaptureStrategyFactory.createStrategy({
             sourceType: 'microphone',
@@ -2491,14 +2518,9 @@ class VoiceTranslateApp {
         //   マイクが訳音声を拾い直して翻訳モデルが自分の出力を再入力→認識崩れ・取りこぼし
         //   （ループバック）が起きる。同時通訳アプリの標準対策。
         //   （監視/システム音声モードは startSystemAudioCapture 側で別途設定する）
-        const config = {
-            // ★マイクは sampleRate を固定しない（ネイティブ48k等で採集）。24k固定だと
-            //   ブラウザのAEC(APM)が十分働かず、スピーカーの訳音がマイクに乗って認識が崩れる。
-            //   入力AudioContextは24kのため取り込み時に自動で24kへ落ち、送信形式は不変（リサンプル不要）。
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true // 旧トグル既定値(ON)を固定
-        };
+        // マイクモードは EC/NS/AGC を強制ON（同一マシンのスピーカーから出る訳音の再入力を AEC で抑制）。
+        // sampleRate は固定しない（ネイティブレートで採集し AEC を有効に保つ。24k固定だと AEC が働かない）。
+        const config = captureConstraintsFor('microphone');
 
         // 戦略を作成（ヘッダでピン留めされた入力デバイスがあればそこから取得。auto は既定マイク）
         const strategy = AudioCaptureStrategyFactory.createStrategy({
@@ -2517,29 +2539,10 @@ class VoiceTranslateApp {
         // ✅ 音声キャプチャ戦略を使用（低結合・高凝集）
         const systemAudioSource = document.getElementById('systemAudioSource');
         const sourceId = systemAudioSource?.value;
-        const sourceLabel = systemAudioSource?.options[systemAudioSource.selectedIndex]?.text || '';
 
-        // 音声設定を取得
-        // ブラウザ、Teams、Zoom で異なる設定を使用
-        const isBrowserSource =
-            this.state.selectedDisplayMediaStream ||
-            sourceLabel.toLowerCase().includes('chrome') ||
-            sourceLabel.toLowerCase().includes('firefox') ||
-            sourceLabel.toLowerCase().includes('edge');
-
-        const config = {
-            // ネイティブレートで採集し、送信直前の resampleMicTo24k で一度だけ24kへ変換する
-            // ★システム/タブ音声はデジタルのクリーン音源。マイク用の AEC/NS/AGC をかけると
-            //   歪み・減衰で認識が劣化する（タブ捕獲に echoCancellation を当てる典型アンチパターン）。
-            //   生音のまま STT へ渡す＝監視モードの認識強化。マイク採集(別経路)には影響しない。
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-        };
-
-        if (isBrowserSource) {
-        } else {
-        }
+        // システム/タブ音声はデジタルのクリーン音源。マイク用の AEC/NS/AGC をかけると歪み・減衰で
+        // 認識が劣化するため無効（tab 行）。sampleRate も固定しない（ネイティブレート採集）。
+        const config = captureConstraintsFor('tab');
 
         // 戦略を作成
         const strategy = AudioCaptureStrategyFactory.createStrategy({
@@ -3480,14 +3483,10 @@ class VoiceTranslateApp {
         const targetLang = this.state.targetLang || 'ja';
         this.sendMessage({
             type: 'session.update',
-            session: {
-                audio: {
-                    input: {
-                        transcription: this.buildInputTranscriptionConfig()
-                    },
-                    output: { language: targetLang }
-                }
-            }
+            session: buildTranslationSessionConfig({
+                targetLang,
+                transcription: this.buildInputTranscriptionConfig()
+            })
         });
     }
 

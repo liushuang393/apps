@@ -378,6 +378,9 @@ class TranscriptSegment(Base):
         ForeignKey("meeting_sessions.id"), index=True, nullable=True
     )
     speaker_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    # 話者分離（P4-A）で識別/クラスタリングした表示ラベル（登録話者名 or "Speaker N"）。
+    # speaker_id（LiveKit track 由来の権威）は不変で、本列は増強情報（未実行時 null）。
+    speaker_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     source_language: Mapped[str] = mapped_column(String(10))
 
@@ -461,4 +464,309 @@ class TranslationSegment(Base):
             "transcript_segment_id",
             "target_language",
         ),
+    )
+
+
+class DataSplit(str, Enum):
+    """訓練データの分割（改善.md §5.2）。
+
+    TRAIN は学習に使用可、HOLDOUT は学習に使わず内部検証用に取り置く。評価集
+    （EvaluationSample）は物理的に別テーブルに置き、学習に混入しない不変条件を保つ。
+    """
+
+    TRAIN = "train"  # 学習に使用可
+    HOLDOUT = "holdout"  # 学習に使わず内部検証で保持
+
+
+class ASRCorrection(Base):
+    """ASR 訂正ペア（改善.md §5.2 asr correction 層）。
+
+    人手/後編集で確定した「ASR 生テキスト → 訂正テキスト」の対。ホットワード・
+    後処理の改善、将来の Whisper LoRA/ドメイン微調整の教師データになる。
+    audio_hash は元音声（暗号化アーカイブ）への参照キーで、音声自体は保存しない。
+    """
+
+    __tablename__ = "asr_correction"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    room_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rooms.id"), index=True, nullable=True
+    )
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("meeting_sessions.id"), index=True, nullable=True
+    )
+    transcript_segment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("transcript_segment.id"), index=True, nullable=True
+    )
+    source_language: Mapped[str] = mapped_column(String(10), index=True)
+    # 元音声（暗号化アーカイブ）参照。音声バイト列は DB に置かない（プライバシー）。
+    audio_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    asr_text: Mapped[str] = mapped_column(Text)  # ASR 生出力
+    corrected_text: Mapped[str] = mapped_column(Text)  # 訂正後
+    corrected_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    # 学習/内部検証の分割。評価集は別テーブルのためここに eval は存在しない。
+    split: Mapped[str] = mapped_column(
+        String(10), default=DataSplit.TRAIN.value, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+
+
+class TranslationCorrection(Base):
+    """翻訳訂正ペア（改善.md §5.2 translation correction 層）。
+
+    「MT 出力 → 訂正訳」の対。用語一貫性・商務語気・数字保持の改善、OPUS/Marian
+    微調整や LLM 後編集プロンプトの教師データになる。適用用語集版も記録する。
+    """
+
+    __tablename__ = "translation_correction"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    translation_segment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("translation_segment.id"), index=True, nullable=True
+    )
+    source_language: Mapped[str] = mapped_column(String(10), index=True)
+    target_language: Mapped[str] = mapped_column(String(10), index=True)
+    source_text: Mapped[str] = mapped_column(Text)
+    mt_text: Mapped[str] = mapped_column(Text)  # MT 生出力
+    corrected_text: Mapped[str] = mapped_column(Text)  # 訂正後
+    corrected_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    glossary_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    split: Mapped[str] = mapped_column(
+        String(10), default=DataSplit.TRAIN.value, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+
+
+class SpeakerEnrollment(Base):
+    """話者エンロールメント（改善.md §5.2 speaker enrollment 層）。
+
+    固定メンバー会議での話者分離精度向上に使う声紋 embedding。embedding は JSON
+    ベクトル参照で保持し、必ず consent(同意) を伴う。用途外利用を防ぐ。
+    """
+
+    __tablename__ = "speaker_enrollment"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    room_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rooms.id"), index=True, nullable=True
+    )
+    speaker_label: Mapped[str] = mapped_column(String(100))
+    # 声紋ベクトル（JSON 配列）または外部ストレージ参照。未取得時は None。
+    embedding: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __table_args__ = (
+        Index("ix_enrollment_user_label", "user_id", "speaker_label", unique=True),
+    )
+
+
+class TTSConsent(Base):
+    """TTS 音色クローンの同意（改善.md §5.2 tts consent / §4.4 授権）。
+
+    個人クローン音色は必ず本人同意 + 用途限定 + 透かし(watermark) を要件とする。
+    granted/revoked で有効期間を管理し、無同意のデフォルト参会者クローンを禁じる。
+    """
+
+    __tablename__ = "tts_consent"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    voice_id: Mapped[str] = mapped_column(String(100), index=True)
+    # 用途スコープ（例: この会議のみ / 組織内 / 全体）。文字列で保持。
+    scope: Mapped[str] = mapped_column(String(30), default="meeting")
+    granted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 透かし必須（既定 True。合成音の出所追跡・悪用抑止）。
+    watermark_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    granted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+
+class EvaluationSample(Base):
+    """評価集サンプル（改善.md §5.2 evaluation set：**学習に永久に混入させない**）。
+
+    WER/CER/BLEU/COMET 等の評価専用データ。訓練テーブル（*_correction）とは物理的に
+    分離し、学習エクスポートは本テーブルを一切参照しない（不変条件）。
+    """
+
+    __tablename__ = "evaluation_sample"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    stage: Mapped[str] = mapped_column(String(20), index=True)  # asr / t2t / tts
+    source_language: Mapped[str] = mapped_column(String(10), index=True)
+    target_language: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    input_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audio_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reference_text: Mapped[str] = mapped_column(Text)  # 正解参照
+    notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+
+class RerunStatus(str, Enum):
+    """離線高質量重跑（P3-D）の状態機。
+
+    PENDING は未処理、DONE は重跑完了、SKIPPED は対象外（音声も原文も無い等）、
+    FAILED は重跑中に例外。冪等再実行は PENDING/FAILED のみを対象にできる。
+    """
+
+    PENDING = "pending"
+    DONE = "done"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class PipelineEvent(Base):
+    """中間パイプライン事件（改善.md §5.3 / P3-D 離線重跑の回放ログ）。
+
+    目的:
+        1 発話の実時パイプライン出力（ASR 原文・言語別訳文・タグ・縮退フラグ・
+        trace_id）と、暗号化アーカイブされた音声への参照（audio_hash）を保存し、
+        会議後に最強モデルで離線再処理（rerun）できる回放基盤とする。
+    注意点:
+        - **音声バイト列は保存しない**。audio_hash は暗号化アーカイブの参照のみ。
+          audio_hash が null の事件は音声なし＝MT のみ再処理可能（ASR 再処理不可）。
+        - rerun_status で冪等な再実行を制御する（PENDING/FAILED のみ再処理対象）。
+        - transcript_segment との 1:1 対応（NULL 可：保存失敗時も事件は残せる）。
+    """
+
+    __tablename__ = "pipeline_event"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    room_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rooms.id"), index=True, nullable=True
+    )
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("meeting_sessions.id"), index=True, nullable=True
+    )
+    transcript_segment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("transcript_segment.id"), index=True, nullable=True
+    )
+    speaker_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    # 話者分離（P4-A）ラベル。回放・議事録の話者帰属に用いる（未実行時 null）。
+    speaker_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    source_language: Mapped[str] = mapped_column(String(10))
+    # 暗号化アーカイブ参照（sha256 hex）。音声を保存した場合のみ非 null。
+    audio_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # 実時パイプライン出力（回放・diff 用）
+    asr_text: Mapped[str] = mapped_column(Text)
+    translations: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    degraded: Mapped[bool] = mapped_column(Boolean, default=False)
+    trace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # 離線重跑の状態（既定 pending）
+    rerun_status: Mapped[str] = mapped_column(
+        String(10), default=RerunStatus.PENDING.value, server_default="pending"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+
+    __table_args__ = (
+        # セッション単位で未処理事件を時系列に読むホットパス（重跑ジョブ）。
+        Index("ix_pipeline_event_session_status", "session_id", "rerun_status"),
+    )
+
+
+class RerunResult(Base):
+    """離線重跑の結果（P3-D）。実時記録を汚さず高品質版を別テーブルへ保存する。
+
+    目的:
+        最強モデルによる ASR/MT 再処理結果を保存し、議事録の高品質版・実時出力との
+        diff・訓練訂正候補の生成源とする。
+    注意点:
+        - 実時の TranscriptSegment/TranslationSegment は不変。高品質版はここに分離。
+        - diff から生成する訓練訂正は機械出力のため既定 holdout（人手 review 前提）。
+    """
+
+    __tablename__ = "rerun_result"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    pipeline_event_id: Mapped[str] = mapped_column(
+        ForeignKey("pipeline_event.id"), index=True
+    )
+    transcript_segment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("transcript_segment.id"), index=True, nullable=True
+    )
+
+    source_language: Mapped[str] = mapped_column(String(10))
+    asr_text: Mapped[str] = mapped_column(Text)  # 高品質 ASR 再処理結果
+    translations: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # 再処理に用いたモデル（監査・再現用）
+    asr_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    mt_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+
+class ExperimentMetric(Base):
+    """A/B 実験の観測指標（改善案 §5.1 / P4-C）。
+
+    目的:
+        実験群（variant）ごとの品質/遅延などの観測値を 1 件 1 行で蓄積し、群間比較
+        （平均・件数・最小/最大）で優劣を判定する根拠とする。
+    注意点:
+        - 実験の配信判定は ab_testing.py（純ロジック・決定的）、本テーブルは結果の
+          永続層のみ。experiment_key + variant で集計する。
+        - 記録失敗はライブを壊さない（app.db.experiments が握る）。
+    """
+
+    __tablename__ = "experiment_metric"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uid)
+    experiment_key: Mapped[str] = mapped_column(String(100), index=True)
+    variant: Mapped[str] = mapped_column(String(50))
+    # 配信単位の id（会議/利用者/セッション）。監査・重複排除の手掛かり（任意）。
+    unit_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    stage: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    metric_name: Mapped[str] = mapped_column(String(50))
+    metric_value: Mapped[float] = mapped_column(Float)
+
+    room_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rooms.id"), nullable=True
+    )
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("meeting_sessions.id"), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+
+    __table_args__ = (
+        # 実験×群で指標を集計するホットパス。
+        Index("ix_experiment_metric_key_variant", "experiment_key", "variant"),
     )

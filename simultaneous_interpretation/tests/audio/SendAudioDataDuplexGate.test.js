@@ -15,6 +15,7 @@ const path = require('path');
 const vm = require('vm');
 
 const { buildCaptureProfile } = require('../../voicetranslate-capture-profile.js');
+const { buildTransportDescriptor } = require('../../voicetranslate-transport-config.js');
 
 function loadProApp() {
     const root = path.join(__dirname, '../..');
@@ -61,6 +62,8 @@ function loadProApp() {
 function makeApp(App, { profile, isPlayingAudio, outputEndTime = null, sendResult = true }) {
     const app = Object.create(App.prototype);
     app.usesWebRtcTransport = () => false;
+    // 既定は PCM append 経路（Electron/WS）。WebRTC ケースは各テストで transport を差し替える。
+    app.transport = buildTransportDescriptor({ isElectron: true, isTranslationSession: true });
     app.isRealtimeTranslationSession = () => true;
     app.state = {
         isConnected: true,
@@ -171,6 +174,8 @@ describe('sendAudioData 半二重ゲート（D1）', () => {
         });
         const app = makeApp(App, { profile, isPlayingAudio: false });
         app.usesWebRtcTransport = () => true;
+        // WebRTC はマイク音声をメディアトラックで送るため PCM append しない（transport で表現）。
+        app.transport = buildTransportDescriptor({ isElectron: false, isTranslationSession: true });
         expect(app.sendAudioData(AUDIO)).toBe(false);
         expect(app.sendMessage).not.toHaveBeenCalled();
     });

@@ -100,6 +100,8 @@ function toSubtitle(msg: Record<string, unknown>): SubtitleData {
     targetLanguage: msg.target_language as SupportedLanguage | undefined,
     isTranslated: Boolean(msg.is_translated),
     isFinal: Boolean(msg.is_final ?? true),
+    isPartial: Boolean(msg.is_partial),
+    revision: msg.revision as number | undefined,
     mainline: msg.mainline as 'hearing' | 'reading' | undefined,
     provider: (msg.provider as string | null | undefined) ?? null,
   };

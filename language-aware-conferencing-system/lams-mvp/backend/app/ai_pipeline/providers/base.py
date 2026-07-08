@@ -19,6 +19,19 @@ LANGUAGE_NAMES: dict[str, str] = {
     "vi": "Tiếng Việt",
 }
 
+# 翻訳 max_tokens の動的化パラメータ（改善点 Q3: 固定 500 では長い複文の訳文が
+# 途中で切れる）。訳文は原文よりトークンが増え得るため入力長 ×4 を目安とし、
+# 短文の下限と、遅延・コスト暴走を防ぐ上限で挟む。
+_MT_MAX_TOKENS_FLOOR = 256
+_MT_MAX_TOKENS_CEIL = 4000
+_MT_TOKENS_PER_CHAR = 4
+
+
+def dynamic_max_tokens(text: str) -> int:
+    """入力長に応じた翻訳 max_tokens を返す（純関数）。短文は下限、長文は上限で飽和。"""
+    estimated = len(text or "") * _MT_TOKENS_PER_CHAR
+    return min(_MT_MAX_TOKENS_CEIL, max(_MT_MAX_TOKENS_FLOOR, estimated))
+
 
 @dataclass
 class TranslationResult:
