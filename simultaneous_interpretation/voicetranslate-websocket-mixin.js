@@ -1891,55 +1891,21 @@ const WebSocketMixin = {
         // 【重要】ループバック防止は全てここで統一的に処理
         // onaudioprocess では処理しない（二重チェックを避ける）
         //
-        // モード別の処理:
-        //   1. マイクモード:
-        //      - 再生中: スキップ（翻訳音声がスピーカーから出ている）
-        //      - 再生終了後 bufferWindow 内: スキップ（スピーカー→マイク伝播遅延を考慮）
-        //      - bufferWindow 経過後: 処理再開
-        //
-        //   2. システム音声モード:
-        //      - 再生中: スキップ（翻訳音声と入力音声の混在を防止）
-        //      - 再生終了後: 即座に処理再開（ループバックは発生しない）
-
-        const now = Date.now();
-        const isPlayingAudio = this.state.isPlayingAudio;
-        const isSystemMode = this.state.audioSourceType === 'system';
-        const isMicrophoneMode = !isSystemMode;
-
-        // ★同時通訳では訳音の再生中も話者は話し続ける。再生中にマイク送信を止める(半二重)と
-        //   その間の発話を丸ごと取りこぼす（＝左カラム認識の致命的な文落ち）。よってマイク翻訳
-        //   セッションは再生中も常に連続採集する（半二重にしない＝認識を絶対に落とさない）。
-        //   訳音のマイク回り込み(エコー)は getUserMedia の echoCancellation で抑制する。
-        //   完全に断つにはヘッドホン使用が確実（スピーカー運用ではAECで軽減）。
-        // 出力先が物理デバイスへ隔離済み(setSinkId)なら、system(仮想カード)入力でも回灌は起きない。
-        // 仮想カードは会議音声のみを載せ、訳音は別の物理デバイスへ出るため半二重は不要＝文落ちを防ぐ。
-        const outputIsolated =
-            this.state.outputDeviceId != null && this.state.outputDeviceId !== '';
-        const continuousCapture =
-            this.isRealtimeTranslationSession() &&
-            (isMicrophoneMode || (isSystemMode && outputIsolated));
-
-        let shouldSkip;
-        if (continuousCapture) {
-            // 出力は別デバイスへ隔離済み → 自分の訳音再生中も対方の発話を落とさない
-            shouldSkip = false;
-        } else {
-            // 従来挙動: 再生中はスキップ（マイク回灌防止／未分離システム音声）
-            shouldSkip = isPlayingAudio;
-
-            if (isMicrophoneMode && !isPlayingAudio) {
-                // マイクモード: 再生終了後もバッファウィンドウ内はスキップ
-                const timeSincePlaybackEnd = this.audioSourceTracker.outputEndTime
-                    ? now - this.audioSourceTracker.outputEndTime
-                    : Infinity;
-                const isWithinBufferWindow =
-                    timeSincePlaybackEnd < this.audioSourceTracker.bufferWindow;
-
-                if (isWithinBufferWindow) {
-                    shouldSkip = true;
-                }
-            }
-        }
+        // 判定はキャプチャプロファイル（voicetranslate-capture-profile.js の決定表）に集約:
+        //   duplex='full'          … 仮想カード/ループバック/タブ共有（デジタル隔離経路）。
+        //                             再生中も送信し続ける（半二重にしない＝文落ちを絶対に防ぐ）。
+        //                             回灌リスクは ttsPolicy（TTS抑止）側で断つ。
+        //   duplex='mic-protected' … 物理マイク。再生中＋再生終了後 bufferWindow 内はスキップ
+        //                             （スピーカー→マイク伝播エコーの再入力防止。エコー自体は
+        //                             getUserMedia の echoCancellation でも抑制する）。
+        // ★UI選択値(audioSourceType)や出力先設定を直接参照しない。フォールバックで実効
+        //   デバイスが変わっても、プロファイル経由で判定が必ず追随する。
+        const shouldSkip = shouldSkipCapture(this.captureProfile, {
+            isPlayingAudio: this.state.isPlayingAudio,
+            outputEndTime: this.audioSourceTracker.outputEndTime,
+            bufferWindowMs: this.audioSourceTracker.bufferWindow,
+            now: Date.now()
+        });
 
         if (shouldSkip && !force) {
             return false;
@@ -1956,8 +1922,23 @@ const WebSocketMixin = {
             audio: base64Audio
         };
 
-        this.sendMessage(message);
+        // 統計は同期で計上する（Path1 の「追記→同一ティック内 commit」があるため遅延不可）。
+        // 送信失敗が判明したら取り消す（失敗フレームを「送信済み」に数えたままだと
+        // commit 判定が実在しない音声を commit してしまう）。ホットパスのため await はしない。
         this.recordRealtimeInputAudioAppend(audioData);
+        this.sendMessage(message).then((sent) => {
+            if (!sent && this.realtimeInputAudioBufferStats) {
+                // commit/reset 済みなら 0 でクランプされるだけ（新しい計上期間は壊さない）
+                this.realtimeInputAudioBufferStats.samples = Math.max(
+                    0,
+                    this.realtimeInputAudioBufferStats.samples - (audioData?.length || 0)
+                );
+                this.realtimeInputAudioBufferStats.chunks = Math.max(
+                    0,
+                    this.realtimeInputAudioBufferStats.chunks - 1
+                );
+            }
+        });
         return true;
     },
 

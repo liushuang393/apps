@@ -9,8 +9,7 @@
   "permissions": [
     "storage",
     "activeTab",
-    "scripting",
-    "tabCapture"
+    "scripting"
   ],
 
   "host_permissions": [
@@ -54,6 +53,7 @@
         "voicetranslate-audio-queue.js",
         "voicetranslate-path-processors.js",
         "voicetranslate-audio-capture-strategy.js",
+        "voicetranslate-capture-profile.js",
         "voicetranslate-websocket-mixin.js",
         "voicetranslate-ui-mixin.js",
         "voicetranslate-pro.js",

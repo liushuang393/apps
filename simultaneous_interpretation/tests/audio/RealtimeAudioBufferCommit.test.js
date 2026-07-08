@@ -5,6 +5,11 @@ const vm = require('vm');
 const { TextPathProcessor } = require('../../voicetranslate-path-processors.js');
 
 function loadWebSocketMixin() {
+    // sendAudioData が参照するキャプチャプロファイル決定表も同一コンテキストへ読み込む
+    const profileSource = fs.readFileSync(
+        path.join(__dirname, '../../voicetranslate-capture-profile.js'),
+        'utf8'
+    );
     const source = fs.readFileSync(
         path.join(__dirname, '../../voicetranslate-websocket-mixin.js'),
         'utf8'
@@ -33,7 +38,7 @@ function loadWebSocketMixin() {
         }
     };
 
-    vm.runInNewContext(`${source}\nmodule.exports = WebSocketMixin;`, sandbox);
+    vm.runInNewContext(`${profileSource}\n${source}\nmodule.exports = WebSocketMixin;`, sandbox);
     return sandbox.module.exports;
 }
 

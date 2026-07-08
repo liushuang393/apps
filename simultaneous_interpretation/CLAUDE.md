@@ -75,7 +75,8 @@ Real-time voice translation for online meetings (Teams, Zoom, Google Meet) and s
 **The single most important thing to understand before editing.** The running app — in **all** forms (browser, Chrome extension, **and** the Electron desktop renderer) — executes the **root-level `voicetranslate-*.js` files**, loaded by `teams-realtime-translator.html`. This is the production code path; **this is where runtime behavior changes belong.**
 
 - Entry UI: `teams-realtime-translator.html` (Electron loads it directly — see `electron/main.ts` `loadFile('teams-realtime-translator.html')`).
-- Logic: `voicetranslate-pro.js` (main), plus `-utils.js`, `-audio-queue.js`, `-path-processors.js`, `-websocket-mixin.js`, `-ui-mixin.js`, `-state-manager.js`, `-audio-capture-strategy.js`, `-platform-adapter.js`.
+- Logic: `voicetranslate-pro.js` (main), plus `-utils.js`, `-audio-queue.js`, `-path-processors.js`, `-websocket-mixin.js`, `-ui-mixin.js`, `-capture-profile.js`, `-audio-capture-strategy.js`, `-platform-adapter.js`, `-segment-alignment.js`.
+- **Mode judgments live in ONE place:** `voicetranslate-capture-profile.js` holds the decision table (platform × input mode × effective device → duplex policy / VAD preset / TTS suppression / silence-fallback target). The half-duplex send gate, VAD presets, and TTS suppression all read `this.captureProfile` (refreshed via `refreshCaptureProfile()`); never re-derive mode from `state.audioSourceType` in behavior code.
 - **These root `.js` files are hand-written source, NOT compiled from `src/`.** Edit them directly; there is no build step. Reload the browser (Ctrl+F5) to see changes. They load in dependency order via `<script>` tags (see the header comment in `voicetranslate-pro.js`).
 
 ### `src/**` is NOT wired into the running app (reference/experimental only)
@@ -85,7 +86,7 @@ Real-time voice translation for online meetings (Teams, Zoom, Google Meet) and s
 ### What IS live besides the root JS
 
 - **`electron/**`** (main process): system audio via `desktopCapturer`, Realtime WebSocket auth, SQLite history (`ConversationDatabase.ts`), IPC. Compiled to `dist/electron/` and used (`package.json` `main`).
-- **`browser-extension/src/`**: packaged Chrome extension (popup/background/adapter) — a separate, thin build.
+- **Chrome extension**: packaged from the SAME root files by `build-extension.js` (manifest.json + root `background.js` + root `voicetranslate-*.js`). There is no separate extension codebase.
 - **`api/*.js`**: Vercel serverless functions (ForgePay payment) — server-side, not part of the renderer.
 
 When asked to change translation/UI/audio behavior, edit the **root `voicetranslate-*.js`**. Touch `src/**` only if explicitly reviving/maintaining that reference tree (it still has the unit tests and the `npm run quality` gate).
@@ -98,8 +99,7 @@ npm install
 # Build (TypeScript only — the HTML/JS codebase needs no build)
 npm run build:core        # src/**  → dist/**       (tsc)
 npm run build:electron    # electron/** → dist/electron/**
-npm run build:extension   # browser-extension/src/** → browser-extension/dist/**
-npm run build:all         # all three
+npm run build:all         # both
 
 # Run
 npm run dev               # watch-build + launch Electron (NODE_ENV=development)
@@ -144,7 +144,7 @@ Each input audio segment gets a unique `transcriptId` linking its outputs:
 2. **Chat API** (`gpt-4o`/`gpt-5`): higher-precision text translation → right column.
 
 ### Response concurrency (P0 — `conversation_already_has_active_response`)
-The Realtime API rejects a new response while one is active. `src/core/ResponseStateManager.ts` enforces a state machine (`IDLE → PENDING → PROCESSING → DONE → IDLE`, with `ERROR → IDLE` forced reset) and `ImprovedResponseQueue.ts` serializes responses with a 50–200ms network-latency guard window. Don't bypass this when touching response handling. (HTML/JS equivalent: `voicetranslate-state-manager.js`.)
+The Realtime API rejects a new response while one is active. `src/core/ResponseStateManager.ts` enforces a state machine (`IDLE → PENDING → PROCESSING → DONE → IDLE`, with `ERROR → IDLE` forced reset) and `ImprovedResponseQueue.ts` serializes responses with a 50–200ms network-latency guard window. Don't bypass this when touching response handling. (The HTML/JS side serializes responses via `ResponseQueue` in `voicetranslate-utils.js`.)
 
 ### VAD buffering (P1)
 Min utterance length ~1s, silence-confirm delay ~500ms, two-stage (client VAD + server VAD) to cut spurious short-audio sends. See `VAD_OPTIMIZATION.md`, `src/audio/AdaptiveVADBuffer.ts`, `src/config/VADPresets.ts`.

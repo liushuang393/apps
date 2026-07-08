@@ -206,6 +206,18 @@ const ALLOWED_CHANNELS = {
 };
 
 /**
+ * off() で実際にリスナーを解除できるようにするための対応表。
+ * 元コールバック → （チャネル → ipcRenderer に登録したラッパー関数）
+ *
+ * 注意: 同一コールバックを同一チャネルに二重登録すると後勝ちで上書きされる
+ * （現状の呼び出し元に該当ケースは無い）。
+ */
+const ipcListenerRegistry = new Map<
+    (...args: unknown[]) => void,
+    Map<string, (event: Electron.IpcRendererEvent, ...args: unknown[]) => void>
+>();
+
+/**
  * Electron API を公開
  */
 const electronAPI: ElectronAPI = {
@@ -370,10 +382,23 @@ const electronAPI: ElectronAPI = {
 
     /**
      * イベントリスナーを登録
+     *
+     * ipcRenderer.on にはラッパー関数を渡すため、off() で解除できるよう
+     * 元コールバック→（チャネル→ラッパー）の対応を ipcListenerRegistry に保持する。
+     * （旧実装は off() に元コールバックを渡しており永久に解除不能＝リスナー蓄積の温床）
      */
     on: (channel: string, callback: (...args: unknown[]) => void) => {
         if (ALLOWED_CHANNELS.receive.includes(channel)) {
-            ipcRenderer.on(channel, (_event, ...args) => callback(...args));
+            const wrapped = (_event: Electron.IpcRendererEvent, ...args: unknown[]): void => {
+                callback(...args);
+            };
+            let byChannel = ipcListenerRegistry.get(callback);
+            if (byChannel === undefined) {
+                byChannel = new Map();
+                ipcListenerRegistry.set(callback, byChannel);
+            }
+            byChannel.set(channel, wrapped);
+            ipcRenderer.on(channel, wrapped);
         } else {
             console.warn(`[Preload] Channel not allowed: ${channel}`);
         }
@@ -384,7 +409,15 @@ const electronAPI: ElectronAPI = {
      */
     off: (channel: string, callback: (...args: unknown[]) => void) => {
         if (ALLOWED_CHANNELS.receive.includes(channel)) {
-            ipcRenderer.removeListener(channel, callback);
+            const byChannel = ipcListenerRegistry.get(callback);
+            const wrapped = byChannel?.get(channel);
+            if (byChannel !== undefined && wrapped !== undefined) {
+                ipcRenderer.removeListener(channel, wrapped);
+                byChannel.delete(channel);
+                if (byChannel.size === 0) {
+                    ipcListenerRegistry.delete(callback);
+                }
+            }
         }
     },
 

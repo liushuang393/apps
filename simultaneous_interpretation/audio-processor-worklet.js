@@ -56,7 +56,24 @@ class AudioProcessorWorklet extends AudioWorkletProcessor {
 
         // 入力データが存在する場合
         if (input && input.length > 0) {
-            const channelData = input[0]; // モノラル（チャンネル0）
+            let channelData = input[0]; // モノラルはそのまま使用
+
+            // ステレオ以上は全チャンネル平均でモノラル化する。
+            // チャンネル0のみだと、右ch優勢の監視音源（一部の会議/ループバック構成）で
+            // 音声を取りこぼし認識漏れになる。
+            if (input.length > 1 && channelData) {
+                const mixed = new Float32Array(channelData.length);
+                for (let c = 0; c < input.length; c++) {
+                    const channel = input[c];
+                    for (let i = 0; i < channel.length; i++) {
+                        mixed[i] += channel[i];
+                    }
+                }
+                for (let i = 0; i < mixed.length; i++) {
+                    mixed[i] /= input.length;
+                }
+                channelData = mixed;
+            }
 
             if (channelData && channelData.length > 0) {
                 // メインスレッドに音声データを送信

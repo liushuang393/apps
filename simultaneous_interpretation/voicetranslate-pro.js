@@ -64,6 +64,10 @@ class VoiceTranslateApp {
         this.elements = {};
         this.timers = {};
 
+        // ✅ キャプチャプロファイル（voicetranslate-capture-profile.js の決定表の現在行）。
+        //    半二重ゲート・VADプリセット・TTS抑止は必ずこれを参照する（判定の単一集約点）。
+        this.captureProfile = null;
+
         // ✅ ストリーミング再生キュー（音声途中切断を防ぐ）
         this.playbackQueue = []; // 音声チャンクの再生待ちキュー（ストリーミング再生）
         this.isPlayingAudio = false; // 音声再生中フラグ（ループバック防止用）
@@ -132,10 +136,12 @@ class VoiceTranslateApp {
             playbackTokens: new Set() // 再生中の音声トークンセット
         };
 
-        // ✅ グローバルモード状態管理（すべてのインスタンス間での一貫性を確保）
-        // 複数のブラウザ標準、Electron、拡張機能などが同時に実行されるのを防ぐ
+        // ✅ クロスインスタンス排他ロック専用（モード保持ではない）。
+        // 複数のブラウザ/Electron/拡張インスタンスが同時に録音するのを防ぐ localStorage ロック。
+        // モード判定は captureProfile（voicetranslate-capture-profile.js）を唯一の参照先とし、
+        // ここを判定に使ってはならない。
         this.modeStateManager = {
-            currentMode: null, // 現在のモード: 'microphone' | 'system' | 'browser' | null
+            currentMode: null, // ロック中のモード表示用: 'microphone' | 'system' | null
             modeStartTime: null, // モード開始時刻
             lastModeChange: null, // 最後のモード変更時刻
             modeChangeTimeout: 1000, // モード変更待機時間（1秒）
@@ -436,9 +442,9 @@ class VoiceTranslateApp {
                 systemAudioSourceGroup.style.display = 'none';
             }
 
-            // VAD設定を再適用（音声ソースタイプに応じた最適な設定に更新）
-            const currentVadLevel = this.elements.vadSensitivity.value;
-            this.updateVADSensitivity(currentVadLevel);
+            // VAD設定を再適用（新モードのプロファイル基準）。refreshCaptureProfile が
+            // 実効デバイスに応じたVADプリセットまで追随させる。
+            this.refreshCaptureProfile();
 
             // ✅ #1 録音中にソースを変更した場合は、新ソースでキャプチャを取り直す（即時切替）。
             //    再起動は restartCapture に一本化（3経路の同時実行による二重パイプラインを防ぐ）。
@@ -621,15 +627,12 @@ class VoiceTranslateApp {
         // ✅ デフォルト設定を使用（ユーザー設定で上書き可能）
         const defaultSettings = CONFIG.VAD.MICROPHONE.MEDIUM;
 
+        // 実働VADクラス（voicetranslate-utils.js）の実インターフェースに合わせる。
+        // 旧 debounceTime/onSpeechStart/onSpeechEnd は別実装（未使用TS版）の名残で
+        // 一度も機能しておらず、debounce が既定300ms固定＝語尾切れの原因だった。
         this.vad = new VoiceActivityDetector({
             threshold: defaultSettings.threshold,
-            debounceTime: defaultSettings.debounce,
-            onSpeechStart: () => {
-                this.updateStatus('recording', '話し中...');
-            },
-            onSpeechEnd: () => {
-                this.updateStatus('recording', '待機中...');
-            }
+            debounce: defaultSettings.debounce
         });
     }
 
@@ -708,13 +711,17 @@ class VoiceTranslateApp {
         }
 
         // 監視先が無音 → システム音声モード(Electron)は次の監視候補へ自動フォールバックする
-        // （優先順位: 仮想カード→ループバック→マイク）。検証は録音開始時の5秒窓でのみ走るため、
-        // 会議中の沈黙で勝手に切り替わることはない。マイクモードは対象外（マイク固定）。
+        // （優先順位: 仮想カード→ループバック→マイク）。検証は録音開始時の5秒窓でのみ走るが、
+        // restartCapture で窓が再アームされるため、自動切替は1録音セッションにつき1回まで
+        // （silenceFallbackDone）。会議開始前の静寂で仮想カード→ループバック→マイクと連鎖降格し
+        // 以降会議音声を拾えなくなる事故を防ぐ。2回目以降は下の警告通知のみ。
+        // マイクモードは対象外（マイク固定）。
         if (
             this.platform.isElectron &&
             this.state.audioSourceType === 'system' &&
             // ピン留め中（ヘッダで明示選択）は自動切替しない＝警告のみ（下の通知に落ちる）
             !this.state.preferredInputDeviceId &&
+            !this.silenceFallbackDone &&
             (this._captureFallbackStage === 'virtual-card' ||
                 this._captureFallbackStage === 'loopback')
         ) {
@@ -724,6 +731,8 @@ class VoiceTranslateApp {
                     : 'ループバック';
             this._captureFallbackTarget =
                 this._captureFallbackStage === 'virtual-card' ? 'loopback' : 'microphone';
+            // 自動切替の実績を記録（このセッションではこれ以降は警告のみ）
+            this.silenceFallbackDone = true;
             this.notify(
                 '音声が検出できません',
                 `${fromLabel}が無音のため、次の監視先へ自動で切り替えます`,
@@ -1329,7 +1338,18 @@ class VoiceTranslateApp {
         try {
             await target.setSinkId(deviceId);
         } catch (err) {
-            // setSinkId 失敗（未対応/権限/デバイス消失）は致命的でない。既定出力にフォールバック。
+            // setSinkId 失敗（未対応/権限/デバイス消失）は一時的な事象であり得るため、
+            // outputDeviceId は保持する（次回の再生で自動的に再試行される）。
+            // ここで永続状態を書き換えると、一度の失敗が回復不能な TTS 常時抑止に固定化してしまう。
+            // このチャンクは既定出力で再生されるだけ（フォールバック済み）。
+            if (!this._sinkFailureNotified) {
+                this._sinkFailureNotified = true; // 再生のたびに呼ばれるため通知は初回のみ
+                this.notify(
+                    '翻訳音声の出力先を固定できません',
+                    '既定出力で再生します。原声分離構成では訳音の回り込みに注意してください。',
+                    'warning'
+                );
+            }
         }
     }
 
@@ -2086,6 +2106,9 @@ class VoiceTranslateApp {
         // （順序が逆だと一覧の再構築で「自動（現在: ...）」表示が消える）。
         await this.populateInputDeviceSelect();
         this.updateDeviceIndicator();
+        // キャプチャ経路が確定したのでプロファイルを最終確定する
+        // （ブラウザのタブ共有は段を持たないため、ここが唯一の確定点になる）
+        this.refreshCaptureProfile();
     }
 
     /**
@@ -2157,8 +2180,8 @@ class VoiceTranslateApp {
         const isVirtual = /CABLE|VB-Audio|VoiceMeeter|Virtual|仮想/i.test(label || '');
         const config = isVirtual
             ? {
-                  sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-                  // デジタル経路のクリーン音源にはマイク向け処理を掛けない
+                  // ネイティブレートで採集し、送信直前の resampleMicTo24k で一度だけ24kへ変換する
+                  // （固定するとネイティブレートAudioContextとの間で二重リサンプルが発生する）
                   echoCancellation: false,
                   noiseSuppression: false,
                   autoGainControl: false
@@ -2204,8 +2227,7 @@ class VoiceTranslateApp {
         const strategy = AudioCaptureStrategyFactory.createStrategy({
             sourceType: 'system',
             config: {
-                sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-                // デジタル経路のクリーン音源にはマイク向け処理を掛けない
+                // ネイティブレートで採集し、送信直前の resampleMicTo24k で一度だけ24kへ変換する
                 echoCancellation: false,
                 noiseSuppression: false,
                 autoGainControl: false
@@ -2231,18 +2253,55 @@ class VoiceTranslateApp {
      */
     setCaptureFallbackStage(stage) {
         this._captureFallbackStage = stage;
-        const suppress = stage === 'loopback';
+        // 実効デバイスが変わったので、プロファイル（duplex/VADプリセット/TTS方針）を追随させる
+        this.refreshCaptureProfile();
+    }
+
+    /**
+     * キャプチャプロファイルを現在の状態から再導出し、依存する方針を追随させる。
+     *
+     * 判定の単一集約点（voicetranslate-capture-profile.js の決定表）。呼出点:
+     *   - setCaptureFallbackStage（実効デバイス段の変更）
+     *   - routeAudioCapture（キャプチャ経路の確定後）
+     *   - applyOutputSink 失敗時（出力隔離の前提が崩れた時）
+     *   - 音声ソースタイプ変更時
+     *
+     * 追随させる方針:
+     *   - VADプリセット（実効デバイス基準。system→マイク降格時は MICROPHONE を適用）
+     *   - TTS抑止（回灌の出力側遮断）。ユーザーの audioOutputMode 設定（localStorage）は
+     *     書き換えない＝プロファイルが変われば自動復帰する。
+     *
+     * @returns {Readonly<Object>} 構築済みプロファイル
+     */
+    refreshCaptureProfile() {
+        this.captureProfile = buildCaptureProfile({
+            isElectron: this.platform.isElectron,
+            audioSourceType: this.state.audioSourceType,
+            fallbackStage: this._captureFallbackStage || null,
+            outputIsolated: this.state.outputDeviceId != null && this.state.outputDeviceId !== '',
+            // 同時通訳セッションの物理マイクは全二重（半二重は致命的な文落ちになる）
+            realtimeSession: this.isRealtimeTranslationSession()
+        });
+
+        // VADプリセットを実効デバイス基準で追随（感度レベルはUIの現在値を維持）
+        if (this.vad && this.elements?.vadSensitivity?.value) {
+            this.updateVADSensitivity(this.elements.vadSensitivity.value);
+        }
+
+        // TTS抑止（回灌防止）をプロファイルに追随。入力は落とさず出力側で断つ。
+        const suppress = this.captureProfile.ttsPolicy === 'suppress';
         if (suppress !== Boolean(this._ttsSuppressedByLoopback)) {
             this._ttsSuppressedByLoopback = suppress;
             this.applyAudioOutputMode();
             if (suppress) {
                 this.notify(
                     '翻訳音声を一時ミュート',
-                    'ループバック監視中は翻訳音声が再取り込みされ認識が乱れるため、字幕のみで運用します',
+                    '翻訳音声が監視入力へ再取り込みされ認識が乱れるのを防ぐため、字幕のみで運用します',
                     'warning'
                 );
             }
         }
+        return this.captureProfile;
     }
 
     /**
@@ -2304,7 +2363,7 @@ class VoiceTranslateApp {
         }
 
         const config = {
-            sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+            // ネイティブレートで採集し、送信直前の resampleMicTo24k で一度だけ24kへ変換する
             // 仮想カードの原声はそのまま取り込む（エコー除去等は無効）
             echoCancellation: false,
             noiseSuppression: false,
@@ -2469,7 +2528,7 @@ class VoiceTranslateApp {
             sourceLabel.toLowerCase().includes('edge');
 
         const config = {
-            sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+            // ネイティブレートで採集し、送信直前の resampleMicTo24k で一度だけ24kへ変換する
             // ★システム/タブ音声はデジタルのクリーン音源。マイク用の AEC/NS/AGC をかけると
             //   歪み・減衰で認識が劣化する（タブ捕獲に echoCancellation を当てる典型アンチパターン）。
             //   生音のまま STT へ渡す＝監視モードの認識強化。マイク採集(別経路)には影響しない。
@@ -2505,203 +2564,6 @@ class VoiceTranslateApp {
         }
 
         this.notify('キャプチャ開始', 'システム音声のキャプチャを開始しました', 'success');
-    }
-
-    async startElectronSystemAudioCapture() {
-        const systemAudioSource = document.getElementById('systemAudioSource');
-        let sourceId = systemAudioSource.value;
-
-        // 音声ソースが未選択の場合、自動検出を試みる
-        if (!sourceId) {
-            this.notify('自動検出', '音声ソースを自動検出しています...', 'info');
-
-            try {
-                await this.detectAudioSources();
-
-                // 検出後、最初のソースを自動選択
-                sourceId = systemAudioSource.value;
-
-                if (!sourceId) {
-                    throw new Error(
-                        '音声ソースが見つかりませんでした。Teams、Zoom、Chrome等の会議アプリやブラウザを起動してから再度お試しください。'
-                    );
-                }
-
-                this.notify('自動選択', '音声ソースを自動選択しました', 'success');
-            } catch (error) {
-                const errorMessage = this.extractErrorMessage(error);
-                throw new Error(
-                    '音声ソースの自動検出に失敗しました。「会議アプリを検出」ボタンをクリックして、手動で選択してください。'
-                );
-            }
-        }
-
-        try {
-            // Electron環境では audio + video で画面キャプチャし、
-            // その後音声トラックを取得する
-            const constraints = {
-                audio: {
-                    mandatory: {
-                        chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: sourceId
-                    }
-                },
-                video: {
-                    mandatory: {
-                        chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: sourceId
-                    }
-                }
-            };
-
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-            // 音声トラックを取得
-            const audioTracks = stream.getAudioTracks();
-            const videoTracks = stream.getVideoTracks();
-
-            // ✅ デバッグログ追加：各音声トラックの詳細
-            audioTracks.forEach((track, index) => {});
-
-            // 重要: 音声トラックがなくても続行する
-            // 理由: 会議アプリでは、誰も話していない時は音声トラックがない場合がある
-            //       音声が開始されると、ストリームに音声トラックが追加される
-
-            if (audioTracks.length === 0) {
-                // ストリーム全体を保存（音声トラックが後で追加される可能性がある）
-                this.state.mediaStream = stream;
-
-                // 音声トラックが追加されたときのリスナーを設定
-                stream.addEventListener('addtrack', (event) => {
-                    if (event.track.kind === 'audio') {
-                        this.notify(
-                            '音声検出',
-                            '音声が検出されました。録音を開始します。',
-                            'success'
-                        );
-                    }
-                });
-
-                this.notify(
-                    '待機中',
-                    '音声トラックを待機しています。会議で誰かが話し始めると録音が開始されます。',
-                    'info'
-                );
-            } else {
-                // 音声トラックがある場合
-                this.state.mediaStream = stream;
-
-                // 重要な通知: ブラウザの音声をミュートするよう指示
-                this.notify(
-                    '重要',
-                    'ブラウザのタブをミュートしてください！翻訳音声のみを聞くために、元の音声をミュートする必要があります。',
-                    'warning'
-                );
-            }
-
-            // ビデオトラックは不要なので停止
-            videoTracks.forEach((track) => track.stop());
-        } catch (error) {
-            const errorMessage = this.extractErrorMessage(error);
-            throw new Error(`システム音声のキャプチャに失敗しました: ${errorMessage}`);
-        }
-    }
-
-    /**
-     * ブラウザシステム音声キャプチャ時の音声トラック終了処理
-     *
-     * 目的:
-     *   画面共有の音声トラックが停止した時の処理を実行
-     *
-     * Returns:
-     *   void
-     *
-     * 注意:
-     *   このメソッドはイベントリスナーから呼び出される
-     */
-    async handleBrowserAudioTrackEnded() {
-        this.notify('エラー', '画面共有の音声キャプチャが停止しました', 'error');
-        try {
-            await this.stopRecording();
-        } catch (error) {
-            // キャプチャ停止は上で通知済み。停止処理の例外はここでは無視
-        }
-    }
-
-    /**
-     * ブラウザシステム音声キャプチャ時の音声トラック監視設定
-     *
-     * 目的:
-     *   画面共有から取得した音声トラックにイベントリスナーを設定
-     *
-     * Parameters:
-     *   audioTrack - MediaStreamAudioTrack オブジェクト
-     *
-     * Returns:
-     *   void
-     *
-     * 注意:
-     *   トラックが存在する場合のみ処理を実行
-     */
-    setupBrowserAudioTrackListener(audioTrack) {
-        if (!audioTrack) {
-            return;
-        }
-
-        audioTrack.addEventListener('ended', async () => {
-            try {
-                await this.handleBrowserAudioTrackEnded();
-            } catch (error) {
-                // ハンドラ内で通知済みのため無視
-            }
-        });
-    }
-
-    async startBrowserSystemAudioCapture() {
-        try {
-            let stream;
-
-            // ✅ 既に選択されたストリームがある場合はそれを使用
-            if (this.state.selectedDisplayMediaStream) {
-                stream = this.state.selectedDisplayMediaStream;
-
-                // 使用後はクリア（次回は再選択が必要）
-                this.state.selectedDisplayMediaStream = null;
-            } else {
-                // ✅ 選択されていない場合は新規に選択ダイアログを表示
-
-                const constraints = {
-                    audio: {
-                        channelCount: 1,
-                        sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false
-                    },
-                    video: true // 互換性のためtrueに設定（後でビデオトラックを停止）
-                };
-
-                stream = await navigator.mediaDevices.getDisplayMedia(constraints);
-
-                // ビデオトラックを停止（音声のみ使用）
-                const videoTracks = stream.getVideoTracks();
-                videoTracks.forEach((track) => {
-                    track.stop();
-                });
-            }
-
-            this.state.mediaStream = stream;
-
-            // 音声トラックの監視
-            const audioTrack = stream.getAudioTracks()[0];
-            this.setupBrowserAudioTrackListener(audioTrack);
-
-            this.notify('キャプチャ開始', 'システム音声のキャプチャを開始しました', 'success');
-        } catch (error) {
-            throw new Error(
-                'システム音声のキャプチャに失敗しました。ブラウザタブまたはウィンドウを選択してください。'
-            );
-        }
     }
 
     /**
@@ -2748,127 +2610,6 @@ class VoiceTranslateApp {
             } catch (error) {
                 // ハンドラ内で通知済みのため無視
             }
-        });
-    }
-
-    /**
-     * tabCapture成功時のコールバック処理
-     *
-     * 目的:
-     *   tabCaptureで取得したストリームを処理
-     *
-     * Parameters:
-     *   stream - MediaStream オブジェクト
-     *   resolve - Promise resolve関数
-     *   reject - Promise reject関数
-     * Returns:
-     *   void
-     *
-     * 注意:
-     *   ネストを減らすため別メソッドに抽出
-     */
-    handleTabCaptureSuccess(stream, resolve, reject) {
-        if (chrome.runtime.lastError) {
-            // エラーメッセージを安全に抽出
-            let errorMsg = '';
-            if (chrome.runtime.lastError.message) {
-                errorMsg = chrome.runtime.lastError.message;
-            } else if (typeof chrome.runtime.lastError === 'string') {
-                errorMsg = chrome.runtime.lastError;
-            } else {
-                errorMsg = JSON.stringify(chrome.runtime.lastError);
-            }
-
-            // Chrome内部ページのエラーを検出
-            if (
-                errorMsg.includes('Chrome pages cannot be captured') ||
-                errorMsg.includes('Extension has not been invoked')
-            ) {
-                reject(
-                    new Error(
-                        'Chrome内部ページ（chrome://）では音声キャプチャできません。\n' +
-                            '通常のウェブページ（YouTube、Google Meetなど）で使用するか、\n' +
-                            '音声ソースを「マイク」または「画面/ウィンドウを選択」に変更してください。'
-                    )
-                );
-            } else {
-                reject(new Error(errorMsg));
-            }
-            return;
-        }
-
-        if (!stream) {
-            reject(new Error('ストリームの取得に失敗しました'));
-            return;
-        }
-
-        this.state.mediaStream = stream;
-
-        // ストリームが停止した時の処理を追加
-        const audioTrack = stream.getAudioTracks()[0];
-        this.setupAudioTrackListener(audioTrack);
-
-        this.notify('キャプチャ開始', '現在のタブの音声キャプチャを開始しました', 'success');
-        resolve();
-    }
-
-    /**
-     * Chrome拡張のtabCaptureを使用して現在のタブの音声をキャプチャ
-     *
-     * 目的:
-     *   ブラウザ拡張環境で現在のタブの音声を直接キャプチャ
-     *
-     * Returns:
-     *   Promise<void>
-     *
-     * Throws:
-     *   Error - キャプチャ失敗時
-     *
-     * 注意:
-     *   manifest.jsonにtabCapture権限が必要
-     */
-    async startTabAudioCapture() {
-        return new Promise((resolve, reject) => {
-            // 現在のタブを取得
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (!tabs || tabs.length === 0) {
-                    reject(new Error('アクティブなタブが見つかりません'));
-                    return;
-                }
-
-                const tab = tabs[0];
-                const tabId = tab.id;
-                const tabUrl = tab.url || '';
-
-                // Chrome内部ページのチェック
-                if (
-                    tabUrl.startsWith('chrome://') ||
-                    tabUrl.startsWith('chrome-extension://') ||
-                    tabUrl.startsWith('edge://') ||
-                    tabUrl.startsWith('about:')
-                ) {
-                    reject(
-                        new Error(
-                            'Chrome内部ページでは音声キャプチャできません。\n\n' +
-                                '解決方法:\n' +
-                                '1. 通常のウェブページ（YouTube、Google Meetなど）を開く\n' +
-                                '2. 音声ソースを「マイク」に変更する\n' +
-                                '3. 音声ソースを「画面/ウィンドウを選択」に変更する'
-                        )
-                    );
-                    return;
-                }
-
-                // タブの音声をキャプチャ
-                const constraints = {
-                    audio: true,
-                    video: false
-                };
-
-                chrome.tabCapture.capture(constraints, (stream) => {
-                    this.handleTabCaptureSuccess(stream, resolve, reject);
-                });
-            });
         });
     }
 
@@ -3711,17 +3452,20 @@ class VoiceTranslateApp {
     }
 
     updateVADSensitivity(level) {
-        // 音声ソースタイプに応じて適切なVAD設定を選択
-        // マイクモード: 静かな環境（個人会議、少人数会議）
-        // システム音声モード: 騒がしい環境（ブラウザ音声、会議、音楽）
-        const sourceType = this.state.audioSourceType === 'microphone' ? 'MICROPHONE' : 'SYSTEM';
+        // 実効デバイス（フォールバック段を含む）に応じたVADプリセットを選ぶ。
+        // audioSourceType 直読みだと、system→マイクへのフォールバック時に
+        // 高いSYSTEMしきい値を静かな物理マイクへ適用し発話を取りこぼす。
+        // プロファイル未構築時（設定復元など録音前）のみ選択値から補完する。
+        const sourceType =
+            this.captureProfile?.vadPreset ??
+            (this.state.audioSourceType === 'microphone' ? 'MICROPHONE' : 'SYSTEM');
         const settings = CONFIG.VAD[sourceType]?.[level.toUpperCase()];
 
         if (settings && this.vad) {
             this.vad.threshold = settings.threshold;
-            this.vad.adaptiveThreshold = settings.threshold; // 🔧 修正: adaptiveThresholdも更新
-            this.vad.debounceTime = settings.debounce;
-        } else {
+            // 実働VADクラスのフィールド名は debounce（旧 debounceTime/adaptiveThreshold への
+            // 書込は存在しないフィールドで一度も効いていなかった）
+            this.vad.debounce = settings.debounce;
         }
     }
 
