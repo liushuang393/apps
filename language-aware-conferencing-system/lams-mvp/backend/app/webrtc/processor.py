@@ -47,8 +47,8 @@ _ERROR_PREFIXES = (
 
 # 注入可能な言語検出関数（wav, hint）→（認識テキスト, 検出言語）。
 DetectFn = Callable[[bytes, str], Awaitable[tuple[str, str]]]
-# user_language（user_id→目標言語）から OutputSink を構築するファクトリ。
-SinkFactory = Callable[[dict[str, str]], OutputSink]
+# user_language（user_id→目標言語）と話者 ID から OutputSink を構築するファクトリ。
+SinkFactory = Callable[[dict[str, str], str], OutputSink]
 
 
 class SegmentProcessor:
@@ -77,7 +77,11 @@ class SegmentProcessor:
             return False
         if normalized.startswith(_ERROR_PREFIXES):
             return True
-        return normalized.startswith("[") and normalized.endswith("]") and "エラー" in normalized
+        return (
+            normalized.startswith("[")
+            and normalized.endswith("]")
+            and "エラー" in normalized
+        )
 
     async def _detect(self, wav: bytes, hint: str) -> tuple[str, str]:
         """言語検出（既定は ai_pipeline.detect_language を遅延束縛）。"""
@@ -132,7 +136,7 @@ class SegmentProcessor:
         seq = self._sequencer.next_seq(room_id)
 
         listeners, user_language = build_listeners(participants, speaker_id)
-        sink = sink_factory(user_language)
+        sink = sink_factory(user_language, speaker_id)
         subtitle_id = generate_subtitle_id()
         await subtitle_cache.store_original(subtitle_id, original_text, detected_lang)
 

@@ -188,7 +188,8 @@ class GoogleProvider(AIProvider):
             return text, detected
         except Exception as e:
             logger.error(f"[Google] ASRエラー: {e}", exc_info=True)
-            return f"[ASRエラー: {type(e).__name__}]", language
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return "", language
 
     async def transcribe_audio(self, audio_data: bytes, language: str) -> str:
         """Chirp 3 で音声認識（テキストのみ返す）"""
@@ -285,16 +286,22 @@ class GoogleProvider(AIProvider):
         return await self._translate_text(text, source_language, target_language)
 
     async def translate_audio(
-        self, audio_data: bytes, source_language: str, target_language: str
+        self,
+        audio_data: bytes,
+        source_language: str,
+        target_language: str,
+        original_text: str | None = None,
     ) -> TranslationResult:
         """
         Mode B 音声翻訳（Chirp 3 ASR → Cloud Translation）。
 
         Mode B は字幕が主役のため audio_data は付与しない（S2S は Mode A の責務）。
-        同一言語時は ASR のみ。
+        同一言語時は ASR のみ。original_text（上流で ASR 済みの原文）があれば
+        再 ASR をスキップする（欠陥 #1）。
         """
         if source_language == target_language:
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            if original_text is None:
+                original_text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
@@ -302,12 +309,13 @@ class GoogleProvider(AIProvider):
                 translated_text=original_text,
                 audio_data=None,
             )
-        original_text = await self.transcribe_audio(audio_data, source_language)
-        if not original_text or original_text.startswith("["):
+        if original_text is None:
+            original_text = await self.transcribe_audio(audio_data, source_language)
+        if not original_text:
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text=original_text or "",
+                original_text="",
                 translated_text="",
                 audio_data=None,
             )
@@ -315,10 +323,11 @@ class GoogleProvider(AIProvider):
             original_text, source_language, target_language
         )
         logger.info(f"[Google] 翻訳完了: '{original_text}' -> '{translated_text}'")
+        # 失敗 = 空文字列の契約（欠陥 #8）。翻訳失敗時もセンチネルを返さない。
         return TranslationResult(
             source_language=source_language,
             target_language=target_language,
             original_text=original_text,
-            translated_text=translated_text or "[翻訳失敗]",
+            translated_text=translated_text or "",
             audio_data=None,
         )

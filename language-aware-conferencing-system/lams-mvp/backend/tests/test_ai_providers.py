@@ -15,6 +15,8 @@ import os
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from app.ai_pipeline.providers.base import TranslationResult
 from app.ai_pipeline.providers.gemini_live import (
     GeminiLiveProvider,
@@ -330,6 +332,243 @@ def test_transcribe_with_detection() -> None:
     text, lang = asyncio.run(provider.transcribe_with_detection(MIN_VALID_AUDIO, "ja"))
     assert text == "テスト発話です"
     assert lang == "ja"
+
+
+# ------------------------------------------------------------
+# 失敗 = 空文字列プロトコル（欠陥 #8: センチネル文字列の全廃）
+# ------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_transcribe_error_returns_empty(monkeypatch):
+    """ASR 例外時はセンチネル文字列ではなく空文字列を返す（欠陥 #8）。"""
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    provider._client = None
+
+    async def boom():
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(provider, "_get_client", boom)
+    text = await provider.transcribe_audio(b"\x00" * 9000, "ja")
+    assert text == ""
+
+
+@pytest.mark.asyncio
+async def test_detection_uses_whisper_model(monkeypatch):
+    """言語検出は verbose_json 対応の whisper-1 を使う（欠陥 #7）。"""
+    from types import SimpleNamespace
+
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "language_detection_mode", "auto")
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    seen: dict = {}
+
+    class FakeTranscriptions:
+        async def create(self, **kwargs):
+            seen.update(kwargs)
+            return SimpleNamespace(text="hello", language="english")
+
+    class FakeClient:
+        audio = SimpleNamespace(transcriptions=FakeTranscriptions())
+
+    async def get_client():
+        return FakeClient()
+
+    provider._client = None
+    monkeypatch.setattr(provider, "_get_client", get_client)
+
+    text, lang = await provider.transcribe_with_detection(b"\x00" * 9000, "multi")
+    assert seen["model"] == settings.openai_detect_model == "whisper-1"
+    assert text == "hello"
+    assert lang == "en"
+
+
+@pytest.mark.asyncio
+async def test_detection_failure_no_ja_hardcode(monkeypatch):
+    """検出失敗 + hint=multi のとき 'ja' を捏造しない（欠陥 #7）。"""
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "language_detection_mode", "auto")
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    provider._client = None
+
+    async def boom():
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(provider, "_get_client", boom)
+    _text, lang = await provider.transcribe_with_detection(b"\x00" * 9000, "multi")
+    assert lang == ""  # processor が話者ヒントへ解決する
+
+
+@pytest.mark.asyncio
+async def test_translate_audio_error_returns_empty_result(monkeypatch):
+    """translate_audio 例外時は両テキスト空の結果を返す（TTS 読み上げ禁止）。"""
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    provider._client = None
+
+    async def boom():
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(provider, "_get_client", boom)
+    result = await provider.translate_audio(b"\x00" * 9000, "ja", "en")
+    assert result.original_text == ""
+    assert result.translated_text == ""
+    assert result.audio_data is None
+
+
+@pytest.mark.asyncio
+async def test_process_audio_no_cache():
+    """同一音声でも毎回プロバイダーを呼ぶ（音声ハッシュキャッシュ廃止、欠陥 #4）。"""
+    from app.ai_pipeline.pipeline import AIPipeline
+    from app.ai_pipeline.providers.base import TranslationResult
+
+    class FakeProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def translate_audio(
+            self,
+            _audio: bytes,
+            src: str,
+            tgt: str,
+            original_text: str | None = None,  # noqa: ARG002
+        ):
+            self.calls += 1
+            return TranslationResult(src, tgt, "こんにちは", "hello", b"WAVDATA")
+
+        async def transcribe_audio(self, _audio: bytes, _lang: str):
+            return "こんにちは"
+
+    pipeline = AIPipeline.__new__(AIPipeline)
+    from app.ai_pipeline.qos import QoSController
+
+    pipeline._qos = QoSController()
+    fake = FakeProvider()
+    pipeline._provider = fake
+
+    r1 = await pipeline.process_audio(b"\x01" * 100, "ja", "en")
+    r2 = await pipeline.process_audio(b"\x01" * 100, "ja", "en")
+    assert fake.calls == 2  # キャッシュで 2 回目が飛ばされない
+    assert r1.audio_data == b"WAVDATA"
+    assert r2.audio_data == b"WAVDATA"  # 音声がキャッシュヒットで消えない
+
+
+# ------------------------------------------------------------
+# S2S タイムアウトの例外化（欠陥 #4: フォールバック発動）
+# ------------------------------------------------------------
+class _FakeWs:
+    """スクリプト化されたイベントを返す WebSocket スタブ。"""
+
+    def __init__(self, events: list[dict], hang_after: bool = False) -> None:
+        self._events = list(events)
+        self._hang_after = hang_after
+
+    async def recv(self) -> str:
+        import asyncio
+        import json
+
+        if self._events:
+            return json.dumps(self._events.pop(0))
+        if self._hang_after:
+            await asyncio.sleep(10)  # タイムアウトさせる
+        raise AssertionError("イベント枯渇")
+
+
+def _realtime_provider():
+    from app.ai_pipeline.providers.gpt_realtime import GPTRealtimeProvider
+
+    provider = GPTRealtimeProvider.__new__(GPTRealtimeProvider)
+    provider._client = None
+    return provider
+
+
+@pytest.mark.asyncio
+async def test_collect_response_timeout_raises():
+    """応答ゼロのタイムアウトは TimeoutError（フォールバック発動条件、欠陥 #4）。"""
+    provider = _realtime_provider()
+    ws = _FakeWs([], hang_after=True)
+    with pytest.raises(TimeoutError):
+        await provider._collect_response(ws, timeout=0.3)
+
+
+@pytest.mark.asyncio
+async def test_collect_response_happy_path():
+    """delta を蓄積し response.done で完了する。"""
+    import base64
+
+    provider = _realtime_provider()
+    ws = _FakeWs(
+        [
+            {"type": "response.audio.delta",
+             "delta": base64.b64encode(b"\x01\x02").decode()},
+            {"type": "response.audio_transcript.delta", "delta": "Hel"},
+            {"type": "response.audio_transcript.delta", "delta": "lo"},
+            {"type": "response.done"},
+        ]
+    )
+    text, chunks = await provider._collect_response(ws, timeout=5.0)
+    assert text == "Hello"
+    assert chunks == [b"\x01\x02"]
+
+
+def test_session_configs_disable_turn_detection():
+    """手動 commit/response.create 運用のため server_vad を無効化する（欠陥 #5）。"""
+    provider = _realtime_provider()
+
+    asr_cfg = provider._build_transcribe_session_config("ja")
+    assert asr_cfg["type"] == "session.update"
+    assert asr_cfg["session"]["turn_detection"] is None
+    assert asr_cfg["session"]["input_audio_transcription"]["language"] == "ja"
+
+    s2s_cfg = provider._build_translate_session_config("ja", "en")
+    assert s2s_cfg["type"] == "session.update"
+    assert s2s_cfg["session"]["turn_detection"] is None
+    assert "instructions" in s2s_cfg["session"]
+
+
+@pytest.mark.asyncio
+async def test_translate_audio_skips_asr_when_text_given(monkeypatch):
+    """original_text 供給時はカスケード実装が再 ASR しない（欠陥 #1）。"""
+    from app.ai_pipeline.providers.gpt4o_transcribe import GPT4oTranscribeProvider
+
+    provider = GPT4oTranscribeProvider.__new__(GPT4oTranscribeProvider)
+    provider._client = None
+    asr_calls = {"n": 0}
+
+    async def fake_transcribe(_audio, _lang):
+        asr_calls["n"] += 1
+        return "should not be used"
+
+    async def fake_translate(_text, _src, _tgt):
+        return "hello"
+
+    monkeypatch.setattr(provider, "transcribe_audio", fake_transcribe)
+    monkeypatch.setattr(
+        "app.translate.routes.translate_text_simple", fake_translate
+    )
+
+    async def no_client():
+        from types import SimpleNamespace
+
+        class FakeSpeech:
+            async def create(self, **_kwargs):
+                return SimpleNamespace(content=b"RIFFwav")
+
+        return SimpleNamespace(audio=SimpleNamespace(speech=FakeSpeech()))
+
+    monkeypatch.setattr(provider, "_get_client", no_client)
+
+    result = await provider.translate_audio(
+        b"\x00" * 9000, "ja", "en", original_text="こんにちは"
+    )
+    assert asr_calls["n"] == 0
+    assert result.original_text == "こんにちは"
+    assert result.translated_text == "hello"
 
 
 if __name__ == "__main__":

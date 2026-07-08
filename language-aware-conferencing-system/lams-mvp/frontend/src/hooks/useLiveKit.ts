@@ -57,6 +57,8 @@ interface AudioEntry {
   el: HTMLMediaElement;
   isTranslation: boolean;
   lang?: string;
+  /** 翻訳音声の元話者 identity（自分由来のエコー抑止に使う） */
+  speakerId?: string;
 }
 
 /** setSinkId 非対応ブラウザ向けに optional 化したメディア要素型 */
@@ -126,6 +128,29 @@ function buildAttributes(p: MyPref): Record<string, string> {
   };
 }
 
+/**
+ * ブラウザから到達可能な LiveKit URL に補正する。
+ * .env の HOST_IP が古い Docker/LAN IP のままだと localhost から接続できないため。
+ */
+function resolveLiveKitServerUrl(serverUrl: string): string {
+  const pageHost = window.location.hostname;
+  try {
+    const url = new URL(serverUrl);
+    if (pageHost === 'localhost' || pageHost === '127.0.0.1') {
+      url.hostname = '127.0.0.1';
+      return url.toString();
+    }
+    // LAN 経由アクセス時はページのホスト名を優先（HOST_IP ずれ対策）
+    if (/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(pageHost)) {
+      url.hostname = pageHost;
+      return url.toString();
+    }
+  } catch {
+    return serverUrl;
+  }
+  return serverUrl;
+}
+
 /** LiveKit ConnectionState を UI の ConnectionStatus へ写像する */
 function toStatus(state: ConnectionState): ConnectionStatus {
   switch (state) {
@@ -181,12 +206,17 @@ export function useLiveKit(roomId: string | null) {
    */
   const applyAudioRouting = useCallback(() => {
     const pref = myPrefRef.current;
+    const myId = user?.id;
     audioEntriesRef.current.forEach((entry) => {
       entry.el.muted = entry.isTranslation
-        ? !(pref?.audioMode === 'translated' && entry.lang === pref.targetLanguage)
+        ? !(
+            pref?.audioMode === 'translated' &&
+            entry.lang === pref.targetLanguage &&
+            entry.speakerId !== myId // 自分の発話の翻訳は再生しない（エコー抑止）
+          )
         : pref?.audioMode !== 'original';
     });
-  }, []);
+  }, [user?.id]);
 
   const setAudioOutputDevice = useCallback(
     async (deviceId: string | null): Promise<boolean> => {
@@ -278,14 +308,16 @@ export function useLiveKit(roomId: string | null) {
           if (track.kind !== Track.Kind.Audio) return;
           const isTranslation =
             isAgent(p.identity) && pub.trackName.startsWith(TRACK_NAME_PREFIX);
-          const lang = isTranslation
-            ? pub.trackName.slice(TRACK_NAME_PREFIX.length)
-            : undefined;
-          const entry = {
-            el: track.attach(),
-            isTranslation,
-            lang,
-          };
+          let lang: string | undefined;
+          let speakerId: string | undefined;
+          if (isTranslation) {
+            // 形式: translation-{lang}-{speakerId}（旧形式 translation-{lang} も許容）
+            const rest = pub.trackName.slice(TRACK_NAME_PREFIX.length);
+            const sep = rest.indexOf('-');
+            lang = sep === -1 ? rest : rest.slice(0, sep);
+            speakerId = sep === -1 ? undefined : rest.slice(sep + 1);
+          }
+          const entry = { el: track.attach(), isTranslation, lang, speakerId };
           audioEntriesRef.current.set(pub.trackSid, entry);
           void applyOutputDevice(entry, outputDeviceIdRef.current).catch(() => {
             setConnectionError('スピーカー出力先の適用に失敗しました。');
@@ -358,7 +390,8 @@ export function useLiveKit(roomId: string | null) {
           subtitleEnabled: true,
         };
 
-        await room.connect(join.serverUrl, join.token);
+        const liveKitUrl = resolveLiveKitServerUrl(join.serverUrl);
+        await room.connect(liveKitUrl, join.token);
         if (cancelled) {
           void room.disconnect();
           return;

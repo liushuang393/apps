@@ -56,8 +56,8 @@ class OrchestrationResult:
     qos_warnings: list[dict] = field(default_factory=list)
 
 
-# 注入可能な主線実体のシグネチャ
-HearingFn = Callable[[bytes, str, str, str], Awaitable[object]]
+# 注入可能な主線実体のシグネチャ（第5引数 = 検出済み原文。欠陥 #1）
+HearingFn = Callable[[bytes, str, str, str, str | None], Awaitable[object]]
 ReadingFn = Callable[[str, str, str], Awaitable[str]]
 
 
@@ -118,13 +118,17 @@ class HybridOrchestrator:
         if events:
             await asyncio.gather(*events, return_exceptions=True)
 
-    async def _hearing(self, audio: bytes, src: str, tgt: str, speaker: str) -> object:
-        """聞く主線（S2S）。既定は ai_pipeline.process_audio を遅延束縛。"""
+    async def _hearing(
+        self, audio: bytes, src: str, tgt: str, speaker: str, original_text: str | None
+    ) -> object:
+        """聞く主線（S2S/カスケード）。既定は ai_pipeline.process_audio を遅延束縛。"""
         if self._hearing_fn is not None:
-            return await self._hearing_fn(audio, src, tgt, speaker)
+            return await self._hearing_fn(audio, src, tgt, speaker, original_text)
         from app.ai_pipeline.pipeline import ai_pipeline
 
-        return await ai_pipeline.process_audio(audio, src, tgt, speaker)
+        return await ai_pipeline.process_audio(
+            audio, src, tgt, speaker, original_text=original_text
+        )
 
     async def _reading(self, text: str, src: str, tgt: str) -> str:
         """読む主線の MT。既定は translate_text_simple を遅延束縛。"""
@@ -134,73 +138,66 @@ class HybridOrchestrator:
 
         return await translate_text_simple(text, src, tgt)
 
-    async def _converge(
+    def _subtitle_message(
         self,
         *,
-        source_language: str,
-        original_text: str,
-        target_lang: str,
-        members: list[Listener],
-        decision_reason: str,
-        s2s_provider: str | None,
-        audio_data: bytes | None,
-        hearing_text: str,
-        reading_text: str,
-        sink: OutputSink,
         subtitle_id: str,
         seq: int,
         speaker_id: str,
-        result: OrchestrationResult,
+        original_text: str,
+        source_language: str,
+        target_lang: str,
+        subtitle_text: str,
+        mainline: str,
+        s2s_provider: str | None,
+    ) -> dict:
+        """字幕 data channel ペイロードを組み立てる（純ロジック）。"""
+        return {
+            "type": "subtitle",
+            "id": subtitle_id,
+            "seq": seq,
+            "speaker_id": speaker_id,
+            "original_text": original_text,
+            "source_language": source_language,
+            "translated_text": (
+                subtitle_text if target_lang != source_language else None
+            ),
+            "target_language": target_lang,
+            "is_translated": bool(target_lang != source_language and subtitle_text),
+            "is_final": True,
+            "mainline": mainline,
+            "provider": s2s_provider if mainline == "hearing" else "asr_mt",
+        }
+
+    async def _deliver_subtitle_group(
+        self, sink: OutputSink, members: list[Listener], message: dict
     ) -> None:
-        """Output Manager 収束: 2 主線出力を混ぜずに配信し、記録を集約する。"""
-        # 字幕は読む主線を権威とし、無ければ聞く主線 delta で代替（§9 縮退）。
-        subtitle_text = reading_text or hearing_text
-        subtitle_mainline = "reading" if reading_text else "hearing"
-
-        deliveries: list[Awaitable] = []
-        for ls in members:
-            # 聞く主線: 翻訳音声（話者自身には返さない＝エコー防止）。
-            if audio_data and ls.wants_audio and ls.user_id != speaker_id:
-                deliveries.append(sink.deliver_audio(ls.user_id, audio_data))
-            # 読む主線: 字幕（有効者のみ）。主線 provider をタグ付けして配信。
-            if subtitle_text and ls.subtitle_enabled:
-                message = {
-                    "type": "subtitle",
-                    "id": subtitle_id,
-                    "seq": seq,
-                    "speaker_id": speaker_id,
-                    "original_text": original_text,
-                    "source_language": source_language,
-                    "translated_text": (
-                        subtitle_text if target_lang != source_language else None
-                    ),
-                    "target_language": target_lang,
-                    "is_translated": bool(
-                        target_lang != source_language and subtitle_text
-                    ),
-                    "is_final": True,
-                    "mainline": subtitle_mainline,
-                    "provider": s2s_provider
-                    if subtitle_mainline == "hearing"
-                    else "asr_mt",
-                }
-                deliveries.append(sink.deliver_subtitle(ls.user_id, message))
-
+        """字幕を購読者へ配信する（読む主線の収束）。"""
+        deliveries = [
+            sink.deliver_subtitle(ls.user_id, message)
+            for ls in members
+            if ls.subtitle_enabled
+        ]
         if deliveries:
             await asyncio.gather(*deliveries, return_exceptions=True)
 
-        # 記録（DB 永続化用）と QoS/ログ用タグを集約。
-        if subtitle_text:
-            result.translations[target_lang] = subtitle_text
-        result.tags.append(
-            {
-                "target_language": target_lang,
-                "reason": decision_reason,
-                "hearing_audio": bool(audio_data),
-                "subtitle_mainline": subtitle_mainline if subtitle_text else None,
-                "s2s_provider": s2s_provider,
-            }
-        )
+    async def _deliver_audio_group(
+        self,
+        sink: OutputSink,
+        members: list[Listener],
+        audio_data: bytes | None,
+        speaker_id: str,
+    ) -> None:
+        """翻訳音声を購読者へ配信する（聞く主線の収束。話者自身は除外）。"""
+        if not audio_data:
+            return
+        deliveries = [
+            sink.deliver_audio(ls.user_id, audio_data)
+            for ls in members
+            if ls.wants_audio and ls.user_id != speaker_id
+        ]
+        if deliveries:
+            await asyncio.gather(*deliveries, return_exceptions=True)
 
     async def orchestrate(
         self,
@@ -225,6 +222,11 @@ class HybridOrchestrator:
         for ls in listeners:
             groups.setdefault(ls.target_language, []).append(ls)
 
+        # §9 実配線: hearing P95 超過中は聞く主線を止め、字幕へ縮退させる（欠陥 #9）
+        s2s_available = True
+        if self._monitor is not None:
+            s2s_available = not self._monitor.hearing_degraded()
+
         async def run_group(target_lang: str, members: list[Listener]) -> None:
             ctx = RouteContext(
                 mode=mode,
@@ -232,6 +234,7 @@ class HybridOrchestrator:
                 target_language=target_lang,
                 enable_openai_s2s=enable_openai_s2s,
                 language_routes=language_routes or {},
+                s2s_available=s2s_available,
             )
             decision = self._router.decide(ctx)
 
@@ -247,7 +250,11 @@ class HybridOrchestrator:
                     self._run_timed(
                         "hearing",
                         self._hearing(
-                            audio_bytes, source_language, target_lang, speaker_id
+                            audio_bytes,
+                            source_language,
+                            target_lang,
+                            speaker_id,
+                            original_text,
                         ),
                     )
                 )
@@ -258,22 +265,46 @@ class HybridOrchestrator:
                         self._reading(original_text, source_language, target_lang),
                     )
                 )
-            for name, task in tasks.items():
+            # --- 読む主線を先に収束（字幕は hearing を待たない。欠陥 #10） ---
+            subtitle_sent = False
+            if "reading" in tasks:
                 try:
-                    out = await task
+                    reading_text = (await tasks["reading"]) or ""
                 except Exception as e:  # noqa: BLE001
                     logger.warning(
-                        "[Hybrid] %s 主線エラー(%s): %s", name, target_lang, e
+                        "[Hybrid] reading 主線エラー(%s): %s", target_lang, e
                     )
-                    continue
-                if name == "hearing":
+                if reading_text:
+                    await self._deliver_subtitle_group(
+                        sink,
+                        members,
+                        self._subtitle_message(
+                            subtitle_id=subtitle_id,
+                            seq=seq,
+                            speaker_id=speaker_id,
+                            original_text=original_text,
+                            source_language=source_language,
+                            target_lang=target_lang,
+                            subtitle_text=reading_text,
+                            mainline="reading",
+                            s2s_provider=decision.s2s_provider,
+                        ),
+                    )
+                    subtitle_sent = True
+
+            # --- 聞く主線の収束（翻訳音声） ---
+            if "hearing" in tasks:
+                try:
+                    out = await tasks["hearing"]
                     audio_data = getattr(out, "audio_data", None)
                     hearing_text = getattr(out, "translated_text", "") or ""
-                else:
-                    reading_text = out or ""
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "[Hybrid] hearing 主線エラー(%s): %s", target_lang, e
+                    )
+                await self._deliver_audio_group(sink, members, audio_data, speaker_id)
 
-            # --- ランタイム縮退（§10）: 聞く主線が失敗（出力なし）し、読む主線が
-            #     未駆動なら、字幕の可聴性確保のため読む主線へ縮退する ---
+            # --- ランタイム縮退（§10）: 聞く主線が失敗し読む主線が未駆動 ---
             hearing_failed = "hearing" in tasks and not audio_data and not hearing_text
             if (
                 decision.needs_translation
@@ -296,21 +327,41 @@ class HybridOrchestrator:
             if not decision.needs_translation:
                 reading_text = original_text
 
-            await self._converge(
-                source_language=source_language,
-                original_text=original_text,
-                target_lang=target_lang,
-                members=members,
-                decision_reason=reason,
-                s2s_provider=decision.s2s_provider,
-                audio_data=audio_data,
-                hearing_text=hearing_text,
-                reading_text=reading_text,
-                sink=sink,
-                subtitle_id=subtitle_id,
-                seq=seq,
-                speaker_id=speaker_id,
-                result=result,
+            # --- 未送の字幕を収束（hearing delta 代替 / 縮退 / 同一言語） ---
+            subtitle_text = reading_text or hearing_text
+            if not subtitle_sent and subtitle_text:
+                mainline = "reading" if reading_text else "hearing"
+                await self._deliver_subtitle_group(
+                    sink,
+                    members,
+                    self._subtitle_message(
+                        subtitle_id=subtitle_id,
+                        seq=seq,
+                        speaker_id=speaker_id,
+                        original_text=original_text,
+                        source_language=source_language,
+                        target_lang=target_lang,
+                        subtitle_text=subtitle_text,
+                        mainline=mainline,
+                        s2s_provider=decision.s2s_provider,
+                    ),
+                )
+
+            # --- 記録（DB 永続化用）と QoS/ログ用タグを集約 ---
+            if subtitle_text:
+                result.translations[target_lang] = subtitle_text
+            result.tags.append(
+                {
+                    "target_language": target_lang,
+                    "reason": reason,
+                    "hearing_audio": bool(audio_data),
+                    "subtitle_mainline": (
+                        ("reading" if reading_text else "hearing")
+                        if subtitle_text
+                        else None
+                    ),
+                    "s2s_provider": decision.s2s_provider,
+                }
             )
 
         await asyncio.gather(*(run_group(t, m) for t, m in groups.items()))

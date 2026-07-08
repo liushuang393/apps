@@ -191,6 +191,7 @@ class AIProvider(ABC):
         audio_data: bytes,
         source_language: str,
         target_language: str,
+        original_text: str | None = None,
     ) -> TranslationResult:
         """
         音声を翻訳
@@ -199,6 +200,8 @@ class AIProvider(ABC):
             audio_data: 入力音声データ（WAV形式）
             source_language: 元言語コード（ja, en, zh, vi）
             target_language: 翻訳先言語コード
+            original_text: 上流で ASR 済みの原文（あればカスケード実装は
+                再 ASR をスキップする。S2S 実装は無視してよい。欠陥 #1）
 
         Returns:
             翻訳結果（テキスト + 音声）

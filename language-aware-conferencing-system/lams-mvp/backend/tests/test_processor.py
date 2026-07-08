@@ -74,7 +74,7 @@ def _make(
 def _sink_factory(captured: list):
     """user_language を記録するだけの sink_factory を返す。"""
 
-    def factory(user_language: dict[str, str]) -> object:
+    def factory(user_language: dict[str, str], _speaker_id: str) -> object:
         captured.append(user_language)
         return object()
 

@@ -113,3 +113,24 @@ def test_chunk16_rejects_nonpositive_frame() -> None:
     """非正のフレーム長は ValueError。"""
     with pytest.raises(ValueError):
         chunk16(_pcm([1, 2]), 0)
+
+
+def test_parse_wav16_roundtrip():
+    """wrap_wav16 の出力から PCM とサンプルレートを復元できる。"""
+    from app.audio.pcm import parse_wav16, wrap_wav16
+
+    pcm = b"\x01\x02" * 100
+    wav = wrap_wav16(pcm, 16000)
+    out_pcm, rate = parse_wav16(wav)
+    assert out_pcm == pcm
+    assert rate == 16000
+
+
+def test_parse_wav16_raw_pcm_fallback():
+    """RIFF ヘッダなしのバイト列は生 PCM とみなし fallback_rate を返す。"""
+    from app.audio.pcm import parse_wav16
+
+    raw = b"\x05\x06" * 50
+    out_pcm, rate = parse_wav16(raw, fallback_rate=24000)
+    assert out_pcm == raw
+    assert rate == 24000

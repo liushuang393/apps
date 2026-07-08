@@ -4,20 +4,15 @@ LAMS AI処理パイプライン
 
 設計方針:
 - 並列処理で遅延最小化
-- キャッシュで重複処理回避
 - QoSで品質監視
 """
 
 import asyncio
-import hashlib
 import logging
 from dataclasses import dataclass
 
-import redis.asyncio as aioredis
-
 from app.ai_pipeline.providers import get_ai_provider
 from app.ai_pipeline.qos import QoSController, QoSMetrics
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,41 +38,12 @@ class AIPipeline:
     - 音声認識（ASR）
     - テキスト翻訳
     - 音声合成（TTS）※オプション
-    - 結果キャッシュ
     - QoS監視
     """
 
     def __init__(self) -> None:
         self._qos = QoSController()
         self._provider = get_ai_provider()
-        self._redis: aioredis.Redis | None = None
-        self._cache_ttl = 3600  # 1時間
-
-    async def _get_redis(self) -> aioredis.Redis:
-        """Redis接続取得"""
-        if self._redis is None:
-            self._redis = aioredis.from_url(settings.redis_url, decode_responses=True)
-        return self._redis
-
-    def _cache_key(self, audio_hash: str, src: str, tgt: str) -> str:
-        """キャッシュキー生成"""
-        return f"translate:{src}:{tgt}:{audio_hash}"
-
-    async def _get_cached(self, cache_key: str) -> str | None:
-        """キャッシュから取得"""
-        try:
-            r = await self._get_redis()
-            return await r.get(cache_key)
-        except Exception:
-            return None
-
-    async def _set_cached(self, cache_key: str, value: str) -> None:
-        """キャッシュに保存"""
-        try:
-            r = await self._get_redis()
-            await r.setex(cache_key, self._cache_ttl, value)
-        except Exception as e:
-            logger.warning(f"キャッシュ保存エラー: {e}")
 
     async def detect_language(
         self,
@@ -102,6 +68,7 @@ class AIPipeline:
         source_language: str,
         target_language: str,
         speaker_id: str = "unknown",
+        original_text: str | None = None,
     ) -> ProcessedAudio:
         """
         音声を処理（翻訳）
@@ -111,6 +78,7 @@ class AIPipeline:
             source_language: 話者の言語
             target_language: 翻訳先言語
             speaker_id: 話者ID
+            original_text: 上流で ASR 済みの原文（あれば再 ASR をスキップ。欠陥 #1）
 
         Returns:
             処理済み音声データ
@@ -119,7 +87,9 @@ class AIPipeline:
 
         # 同じ言語の場合は翻訳不要
         if source_language == target_language:
-            result = await self._provider.transcribe_audio(audio_data, source_language)
+            result = original_text or await self._provider.transcribe_audio(
+                audio_data, source_language
+            )
             metrics = self._qos.end_measurement(metrics)
             return ProcessedAudio(
                 speaker_id=speaker_id,
@@ -131,38 +101,17 @@ class AIPipeline:
                 metrics=metrics,
             )
 
-        # キャッシュチェック
-        audio_hash = hashlib.md5(audio_data).hexdigest()
-        cache_key = self._cache_key(audio_hash, source_language, target_language)
-        cached = await self._get_cached(cache_key)
-
-        if cached:
-            # キャッシュヒット
-            original, translated = cached.split("|||", 1)
-            metrics = self._qos.end_measurement(metrics)
-            return ProcessedAudio(
-                speaker_id=speaker_id,
-                source_language=source_language,
-                target_language=target_language,
-                original_text=original,
-                translated_text=translated,
-                audio_data=None,
-                metrics=metrics,
-            )
-
-        # AI翻訳実行
+        # AI翻訳実行（キャッシュなし: 生PCMのMD5一致は実運用でほぼ発生せず、
+        # 空結果汚染・音声消失の温床だったため撤去。テキスト翻訳キャッシュは
+        # translate_text_simple 層に存在する）
         try:
             result = await self._provider.translate_audio(
-                audio_data, source_language, target_language
+                audio_data,
+                source_language,
+                target_language,
+                original_text=original_text,
             )
-
-            # キャッシュ保存
-            await self._set_cached(
-                cache_key, f"{result.original_text}|||{result.translated_text}"
-            )
-
             metrics = self._qos.end_measurement(metrics)
-
             return ProcessedAudio(
                 speaker_id=speaker_id,
                 source_language=source_language,
@@ -175,12 +124,13 @@ class AIPipeline:
         except Exception as e:
             logger.error(f"AI処理エラー: {e}")
             metrics = self._qos.end_measurement(metrics)
+            # 失敗 = 空文字列（センチネル禁止）。orchestrator の縮退判定が依存する。
             return ProcessedAudio(
                 speaker_id=speaker_id,
                 source_language=source_language,
                 target_language=target_language,
-                original_text="[処理エラー]",
-                translated_text="[処理エラー]",
+                original_text="",
+                translated_text="",
                 audio_data=None,
                 metrics=metrics,
             )

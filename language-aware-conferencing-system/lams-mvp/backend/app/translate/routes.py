@@ -50,10 +50,31 @@ async def _get_redis() -> aioredis.Redis:
     return _redis
 
 
-def _cache_key(text: str, src: str, tgt: str) -> str:
-    """キャッシュキー生成（テキストハッシュベース）"""
+_GLOSSARY_VERSION_KEY = "glossary:version"
+
+
+def _cache_key(text: str, src: str, tgt: str, glossary_version: str) -> str:
+    """キャッシュキー生成（用語集世代を含む。世代更新で旧訳を一括無効化）"""
     text_hash = hashlib.md5(text.encode()).hexdigest()
-    return f"text_translate:{src}:{tgt}:{text_hash}"
+    return f"text_translate:v{glossary_version}:{src}:{tgt}:{text_hash}"
+
+
+async def _glossary_version() -> str:
+    """現在の用語集バージョン（未設定/障害時は "0"）"""
+    try:
+        r = await _get_redis()
+        return await r.get(_GLOSSARY_VERSION_KEY) or "0"
+    except Exception:
+        return "0"
+
+
+async def bump_glossary_version() -> None:
+    """用語集 CRUD 後に呼び、text_translate キャッシュを世代ごと無効化する"""
+    try:
+        r = await _get_redis()
+        await r.incr(_GLOSSARY_VERSION_KEY)
+    except Exception as e:
+        logger.warning(f"[Translate] 用語集バージョン更新エラー: {e}")
 
 
 def _context_key(user_id: str, room_id: str | None) -> str:
@@ -159,7 +180,10 @@ async def translate_text(
         )
 
     # キャッシュチェック
-    cache_key = _cache_key(req.text, req.source_language, req.target_language)
+    glossary_version = await _glossary_version()
+    cache_key = _cache_key(
+        req.text, req.source_language, req.target_language, glossary_version
+    )
     try:
         r = await _get_redis()
         cached = await r.get(cache_key)
@@ -188,12 +212,13 @@ async def translate_text(
     # ★コンテキストに追加
     await _add_context(user.id, req.room_id, req.text, translated_text)
 
-    # キャッシュ保存
-    try:
-        r = await _get_redis()
-        await r.setex(cache_key, CACHE_TTL, translated_text)
-    except Exception as e:
-        logger.warning(f"[Translate] キャッシュ保存エラー: {e}")
+    # キャッシュ保存（文脈付き訳文は共有キャッシュへ入れない。欠陥 #14: 部屋間流出防止）
+    if not context:
+        try:
+            r = await _get_redis()
+            await r.setex(cache_key, CACHE_TTL, translated_text)
+        except Exception as e:
+            logger.warning(f"[Translate] キャッシュ保存エラー: {e}")
 
     return TranslateResponse(
         original_text=req.text,
@@ -303,7 +328,8 @@ async def _call_openai_translate(
 
         if not translated:
             logger.warning(f"[Translate] 翻訳結果が空: {text[:30]}...")
-            return "[翻訳失敗]"
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return ""
 
         # ★LLM 補正（任意・既定OFF）。失敗時は暫定訳を維持し既存挙動を壊さない
         translated = await _maybe_correct_translation(
@@ -385,7 +411,8 @@ async def translate_text_simple(
         return text
 
     # キャッシュチェック
-    cache_key = _cache_key(text, source_language, target_language)
+    glossary_version = await _glossary_version()
+    cache_key = _cache_key(text, source_language, target_language, glossary_version)
     try:
         r = await _get_redis()
         cached = await r.get(cache_key)
@@ -425,7 +452,7 @@ class SubtitleTranslationResponse(BaseModel):
     subtitle_id: str
     target_language: str
     translated_text: str | None
-    status: str  # "ready" | "pending" | "not_found"
+    status: str  # "ready" | "pending" | "not_found" | "error"
 
 
 @router.get(
@@ -514,28 +541,24 @@ async def get_subtitle_translation(
                     translated_text=translated,
                     status="ready",
                 )
-            else:
-                # 翻訳結果が空の場合、原文を返す（フォールバック）
-                logger.warning(f"[SubtitleTranslate] 翻訳結果が空: {subtitle_id}")
-                await subtitle_cache.store_translation(
-                    subtitle_id, target_lang, original_text
-                )
-                return SubtitleTranslationResponse(
-                    subtitle_id=subtitle_id,
-                    target_language=target_lang,
-                    translated_text=original_text,  # 原文をフォールバック
-                    status="ready",
-                )
-        except Exception as e:
-            logger.error(f"[SubtitleTranslate] 翻訳エラー: {e}")
-            await subtitle_cache.store_translation(
-                subtitle_id, target_lang, original_text
-            )
+            # 翻訳結果が空: 原文を ready でキャッシュ固定化しない（欠陥 #15）。
+            # マーカーを解放し、次回リクエストで再試行させる。
+            logger.warning(f"[SubtitleTranslate] 翻訳結果が空: {subtitle_id}")
+            await subtitle_cache.release_claim(subtitle_id, target_lang)
             return SubtitleTranslationResponse(
                 subtitle_id=subtitle_id,
                 target_language=target_lang,
-                translated_text=original_text,  # エラー時も原文を返す
-                status="ready",
+                translated_text=original_text,  # 表示用フォールバック（非キャッシュ）
+                status="error",
+            )
+        except Exception as e:
+            logger.error(f"[SubtitleTranslate] 翻訳エラー: {e}")
+            await subtitle_cache.release_claim(subtitle_id, target_lang)
+            return SubtitleTranslationResponse(
+                subtitle_id=subtitle_id,
+                target_language=target_lang,
+                translated_text=original_text,  # 表示用フォールバック（非キャッシュ）
+                status="error",
             )
 
     # 他のリクエストが翻訳中 → 待機

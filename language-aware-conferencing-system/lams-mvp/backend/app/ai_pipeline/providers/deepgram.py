@@ -215,16 +215,18 @@ class DeepgramProvider(AIProvider):
                 f"[Deepgram] API HTTPエラー: {e.response.status_code} - "
                 f"{e.response.text}"
             )
-            return f"[APIエラー: {e.response.status_code}]", language
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return "", language
         except Exception as e:
             logger.error(f"[Deepgram] ASRエラー: {e}", exc_info=True)
-            return f"[ASRエラー: {type(e).__name__}]", language
+            return "", language
 
     async def translate_audio(
         self,
         audio_data: bytes,
         source_language: str,
         target_language: str,
+        original_text: str | None = None,
     ) -> TranslationResult:
         """
         音声翻訳（Deepgram ASR → GPT翻訳 → TTS）
@@ -233,13 +235,15 @@ class DeepgramProvider(AIProvider):
             audio_data: WAV形式の音声データ
             source_language: 元言語コード
             target_language: 翻訳先言語コード
+            original_text: 上流で ASR 済みの原文（あれば再 ASR をスキップ。欠陥 #1）
 
         Returns:
             翻訳結果
         """
-        # 同一言語の場合はASRのみ
+        # 同一言語の場合はASRのみ（原文供給済みなら再 ASR しない）
         if source_language == target_language:
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            if original_text is None:
+                original_text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
@@ -249,13 +253,14 @@ class DeepgramProvider(AIProvider):
             )
 
         try:
-            # 1. Deepgram ASR
-            original_text = await self.transcribe_audio(audio_data, source_language)
-            if not original_text or original_text.startswith("["):
+            # 1. Deepgram ASR（上流で検出済みならスキップ。欠陥 #1: 二重 ASR 根絶）
+            if original_text is None:
+                original_text = await self.transcribe_audio(audio_data, source_language)
+            if not original_text:
                 return TranslationResult(
                     source_language=source_language,
                     target_language=target_language,
-                    original_text=original_text or "",
+                    original_text="",
                     translated_text="",
                     audio_data=None,
                 )
@@ -296,7 +301,18 @@ class DeepgramProvider(AIProvider):
             translated_text = translated_text.strip() if translated_text else ""
 
             if not translated_text:
-                translated_text = "[翻訳失敗]"
+                # 失敗 = 空文字列の契約。センチネルを TTS へ流さない（欠陥 #8）。
+                logger.warning(
+                    f"[Deepgram] 翻訳結果が空のため TTS をスキップ: "
+                    f"'{original_text[:30]}'"
+                )
+                return TranslationResult(
+                    source_language=source_language,
+                    target_language=target_language,
+                    original_text=original_text,
+                    translated_text="",
+                    audio_data=None,
+                )
 
             logger.info(
                 f"[Deepgram] 翻訳完了: '{original_text}' -> '{translated_text}'"
@@ -326,10 +342,11 @@ class DeepgramProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[Deepgram] 翻訳エラー: {e}", exc_info=True)
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text=f"[エラー: {type(e).__name__}]",
-                translated_text=f"[エラー: {type(e).__name__}]",
+                original_text="",
+                translated_text="",
                 audio_data=None,
             )

@@ -12,6 +12,7 @@ import math
 import re
 import time
 from collections import Counter, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -108,6 +109,8 @@ class HybridQoSMonitor:
         glossary_target: float = GLOSSARY_HIT_RATE_TARGET,
         number_target: float = NUMBER_RETENTION_TARGET,
         percentile_pct: float = _DEFAULT_P95,
+        retry_cooldown_s: float = 60.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._targets_ms = dict(
             _MAINLINE_TARGETS_MS if targets_ms is None else targets_ms
@@ -122,6 +125,9 @@ class HybridQoSMonitor:
         self._glossary_total = 0
         self._number_kept = 0
         self._number_total = 0
+        self._retry_cooldown_s = retry_cooldown_s
+        self._clock = clock
+        self._degraded_since: float | None = None
 
     def record_latency(self, mainline: str, latency_ms: float) -> None:
         """主線の 1 サンプル遅延（ms）を記録する（未知主線・負値は無視）。"""
@@ -182,6 +188,26 @@ class HybridQoSMonitor:
             "target_ms": target,
             "should_fallback_to_subtitle": fallback,
         }
+
+    def hearing_degraded(self) -> bool:
+        """聞く主線の P95 目標超過による縮退判定（§9 の実配線。欠陥 #9）。
+
+        超過が続く場合も retry_cooldown_s 経過で窓を捨てて False を返し、
+        次のセグメントで S2S を再試行させる。
+        # ponytail: 単純クールダウン。ヒステリシスは必要になったら導入。
+        """
+        if self.evaluate_latency("hearing") is None:
+            self._degraded_since = None
+            return False
+        now = self._clock()
+        if self._degraded_since is None:
+            self._degraded_since = now
+            return True
+        if now - self._degraded_since >= self._retry_cooldown_s:
+            self._latency["hearing"].clear()
+            self._degraded_since = None
+            return False
+        return True
 
     def evaluate_glossary(self) -> dict | None:
         """用語命中率が目標を下回れば qos_warning を返す（正常/未計測時 None）。"""

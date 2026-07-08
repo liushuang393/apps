@@ -40,7 +40,7 @@ def _make_orchestrator() -> tuple[HybridOrchestrator, dict]:
     calls: dict[str, int] = {"hearing": 0, "reading": 0}
 
     async def hearing(
-        _audio: bytes, _src: str, tgt: str, _speaker: str
+        _audio: bytes, _src: str, tgt: str, _speaker: str, _original_text: str | None
     ) -> _FakeProcessed:
         calls["hearing"] += 1
         return _FakeProcessed(audio_data=b"AUDIO", translated_text=f"H:{tgt}")
@@ -167,7 +167,9 @@ async def test_runtime_fallback_hearing_failure_to_reading() -> None:
     """§10: mode A で聞く主線が失敗すると、字幕のため読む主線へ縮退する。"""
     calls: dict[str, int] = {"hearing": 0, "reading": 0}
 
-    async def hearing(_a: bytes, _s: str, _t: str, _spk: str) -> object:
+    async def hearing(
+        _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
+    ) -> object:
         calls["hearing"] += 1
         raise RuntimeError("s2s down")
 
@@ -200,10 +202,55 @@ async def test_runtime_fallback_hearing_failure_to_reading() -> None:
 
 
 @pytest.mark.asyncio
+async def test_hearing_empty_string_triggers_reading_fallback() -> None:
+    """欠陥 #8: 例外でなくとも hearing が空文字列を返せば hearing_failed 縮退が発動する。
+
+    センチネル文字列（例: "[エラー: ...]"）は非空のため縮退を素通りしていた。
+    「失敗 = 空文字列」契約により、空文字列を返すだけで縮退が正しく起動することを保証する。
+    """
+    calls: dict[str, int] = {"hearing": 0, "reading": 0}
+
+    async def hearing(
+        _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
+    ) -> object:
+        calls["hearing"] += 1
+        # 例外を投げず、失敗を空文字列（+ 音声なし）で表現する（空文字列プロトコル）。
+        return _FakeProcessed(audio_data=None, translated_text="")
+
+    async def reading(_text: str, _src: str, tgt: str) -> str:
+        calls["reading"] += 1
+        return f"R:{tgt}"
+
+    orch = HybridOrchestrator(hearing_fn=hearing, reading_fn=reading)
+    sink = _FakeSink()
+    listener = Listener("u1", "en", wants_audio=True, subtitle_enabled=True)
+
+    res = await orch.orchestrate(
+        audio_bytes=b"x",
+        source_language="ja",
+        original_text="text",
+        listeners=[listener],
+        sink=sink,
+        mode="a",
+        speaker_id="spk",
+    )
+
+    # mode A では読む主線は未駆動だが、hearing の空文字列で縮退起動される
+    assert calls == {"hearing": 1, "reading": 1}
+    assert sink.audio == []  # 翻訳音声は生成されない
+    _, msg = sink.subtitles[0]
+    assert msg["translated_text"] == "R:en"
+    assert msg["mainline"] == "reading"
+    assert res.tags[0]["reason"] == "hearing_failed_runtime_fallback_reading"
+
+
+@pytest.mark.asyncio
 async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
     """§9: 目標逸脱時に qos_warning が result と deliver_event へ反映される。"""
 
-    async def hearing(_a: bytes, _s: str, _t: str, _spk: str) -> object:
+    async def hearing(
+        _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
+    ) -> object:
         return _FakeProcessed(audio_data=b"A", translated_text="H")
 
     async def reading(_text: str, _src: str, tgt: str) -> str:
@@ -255,3 +302,135 @@ async def test_no_monitor_means_no_qos_warnings() -> None:
 
     assert res.qos_warnings == []
     assert sink.events == []
+
+
+@pytest.mark.asyncio
+async def test_hearing_receives_original_text():
+    """orchestrator は検出済み原文を hearing 主線へ引き渡す（欠陥 #1）。"""
+    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+
+    received: dict = {}
+
+    async def hearing_fn(_audio, _src, _tgt, _speaker, original_text):
+        received["text"] = original_text
+
+        class Out:
+            audio_data = b"wav"
+            translated_text = "hello"
+
+        return Out()
+
+    async def reading_fn(_text, _src, _tgt):
+        return "hello"
+
+    class NullSink:
+        async def deliver_audio(self, user_id, audio):
+            pass
+
+        async def deliver_subtitle(self, user_id, message):
+            pass
+
+    orch = HybridOrchestrator(hearing_fn=hearing_fn, reading_fn=reading_fn)
+    await orch.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=NullSink(),
+        mode="hybrid",
+        speaker_id="sp",
+    )
+    assert received["text"] == "こんにちは"
+
+
+@pytest.mark.asyncio
+async def test_subtitle_not_blocked_by_slow_hearing():
+    """字幕（読む主線）は聞く主線の完了を待たずに配信される（欠陥 #10）。"""
+    import asyncio
+    import time
+
+    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+
+    times: dict[str, float] = {}
+
+    async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
+        await asyncio.sleep(0.5)  # 遅い S2S を模擬
+
+        class Out:
+            audio_data = b"wav"
+            translated_text = "hello"
+
+        return Out()
+
+    async def reading_fn(_text, _src, _tgt):
+        return "hello"
+
+    class RecordingSink:
+        async def deliver_audio(self, _user_id, _audio):
+            times.setdefault("audio", time.perf_counter())
+
+        async def deliver_subtitle(self, _user_id, _message):
+            times.setdefault("subtitle", time.perf_counter())
+
+    orch = HybridOrchestrator(hearing_fn=hearing_fn, reading_fn=reading_fn)
+    await orch.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=RecordingSink(),
+        mode="hybrid",
+        speaker_id="sp",
+    )
+    assert "subtitle" in times and "audio" in times
+    assert times["audio"] - times["subtitle"] > 0.3  # 字幕が hearing を待っていない
+
+
+@pytest.mark.asyncio
+async def test_degraded_monitor_suppresses_hearing():
+    """hearing 縮退中は聞く主線を駆動せず読む主線のみで収束する（欠陥 #9）。"""
+    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+    from app.ai_pipeline.qos import HybridQoSMonitor
+
+    monitor = HybridQoSMonitor(window=10)
+    for _ in range(10):
+        monitor.record_latency("hearing", 9000.0)
+
+    hearing_called = {"n": 0}
+
+    async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
+        hearing_called["n"] += 1
+
+        class Out:
+            audio_data = b"wav"
+            translated_text = "x"
+
+        return Out()
+
+    async def reading_fn(_text, _src, _tgt):
+        return "hello"
+
+    class NullSink:
+        async def deliver_audio(self, _user_id, _audio):
+            pass
+
+        async def deliver_subtitle(self, _user_id, _message):
+            pass
+
+        async def deliver_event(self, _user_id, _message):
+            pass
+
+    orch = HybridOrchestrator(
+        hearing_fn=hearing_fn, reading_fn=reading_fn, monitor=monitor
+    )
+    result = await orch.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=NullSink(),
+        mode="hybrid",
+        speaker_id="sp",
+    )
+    assert hearing_called["n"] == 0
+    assert result.translations["en"] == "hello"

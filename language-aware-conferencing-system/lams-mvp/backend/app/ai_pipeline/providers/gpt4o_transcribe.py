@@ -109,7 +109,8 @@ class GPT4oTranscribeProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[GPT4o-transcribe] ASRエラー: {e}", exc_info=True)
-            return f"[ASRエラー: {type(e).__name__}]"
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return ""
 
     async def transcribe_with_detection(
         self,
@@ -155,7 +156,8 @@ class GPT4oTranscribeProvider(AIProvider):
 
             # verbose_json形式で言語情報を取得
             transcribe_params: dict = {
-                "model": settings.openai_transcribe_model,
+                # verbose_json は whisper-1 のみ対応（gpt-4o-transcribe は 400 になる）
+                "model": settings.openai_detect_model,
                 "file": audio_file,
                 "response_format": "verbose_json",
                 "prompt": asr_prompt,
@@ -198,9 +200,11 @@ class GPT4oTranscribeProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[GPT4o-transcribe] 言語検出ASRエラー: {e}", exc_info=True)
-            # フォールバック: 通常のASR
+            # フォールバック: 通常のASR（検出言語は捏造しない。欠陥 #7）
+            if hint_language == "multi":
+                return "", ""
             text = await self.transcribe_audio(audio_data, hint_language)
-            return text, hint_language if hint_language != "multi" else "ja"
+            return text, hint_language
 
     def _normalize_language_code(self, lang: str) -> str:
         """
@@ -227,6 +231,7 @@ class GPT4oTranscribeProvider(AIProvider):
         audio_data: bytes,
         source_language: str,
         target_language: str,
+        original_text: str | None = None,
     ) -> TranslationResult:
         """
         音声翻訳（ASR → 翻訳 → TTS）
@@ -235,13 +240,15 @@ class GPT4oTranscribeProvider(AIProvider):
             audio_data: WAV形式の音声データ
             source_language: 元言語コード
             target_language: 翻訳先言語コード
+            original_text: 上流で ASR 済みの原文（あれば再 ASR をスキップ。欠陥 #1）
 
         Returns:
             翻訳結果
         """
-        # 同一言語の場合はASRのみ
+        # 同一言語の場合はASRのみ（原文供給済みなら再 ASR しない）
         if source_language == target_language:
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            if original_text is None:
+                original_text = await self.transcribe_audio(audio_data, source_language)
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
@@ -253,13 +260,14 @@ class GPT4oTranscribeProvider(AIProvider):
         try:
             client = await self._get_client()
 
-            # 1. ASR
-            original_text = await self.transcribe_audio(audio_data, source_language)
-            if not original_text or original_text.startswith("["):
+            # 1. ASR（上流で検出済みならスキップ。欠陥 #1: 二重 ASR 根絶）
+            if original_text is None:
+                original_text = await self.transcribe_audio(audio_data, source_language)
+            if not original_text:
                 return TranslationResult(
                     source_language=source_language,
                     target_language=target_language,
-                    original_text=original_text or "",
+                    original_text="",
                     translated_text="",
                     audio_data=None,
                 )
@@ -278,7 +286,18 @@ class GPT4oTranscribeProvider(AIProvider):
             translated_text = translated_text.strip() if translated_text else ""
 
             if not translated_text:
-                translated_text = "[翻訳失敗]"
+                # 失敗 = 空文字列の契約。センチネルを TTS へ流さない（欠陥 #8）。
+                logger.warning(
+                    f"[GPT4o-transcribe] 翻訳結果が空のため TTS をスキップ: "
+                    f"'{original_text[:30]}'"
+                )
+                return TranslationResult(
+                    source_language=source_language,
+                    target_language=target_language,
+                    original_text=original_text,
+                    translated_text="",
+                    audio_data=None,
+                )
 
             logger.info(
                 f"[GPT4o-transcribe] 翻訳完了: '{original_text}' -> '{translated_text}'"
@@ -313,10 +332,11 @@ class GPT4oTranscribeProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[GPT4o-transcribe] 翻訳エラー: {e}", exc_info=True)
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text=f"[エラー: {type(e).__name__}]",
-                translated_text=f"[エラー: {type(e).__name__}]",
+                original_text="",
+                translated_text="",
                 audio_data=None,
             )

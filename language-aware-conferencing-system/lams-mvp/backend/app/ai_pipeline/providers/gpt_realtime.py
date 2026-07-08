@@ -24,12 +24,16 @@ from app.ai_pipeline.providers.base import (
     TranslationResult,
     check_api_key,
 )
+from app.audio.pcm import parse_wav16, resample16
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # WebSocket Realtime API エンドポイント
 REALTIME_API_URL = "wss://api.openai.com/v1/realtime"
+
+# Realtime API の pcm16 入力が前提とするサンプルレート（欠陥 #2）。
+REALTIME_INPUT_RATE = 24000
 
 
 class GPTRealtimeProvider(AIProvider):
@@ -47,6 +51,80 @@ class GPTRealtimeProvider(AIProvider):
         """プロバイダー初期化"""
         self._client = None  # REST API用（フォールバック）
         check_api_key(settings.openai_api_key, "OpenAI")
+
+    def _build_transcribe_session_config(self, language: str) -> dict:
+        """
+        transcription セッション設定（手動 commit 運用のため VAD 無効）。
+
+        Args:
+            language: 言語コード（ja, en, zh, vi など）
+
+        Returns:
+            session.update イベント辞書（turn_detection: None を含む）
+        """
+        # zh / multi はモデルが自動言語検出するため language を指定しない
+        lang_for_transcribe = language if language not in ("zh", "multi") else None
+        transcription_config: dict = {"model": settings.openai_transcribe_model}
+        if lang_for_transcribe:
+            transcription_config["language"] = lang_for_transcribe
+        return {
+            "type": "session.update",
+            "session": {
+                "input_audio_format": "pcm16",
+                "input_audio_transcription": transcription_config,
+                # 手動 commit と自動 VAD の競合防止（欠陥 #5）
+                "turn_detection": None,
+            },
+        }
+
+    def _build_translate_session_config(
+        self, source_language: str, target_language: str
+    ) -> dict:
+        """
+        S2S（Speech-to-Speech）翻訳セッション設定（手動 commit/response.create 運用のため VAD 無効）。
+
+        Args:
+            source_language: 元言語コード
+            target_language: 翻訳先言語コード
+
+        Returns:
+            session.update イベント辞書（turn_detection: None を含む）
+        """
+        src_name = LANGUAGE_NAMES.get(source_language, source_language)
+        tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
+        return {
+            "type": "session.update",
+            "session": {
+                "modalities": ["text", "audio"],
+                "instructions": (
+                    f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
+                    f"[CRITICAL WARNING] You are a TRANSLATION MACHINE, NOT a conversation partner.\n\n"
+                    f"ABSOLUTE RULES - VIOLATION IS FORBIDDEN:\n"
+                    f"1. TRANSLATE ONLY: Convert {src_name} speech to {tgt_name}. Nothing else.\n"
+                    f"2. NO CONVERSATION: NEVER respond, reply, acknowledge, or engage.\n"
+                    f"3. NO GREETINGS: NEVER say hello, goodbye, or any pleasantries.\n"
+                    f"4. NO COMMENTS: NEVER add explanations, notes, or your opinions.\n"
+                    f"5. NO ACKNOWLEDGMENT: NEVER say 'I understand', 'OK', 'Sure', etc.\n"
+                    f"6. SILENCE ON NOISE: If audio is unclear/silent, output NOTHING.\n"
+                    f"7. LITERAL TRANSLATION: Output ONLY the direct translation of spoken words.\n\n"
+                    f"FORBIDDEN PHRASES (never output these):\n"
+                    f"- 'はい、承知しました' / 'I understand' / '好的，我明白了'\n"
+                    f"- 'どうぞお話しください' / 'Please continue' / '请继续说'\n"
+                    f"- Any response that is not a translation of the input audio\n\n"
+                    f"Remember: You are a machine that converts {src_name} audio to {tgt_name}. "
+                    f"If someone says '今日は会議があります', output ONLY the translation like "
+                    f"'There is a meeting today' - NEVER add 'I understand' or any response."
+                ),
+                "voice": settings.openai_tts_voice,
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
+                "input_audio_transcription": {
+                    "model": settings.openai_transcribe_model,
+                },
+                # 手動 commit と自動 VAD の競合防止（欠陥 #5）
+                "turn_detection": None,
+            },
+        }
 
     async def _get_client(self):
         """OpenAI REST APIクライアント取得（フォールバック用）"""
@@ -79,10 +157,12 @@ class GPTRealtimeProvider(AIProvider):
             return ""
 
         try:
-            # WAVからPCM16データを抽出
-            pcm_data = self._wav_to_pcm16(audio_data)
+            # WAV から PCM と実レートを取り出し、Realtime API 要求の 24kHz へ揃える
+            # （16kHz のまま送ると 1.5 倍速解釈で品質が崩壊する。欠陥 #2）
+            pcm_data, src_rate = parse_wav16(audio_data)
             if not pcm_data:
                 return ""
+            pcm_data = resample16(pcm_data, src_rate, REALTIME_INPUT_RATE)
 
             audio_base64 = base64.b64encode(pcm_data).decode("utf-8")
             lang_name = LANGUAGE_NAMES.get(language, language)
@@ -106,18 +186,6 @@ class GPTRealtimeProvider(AIProvider):
             logger.error(f"[GPT-Realtime] ASRエラー: {e}", exc_info=True)
             # フォールバック: gpt-4o-transcribe
             return await self._transcribe_fallback(audio_data, language)
-
-    def _wav_to_pcm16(self, wav_data: bytes) -> bytes:
-        """WAVデータからPCM16データを抽出"""
-        try:
-            # WAVヘッダーをスキップ（44バイト）
-            if len(wav_data) < 44:
-                return b""
-            # 簡易的にヘッダーをスキップ
-            return wav_data[44:]
-        except Exception as e:
-            logger.warning(f"[GPT-Realtime] WAV解析エラー: {e}")
-            return b""
 
     async def _realtime_transcribe(self, audio_base64: str, language: str) -> str:
         """WebSocket Realtime APIで音声認識"""
@@ -145,20 +213,7 @@ class GPTRealtimeProvider(AIProvider):
                         logger.debug("[GPT-Realtime] セッション準備完了")
 
                 # セッション設定（transcriptionモード）
-                # 注意: session.type は存在しないパラメータ
-                lang_for_transcribe = (
-                    language if language not in ("zh", "multi") else None
-                )
-                transcription_config: dict = {"model": settings.openai_transcribe_model}
-                if lang_for_transcribe:
-                    transcription_config["language"] = lang_for_transcribe
-                session_config = {
-                    "type": "session.update",
-                    "session": {
-                        "input_audio_format": "pcm16",
-                        "input_audio_transcription": transcription_config,
-                    },
-                }
+                session_config = self._build_transcribe_session_config(language)
                 await ws.send(json.dumps(session_config))
 
                 # session.updated を待機
@@ -242,7 +297,8 @@ class GPTRealtimeProvider(AIProvider):
             return response.text.strip() if response.text else ""
         except Exception as e:
             logger.error(f"[GPT-Realtime] フォールバックASRエラー: {e}")
-            return f"[ASRエラー: {type(e).__name__}]"
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
+            return ""
 
     async def transcribe_with_detection(
         self,
@@ -293,9 +349,9 @@ class GPTRealtimeProvider(AIProvider):
             )
 
             # verbose_json形式で言語情報を取得
-            # 注意: gpt-4o-transcribe は verbose_json をサポート
+            # 注意: verbose_json は whisper-1 のみ対応（gpt-4o-transcribe は 400 になる）
             transcribe_params: dict = {
-                "model": settings.openai_transcribe_model,
+                "model": settings.openai_detect_model,
                 "file": audio_file,
                 "response_format": "verbose_json",
                 "prompt": asr_prompt,
@@ -341,9 +397,11 @@ class GPTRealtimeProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[GPT-Realtime] 言語検出ASRエラー: {e}", exc_info=True)
-            # フォールバック: 通常のASR
+            # フォールバック: 通常のASR（検出言語は捏造しない。欠陥 #7）
+            if hint_language == "multi":
+                return "", ""
             text = await self._transcribe_fallback(audio_data, hint_language)
-            return text, hint_language if hint_language != "multi" else "ja"
+            return text, hint_language
 
     def _normalize_language_code(self, lang: str) -> str:
         """
@@ -382,6 +440,7 @@ class GPTRealtimeProvider(AIProvider):
         audio_data: bytes,
         source_language: str,
         target_language: str,
+        original_text: str | None = None,  # noqa: ARG002
     ) -> TranslationResult:
         """
         Speech-to-Speech 翻訳（WebSocket Realtime API）
@@ -390,6 +449,7 @@ class GPTRealtimeProvider(AIProvider):
             audio_data: WAV形式の音声データ
             source_language: 元言語コード
             target_language: 翻訳先言語コード
+            original_text: S2S は音声から直接翻訳するため使用しない（欠陥 #1）
 
         Returns:
             翻訳結果（音声 + テキスト）
@@ -409,8 +469,9 @@ class GPTRealtimeProvider(AIProvider):
             src_name = LANGUAGE_NAMES.get(source_language, source_language)
             tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
 
-            # WAVからPCM16データを抽出
-            pcm_data = self._wav_to_pcm16(audio_data)
+            # WAV から PCM と実レートを取り出し、Realtime API 要求の 24kHz へ揃える
+            # （16kHz のまま送ると 1.5 倍速解釈で品質が崩壊する。欠陥 #2）
+            pcm_data, src_rate = parse_wav16(audio_data)
             if not pcm_data:
                 return TranslationResult(
                     source_language=source_language,
@@ -419,6 +480,7 @@ class GPTRealtimeProvider(AIProvider):
                     translated_text="",
                     audio_data=None,
                 )
+            pcm_data = resample16(pcm_data, src_rate, REALTIME_INPUT_RATE)
 
             audio_base64 = base64.b64encode(pcm_data).decode("utf-8")
 
@@ -458,8 +520,6 @@ class GPTRealtimeProvider(AIProvider):
 
         model = settings.openai_realtime_model
         url = f"{REALTIME_API_URL}?model={model}"
-        src_name = LANGUAGE_NAMES.get(source_language, source_language)
-        tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
 
         headers = {
             "Authorization": f"Bearer {settings.openai_api_key}",
@@ -479,40 +539,9 @@ class GPTRealtimeProvider(AIProvider):
                     logger.debug("[GPT-Realtime] S2Sセッション準備完了")
 
             # セッション設定（realtimeモード = S2S）
-            # 重要: プロンプトで厳格に翻訳のみを指示し、幻覚を防止
-            # 注意: session.type は存在しないパラメータ
-            # ★★★ 強化された翻訳専用指示（AI乱話防止）★★★
-            session_config = {
-                "type": "session.update",
-                "session": {
-                    "modalities": ["text", "audio"],
-                    "instructions": (
-                        f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
-                        f"[CRITICAL WARNING] You are a TRANSLATION MACHINE, NOT a conversation partner.\n\n"
-                        f"ABSOLUTE RULES - VIOLATION IS FORBIDDEN:\n"
-                        f"1. TRANSLATE ONLY: Convert {src_name} speech to {tgt_name}. Nothing else.\n"
-                        f"2. NO CONVERSATION: NEVER respond, reply, acknowledge, or engage.\n"
-                        f"3. NO GREETINGS: NEVER say hello, goodbye, or any pleasantries.\n"
-                        f"4. NO COMMENTS: NEVER add explanations, notes, or your opinions.\n"
-                        f"5. NO ACKNOWLEDGMENT: NEVER say 'I understand', 'OK', 'Sure', etc.\n"
-                        f"6. SILENCE ON NOISE: If audio is unclear/silent, output NOTHING.\n"
-                        f"7. LITERAL TRANSLATION: Output ONLY the direct translation of spoken words.\n\n"
-                        f"FORBIDDEN PHRASES (never output these):\n"
-                        f"- 'はい、承知しました' / 'I understand' / '好的，我明白了'\n"
-                        f"- 'どうぞお話しください' / 'Please continue' / '请继续说'\n"
-                        f"- Any response that is not a translation of the input audio\n\n"
-                        f"Remember: You are a machine that converts {src_name} audio to {tgt_name}. "
-                        f"If someone says '今日は会議があります', output ONLY the translation like "
-                        f"'There is a meeting today' - NEVER add 'I understand' or any response."
-                    ),
-                    "voice": settings.openai_tts_voice,
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
-                    "input_audio_transcription": {
-                        "model": settings.openai_transcribe_model,
-                    },
-                },
-            }
+            session_config = self._build_translate_session_config(
+                source_language, target_language
+            )
             await ws.send(json.dumps(session_config))
 
             # session.updated を待機
@@ -539,45 +568,8 @@ class GPTRealtimeProvider(AIProvider):
             # レスポンス生成を要求
             await ws.send(json.dumps({"type": "response.create"}))
 
-            # レスポンスを収集
-            translated_text = ""
-            audio_chunks: list[bytes] = []
-            timeout = 15.0
-            start_time = asyncio.get_event_loop().time()
-
-            while True:
-                if asyncio.get_event_loop().time() - start_time > timeout:
-                    logger.warning("[GPT-Realtime] S2Sタイムアウト")
-                    break
-
-                try:
-                    msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                    event = json.loads(msg)
-                    event_type = event.get("type", "")
-
-                    # 音声データ（デルタ）
-                    if event_type == "response.audio.delta":
-                        delta = event.get("delta", "")
-                        if delta:
-                            audio_chunks.append(base64.b64decode(delta))
-
-                    # 翻訳テキスト（デルタ）
-                    elif event_type == "response.audio_transcript.delta":
-                        delta = event.get("delta", "")
-                        translated_text += delta
-
-                    # レスポンス完了
-                    elif event_type == "response.done":
-                        break
-
-                    # エラー
-                    elif event_type == "error":
-                        error_msg = event.get("error", {}).get("message", "Unknown")
-                        logger.error(f"[GPT-Realtime] APIエラー: {error_msg}")
-                        raise RuntimeError(f"Realtime API error: {error_msg}")
-
-                except asyncio.TimeoutError:
-                    break
+            # レスポンスを収集（応答ゼロのタイムアウトは TimeoutError → フォールバック）
+            translated_text, audio_chunks = await self._collect_response(ws)
 
             # 音声データを結合してWAV形式に変換
             translated_audio = None
@@ -595,6 +587,56 @@ class GPTRealtimeProvider(AIProvider):
                 translated_text=translated_text.strip(),
                 audio_data=translated_audio,
             )
+
+    async def _collect_response(
+        self, ws, timeout: float = 15.0
+    ) -> tuple[str, list[bytes]]:
+        """S2S 応答（テキスト delta + 音声 delta）を response.done まで収集する。
+
+        Returns:
+            (翻訳テキスト, 音声チャンク列)
+        Raises:
+            TimeoutError: 期限内に応答が一切得られなかった場合
+                （呼び出し側の 3 段階フォールバックを発動させる。欠陥 #4）
+            RuntimeError: API がエラーイベントを返した場合
+        """
+        translated_text = ""
+        audio_chunks: list[bytes] = []
+        done = False
+        start_time = asyncio.get_event_loop().time()
+
+        while True:
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                logger.warning("[GPT-Realtime] S2Sタイムアウト")
+                break
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, timeout))
+            except asyncio.TimeoutError:
+                continue
+            event = json.loads(msg)
+            event_type = event.get("type", "")
+
+            # 音声データ（デルタ）
+            if event_type == "response.audio.delta":
+                delta = event.get("delta", "")
+                if delta:
+                    audio_chunks.append(base64.b64decode(delta))
+            # 翻訳テキスト（デルタ）
+            elif event_type == "response.audio_transcript.delta":
+                translated_text += event.get("delta", "")
+            # レスポンス完了
+            elif event_type == "response.done":
+                done = True
+                break
+            # エラー
+            elif event_type == "error":
+                error_msg = event.get("error", {}).get("message", "Unknown")
+                logger.error(f"[GPT-Realtime] APIエラー: {error_msg}")
+                raise RuntimeError(f"Realtime API error: {error_msg}")
+
+        if not done and not translated_text and not audio_chunks:
+            raise TimeoutError("Realtime API 応答タイムアウト（response.done 未受信）")
+        return translated_text.strip(), audio_chunks
 
     def _pcm16_to_wav(self, pcm_data: bytes, sample_rate: int = 24000) -> bytes:
         """PCM16データをWAV形式に変換"""
@@ -640,11 +682,11 @@ class GPTRealtimeProvider(AIProvider):
 
             # 1. ASR
             original_text = await self.transcribe_audio(audio_data, source_language)
-            if not original_text or original_text.startswith("["):
+            if not original_text:
                 return TranslationResult(
                     source_language=source_language,
                     target_language=target_language,
-                    original_text=original_text or "",
+                    original_text="",
                     translated_text="",
                     audio_data=None,
                 )
@@ -706,10 +748,11 @@ class GPTRealtimeProvider(AIProvider):
 
         except Exception as e:
             logger.error(f"[GPT-Realtime Fallback] エラー: {e}", exc_info=True)
+            # 失敗 = 空文字列の契約（欠陥 #8）。センチネル文字列は返さない。
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text=f"[エラー: {type(e).__name__}]",
-                translated_text=f"[エラー: {type(e).__name__}]",
+                original_text="",
+                translated_text="",
                 audio_data=None,
             )
