@@ -658,3 +658,66 @@ async def test_ab_context_room_and_speaker_set_during_orchestrate(monkeypatch) -
     from app.ai_pipeline.ab_runtime import get_ab_context as _get
 
     assert _get() is None
+
+
+@pytest.mark.asyncio
+async def test_speaker_label_and_session_flow(monkeypatch) -> None:
+    """speaker_label が orchestrate へ渡り、record_event_fn 有効時に session_id が
+    A/B 文脈へ載る（speaker_label ライブ表示 + A/B session unit 配線）。"""
+    from app.ai_pipeline.ab_runtime import get_ab_context
+    from app.ai_pipeline.orchestrator import OrchestrationResult
+
+    seen: dict = {}
+    events: list = []
+
+    class _CtxOrchestrator:
+        async def orchestrate(self, **kwargs) -> OrchestrationResult:
+            ctx = get_ab_context()
+            seen["speaker_label"] = kwargs.get("speaker_label")
+            seen["session_id"] = ctx.session_id if ctx else None
+            return OrchestrationResult(translations={kwargs["source_language"]: "x"})
+
+    async def fake_save(**_kwargs) -> str:
+        return "seg-1"
+
+    async def fake_store_original(*_a, **_k) -> None:
+        return None
+
+    async def fake_get_session(_room_id: str) -> str:
+        return "sess-9"
+
+    async def fake_record(**kwargs) -> str | None:
+        events.append(kwargs)
+        return "ev-1"
+
+    async def detect(_wav: bytes, _hint: str) -> tuple[str, str]:
+        return ("こんにちは", "ja")
+
+    monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
+    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
+    monkeypatch.setattr(processor_mod, "get_or_create_session", fake_get_session)
+    proc = SegmentProcessor(
+        orchestrator=_CtxOrchestrator(),
+        sequencer=SubtitleSequencer(),
+        detect_fn=detect,
+        record_event_fn=fake_record,
+    )
+    # 話者ラベル解決を固定（diarization 実体なしでも検証できるよう差し替え）。
+    async def _label(_room_id: str, _wav: bytes) -> str:
+        return "Speaker 1"
+
+    proc._resolve_speaker_label = _label  # type: ignore[method-assign]
+
+    await proc.process(
+        room_id="r1",
+        speaker_id="spk",
+        pcm16=_PCM,
+        speaker_lang_hint="ja",
+        participants=_participants(),
+        sink_factory=_sink_factory([]),
+        config=MeetingConfig(),
+    )
+    assert seen == {"speaker_label": "Speaker 1", "session_id": "sess-9"}
+    # 回放ログにも speaker_label / session_id が載る。
+    assert events and events[0]["speaker_label"] == "Speaker 1"
+    assert events[0]["session_id"] == "sess-9"

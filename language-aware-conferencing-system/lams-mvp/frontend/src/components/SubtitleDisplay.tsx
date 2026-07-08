@@ -174,20 +174,48 @@ function SubtitleDisplayInner() {
               ? `${sub.id}:${sub.targetLanguage ?? ''}`
               : `${sub.speakerId}-${idx}-${sub.originalText.slice(0, 10)}`;
 
+            // 全主線失敗の縮退字幕（原文のみ）。前端でも翻訳できなかった場合のみ印を出す。
+            const isDegraded = Boolean(sub.degraded) && !sub.isTranslated;
             return (
               <div
                 key={subtitleKey}
-                className={`subtitle-item ${isMyMessage ? 'my-message' : ''}`}
+                className={`subtitle-item ${isMyMessage ? 'my-message' : ''} ${isDegraded ? 'degraded' : ''}`}
+                // 使用モデルID を可観測用にツールチップ表示（A/B・回放の手掛かり）。
+                title={sub.modelId ? `model: ${sub.modelId}` : undefined}
               >
                 <span className="speaker-name">
                   {displayName}
-                  {isMyMessage && ' (自分)'}：
+                  {isMyMessage && ' (自分)'}
+                  {/* 話者分離ラベル（P4-A）: track 権威の名前を補う増強情報。
+                      未有効時は null で非表示（後方互換）。 */}
+                  {sub.speakerLabel && (
+                    <span
+                      className="speaker-label-tag"
+                      style={{ marginLeft: '0.3rem', fontSize: '0.8em', color: '#9aa0b5' }}
+                    >
+                      〔{sub.speakerLabel}〕
+                    </span>
+                  )}
+                  ：
                 </span>
                 <span className="subtitle-text">
                   {sub.isTranslating ? '翻訳中...' : sub.displayText}
                 </span>
                 {sub.isTranslated && (
                   <span className="translated-badge">翻訳</span>
+                )}
+                {isDegraded && (
+                  <span
+                    className="degraded-badge"
+                    title="全主線が失敗したため原文のみ表示（翻訳不可）"
+                    style={{
+                      marginLeft: '0.5rem',
+                      fontSize: '0.8em',
+                      color: '#e0a020',
+                    }}
+                  >
+                    ⚠ 原文
+                  </span>
                 )}
               </div>
             );

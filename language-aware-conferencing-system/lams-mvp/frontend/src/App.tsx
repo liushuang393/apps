@@ -15,6 +15,7 @@ import { RoomPage } from './pages/RoomPage';
 import { TranscriptPage } from './pages/TranscriptPage';
 import { AdminPage } from './pages/AdminPage';
 import { LanguageSettingsPage } from './pages/LanguageSettingsPage';
+import { ExperimentsPage } from './pages/ExperimentsPage';
 import './styles/main.css';
 
 /**
@@ -142,6 +143,16 @@ export function App() {
             <PrivateRoute>
               <AdminRoute>
                 <LanguageSettingsPage />
+              </AdminRoute>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin/experiments"
+          element={
+            <PrivateRoute>
+              <AdminRoute>
+                <ExperimentsPage />
               </AdminRoute>
             </PrivateRoute>
           }

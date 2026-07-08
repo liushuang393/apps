@@ -495,3 +495,39 @@ async def test_degraded_monitor_suppresses_hearing():
     )
     assert hearing_called["n"] == 0
     assert result.translations["en"] == "hello"
+
+
+def test_subtitle_message_includes_speaker_label() -> None:
+    """_subtitle_message は speaker_label を payload に載せる（P4-A ライブ表示）。"""
+    orch = HybridOrchestrator()
+    msg = orch._subtitle_message(
+        subtitle_id="s1",
+        seq=1,
+        speaker_id="spk",
+        original_text="こんにちは",
+        source_language="ja",
+        target_lang="en",
+        subtitle_text="hello",
+        mainline="reading",
+        s2s_provider=None,
+        speaker_label="Speaker 1",
+    )
+    assert msg["speaker_label"] == "Speaker 1"
+    assert msg["speaker_id"] == "spk"
+
+
+def test_subtitle_message_speaker_label_defaults_none() -> None:
+    """speaker_label 未指定なら None（後方互換・未有効時）。"""
+    orch = HybridOrchestrator()
+    msg = orch._subtitle_message(
+        subtitle_id="s1",
+        seq=1,
+        speaker_id="spk",
+        original_text="hi",
+        source_language="ja",
+        target_lang="en",
+        subtitle_text="hi",
+        mainline="reading",
+        s2s_provider=None,
+    )
+    assert msg["speaker_label"] is None

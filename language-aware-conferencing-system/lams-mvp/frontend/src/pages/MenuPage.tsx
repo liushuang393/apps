@@ -76,6 +76,13 @@ const menuCategories: MenuCategoryExtended[] = [
         path: '/admin/languages',
         requireAdmin: true,
       },
+      {
+        icon: '🧪',
+        titleKey: 'menu.experiments',
+        descKey: 'menu.experimentsDesc',
+        path: '/admin/experiments',
+        requireAdmin: true,
+      },
     ],
   },
 ];

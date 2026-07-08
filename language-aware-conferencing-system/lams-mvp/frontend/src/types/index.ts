@@ -102,6 +102,12 @@ export interface SubtitleData {
   mainline?: 'hearing' | 'reading';
   /** 使用プロバイダー */
   provider?: string | null;
+  /** 全主線失敗による縮退字幕（原文プレースホルダ・翻訳なし）。改善点 M4 */
+  degraded?: boolean;
+  /** 使用モデルID（可観測・A/B。改善案 §3 事件協議） */
+  modelId?: string | null;
+  /** 話者分離ラベル（P4-A）。track 権威の speakerId を補う増強情報（未有効時 null） */
+  speakerLabel?: string | null;
 }
 
 /** WebSocketメッセージ型 */

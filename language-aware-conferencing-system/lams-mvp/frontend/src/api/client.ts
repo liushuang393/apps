@@ -384,6 +384,48 @@ function convertAdminUser(u: AdminUserApiResponse): AdminUser {
 }
 
 /** 管理者API */
+/** A/B 実験群（表示用） */
+export interface ExperimentVariantInfo {
+  name: string;
+  modelId: string;
+  weight: number;
+}
+
+/** A/B 実験（表示用） */
+export interface ExperimentInfo {
+  key: string;
+  stage: string;
+  unit: string;
+  enabled: boolean;
+  variants: ExperimentVariantInfo[];
+}
+
+/** 指標の集計統計（1 群 1 指標） */
+export interface MetricStat {
+  count: number;
+  mean: number;
+  min: number;
+  max: number;
+}
+
+/** 実験集計: 群名 → 指標名 → 統計 */
+export type ExperimentSummary = Record<string, Record<string, MetricStat>>;
+
+/** GET /admin/experiments の生レスポンス */
+interface ExperimentApiResponse {
+  key: string;
+  stage: string;
+  unit: string;
+  enabled: boolean;
+  variants: Array<{ name: string; model_id: string; weight: number }>;
+}
+
+/** GET /admin/experiments/{key}/summary の生レスポンス */
+interface ExperimentSummaryApiResponse {
+  experiment_key: string;
+  summary: ExperimentSummary;
+}
+
 export const adminApi = {
   /** ユーザー一覧取得 */
   listUsers: async (): Promise<AdminUser[]> => {
@@ -447,6 +489,30 @@ export const adminApi = {
       enabledLanguages: res.enabled_languages,
       allAvailableLanguages: res.all_available_languages,
     };
+  },
+
+  /** A/B 実験一覧取得（P4-C） */
+  listExperiments: async (): Promise<ExperimentInfo[]> => {
+    const res = await apiFetch<ExperimentApiResponse[]>('/admin/experiments');
+    return res.map((e) => ({
+      key: e.key,
+      stage: e.stage,
+      unit: e.unit,
+      enabled: e.enabled,
+      variants: e.variants.map((v) => ({
+        name: v.name,
+        modelId: v.model_id,
+        weight: v.weight,
+      })),
+    }));
+  },
+
+  /** A/B 実験の群×指標集計取得（P4-C） */
+  getExperimentSummary: async (key: string): Promise<ExperimentSummary> => {
+    const res = await apiFetch<ExperimentSummaryApiResponse>(
+      `/admin/experiments/${encodeURIComponent(key)}/summary`
+    );
+    return res.summary;
   },
 };
 

@@ -67,6 +67,8 @@
     "adminDesc": "ユーザー管理・システム設定",
     "languageSettings": "対応言語設定",
     "languageSettingsDesc": "システム対応言語のカスタマイズ",
+    "experiments": "A/B実験",
+    "experimentsDesc": "実験配信と指標比較の確認",
     "comingSoon": "準備中"
   },
   "room": {

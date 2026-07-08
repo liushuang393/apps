@@ -155,6 +155,7 @@ class HybridOrchestrator:
         revision: int = 0,
         trace_id: str | None = None,
         model_id: str | None = None,
+        speaker_label: str | None = None,
     ) -> dict:
         """字幕 data channel ペイロード（typed 事件）を組み立てる（純ロジック）。
 
@@ -172,6 +173,8 @@ class HybridOrchestrator:
             "sequence_id": seq,
             "revision": revision,
             "speaker_id": speaker_id,
+            # 話者分離ラベル（P4-A）。track 権威の speaker_id を補う増強情報（未有効時 None）。
+            "speaker_label": speaker_label,
             "original_text": original_text,
             "source_language": source_language,
             "translated_text": (
@@ -287,8 +290,13 @@ class HybridOrchestrator:
         subtitle_id: str = "",
         seq: int = 0,
         speaker_id: str = "",
+        speaker_label: str | None = None,
     ) -> OrchestrationResult:
-        """目標言語ごとに 2 主線を駆動し、収束結果を返す（副作用は sink 経由のみ）。"""
+        """目標言語ごとに 2 主線を駆動し、収束結果を返す（副作用は sink 経由のみ）。
+
+        speaker_label は話者分離（P4-A）の表示ラベル。ライブ字幕へ付与して話者帰属を
+        即時表示する（未有効時 None）。
+        """
         result = OrchestrationResult()
 
         # 目標言語でグルーピング（同一ペアの主線は 1 回だけ駆動して収束）
@@ -362,6 +370,7 @@ class HybridOrchestrator:
                             subtitle_text=reading_text,
                             mainline="reading",
                             s2s_provider=decision.s2s_provider,
+                            speaker_label=speaker_label,
                         ),
                     )
                     subtitle_sent = True
@@ -418,6 +427,7 @@ class HybridOrchestrator:
                         subtitle_text=subtitle_text,
                         mainline=mainline,
                         s2s_provider=decision.s2s_provider,
+                        speaker_label=speaker_label,
                     ),
                 )
             elif not subtitle_sent and decision.needs_translation and original_text:
@@ -444,6 +454,7 @@ class HybridOrchestrator:
                         mainline="degraded",
                         s2s_provider=decision.s2s_provider,
                         degraded=True,
+                        speaker_label=speaker_label,
                     ),
                 )
 

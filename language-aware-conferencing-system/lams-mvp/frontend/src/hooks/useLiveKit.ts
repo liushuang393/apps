@@ -104,6 +104,9 @@ function toSubtitle(msg: Record<string, unknown>): SubtitleData {
     revision: msg.revision as number | undefined,
     mainline: msg.mainline as 'hearing' | 'reading' | undefined,
     provider: (msg.provider as string | null | undefined) ?? null,
+    degraded: Boolean(msg.degraded),
+    modelId: (msg.model_id as string | null | undefined) ?? null,
+    speakerLabel: (msg.speaker_label as string | null | undefined) ?? null,
   };
 }
 

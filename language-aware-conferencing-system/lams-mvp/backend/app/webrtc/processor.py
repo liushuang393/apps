@@ -269,11 +269,25 @@ class SegmentProcessor:
         subtitle_id = generate_subtitle_id()
         await subtitle_cache.store_original(subtitle_id, original_text, detected_lang)
 
-        # A/B 実験の配信単位（room/user）を発話文脈へ設定する。聞く主線の
-        # process_audio がこれを継承し unit=room/user を解決可能にする（未有効時は無害）。
-        # session_id は hot-path での DB 追加取得を避けるため設定しない（unit=session は
-        # 現状ライブ解決対象外＝既定へ縮退）。
-        ab_token = set_ab_context(ABContext(room_id=room_id, user_id=speaker_id))
+        # 話者分離（P4-A）: 発話の表示ラベルを orchestrate 前に解決する。ライブ字幕
+        # payload へ載せて話者帰属を即時表示するため（未有効時は即 None・非破壊）。
+        speaker_label = await self._resolve_speaker_label(room_id, wav)
+
+        # セッション id を安全取得（失敗は None）。A/B の unit=session 解決と回放ログの
+        # 双方で使い回すことで DB 呼び出しは 1 回に保つ（純増ゼロ）。回放ログ無効時は
+        # 追加コストを避けるため解決しない（この場合 unit=session は既定へ縮退。room/user
+        # は影響なし）。
+        session_id = (
+            await self._safe_session_id(room_id)
+            if self._record_event_fn is not None
+            else None
+        )
+
+        # A/B 実験の配信単位（room/user/session）を発話文脈へ設定する。聞く主線の
+        # process_audio がこれを継承し unit=room/user/session を解決可能にする（未有効時は無害）。
+        ab_token = set_ab_context(
+            ABContext(room_id=room_id, user_id=speaker_id, session_id=session_id)
+        )
         try:
             result = await self._orchestrator.orchestrate(
                 audio_bytes=wav,
@@ -287,12 +301,10 @@ class SegmentProcessor:
                 subtitle_id=subtitle_id,
                 seq=seq,
                 speaker_id=speaker_id,
+                speaker_label=speaker_label,
             )
         finally:
             reset_ab_context(ab_token)
-
-        # 話者分離（P4-A）: 発話の表示ラベルを解決（未有効時 None・非破壊）。
-        speaker_label = await self._resolve_speaker_label(room_id, wav)
 
         seg_id = await save_transcript_segment(
             room_id=room_id,
@@ -315,8 +327,17 @@ class SegmentProcessor:
             seg_id=seg_id,
             result=result,
             speaker_label=speaker_label,
+            session_id=session_id,
         )
         return result
+
+    async def _safe_session_id(self, room_id: str) -> str | None:
+        """セッション id を安全に解決する（失敗時 None・ライブを壊さない）。"""
+        try:
+            return await get_or_create_session(room_id)
+        except Exception as e:  # noqa: BLE001 - セッション解決失敗はライブを壊さない
+            logger.warning("[Agent] セッション解決に失敗(room=%s): %s", room_id, e)
+            return None
 
     async def _record_pipeline_event(
         self,
@@ -330,13 +351,14 @@ class SegmentProcessor:
         seg_id: str | None,
         result: OrchestrationResult,
         speaker_label: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """回放ログ（PipelineEvent）を記録する。音声アーカイブ有効時は暗号化保存。
 
-        record_event_fn 未注入なら何もしない（従来挙動）。全体を try/except で囲い、
-        get_or_create_session 等の未防御依存が例外を投げても process を壊さない
-        （review 指摘 3: ライブ配信は既に完了済みで、回放ログ記録の失敗で収束の
-        戻り値を飛ばしてはならない）。
+        record_event_fn 未注入なら何もしない（従来挙動）。session_id は process() が
+        解決済みの値を受け取る（DB 呼び出しの二重化回避）。全体を try/except で囲い、
+        未防御依存が例外を投げても process を壊さない（review 指摘 3: ライブ配信は既に
+        完了済みで、回放ログ記録の失敗で収束の戻り値を飛ばしてはならない）。
         """
         if self._record_event_fn is None:
             return
@@ -346,7 +368,6 @@ class SegmentProcessor:
                 h = compute_audio_hash(wav)
                 if await self._audio_archive.store(h, wav):
                     audio_hash = h
-            session_id = await get_or_create_session(room_id)
             degraded = _degraded_langs_present(
                 source_language=source_language,
                 tags=result.tags,

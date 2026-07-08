@@ -67,6 +67,8 @@
     "adminDesc": "Quản lý người dùng và cài đặt hệ thống",
     "languageSettings": "Cài đặt ngôn ngữ",
     "languageSettingsDesc": "Tùy chỉnh ngôn ngữ hỗ trợ hệ thống",
+    "experiments": "Thử nghiệm A/B",
+    "experimentsDesc": "Xem định tuyến và chỉ số thử nghiệm",
     "comingSoon": "Sắp ra mắt"
   },
   "room": {

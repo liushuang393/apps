@@ -11,11 +11,29 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic_settings import BaseSettings
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_csv_list(v: object) -> object:
+    """カンマ区切り文字列を list へ正規化する（.env のリスト系設定用）。
+
+    pydantic-settings は list 型フィールドの env 値を JSON として解釈するため、
+    "ja,en,zh,vi" のようなカンマ区切り記法だと解析に失敗する。本ヘルパで
+    カンマ区切り・JSON 配列・既存 list のいずれも受理する（NoDecode と併用）。
+    """
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return []
+        if s.startswith("["):  # JSON 配列記法はそのまま json で解釈
+            return json.loads(s)
+        return [item.strip() for item in s.split(",") if item.strip()]
+    return v
 
 
 def _load_secrets_json() -> dict:
@@ -372,7 +390,7 @@ class Settings(BaseSettings):
     # 環境変数 FRONTEND_PORT を自動読み込み（ポート変更時は .env のみ変更）
     frontend_port: int = 5273
     # 追加許可オリジン（省略可。HOST_IP + frontend_port は get_cors_origins() で自動生成）
-    cors_origins: list[str] = []
+    cors_origins: Annotated[list[str], NoDecode] = []
 
     def get_cors_origins(self) -> list[str]:
         """
@@ -399,7 +417,14 @@ class Settings(BaseSettings):
     # ===========================================
     # 対応言語（日本語、英語、中国語、ベトナム語）
     # ===========================================
-    supported_languages: list[str] = ["ja", "en", "zh", "vi"]
+    supported_languages: Annotated[list[str], NoDecode] = ["ja", "en", "zh", "vi"]
+
+    # env のカンマ区切り記法（例: "ja,en,zh,vi"）を list へ正規化する。NoDecode で
+    # pydantic-settings の JSON 前提を無効化し、本 validator で解釈する。
+    @field_validator("supported_languages", "cors_origins", mode="before")
+    @classmethod
+    def _split_list_fields(cls, v: object) -> object:
+        return _parse_csv_list(v)
 
     class Config:
         """Pydantic設定"""

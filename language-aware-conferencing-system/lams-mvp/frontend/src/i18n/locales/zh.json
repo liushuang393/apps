@@ -67,6 +67,8 @@
     "adminDesc": "用户管理和系统设置",
     "languageSettings": "语言设置",
     "languageSettingsDesc": "自定义系统支持的语言",
+    "experiments": "A/B实验",
+    "experimentsDesc": "查看实验分流与指标比较",
     "comingSoon": "即将推出"
   },
   "room": {

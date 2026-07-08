@@ -67,6 +67,8 @@
     "adminDesc": "User management and system settings",
     "languageSettings": "Language Settings",
     "languageSettingsDesc": "Customize system supported languages",
+    "experiments": "A/B Experiments",
+    "experimentsDesc": "Review experiment routing and metrics",
     "comingSoon": "Coming Soon"
   },
   "room": {
