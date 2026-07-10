@@ -1,247 +1,77 @@
-# VAD 最適化 - より自然で智能な実時翻訳
+# VAD 最適化 - 現行実装の仕様
 
-## 📋 ユーザーからの要求
+> ⚠️ **旧版に関する注意（2026-07 改訂）**
+> 本書の旧版は `getTurnDetectionConfig()` / `updateSessionConfig()` による
+> `turn_detection`（threshold 0.3/0.5/0.7、prefix_padding_ms: 300、silence_duration_ms: 1500）の
+> 調整方法を説明していたが、**この仕組みは廃止済み**。
+> 現在の翻訳エンドポイント（`/v1/realtime/translations`）は `session.update` での
+> `turn_detection` 指定を受け付けず、`getTurnDetectionConfig()` はコードに存在しない
+> （`updateSessionConfig()` は互換のための no-op、`voicetranslate-pro.js` 参照）。
+> 旧版の手順で「VADを調整」しても動作には一切影響しない。
 
-### 問題1: VAD感度が機能しない
-> VADの敏感度 是否起作用 稍微调高点
+## 現行アーキテクチャの全体像
 
-**原因**:
-- Server VAD使用時、VAD感度スライダーの値が反映されていなかった
-- `getTurnDetectionConfig()` で固定の `threshold: 0.5` を使用していた
+発話の区切り検出は次の3層で行われ、**どの層が効くかは設定と環境で決まる**。
 
-### 問題2: 翻訳が不自然
-> 连续说话 就最好一起翻译，稍微上时间1.5s？没有声音 就要送到q里等待翻译。
+| 層 | 実体 | 効く条件 |
+|---|---|---|
+| サーバー側ターン検出 | OpenAI translations エンドポイント（semantic_vad） | 既定。「自動音声検出」トグルON（既定ON）で全フレームをストリーム送信し、区切りはサーバーに委ねる |
+| クライアントVAD | `VoiceActivityDetector`（`voicetranslate-utils.js`） | 「自動音声検出」トグルを**OFF**にした場合のみ |
+| 文グルーピング | `CONFIG.TRANSLATION`（`voicetranslate-utils.js`） | テキスト翻訳（Path2）の送信単位を決める |
 
-**要求**:
-- **連続した発話**: 一緒に翻訳（文脈を保持）
-- **1.5秒の静音**: 発話終了と判定して翻訳キューに送信
+さらにブラウザ/拡張機能のマイクモードは WebRTC メディアトラック送信のため、
+クライアント側の VAD・リサンプル・PCM送信チェーンは**送信に関与しない**
+（クライアントVAD が実際に送信を制御するのは Electron の PCM 送信経路のみ）。
 
-## ✅ 実装した解決策
+## 1. サーバーVAD（既定・推奨）
 
-### 1. VAD感度の動的調整
+- 「自動音声検出」トグル（`vadEnabled`、既定ON）が有効な間、音声は無加工で連続送信され、
+  ターン検出はサーバー側で行われる。クライアントの VAD 感度設定は**この経路には影響しない**。
+- ブラウザ/拡張の WebRTC 経路では `noise_reduction: { type: 'near_field' }` を
+  client_secret 発行時に指定（`voicetranslate-pro.js` の `mintTranslationClientSecret`）。
 
-**修正前**:
-```javascript
-getTurnDetectionConfig() {
-    return {
-        type: 'server_vad',
-        threshold: 0.5, // ← 固定値
-        silence_duration_ms: 500  // マイクモード
-        // または
-        silence_duration_ms: 1200 // システム音声モード
-    };
-}
-```
+## 2. クライアントVAD（トグルOFF時のみ）
 
-**修正後**:
-```javascript
-getTurnDetectionConfig() {
-    // ✅ VAD感度スライダーの値を取得
-    const vadSensitivity = this.elements.vadSensitivity?.value || 'medium';
-    
-    // ✅ VAD感度に応じてthresholdを調整
-    const thresholdMap = {
-        low: 0.7,    // 低感度：大きい音のみ検出（騒音環境向け）
-        medium: 0.5, // 中感度：標準的な音声を検出（通常環境向け）
-        high: 0.3    // 高感度：小さい音も検出（静音環境向け）
-    };
-    
-    const threshold = thresholdMap[vadSensitivity] || 0.5;
-    
-    return {
-        type: 'server_vad',
-        threshold: threshold, // ✅ 動的に調整
-        prefix_padding_ms: 300,
-        silence_duration_ms: 1500 // ✅ 統一: 1.5秒
-    };
-}
-```
+実体: `VoiceActivityDetector`（`voicetranslate-utils.js`）
 
-### 2. silence_duration_ms の最適化
+- RMS エネルギー + 直近10フレームの移動平均
+- 起動後30フレームでノイズフロア（平均+標準偏差）を較正し、実効しきい値 = `max(threshold, noiseFloor×2)`
+- 感度プリセット（`CONFIG.VAD`、`voicetranslate-utils.js`）:
 
-**修正前**:
-- **マイクモード**: 500ms（短すぎる → 発話が途切れる）
-- **システム音声モード**: 1200ms（やや短い → 文脈が失われる）
+| プリセット | マイク threshold / debounce | システム threshold / debounce |
+|---|---|---|
+| LOW | 0.008 / 600ms | 0.015 / 700ms |
+| MEDIUM（既定） | 0.004 / 500ms | 0.01 / 600ms |
+| HIGH | 0.002 / 300ms | 0.006 / 400ms |
 
-**修正後**:
-- **両モード統一**: 1500ms（1.5秒）
+- どちらの列を使うかは capture-profile 決定表の `vadPreset`
+  （`voicetranslate-capture-profile.js`）が決める。UI選択値からの再判定は禁止。
 
-**効果**:
-```
-ユーザー発話: "Hello, how are you today?"
-              ↓ (呼吸・間)
-              "I'm fine, thank you."
+### 短句保護・取りこぼし防止（クライアントVAD経路）
 
-修正前（500ms）:
-  → "Hello," → 翻訳1
-  → "how are you today?" → 翻訳2
-  → "I'm fine," → 翻訳3
-  → "thank you." → 翻訳4
-  結果: 4つの断片的な翻訳（不自然）
+| 定数 | 値 | 場所 | 役割 |
+|---|---|---|---|
+| `minSpeechDuration` | 300ms | `voicetranslate-pro.js` | これ未満の発話は silence-confirm 後に再判定（短い単語の保護） |
+| `silenceConfirmDelay` | 200ms | `voicetranslate-pro.js` | 無音確定までの猶予 |
+| `MIN_QUEUE_DURATION` | 500ms | `voicetranslate-websocket-mixin.js` | これ未満のセグメントは破棄せず次セグメントと結合 |
+| `REALTIME_MIN_COMMIT_AUDIO_MS` | 100ms | `voicetranslate-websocket-mixin.js` | これ未満は commit せず clear（サーバーの buffer too small エラー回避） |
 
-修正後（1500ms）:
-  → "Hello, how are you today? I'm fine, thank you." → 翻訳1
-  結果: 1つの完全な翻訳（自然・文脈保持）
-```
+録音開始から**全フレームを連続バッファリング**するため、VAD 立ち上がり遅延による
+語頭切れは発生しない設計（コミット時にバッファ全体を連結）。
 
-### 3. VAD感度変更時のセッション更新
+## 3. 文グルーピング（テキスト翻訳の送信単位）
 
-**追加機能**:
-```javascript
-// VAD感度変更時
-this.elements.vadSensitivity.addEventListener('change', async (e) => {
-    this.updateVADSensitivity(e.target.value);
-    this.saveToStorage('vad_sensitivity', e.target.value);
-    
-    // ✅ Server VAD有効時は、セッション設定を更新
-    if (this.state.isConnected && this.elements.vadEnabled.classList.contains('active')) {
-        await this.updateSessionConfig();
-    }
-});
+`CONFIG.TRANSLATION`（`voicetranslate-utils.js`）:
 
-// セッション設定更新メソッド
-async updateSessionConfig() {
-    const updateEvent = {
-        type: 'session.update',
-        session: {
-            turn_detection: this.getTurnDetectionConfig()
-        }
-    };
-    this.sendMessage(updateEvent);
-}
-```
+- `TURN_MODE: 'grouped'` / `VAD_TYPE: 'semantic_vad'` / `SEMANTIC_EAGERNESS: 'medium'`
+- `MIN_COMPLETE_SENTENCES: 1`、`MAX_SENTENCES: 1`（1文ずつ即時翻訳）
+- `POST_SENTENCE_HOLD_MS: 150`（文完結後の追加発話待ち）
+- `MAX_BUFFER_MS: 2500`(無限待機防止の上限)
 
-## 🎯 VAD感度の3つのモード
+Electron では `.env` の `TRANSLATION_*` で上書き可能。ブラウザ/拡張はこの既定値が効く。
 
-### Low（低感度）- 騒音環境向け
-- **threshold**: 0.7
-- **用途**: カフェ、オフィス、街中など騒がしい環境
-- **特徴**: 大きい音のみ検出、誤検出を防ぐ
+## テスト方法
 
-### Medium（中感度）- 標準環境向け ⭐ デフォルト
-- **threshold**: 0.5
-- **用途**: 通常の室内、会議室、自宅など
-- **特徴**: 標準的な音声を検出、バランスが良い
-
-### High（高感度）- 静音環境向け
-- **threshold**: 0.3
-- **用途**: 防音室、静かな部屋、小声での会話
-- **特徴**: 小さい音も検出、感度が高い
-
-## 📊 パラメータ比較表
-
-| パラメータ | 修正前（マイク） | 修正前（システム） | 修正後（統一） |
-|-----------|----------------|------------------|---------------|
-| **threshold** | 0.5（固定） | 0.5（固定） | 0.3/0.5/0.7（動的） |
-| **silence_duration_ms** | 500ms | 1200ms | 1500ms |
-| **prefix_padding_ms** | 300ms | 300ms | 300ms |
-
-## 🔧 技術的な改善
-
-### 1. threshold の意味
-- **値が小さい** → 敏感（小さい音でも検出）
-- **値が大きい** → 鈍感（大きい音のみ検出）
-
-### 2. silence_duration_ms の意味
-- **値が小さい** → 短い静音で発話終了と判定（応答が速いが途切れやすい）
-- **値が大きい** → 長い静音で発話終了と判定（応答が遅いが文脈を保持）
-
-### 3. 最適なバランス
-- **threshold**: VAD感度スライダーで調整（環境に応じて）
-- **silence_duration_ms**: 1500ms（連続発話を一つにまとめる）
-- **prefix_padding_ms**: 300ms（発話開始前の音を含める）
-
-## 🎉 期待される効果
-
-### Before（修正前）❌
-
-**シナリオ**: ユーザーが連続して話す
-```
-User: "今日は天気がいいですね。" (500ms静音) "散歩に行きましょう。"
-      ↓
-AI: "今日は天気がいいですね。" → 翻訳1
-    (500ms後に発話終了と判定)
-    "散歩に行きましょう。" → 翻訳2
-    (2つの断片的な翻訳)
-```
-
-### After（修正後）✅
-
-**シナリオ**: 同じ発話
-```
-User: "今日は天気がいいですね。" (500ms静音) "散歩に行きましょう。"
-      ↓
-AI: (1500ms待機 - 連続発話を検出)
-    "今日は天気がいいですね。散歩に行きましょう。" → 翻訳1
-    (1つの完全な翻訳、文脈を保持)
-```
-
-## 📝 修正ファイル
-
-1. **voicetranslate-pro.js**
-   - `getTurnDetectionConfig()`: VAD感度に応じたthreshold調整
-   - `silence_duration_ms`: 1500msに統一
-   - `updateSessionConfig()`: セッション設定更新メソッド追加
-   - VAD感度変更イベント: セッション更新処理追加
-
-2. **voicetranslate-ui-mixin.js**
-   - `updateVisualizer()`: デバッグログ追加
-
-## 🧪 テスト方法
-
-### 1. VAD感度のテスト
-```
-1. ページをリフレッシュ（Ctrl+F5）
-2. 接続 → 開始
-3. VAD感度を変更: Low → Medium → High
-4. 各設定で話してみる
-5. コンソールログを確認:
-   [VAD] Server VAD設定: 感度=high, threshold=0.3, silence=1500ms
-```
-
-### 2. 連続発話のテスト
-```
-1. 接続 → 開始
-2. 連続して話す（間に短い停顿を入れる）:
-   "Hello, how are you?" (0.5秒停顿) "I'm fine, thank you."
-3. 期待される動作:
-   - 1.5秒の静音まで待機
-   - 全体を1つの翻訳として処理
-   - 文脈を保持した自然な翻訳
-```
-
-### 3. 環境別のテスト
-
-**静かな環境**:
-- VAD感度: High
-- 小声でも検出されることを確認
-
-**騒がしい環境**:
-- VAD感度: Low
-- 背景ノイズで誤検出しないことを確認
-
-**通常環境**:
-- VAD感度: Medium（デフォルト）
-- バランスの良い検出を確認
-
-## 💡 ユーザーへの推奨設定
-
-### 個人対話モード（マイク）
-- **VAD感度**: Medium または High
-- **環境**: 静かな部屋、自宅
-- **用途**: 1対1の会話、語学学習
-
-### 会議監視モード（システム音声）
-- **VAD感度**: Low または Medium
-- **環境**: 会議室、オフィス
-- **用途**: Teams/Zoom会議、プレゼンテーション
-
-## 🚀 次のステップ
-
-1. **ページをリフレッシュ**（Ctrl+F5）
-2. **VAD感度を調整**して最適な設定を見つける
-3. **連続発話をテスト**して翻訳の自然さを確認
-4. **フィードバック**を提供して更なる改善を実現
-
-これで、より自然で智能な実時翻訳が実現されます！🎉
-
+- 決定表・送信ゲートの単体テスト: `npx jest tests/audio/CaptureProfile.test.js tests/audio/SendAudioDataDuplexGate.test.js`
+- 手動確認: 「自動音声検出」をOFFにして VAD 感度 Low/Medium/High を切り替え、
+  短い単語（「はい」等）が取りこぼされないこと、無音でセグメントが送信されないことを確認。

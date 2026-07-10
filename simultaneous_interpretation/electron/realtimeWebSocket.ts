@@ -1,203 +1,313 @@
 /**
- * OpenAI Realtime API WebSocket ハンドラー (Electron Main Process)
+ * OpenAI Realtime WebSocket の connectionId ベース接続管理。
  *
- * @description
- * Authorizationヘッダーを使用したWebSocket接続を管理
- *
- * 目的:
- *   - Node.jsの`ws`ライブラリを使用してカスタムヘッダーを設定
- *   - renderer processとIPC経由で通信
- *
- * @author VoiceTranslate Pro Team
- * @version 1.0.0
+ * API キーと接続先は main 内部サービスから取得し、renderer からは受け取らない。
+ * 古い socket の遅延イベントは現在の接続へ一切影響させない。
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { randomUUID } from 'crypto';
+import { WebContents } from 'electron';
 import WebSocket from 'ws';
+import { CredentialService } from './CredentialService';
+import { OpenAIConfigService } from './OpenAIConfigService';
 
-/**
- * WebSocket接続設定
- */
-interface WebSocketConfig {
-    url: string;
-    apiKey: string;
-    model: string;
+const CONNECT_TIMEOUT_MS = 30_000;
+const MAX_OUTBOUND_MESSAGE_BYTES = 4 * 1024 * 1024;
+const MAX_INBOUND_MESSAGE_BYTES = 16 * 1024 * 1024;
+
+const ALLOWED_EVENT_TYPES = new Set([
+    'session.update',
+    'session.close',
+    'input_audio_buffer.append',
+    'input_audio_buffer.commit',
+    'input_audio_buffer.clear',
+    'response.create'
+]);
+
+export type RealtimeConnectionState =
+    | 'idle'
+    | 'connecting'
+    | 'open'
+    | 'closing'
+    | 'closed'
+    | 'failed';
+
+export interface RealtimeRendererEvent {
+    connectionId: string;
+    kind: 'open' | 'message' | 'error' | 'close';
+    message?: string;
+    code?: number;
+    reason?: string;
+    authError?: boolean;
 }
 
-/**
- * アクティブなWebSocket接続
- */
-let activeWebSocket: WebSocket | null = null;
+export interface RealtimeSendResult {
+    success: boolean;
+    message?: string;
+}
 
-/**
- * WebSocket接続ハンドラーを初期化
- *
- * 目的:
- *   IPCハンドラーを登録してrenderer processからの要求を処理
- */
-export function initializeRealtimeWebSocket(): void {
-    console.info('[Realtime WS] Initializing WebSocket handlers');
+interface ActiveConnection {
+    id: string;
+    owner: WebContents;
+    socket: WebSocket;
+    state: RealtimeConnectionState;
+    connectTimer: NodeJS.Timeout;
+    resolveConnect: (value: { connectionId: string }) => void;
+    rejectConnect: (error: Error) => void;
+    connectSettled: boolean;
+}
 
-    // WebSocket接続を確立
-    ipcMain.handle('realtime-ws-connect', async (event, config: WebSocketConfig) => {
-        try {
-            console.info('[Realtime WS] 接続要求を受信:', {
-                url: config.url,
-                model: config.model,
-                apiKey: config.apiKey ? `${config.apiKey.substring(0, 7)}...` : 'なし'
-            });
+type WebSocketFactory = (url: string, options: WebSocket.ClientOptions) => WebSocket;
 
-            // 既存の接続をクリーンアップ
-            if (activeWebSocket) {
-                console.info('[Realtime WS] 既存の接続をクローズ');
-                activeWebSocket.close();
-                activeWebSocket = null;
-            }
+export class RealtimeSessionManager {
+    private active: ActiveConnection | null = null;
 
-            // WebSocket URL構築
-            const wsUrl = `${config.url}?model=${config.model}`;
-            console.info('[Realtime WS] 接続URL:', wsUrl);
+    public constructor(
+        private readonly credentials: CredentialService,
+        private readonly config: OpenAIConfigService,
+        private readonly socketFactory: WebSocketFactory = (url, options) =>
+            new WebSocket(url, options)
+    ) {}
 
-            // Authorizationヘッダー付きでWebSocket作成
-            // GA: 'OpenAI-Beta: realtime=v1' ヘッダーは削除
-            activeWebSocket = new WebSocket(wsUrl, {
-                headers: {
-                    Authorization: `Bearer ${config.apiKey}`
+    public async connect(owner: WebContents): Promise<{ connectionId: string }> {
+        const apiKey = this.credentials.getApiKey();
+        if (apiKey === null) {
+            throw new Error('OpenAI API キーが設定されていません');
+        }
+
+        await this.closeCurrent(false);
+        const connectionId = randomUUID();
+        const socket = this.socketFactory(this.config.buildRealtimeUrl(), {
+            headers: { Authorization: `Bearer ${apiKey}` },
+            maxPayload: MAX_INBOUND_MESSAGE_BYTES
+        });
+
+        return await new Promise<{ connectionId: string }>((resolve, reject) => {
+            const connectTimer = setTimeout(() => {
+                const current = this.active;
+                if (current === null || current.id !== connectionId || current.connectSettled) {
+                    return;
                 }
-            });
+                current.connectSettled = true;
+                current.state = 'failed';
+                this.active = null;
+                current.socket.terminate();
+                reject(new Error('Realtime WebSocket 接続がタイムアウトしました'));
+            }, CONNECT_TIMEOUT_MS);
 
-            // イベントハンドラー設定
-            setupWebSocketHandlers(activeWebSocket, BrowserWindow.fromWebContents(event.sender));
-
-            return { success: true, message: '接続を開始しました' };
-        } catch (error) {
-            console.error('[Realtime WS] 接続エラー:', error);
-            return {
-                success: false,
-                message: `接続失敗: ${(error as Error).message}`
+            const connection: ActiveConnection = {
+                id: connectionId,
+                owner,
+                socket,
+                state: 'connecting',
+                connectTimer,
+                resolveConnect: resolve,
+                rejectConnect: reject,
+                connectSettled: false
             };
-        }
-    });
-
-    // メッセージ送信
-    ipcMain.handle('realtime-ws-send', async (_event, message: string) => {
-        try {
-            if (!activeWebSocket || activeWebSocket.readyState !== WebSocket.OPEN) {
-                throw new Error('WebSocketが接続されていません');
-            }
-
-            activeWebSocket.send(message);
-            // ログ削除: 頻繁すぎるため
-            return { success: true };
-        } catch (error) {
-            console.error('[Realtime WS] 送信エラー:', error);
-            return {
-                success: false,
-                message: `送信失敗: ${(error as Error).message}`
-            };
-        }
-    });
-
-    // 接続をクローズ
-    ipcMain.handle('realtime-ws-close', async () => {
-        try {
-            if (activeWebSocket) {
-                activeWebSocket.close();
-                activeWebSocket = null;
-                console.info('[Realtime WS] 接続をクローズしました');
-            }
-            return { success: true };
-        } catch (error) {
-            console.error('[Realtime WS] クローズエラー:', error);
-            return {
-                success: false,
-                message: `クローズ失敗: ${(error as Error).message}`
-            };
-        }
-    });
-
-    // 接続状態を取得
-    ipcMain.handle('realtime-ws-state', async () => {
-        if (!activeWebSocket) {
-            return { state: 'CLOSED', readyState: WebSocket.CLOSED };
-        }
-
-        const stateNames: { [key: number]: string } = {
-            [WebSocket.CONNECTING]: 'CONNECTING',
-            [WebSocket.OPEN]: 'OPEN',
-            [WebSocket.CLOSING]: 'CLOSING',
-            [WebSocket.CLOSED]: 'CLOSED'
-        };
-
-        return {
-            state: stateNames[activeWebSocket.readyState] || 'UNKNOWN',
-            readyState: activeWebSocket.readyState
-        };
-    });
-}
-
-/**
- * WebSocketイベントハンドラーを設定
- *
- * @param ws - WebSocketインスタンス
- * @param window - BrowserWindowインスタンス
- */
-function setupWebSocketHandlers(ws: WebSocket, window: BrowserWindow | null): void {
-    if (!window) {
-        console.error('[Realtime WS] BrowserWindow not found');
-        return;
+            this.active = connection;
+            this.attachHandlers(connection);
+        });
     }
 
-    // 接続成功
-    ws.on('open', () => {
-        console.info('[Realtime WS] WebSocket接続成功');
-        window.webContents.send('realtime-ws-open');
-    });
-
-    // メッセージ受信
-    ws.on('message', (data: WebSocket.Data) => {
-        try {
-            const message = data.toString();
-            // ログ削除: 頻繁すぎるため（必要時はDEBUGモードで確認）
-            window.webContents.send('realtime-ws-message', message);
-        } catch (error) {
-            console.error('[Realtime WS] メッセージ処理エラー:', error);
+    public send(connectionId: string, event: unknown): RealtimeSendResult {
+        const connection = this.active;
+        if (
+            connection === null ||
+            connection.id !== connectionId ||
+            connection.state !== 'open' ||
+            connection.socket.readyState !== WebSocket.OPEN
+        ) {
+            return { success: false, message: 'Realtime WebSocket が接続されていません' };
         }
-    });
 
-    // エラー
-    ws.on('error', (error: Error) => {
-        console.error('[Realtime WS] WebSocketエラー:', error);
-        window.webContents.send('realtime-ws-error', {
-            message: error.message,
-            stack: error.stack
-        });
-    });
+        let message: string;
+        try {
+            this.validateEvent(event);
+            message = JSON.stringify(event);
+        } catch (error) {
+            return { success: false, message: this.errorMessage(error) };
+        }
+        if (Buffer.byteLength(message, 'utf8') > MAX_OUTBOUND_MESSAGE_BYTES) {
+            return { success: false, message: 'Realtime メッセージが大きすぎます' };
+        }
 
-    // 接続クローズ
-    ws.on('close', (code: number, reason: Buffer) => {
-        console.info('[Realtime WS] WebSocket接続終了:', {
-            code,
-            reason: reason.toString()
-        });
-        window.webContents.send('realtime-ws-close', {
-            code,
-            reason: reason.toString()
-        });
-        activeWebSocket = null;
-    });
-}
+        try {
+            connection.socket.send(message);
+            return { success: true };
+        } catch (error) {
+            return { success: false, message: `送信失敗: ${this.errorMessage(error)}` };
+        }
+    }
 
-/**
- * クリーンアップ
- *
- * 目的:
- *   アプリケーション終了時にWebSocket接続をクローズ
- */
-export function cleanupRealtimeWebSocket(): void {
-    if (activeWebSocket) {
-        console.info('[Realtime WS] クリーンアップ: 接続をクローズ');
-        activeWebSocket.close();
-        activeWebSocket = null;
+    public async close(connectionId: string): Promise<void> {
+        if (this.active === null || this.active.id !== connectionId) {
+            return;
+        }
+        await this.closeCurrent(true);
+    }
+
+    public getState(): { connectionId: string | null; state: RealtimeConnectionState } {
+        return this.active === null
+            ? { connectionId: null, state: 'idle' }
+            : { connectionId: this.active.id, state: this.active.state };
+    }
+
+    public ownsConnection(connectionId: string, owner: WebContents): boolean {
+        return this.active?.id === connectionId && this.active.owner.id === owner.id;
+    }
+
+    public async cleanup(): Promise<void> {
+        await this.closeCurrent(false);
+    }
+
+    private attachHandlers(connection: ActiveConnection): void {
+        connection.socket.on('open', () => {
+            if (!this.isCurrent(connection)) {
+                return;
+            }
+            clearTimeout(connection.connectTimer);
+            connection.state = 'open';
+            this.emit(connection, { connectionId: connection.id, kind: 'open' });
+            if (!connection.connectSettled) {
+                connection.connectSettled = true;
+                connection.resolveConnect({ connectionId: connection.id });
+            }
+        });
+
+        connection.socket.on('message', (data: WebSocket.Data) => {
+            if (!this.isCurrent(connection)) {
+                return;
+            }
+            this.emit(connection, {
+                connectionId: connection.id,
+                kind: 'message',
+                message: data.toString()
+            });
+        });
+
+        connection.socket.on('error', (error: Error) => {
+            if (!this.isCurrent(connection)) {
+                return;
+            }
+            const authError = /401|403|unauthori[sz]ed|invalid[_ -]?api[_ -]?key/iu.test(
+                error.message
+            );
+            this.emit(connection, {
+                connectionId: connection.id,
+                kind: 'error',
+                message: error.message,
+                authError
+            });
+            if (!connection.connectSettled) {
+                clearTimeout(connection.connectTimer);
+                connection.connectSettled = true;
+                connection.state = 'failed';
+                this.active = null;
+                connection.socket.terminate();
+                connection.rejectConnect(
+                    new Error(`Realtime WebSocket 接続に失敗しました: ${error.message}`)
+                );
+            }
+        });
+
+        connection.socket.on('close', (code: number, reason: Buffer) => {
+            if (!this.isCurrent(connection)) {
+                return;
+            }
+            clearTimeout(connection.connectTimer);
+            const reasonText = reason.toString();
+            const authError =
+                code === 1008 ||
+                /401|403|unauthori[sz]ed|invalid[_ -]?api[_ -]?key/iu.test(reasonText);
+            connection.state = 'closed';
+            this.active = null;
+            this.emit(connection, {
+                connectionId: connection.id,
+                kind: 'close',
+                code,
+                reason: reasonText,
+                authError
+            });
+            if (!connection.connectSettled) {
+                connection.connectSettled = true;
+                connection.rejectConnect(
+                    new Error(`Realtime WebSocket が接続前に終了しました (${code})`)
+                );
+            }
+        });
+    }
+
+    private async closeCurrent(emitClose: boolean): Promise<void> {
+        const connection = this.active;
+        if (connection === null) {
+            return;
+        }
+
+        this.active = null;
+        clearTimeout(connection.connectTimer);
+        connection.state = 'closing';
+        if (!connection.connectSettled) {
+            connection.connectSettled = true;
+            connection.rejectConnect(new Error('Realtime WebSocket 接続をキャンセルしました'));
+        }
+        if (emitClose) {
+            this.emit(connection, {
+                connectionId: connection.id,
+                kind: 'close',
+                code: 1000,
+                reason: 'client-close'
+            });
+        }
+
+        await new Promise<void>((resolve) => {
+            if (
+                connection.socket.readyState === WebSocket.CLOSED ||
+                connection.socket.readyState === WebSocket.CLOSING
+            ) {
+                resolve();
+                return;
+            }
+            const timer = setTimeout(() => {
+                connection.socket.terminate();
+                resolve();
+            }, 2_000);
+            connection.socket.once('close', () => {
+                clearTimeout(timer);
+                resolve();
+            });
+            try {
+                connection.socket.close(1000, 'client-close');
+            } catch {
+                clearTimeout(timer);
+                connection.socket.terminate();
+                resolve();
+            }
+        });
+    }
+
+    private validateEvent(event: unknown): asserts event is Record<string, unknown> {
+        if (typeof event !== 'object' || event === null || Array.isArray(event)) {
+            throw new Error('Realtime イベントはオブジェクトで指定してください');
+        }
+        const type = (event as Record<string, unknown>)['type'];
+        if (typeof type !== 'string' || !ALLOWED_EVENT_TYPES.has(type)) {
+            throw new Error(`Realtime イベント種別が許可されていません: ${String(type)}`);
+        }
+    }
+
+    private isCurrent(connection: ActiveConnection): boolean {
+        return this.active?.id === connection.id && this.active.socket === connection.socket;
+    }
+
+    private emit(connection: ActiveConnection, event: RealtimeRendererEvent): void {
+        if (connection.owner.isDestroyed()) {
+            return;
+        }
+        connection.owner.send('realtime:event', event);
+    }
+
+    private errorMessage(error: unknown): string {
+        return error instanceof Error ? error.message : String(error);
     }
 }

@@ -24,6 +24,9 @@ class VoiceTranslateApp {
     constructor() {
         this.state = {
             apiKey: '',
+            credentialConfigured: false,
+            connectionGeneration: null,
+            connectionState: 'idle',
             isConnected: false,
             isRecording: false,
             sourceLang: null, // ✅ 修正: 自動検出に変更、初期値は null
@@ -63,6 +66,8 @@ class VoiceTranslateApp {
         this.vad = null;
         this.elements = {};
         this.timers = {};
+        this.connectPromise = null;
+        this.disconnectPromise = null;
 
         // ✅ キャプチャプロファイル（voicetranslate-capture-profile.js の決定表の現在行）。
         //    半二重ゲート・VADプリセット・TTS抑止は必ずこれを参照する（判定の単一集約点）。
@@ -274,6 +279,9 @@ class VoiceTranslateApp {
         // ブラウザ版とElectronアプリの競合を防ぐ
         this.initCrossInstanceSync();
 
+        // 最小化/バックグラウンド化で suspended になった AudioContext の自動復帰
+        this.initAudioContextRecovery();
+
         // マイク権限を自動チェック
         await this.checkMicrophonePermission();
 
@@ -387,12 +395,20 @@ class VoiceTranslateApp {
         this.elements.apiKey.addEventListener('input', (e) => {
             const value = e.target.value;
             const progress = document.getElementById('apiKeyProgress');
-            if (value.startsWith('sk-') && value.length > 20) {
+            if (value.trim().length > 0) {
                 progress.style.width = '100%';
-                this.state.apiKey = value;
-                this.saveToStorage('openai_api_key', value);
+                if (this.platform.isElectron) {
+                    // Electron は保存ボタン押下時だけ main の safeStorage へ渡す。
+                    this.state.pendingApiKey = value;
+                } else {
+                    this.state.apiKey = value;
+                    this.saveToStorage('openai_api_key', value);
+                }
             } else {
                 progress.style.width = `${(value.length / 50) * 100}%`;
+                if (this.platform.isElectron) {
+                    this.state.pendingApiKey = '';
+                }
             }
         });
 
@@ -403,7 +419,8 @@ class VoiceTranslateApp {
         if (this.elements.sourceLang) {
             this.elements.sourceLang.addEventListener('change', (e) => {
                 this.runSettingChange('入力言語', () => {
-                    this.state.sourceLang = e.currentTarget.value === 'auto' ? null : e.currentTarget.value;
+                    this.state.sourceLang =
+                        e.currentTarget.value === 'auto' ? null : e.currentTarget.value;
                     this.saveToStorage('source_lang', e.currentTarget.value);
                 });
             });
@@ -506,7 +523,11 @@ class VoiceTranslateApp {
                             // ✅ 音声トラックの有無を即座にチェック
                             const audioTrack = stream.getAudioTracks()[0];
                             if (audioTrack) {
-                                this.notify('選択完了', `${audioTrack.label} を選択しました`, 'success');
+                                this.notify(
+                                    '選択完了',
+                                    `${audioTrack.label} を選択しました`,
+                                    'success'
+                                );
 
                                 // 選択された音声ソースを保存
                                 this.state.selectedDisplayMediaStream = stream;
@@ -536,7 +557,11 @@ class VoiceTranslateApp {
                                     'info'
                                 );
                             } else {
-                                this.notify('エラー', '画面/ウィンドウの選択に失敗しました', 'error');
+                                this.notify(
+                                    'エラー',
+                                    '画面/ウィンドウの選択に失敗しました',
+                                    'error'
+                                );
                             }
                         }
                     }
@@ -998,7 +1023,7 @@ class VoiceTranslateApp {
             vadSensitivity: await this.getFromStorage('vad_sensitivity')
         };
 
-        if (settings.apiKey) {
+        if (!this.platform.isElectron && settings.apiKey) {
             this.elements.apiKey.value = settings.apiKey;
             this.state.apiKey = settings.apiKey;
             const progress = document.getElementById('apiKeyProgress');
@@ -1089,8 +1114,7 @@ class VoiceTranslateApp {
      *   app2で録音開始時に、ブラウザ版の録音を自動停止
      */
     initCrossInstanceSync() {
-        if (this.platform.isElectron) {
-        } else {
+        if (!this.platform.isElectron) {
             // ブラウザ版の場合、LocalStorageの変更を監視
             globalThis.addEventListener('storage', (event) => {
                 if (event.key === 'app2_recording' && event.newValue === 'true') {
@@ -1108,11 +1132,110 @@ class VoiceTranslateApp {
         }
     }
 
+    /**
+     * AudioContext の自動復帰を初期化する
+     *
+     * 目的:
+     *   ウィンドウ最小化/バックグラウンド化でブラウザが AudioContext を suspended に
+     *   すると、録音セッションの音声が無通知で途切れる（特に拡張のポップアップ窓）。
+     *   可視状態への復帰時に入力/出力 AudioContext を自動 resume して防ぐ。
+     *   （suspended への遷移自体は watchAudioContextSuspension が即時検知する）
+     */
+    initAudioContextRecovery() {
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                void this.resumeSuspendedAudioContexts();
+            }
+        });
+    }
+
+    /**
+     * 録音中に suspended になった AudioContext を resume する
+     *
+     * @returns {Promise<void>}
+     */
+    async resumeSuspendedAudioContexts() {
+        if (!this.state.isRecording) {
+            return;
+        }
+        for (const ctx of [this.state.audioContext, this.state.outputAudioContext]) {
+            if (ctx && ctx.state === 'suspended') {
+                try {
+                    await ctx.resume();
+                } catch (error) {
+                    // 失敗しても入力は止めない（次の visibilitychange / 再生時 resume で再試行される）
+                    if (!this._audioResumeWarned) {
+                        this._audioResumeWarned = true;
+                        this.notify(
+                            '音声処理の再開に失敗',
+                            'ウィンドウをクリックすると音声処理が再開されます: ' +
+                                this.extractErrorMessage(error),
+                            'warning'
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * AudioContext の suspended 遷移を監視し、録音中なら即時 resume を試みる
+     *
+     * @param {AudioContext} ctx - 監視対象の AudioContext
+     */
+    watchAudioContextSuspension(ctx) {
+        ctx.addEventListener('statechange', () => {
+            if (ctx.state === 'suspended' && this.state.isRecording) {
+                void this.resumeSuspendedAudioContexts();
+            }
+        });
+    }
+
     async validateApiKey() {
         const btn = this.elements.validateBtn;
         const originalText = btn.querySelector('#validateBtnText').textContent;
 
-        if (!this.state.apiKey || !this.state.apiKey.startsWith('sk-')) {
+        if (this.platform.isElectron) {
+            const pendingKey = (
+                this.state.pendingApiKey ||
+                this.elements.apiKey.value ||
+                ''
+            ).trim();
+            if (!pendingKey) {
+                this.notify('エラー', '保存するAPIキーを入力してください', 'error');
+                return;
+            }
+            btn.disabled = true;
+            try {
+                const result = await this.platform.storeCredential(pendingKey);
+                if (!result || !result.success) {
+                    throw new Error(result?.message || 'APIキーを保存できませんでした');
+                }
+                this.state.pendingApiKey = '';
+                this.elements.apiKey.value = '';
+                this.state.credentialConfigured = true;
+                this.state.apiKey = '';
+                localStorage.removeItem('openai_api_key');
+                const progress = document.getElementById('apiKeyProgress');
+                if (progress) {
+                    progress.style.width = '100%';
+                }
+                this.notify(
+                    'APIキーを保存しました',
+                    result.persisted
+                        ? 'OSの安全なストレージに暗号化して保存しました'
+                        : result.message || '今回の起動中のみ使用します',
+                    result.persisted ? 'success' : 'warning'
+                );
+            } catch (error) {
+                this.notify('エラー', this.extractErrorMessage(error), 'error');
+            } finally {
+                btn.disabled = false;
+            }
+            return;
+        }
+
+        if (!this.state.apiKey) {
             this.notify('エラー', '有効なAPIキーを入力してください', 'error');
             return;
         }
@@ -1121,11 +1244,13 @@ class VoiceTranslateApp {
         btn.querySelector('#validateBtnText').innerHTML = '<span class="spinner"></span> 検証中...';
 
         try {
-            // APIキー検証（実際のエンドポイントに接続テスト）
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // シミュレーション
-
-            this.notify('成功', 'APIキーが検証されました', 'success');
-            btn.querySelector('#validateBtnText').textContent = '✓ 検証済み';
+            // ブラウザ版では保存のみ行い、実際の認証は接続時に確定する。
+            this.notify(
+                '保存完了',
+                'APIキーを保存しました。認証は接続時に確認されます。',
+                'success'
+            );
+            btn.querySelector('#validateBtnText').textContent = '✓ 保存済み';
 
             setTimeout(() => {
                 btn.querySelector('#validateBtnText').textContent = originalText;
@@ -1152,16 +1277,29 @@ class VoiceTranslateApp {
         }
 
         try {
-            const envApiKey = await this.platform.getEnvApiKey();
-
-            if (envApiKey) {
-                this.state.apiKey = envApiKey;
-                // UIに反映（セキュリティのため一部のみ表示）
-                // 注意: パスワードフィールドには完全なキーを設定
-                if (this.elements && this.elements.apiKey) {
-                    this.elements.apiKey.value = envApiKey;
+            // 旧 localStorage 平文キーを1回だけ safeStorage へ移行する。
+            const migrationKey = 'electron_secure_key_migration_v1';
+            if (localStorage.getItem(migrationKey) !== 'done') {
+                const legacyKey = localStorage.getItem('openai_api_key');
+                if (legacyKey) {
+                    const migrated = await this.platform.storeCredential(legacyKey);
+                    if (migrated?.success && migrated.persisted) {
+                        localStorage.removeItem('openai_api_key');
+                        localStorage.setItem(migrationKey, 'done');
+                    }
+                } else {
+                    localStorage.setItem(migrationKey, 'done');
                 }
-            } else {
+            }
+
+            const credentialStatus = await this.platform.getCredentialStatus();
+            this.state.credentialConfigured = !!credentialStatus?.configured;
+            this.state.apiKey = '';
+            if (this.elements?.apiKey) {
+                this.elements.apiKey.value = '';
+                this.elements.apiKey.placeholder = this.state.credentialConfigured
+                    ? `APIキー設定済み (${credentialStatus.source})`
+                    : 'OpenAI APIキーを入力して保存';
             }
 
             // 環境変数から設定を読み込む
@@ -1175,25 +1313,61 @@ class VoiceTranslateApp {
                     envConfig.transcribeModel ||
                     CONFIG.API.TRANSCRIBE_MODEL ||
                     'gpt-realtime-whisper';
-                CONFIG.API.REALTIME_URL = envConfig.realtimeUrl;
+                // URL とキーは main 専有。renderer は公開モデル/ターン設定だけを受け取る。
 
                 // 翻訳の区切り（ターン検出）設定を .env から上書き
                 // 未設定の項目は CONFIG.TRANSLATION の既定値を維持する
                 if (envConfig.translation) {
                     const t = envConfig.translation;
-                    if (t.turnMode != null) CONFIG.TRANSLATION.TURN_MODE = t.turnMode;
-                    if (t.vadType != null) CONFIG.TRANSLATION.VAD_TYPE = t.vadType;
-                    if (t.semanticEagerness != null)
+                    if (t.turnMode != null) {
+                        CONFIG.TRANSLATION.TURN_MODE = t.turnMode;
+                    }
+                    if (t.vadType != null) {
+                        CONFIG.TRANSLATION.VAD_TYPE = t.vadType;
+                    }
+                    if (t.semanticEagerness != null) {
                         CONFIG.TRANSLATION.SEMANTIC_EAGERNESS = t.semanticEagerness;
-                    if (t.maxSentences != null) CONFIG.TRANSLATION.MAX_SENTENCES = t.maxSentences;
-                    if (t.postSentenceHoldMs != null)
+                    }
+                    if (t.maxSentences != null) {
+                        CONFIG.TRANSLATION.MAX_SENTENCES = t.maxSentences;
+                    }
+                    if (t.postSentenceHoldMs != null) {
                         CONFIG.TRANSLATION.POST_SENTENCE_HOLD_MS = t.postSentenceHoldMs;
-                    if (t.maxBufferMs != null) CONFIG.TRANSLATION.MAX_BUFFER_MS = t.maxBufferMs;
+                    }
+                    if (t.maxBufferMs != null) {
+                        CONFIG.TRANSLATION.MAX_BUFFER_MS = t.maxBufferMs;
+                    }
                 }
             }
         } catch (error) {
             this.notify('警告', '環境設定の読み込みに失敗しました（既定値を使用します）', 'error');
         }
+    }
+
+    hasApiCredential() {
+        return this.platform.isElectron ? !!this.state.credentialConfigured : !!this.state.apiKey;
+    }
+
+    async ensureConversationSession() {
+        if (!this.platform.conversation || this.state.currentSessionId) {
+            return this.state.currentSessionId;
+        }
+        if (!this._conversationSessionPromise) {
+            this._conversationSessionPromise = this.platform.conversation
+                .startSession(this.state.sourceLang || 'auto', this.state.targetLang || 'ja')
+                .then((sessionId) => {
+                    this.state.currentSessionId = sessionId;
+                    return sessionId;
+                })
+                .catch(() => {
+                    this.notify('警告', '会話履歴セッションの開始に失敗しました', 'error');
+                    return null;
+                })
+                .finally(() => {
+                    this._conversationSessionPromise = null;
+                });
+        }
+        return await this._conversationSessionPromise;
     }
 
     setupElectronWebSocketHandlers() {
@@ -1215,8 +1389,8 @@ class VoiceTranslateApp {
 
         // Realtime WebSocket イベントをアダプタ経由で購読
         this.platform.subscribeRealtimeEvents({
-            onOpen: () => {
-                this.handleWSOpen();
+            onOpen: (event) => {
+                this.handleWSOpen(event);
             },
             onMessage: (message) => {
                 this.handleWSMessage({ data: message });
@@ -1236,7 +1410,7 @@ class VoiceTranslateApp {
      * 接続成功後の録音開始は handleWSOpen() が担う（接続→翻訳を1アクションに）。
      */
     async start() {
-        if (!this.state.apiKey) {
+        if (!this.hasApiCredential()) {
             this.notify('エラー', 'APIキーを入力してください', 'error');
             return;
         }
@@ -1463,11 +1637,9 @@ class VoiceTranslateApp {
                         return b.score - a.score;
                     }
                     const aAlias =
-                        a.device.deviceId === 'default' ||
-                        a.device.deviceId === 'communications';
+                        a.device.deviceId === 'default' || a.device.deviceId === 'communications';
                     const bAlias =
-                        b.device.deviceId === 'default' ||
-                        b.device.deviceId === 'communications';
+                        b.device.deviceId === 'default' || b.device.deviceId === 'communications';
                     if (aAlias !== bAlias) {
                         return aAlias ? 1 : -1;
                     }
@@ -1660,7 +1832,20 @@ class VoiceTranslateApp {
     }
 
     async connect() {
-        if (!this.state.apiKey) {
+        if (this.connectPromise) {
+            return await this.connectPromise;
+        }
+        if (this.state.connectionState === 'open' || this.state.isConnected) {
+            return;
+        }
+        this.connectPromise = this.connectInternal().finally(() => {
+            this.connectPromise = null;
+        });
+        return await this.connectPromise;
+    }
+
+    async connectInternal() {
+        if (!this.hasApiCredential()) {
             this.notify('エラー', 'APIキーを入力してください', 'error');
             return;
         }
@@ -1668,6 +1853,16 @@ class VoiceTranslateApp {
         // 接続開始時にトランスクリプトをクリア
         this.clearTranscript('both');
         this.normalizeRealtimeEndpointModel();
+        // 現行実装はリアルタイム音声翻訳セッション（/v1/realtime/translations）前提。
+        // 標準 Realtime 設定のまま接続すると転写が有効化されず両カラムが停止するため、
+        // 静かに固まる代わりに設定ミスを明示する（.env の OPENAI_REALTIME_MODEL/URL を確認）。
+        if (!this.isRealtimeTranslationSession()) {
+            this.notify(
+                '設定警告',
+                `標準 Realtime 設定（${CONFIG.API.REALTIME_MODEL} / ${CONFIG.API.REALTIME_URL}）では音声翻訳が動作しません。.env を OPENAI_REALTIME_MODEL=gpt-realtime-translate に設定してください。`,
+                'error'
+            );
+        }
         // 実効エンドポイント正規化後にトランスポート記述子を確定（再接続でもここで再構築）。
         this.transport = buildTransportDescriptor({
             isElectron: this.platform.isElectron,
@@ -1680,30 +1875,11 @@ class VoiceTranslateApp {
         this.updateDeviceIndicator();
 
         try {
+            this.state.connectionState = 'connecting';
             this.updateConnectionStatus('connecting');
             this.elements.connectBtn.disabled = true;
 
             // デバッグ: 接続情報をログ出力
-            const debugInfo = {
-                apiKey: this.state.apiKey ? `${this.state.apiKey.substring(0, 7)}...` : 'なし',
-                model: CONFIG.API.REALTIME_MODEL,
-                url: CONFIG.API.REALTIME_URL
-            };
-
-            // ✅ Electron環境: 会話セッション開始
-            if (this.platform.conversation) {
-                try {
-                    const sessionId = await this.platform.conversation.startSession(
-                        this.state.sourceLang || 'auto',
-                        this.state.targetLang || 'ja'
-                    );
-                    this.state.currentSessionId = sessionId;
-                } catch (error) {
-                    // セッション開始失敗でも接続は続行（履歴は保存されない）
-                    this.notify('警告', '会話履歴セッションの開始に失敗しました', 'error');
-                }
-            }
-
             if (this.platform.isElectron) {
                 // Electronの場合、mainプロセス経由で接続（Authorizationヘッダー付き）
 
@@ -1711,15 +1887,13 @@ class VoiceTranslateApp {
                 this.setupElectronWebSocketHandlers();
 
                 // WebSocket接続を要求
-                const result = await this.platform.connectRealtime({
-                    url: CONFIG.API.REALTIME_URL,
-                    apiKey: this.state.apiKey,
-                    model: CONFIG.API.REALTIME_MODEL
-                });
+                const result = await this.platform.connectRealtime();
 
                 if (!result.success) {
                     throw new Error(result.message || '接続失敗');
                 }
+
+                this.state.connectionGeneration = result.connectionId;
 
                 // 接続成功はIPCイベント経由で通知される
                 return;
@@ -1760,19 +1934,33 @@ class VoiceTranslateApp {
             this.notify('エラー', '接続に失敗しました: ' + error.message, 'error');
             this.updateConnectionStatus('error');
             this.elements.connectBtn.disabled = false;
+            this.state.connectionState = 'idle';
+            const isAuthError = /401|403|unauthori[sz]ed|invalid[_ -]?api[_ -]?key/iu.test(
+                this.extractErrorMessage(error)
+            );
+            if (isAuthError) {
+                this.state.userWantsActive = false;
+            } else if (this.state.userWantsActive && !this.state.isUnloading) {
+                this.scheduleReconnect();
+            }
         }
     }
 
     async disconnect() {
-        // ✅ Electron環境: 会話セッション終了
-        if (this.platform.conversation && this.state.currentSessionId) {
-            try {
-                await this.platform.conversation.endSession();
-                this.state.currentSessionId = null;
-            } catch (error) {
-                this.notify('警告', '会話履歴セッションの終了処理に失敗しました', 'error');
-            }
+        if (this.disconnectPromise) {
+            return await this.disconnectPromise;
         }
+        this.disconnectPromise = this.disconnectInternal().finally(() => {
+            this.disconnectPromise = null;
+        });
+        return await this.disconnectPromise;
+    }
+
+    async disconnectInternal() {
+        if (this.state.connectionState === 'closing') {
+            return;
+        }
+        this.state.connectionState = 'closing';
 
         // 公式手順: 翻訳セッション(WS)は session.close を送り session.closed を待ってから
         // ソケットを閉じる（残余の翻訳音声・字幕の flush を待つ。応答が無ければタイムアウト）。
@@ -1781,6 +1969,20 @@ class VoiceTranslateApp {
         }
         // 未確定の字幕バッファを確定（WebRTC は session.closed を受けないため必須。WSでは冪等）。
         this.flushTranslationCaptions?.();
+
+        // flush で確定した最終原文/訳文の UPSERT を待ってから session を閉じる。
+        if (this._conversationSessionPromise) {
+            await this._conversationSessionPromise;
+        }
+        await this.drainHistoryWrites?.();
+        if (this.platform.conversation && this.state.currentSessionId) {
+            try {
+                await this.platform.conversation.endSession();
+                this.state.currentSessionId = null;
+            } catch (error) {
+                this.notify('警告', '会話履歴セッションの終了処理に失敗しました', 'error');
+            }
+        }
 
         if (this.platform.isElectron) {
             // Electron環境
@@ -1800,6 +2002,8 @@ class VoiceTranslateApp {
         this.responseQueue.clear();
 
         this.state.isConnected = false;
+        this.state.connectionGeneration = null;
+        this.state.connectionState = 'idle';
         this.updateConnectionStatus('offline');
         // 新モデル: 切断状態では「開始」を入口として有効化（接続は開始が担う）
         this.elements.connectBtn.disabled = false;
@@ -1813,8 +2017,13 @@ class VoiceTranslateApp {
         this.notify('切断', '接続を切断しました', 'warning');
     }
 
-    handleWSOpen() {
+    handleWSOpen(event = {}) {
         clearTimeout(this.timers.connectionTimeout);
+
+        if (event.connectionId) {
+            this.state.connectionGeneration = event.connectionId;
+        }
+        this.state.connectionState = 'open';
 
         // 前セッションの残留ペアリング状態（訳文確定待ちキュー等）を破棄（再接続時の誤結線防止）
         this.resetTranslationStreamState?.();
@@ -1835,6 +2044,9 @@ class VoiceTranslateApp {
         this.state.reconnectAttempt = 0;
 
         this.notify('接続成功', 'OpenAI Realtime APIに接続しました', 'success');
+
+        // transport が実際に開いた後で履歴セッションを開始する。
+        void this.ensureConversationSession();
 
         // 「開始」意図がある場合は録音（翻訳）を自動開始する。
         // これにより「接続→翻訳開始」が1アクションになり、再接続後も自動で再開する。
@@ -2721,7 +2933,6 @@ class VoiceTranslateApp {
                 }
             };
         } catch (error) {
-            const errorMessage = this.extractErrorMessage(error);
             // エラーは無視（一部ブラウザでは microphone クエリが未サポート）
         }
     }
@@ -2895,37 +3106,37 @@ class VoiceTranslateApp {
      */
     resampleMicTo24k(input, srcRate) {
         const TARGET = CONFIG.AUDIO.SAMPLE_RATE; // 24000
-        if (!input || input.length === 0 || !srcRate || srcRate === TARGET) {
+        if (!input || input.length === 0 || !srcRate) {
             return input;
         }
-        // 整数倍（48k→2, 96k→4）: グループ平均で間引き（アンチエイリアス付き・長さ厳密）
-        if (srcRate % TARGET === 0) {
-            const factor = srcRate / TARGET;
-            const outLen = Math.floor(input.length / factor);
-            const out = new Float32Array(outLen);
-            for (let i = 0; i < outLen; i++) {
-                let sum = 0;
-                const base = i * factor;
-                for (let j = 0; j < factor; j++) {
-                    sum += input[base + j];
-                }
-                out[i] = sum / factor;
-            }
-            return out;
+        if (srcRate === TARGET) {
+            this._micResampler = null;
+            return input;
         }
-        // 非整数（44.1k等）: フレーム内線形補間（STT用途で十分）
+        if (!this._micResampler || this._micResampler.sourceRate !== srcRate) {
+            this._micResampler = {
+                sourceRate: srcRate,
+                samples: new Float32Array(0),
+                position: 0
+            };
+        }
+        const state = this._micResampler;
+        const samples = new Float32Array(state.samples.length + input.length);
+        samples.set(state.samples);
+        samples.set(input, state.samples.length);
         const step = srcRate / TARGET;
-        const outLen = Math.max(1, Math.floor(input.length / step));
-        const out = new Float32Array(outLen);
-        for (let i = 0; i < outLen; i++) {
-            const pos = i * step;
-            const idx = Math.floor(pos);
-            const frac = pos - idx;
-            const a = input[idx];
-            const b = idx + 1 < input.length ? input[idx + 1] : a;
-            out[i] = a + (b - a) * frac;
+        const values = [];
+        let position = state.position;
+        while (position + 1 < samples.length) {
+            const index = Math.floor(position);
+            const fraction = position - index;
+            values.push(samples[index] + (samples[index + 1] - samples[index]) * fraction);
+            position += step;
         }
-        return out;
+        const consumed = Math.min(Math.floor(position), Math.max(0, samples.length - 1));
+        state.samples = samples.slice(consumed);
+        state.position = position - consumed;
+        return Float32Array.from(values);
     }
 
     async setupAudioProcessing() {
@@ -2935,6 +3146,9 @@ class VoiceTranslateApp {
         //   翻訳音(TTS)がマイクに乗って認識・再翻訳されてしまう（自己ループ）。ネイティブ採集で
         //   AECを効かせ、送信直前に resampleMicTo24k() で24kへ落とす（下流は従来どおり24k）。
         this.state.audioContext = new (globalThis.AudioContext || globalThis.webkitAudioContext)();
+
+        // 最小化等で suspended になった場合の自動復帰を監視
+        this.watchAudioContextSuspension(this.state.audioContext);
 
         // AudioContextがサスペンドされている場合、再開
         if (this.state.audioContext.state === 'suspended') {
@@ -2992,7 +3206,7 @@ class VoiceTranslateApp {
                     // ★ネイティブレート採集→送信用24kへ変換（下流は全て24k前提のまま）
                     const inputData = this.resampleMicTo24k(
                         event.data.data,
-                        this.state.audioContext.sampleRate
+                        event.data.sampleRate || this.state.audioContext.sampleRate
                     );
 
                     // ✅ Phase 3: 音声データバッファリング（VAD有効無効に関わらず）
@@ -3048,8 +3262,6 @@ class VoiceTranslateApp {
             this.state.workletNode.connect(this.state.inputGainNode);
             this.state.inputGainNode.connect(this.state.audioContext.destination);
         } catch (error) {
-            const errorMessage = this.extractErrorMessage(error);
-
             // フォールバック: ScriptProcessorNode を使用（非推奨だが互換性のため）
             const preset = getAudioPreset();
             this.state.processor = this.state.audioContext.createScriptProcessor(
@@ -3238,6 +3450,7 @@ class VoiceTranslateApp {
         this.isBufferingAudio = false;
         this.audioBuffer = []; // バッファクリア
         this.audioBufferStartTime = null;
+        this._micResampler = null;
 
         // ✅ groupedモードの蓄積状態をリセット（保険タイマー解除を含む）
         //    停止時は消費者ループが既に停止済みのため flush しても再生されない。
@@ -3403,9 +3616,8 @@ class VoiceTranslateApp {
         // 出力専用AudioContextが存在しない場合は作成
         // 入力処理と分離することで、出力音声の優先度を確保
         if (!this.state.outputAudioContext) {
-            this.state.outputAudioContext = new (
-                globalThis.AudioContext || globalThis.webkitAudioContext
-            )({
+            this.state.outputAudioContext = new (globalThis.AudioContext ||
+                globalThis.webkitAudioContext)({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
             // 翻訳音声は既定スピーカーで再生（出力先分離は廃止）
@@ -3495,6 +3707,14 @@ class VoiceTranslateApp {
         this.state.processingTranscripts.add(transcriptId);
 
         try {
+            if (this.platform.isElectron) {
+                const detected = Utils.detectSupportedLanguageFromText(
+                    inputText,
+                    this.state.sourceLang || 'en'
+                );
+                await this.translateTextDirectly(inputText, transcriptId, detected);
+                return;
+            }
             if (!this.state.apiKey) {
                 throw new Error('APIキーが設定されていません');
             }
@@ -3588,6 +3808,29 @@ class VoiceTranslateApp {
         // ✅ デバッグログ追加：翻訳方向を明確に表示
 
         try {
+            if (this.platform.isElectron) {
+                const generation = this.state.connectionGeneration || this.platform.connectionId;
+                if (!generation) {
+                    throw new Error('Realtime 接続がありません');
+                }
+                const result = await this.platform.translateText({
+                    sessionId: this.state.currentSessionId || 0,
+                    generation,
+                    segmentId: String(transcriptId || `legacy_${Date.now()}`),
+                    text: inputText,
+                    ...(actualSourceLang ? { sourceLanguage: actualSourceLang } : {}),
+                    targetLanguage: this.state.targetLang || 'ja'
+                });
+                if (result.generation !== this.state.connectionGeneration) {
+                    return null;
+                }
+                const translatedText = Utils.stripAssistantBoilerplate(result.text || '');
+                if (translatedText) {
+                    this.addTranscript('output', translatedText, transcriptId);
+                }
+                return translatedText;
+            }
+
             if (!this.state.apiKey) {
                 throw new Error('APIキーが設定されていません');
             }
@@ -3805,7 +4048,6 @@ class CollapsibleManager {
         // クリックイベントハンドラーを定義
         const clickHandler = (e) => {
             // collapsed クラスをトグル
-            const wasCollapsed = content.classList.contains('collapsed');
             content.classList.toggle('collapsed');
             header.classList.toggle('collapsed');
 
@@ -3852,8 +4094,6 @@ class CollapsibleManager {
         }
 
         const header = document.getElementById(config.headerId);
-        const content = document.getElementById(config.contentId);
-
         if (header) {
             header.click();
         }
@@ -3973,52 +4213,35 @@ VoiceTranslateApp.prototype.showHistory = async function () {
     const platform = VoiceTranslatePlatform.getPlatform();
 
     if (!platform.conversation) {
-        // ブラウザ環境: 情報メッセージを表示
-        modalBody.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">ℹ️</div>
-                <div class="empty-text">
-                    <p style="font-size: 16px; margin-bottom: 8px;">会話履歴機能について</p>
-                    <p>会話履歴機能はElectronアプリ版でのみ利用可能です。</p>
-                    <p>ブラウザ版では履歴は保存されません。</p>
-                </div>
-            </div>
-        `;
+        this.renderHistoryStatus(
+            modalBody,
+            'ℹ️',
+            '会話履歴機能はElectronアプリ版でのみ利用可能です。'
+        );
         modal.classList.add('active');
         return;
     }
 
     // Electron環境: セッション一覧を表示
     try {
-        modalBody.innerHTML = '<div style="text-align: center; padding: 40px;">読み込み中...</div>';
+        this.renderHistoryStatus(modalBody, '⏳', '読み込み中...');
         modal.classList.add('active');
 
         const sessions = await platform.conversation.getAllSessions(50);
 
         if (!sessions || sessions.length === 0) {
-            modalBody.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">📭</div>
-                    <div class="empty-text">
-                        <p>会話履歴がありません</p>
-                    </div>
-                </div>
-            `;
+            this.renderHistoryStatus(modalBody, '📭', '会話履歴がありません');
             return;
         }
 
         // セッション一覧を表示
         this.renderSessionList(sessions);
     } catch (error) {
-        modalBody.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">❌</div>
-                <div class="empty-text">
-                    <p>履歴の読み込みに失敗しました</p>
-                    <p style="font-size: 12px; color: var(--text-secondary);">${error.message}</p>
-                </div>
-            </div>
-        `;
+        this.renderHistoryStatus(
+            modalBody,
+            '❌',
+            '履歴の読み込みに失敗しました: ' + this.extractErrorMessage(error)
+        );
     }
 };
 
@@ -4029,62 +4252,55 @@ VoiceTranslateApp.prototype.showHistory = async function () {
  */
 VoiceTranslateApp.prototype.renderSessionList = function (sessions) {
     const modalBody = document.getElementById('historyModalBody');
-
-    const sessionListHTML = sessions
-        .map((session) => {
-            // ✅ キャメルケースとスネークケースの両方に対応
-            const startTime = new Date(session.startTime || session.start_time);
-            const endTime =
-                session.endTime || session.end_time
-                    ? new Date(session.endTime || session.end_time)
-                    : null;
-            const turnCount = session.turnCount || session.turn_count || 0;
-            const sourceLanguage = session.sourceLanguage || session.source_language || 'auto';
-            const targetLanguage = session.targetLanguage || session.target_language || 'ja';
-
-            // ✅ 継続時間計算
-            const duration = endTime
-                ? Math.round((endTime - startTime) / 1000)
-                : Math.round((Date.now() - startTime) / 1000);
-
-            const formatDuration = (seconds) => {
-                const hours = Math.floor(seconds / 3600);
-                const minutes = Math.floor((seconds % 3600) / 60);
-                const secs = seconds % 60;
-                if (hours > 0) {
-                    return `${hours}時間${minutes}分`;
-                } else if (minutes > 0) {
-                    return `${minutes}分${secs}秒`;
-                } else {
-                    return `${secs}秒`;
-                }
-            };
-
-            return `
-                <div class="session-item" data-session-id="${session.id}">
-                    <div class="session-header">
-                        <div class="session-time">${startTime.toLocaleString('ja-JP')}</div>
-                        <div class="session-badge">${turnCount}ターン</div>
-                    </div>
-                    <div class="session-info">
-                        <span>⏱️ ${formatDuration(duration)}</span>
-                        <span>🌐 ${sourceLanguage} → ${targetLanguage}</span>
-                    </div>
-                </div>
-            `;
-        })
-        .join('');
-
-    modalBody.innerHTML = `<div class="session-list">${sessionListHTML}</div>`;
-
-    // セッションクリックイベント
-    const sessionItems = modalBody.querySelectorAll('.session-item');
-    sessionItems.forEach((item) => {
-        item.addEventListener('click', () => {
-            const sessionId = Number.parseInt(item.dataset.sessionId, 10);
-            this.showSessionDetails(sessionId);
-        });
+    if (!modalBody) {
+        return;
+    }
+    const list = document.createElement('div');
+    list.className = 'session-list';
+    for (const session of sessions) {
+        const startTime = new Date(session.startTime || session.start_time);
+        const endRaw = session.endTime || session.end_time;
+        const endTime = endRaw ? new Date(endRaw) : null;
+        const duration = Math.max(
+            0,
+            Math.round(((endTime ? endTime.getTime() : Date.now()) - startTime.getTime()) / 1000)
+        );
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'session-item';
+        item.dataset.sessionId = String(session.id);
+        const title = document.createElement('div');
+        title.className = 'session-time';
+        title.textContent = startTime.toLocaleString('ja-JP');
+        const detail = document.createElement('div');
+        detail.className = 'session-info';
+        detail.textContent = `${session.turnCount || session.turn_count || 0}ターン · ${duration}秒 · ${session.sourceLanguage || session.source_language || 'auto'} → ${session.targetLanguage || session.target_language || 'ja'} · ${session.status || 'completed'}`;
+        item.append(title, detail);
+        item.addEventListener('click', () => void this.showSessionDetails(Number(session.id)));
+        list.appendChild(item);
+    }
+    const clearButton = document.createElement('button');
+    clearButton.type = 'button';
+    clearButton.className = 'back-button';
+    clearButton.textContent = '履歴をすべて消去';
+    clearButton.addEventListener('click', async () => {
+        if (this.state.isRecording || this.state.isConnected) {
+            this.notify('履歴を消去できません', '翻訳を停止してから実行してください', 'warning');
+            return;
+        }
+        if (clearButton.dataset.confirm !== 'yes') {
+            clearButton.dataset.confirm = 'yes';
+            clearButton.textContent = 'もう一度押すと完全に消去します';
+            setTimeout(() => {
+                clearButton.dataset.confirm = '';
+                clearButton.textContent = '履歴をすべて消去';
+            }, 5000);
+            return;
+        }
+        await VoiceTranslatePlatform.getPlatform().conversation.clearAll();
+        this.renderHistoryStatus(modalBody, '📭', '会話履歴を消去しました');
     });
+    modalBody.replaceChildren(list, clearButton);
 };
 
 /**
@@ -4096,60 +4312,71 @@ VoiceTranslateApp.prototype.showSessionDetails = async function (sessionId) {
     const modalBody = document.getElementById('historyModalBody');
 
     try {
-        modalBody.innerHTML = '<div style="text-align: center; padding: 40px;">読み込み中...</div>';
+        this.renderHistoryStatus(modalBody, '⏳', '読み込み中...');
 
         const turns =
             await VoiceTranslatePlatform.getPlatform().conversation.getSessionTurns(sessionId);
 
         if (!turns || turns.length === 0) {
-            modalBody.innerHTML = `
-                <button class="back-button">← 戻る</button>
-                <div class="empty-state">
-                    <div class="empty-icon">📭</div>
-                    <div class="empty-text">
-                        <p>このセッションにはターンがありません</p>
-                    </div>
-                </div>
-            `;
-            this.addBackButtonListener();
+            this.renderHistoryStatus(modalBody, '📭', 'このセッションにはターンがありません');
+            const back = document.createElement('button');
+            back.type = 'button';
+            back.className = 'back-button';
+            back.textContent = '← 戻る';
+            back.addEventListener('click', () => void this.showHistory());
+            modalBody.prepend(back);
             return;
         }
 
-        // ターン一覧を表示
-        const turnListHTML = turns
-            .map((turn) => {
-                const time = new Date(turn.timestamp);
-                return `
-                    <div class="turn-item">
-                        <div class="turn-header">
-                            <div class="turn-role ${turn.role}">${turn.role === 'user' ? 'ユーザー' : 'アシスタント'}</div>
-                            <div class="turn-time">${time.toLocaleTimeString('ja-JP')}</div>
-                        </div>
-                        <div class="turn-content">${this.escapeHtml(turn.content)}</div>
-                    </div>
-                `;
-            })
-            .join('');
-
-        modalBody.innerHTML = `
-            <button class="back-button">← 戻る</button>
-            <div class="turn-list">${turnListHTML}</div>
-        `;
-
-        this.addBackButtonListener();
+        const back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'back-button';
+        back.textContent = '← 戻る';
+        back.addEventListener('click', () => void this.showHistory());
+        const turnList = document.createElement('div');
+        turnList.className = 'turn-list';
+        const grouped = new Map();
+        for (const turn of turns) {
+            const key = turn.segmentId || `legacy_${turn.id}`;
+            if (!grouped.has(key)) {
+                grouped.set(key, {});
+            }
+            grouped.get(key)[turn.role] = turn;
+        }
+        for (const pair of grouped.values()) {
+            const item = document.createElement('div');
+            item.className = 'turn-item';
+            for (const role of ['user', 'assistant']) {
+                const turn = pair[role];
+                const row = document.createElement('div');
+                row.className = `turn-content ${role}`;
+                const label = role === 'user' ? '原文' : '訳文';
+                row.textContent = `${label}: ${turn ? turn.content : '（未完了）'}`;
+                item.appendChild(row);
+            }
+            turnList.appendChild(item);
+        }
+        modalBody.replaceChildren(back, turnList);
     } catch (error) {
-        modalBody.innerHTML = `
-            <button class="back-button">← 戻る</button>
-            <div class="empty-state">
-                <div class="empty-icon">❌</div>
-                <div class="empty-text">
-                    <p>ターンの読み込みに失敗しました</p>
-                    <p style="font-size: 12px; color: var(--text-secondary);">${error.message}</p>
-                </div>
-            </div>
-        `;
-        this.addBackButtonListener();
+        this.renderHistoryStatus(
+            modalBody,
+            '❌',
+            'ターンの読み込みに失敗しました: ' + this.extractErrorMessage(error)
+        );
     }
+};
+
+VoiceTranslateApp.prototype.renderHistoryStatus = function (container, icon, text) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'empty-state';
+    const iconElement = document.createElement('div');
+    iconElement.className = 'empty-icon';
+    iconElement.textContent = icon;
+    const textElement = document.createElement('p');
+    textElement.className = 'empty-text';
+    textElement.textContent = text;
+    wrapper.append(iconElement, textElement);
+    container.replaceChildren(wrapper);
 };
 
 /**

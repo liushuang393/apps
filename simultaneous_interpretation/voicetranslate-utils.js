@@ -25,12 +25,15 @@ class ResponseQueue {
         this.config = {
             maxQueueSize: options.maxQueueSize || 10,
             timeout: options.timeout || 60000,
-            debugMode: options.debugMode !== undefined ? options.debugMode : false
+            debugMode: options.debugMode !== undefined ? options.debugMode : false,
+            retryOnError: options.retryOnError !== undefined ? options.retryOnError : false,
+            maxRetries: options.maxRetries || 0
         };
 
         this.pendingQueue = [];
         this.processingQueue = [];
         this.timeoutTimer = null;
+        this.timeoutTimerItem = null;
 
         this.stats = {
             totalRequests: 0,
@@ -58,7 +61,9 @@ class ResponseQueue {
                 request: request,
                 resolve: resolve,
                 reject: reject,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                retryCount: 0,
+                settled: false
             };
 
             this.pendingQueue.push(item);
@@ -67,11 +72,11 @@ class ResponseQueue {
             if (this.config.debugMode) {
             }
 
-            this.consume();
+            void this.consume();
         });
     }
 
-    consume() {
+    async consume() {
         if (this.processingQueue.length > 0) {
             if (this.config.debugMode) {
             }
@@ -94,7 +99,7 @@ class ResponseQueue {
         if (this.config.debugMode) {
         }
 
-        this.startTimeoutTimer();
+        this.startTimeoutTimer(item);
 
         try {
             // ✅ リクエスト送信前にコールバックを呼び出す（レース条件対策）
@@ -102,21 +107,34 @@ class ResponseQueue {
                 this.onRequestSending();
             }
 
-            this.sendMessage({
+            const sent = await this.sendMessage({
                 type: 'response.create',
                 response: item.request
             });
+            if (sent === false || (sent && sent.success === false)) {
+                throw new Error(sent?.message || 'response.create の送信に失敗しました');
+            }
 
             if (this.config.debugMode) {
             }
         } catch (error) {
-            this.clearTimeoutTimer();
-            this.processingQueue.shift();
-            if (item.reject) {
-                item.reject(error);
+            this.clearTimeoutTimer(item);
+            if (this.processingQueue[0] === item) {
+                this.processingQueue.shift();
             }
+            if (item.settled) {
+                return;
+            }
+            if (this.config.retryOnError && item.retryCount < this.config.maxRetries) {
+                item.retryCount++;
+                this.pendingQueue.unshift(item);
+                setTimeout(() => void this.consume(), 100 * item.retryCount);
+                return;
+            }
+            item.settled = true;
+            item.reject(error instanceof Error ? error : new Error(String(error)));
             this.stats.failedRequests++;
-            this.consume();
+            void this.consume();
         }
     }
 
@@ -140,7 +158,7 @@ class ResponseQueue {
         if (this.processingQueue.length > 0) {
             const item = this.processingQueue[0];
 
-            if (item.responseId && item.responseId !== responseId) {
+            if (!item.responseId || item.responseId !== responseId) {
                 return;
             }
         }
@@ -150,17 +168,18 @@ class ResponseQueue {
         const item = this.processingQueue.shift();
 
         if (item) {
-            if (item.resolve) {
+            if (!item.settled) {
+                item.settled = true;
                 item.resolve(responseId);
+                this.stats.completedRequests++;
             }
-            this.stats.completedRequests++;
         }
 
         // ✅ プル型アーキテクチャ: response.done 後に自動的に次のリクエストを送信
         // これにより、activeResponseId/pendingResponseId の管理が不要になる
         if (this.config.debugMode) {
         }
-        this.consume();
+        void this.consume();
     }
 
     handleError(error, code) {
@@ -178,6 +197,14 @@ class ResponseQueue {
             const item = this.processingQueue.shift();
 
             if (item) {
+                if (!this.config.retryOnError || item.retryCount >= this.config.maxRetries) {
+                    item.settled = true;
+                    item.reject(error);
+                    this.stats.failedRequests++;
+                    void this.consume();
+                    return;
+                }
+                item.retryCount++;
                 // ✅ 重要: reject ではなく pending キューに戻す
                 // これによって サーバー側の response.done イベント後に
                 // 自動的にリトライされる（プル型）
@@ -197,37 +224,51 @@ class ResponseQueue {
         const item = this.processingQueue.shift();
 
         if (item) {
-            if (item.reject) {
+            if (!item.settled) {
+                item.settled = true;
                 item.reject(error);
-            }
-            this.stats.failedRequests++;
-        }
-
-        this.consume();
-    }
-
-    startTimeoutTimer() {
-        this.clearTimeoutTimer();
-
-        this.timeoutTimer = setTimeout(() => {
-            const item = this.processingQueue.shift();
-
-            if (item) {
-                if (item.reject) {
-                    item.reject(new Error('Response timeout'));
-                }
                 this.stats.failedRequests++;
             }
+        }
 
-            this.consume();
+        void this.consume();
+    }
+
+    startTimeoutTimer(item) {
+        this.clearTimeoutTimer();
+        this.timeoutTimerItem = item;
+
+        this.timeoutTimer = setTimeout(() => {
+            if (this.processingQueue[0] !== item) {
+                return;
+            }
+            this.processingQueue.shift();
+            if (this.timeoutTimerItem === item) {
+                this.timeoutTimer = null;
+                this.timeoutTimerItem = null;
+            }
+
+            if (item) {
+                if (!item.settled) {
+                    item.settled = true;
+                    item.reject(new Error('Response timeout'));
+                    this.stats.failedRequests++;
+                }
+            }
+
+            void this.consume();
         }, this.config.timeout);
     }
 
-    clearTimeoutTimer() {
+    clearTimeoutTimer(expectedItem = null) {
+        if (expectedItem && this.timeoutTimerItem !== expectedItem) {
+            return;
+        }
         if (this.timeoutTimer) {
             clearTimeout(this.timeoutTimer);
             this.timeoutTimer = null;
         }
+        this.timeoutTimerItem = null;
     }
 
     clear() {
@@ -237,7 +278,8 @@ class ResponseQueue {
         this.clearTimeoutTimer();
 
         [...this.pendingQueue, ...this.processingQueue].forEach((item) => {
-            if (item.reject) {
+            if (!item.settled) {
+                item.settled = true;
                 item.reject(new Error('Queue cleared'));
             }
         });
@@ -331,9 +373,9 @@ const CONFIG = {
      * @property {string} VAD_TYPE - 'semantic_vad'（意味的完結で区切る公式機能。既定）| 'server_vad'（従来の無音検出）
      * @property {string} SEMANTIC_EAGERNESS - semantic_vad の区切り積極性 'medium'（既定・品質/遅延の均衡）| 'low' | 'high' | 'auto'
      * @property {number} MIN_COMPLETE_SENTENCES - 翻訳を開始できる最小の完全文数（既定1）
-     * @property {number} MAX_SENTENCES - グルーピングの最大文数（既定3）
-     * @property {number} POST_SENTENCE_HOLD_MS - 1文完結後に追加発話を待つ短い猶予（既定500ms）
-     * @property {number} MAX_BUFFER_MS - グルーピングの最大蓄積時間ms（既定6000）。無限待機を防ぐ上限
+     * @property {number} MAX_SENTENCES - グルーピングの最大文数（既定1＝1文ずつ即時翻訳）
+     * @property {number} POST_SENTENCE_HOLD_MS - 1文完結後に追加発話を待つ短い猶予（既定150ms）
+     * @property {number} MAX_BUFFER_MS - グルーピングの最大蓄積時間ms（既定2500）。無限待機を防ぐ上限
      */
     TRANSLATION: {
         TURN_MODE: 'grouped',

@@ -90,7 +90,7 @@ class AudioSegment {
 
         // ✅ 音声送信状態（重複送信防止）
         this.audioSent = false; // 音声がサーバーに送信済みかフラグ
-        this.audioSendWaiters = []; // 音声送信完了待ちコールバックリスト
+        this.audioSendWaiters = []; // { resolve, reject, timer } の待機リスト
     }
 
     /**
@@ -174,7 +174,10 @@ class AudioSegment {
         this.audioSent = true;
 
         // 全待機コールバック起動
-        this.audioSendWaiters.forEach((resolve) => resolve());
+        this.audioSendWaiters.forEach((waiter) => {
+            clearTimeout(waiter.timer);
+            waiter.resolve();
+        });
         this.audioSendWaiters = [];
     }
 
@@ -197,24 +200,36 @@ class AudioSegment {
         // 待機Promise作成
         return new Promise((resolve, reject) => {
             // 待機リストに追加
-            this.audioSendWaiters.push(resolve);
-
             // タイムアウト保護（30秒）
+            const waiter = { resolve, reject, timer: null };
             const timeout = setTimeout(() => {
                 // 待機リストから削除
-                const index = this.audioSendWaiters.indexOf(resolve);
+                const index = this.audioSendWaiters.indexOf(waiter);
                 if (index > -1) {
                     this.audioSendWaiters.splice(index, 1);
                 }
                 reject(new Error(`音声データ送信タイムアウト: ${this.id}`));
             }, 30000);
+            waiter.timer = timeout;
+            this.audioSendWaiters.push(waiter);
 
             // 送信済みの場合（競合状態）、即座にresolve
             if (this.audioSent) {
                 clearTimeout(timeout);
+                const index = this.audioSendWaiters.indexOf(waiter);
+                if (index > -1) {
+                    this.audioSendWaiters.splice(index, 1);
+                }
                 resolve();
             }
         });
+    }
+
+    cancelWaiters(error) {
+        for (const waiter of this.audioSendWaiters.splice(0)) {
+            clearTimeout(waiter.timer);
+            waiter.reject(error);
+        }
     }
 
     /**
@@ -331,6 +346,7 @@ class AudioQueue {
             onSegmentComplete: null,
             onQueueFull: null
         };
+        this.expiryTimers = new Map();
     }
 
     /**
@@ -372,12 +388,17 @@ class AudioQueue {
         this.stats.currentQueueSize = this.queue.size;
 
         // ✅ 200秒後に自動クリーンアップ（タイムアウト）
-        setTimeout(() => {
+        const expiryTimer = setTimeout(() => {
             const seg = this.queue.get(segment.id);
             if (seg && !seg.isFullyProcessed()) {
-                this.cleanup(segment.id);
+                seg.cancelWaiters(new Error(`音声セグメント処理タイムアウト: ${segment.id}`));
+                this.queue.delete(segment.id);
+                this.expiryTimers.delete(segment.id);
+                this.stats.droppedSegments++;
+                this.stats.currentQueueSize = this.queue.size;
             }
         }, 200000); // 200秒
+        this.expiryTimers.set(segment.id, expiryTimer);
 
         return segment;
     }
@@ -408,7 +429,7 @@ class AudioQueue {
         }
 
         // ✅ キューから最も古い未取得セグメントを検索
-        for (const [segmentId, segment] of this.queue) {
+        for (const segment of this.queue.values()) {
             if (segment.isPathAvailable(pathName)) {
                 // ✅ 取得済みにマーク（重複防止）
                 if (segment.markPathConsumed(pathName)) {
@@ -471,6 +492,11 @@ class AudioQueue {
         }
 
         if (segment.isFullyProcessed()) {
+            const timer = this.expiryTimers.get(segmentId);
+            if (timer) {
+                clearTimeout(timer);
+                this.expiryTimers.delete(segmentId);
+            }
             this.queue.delete(segmentId);
             this.stats.processedSegments++;
             this.stats.currentQueueSize = this.queue.size;
@@ -516,7 +542,13 @@ class AudioQueue {
      * キュークリア
      */
     clear() {
-        const size = this.queue.size;
+        for (const timer of this.expiryTimers.values()) {
+            clearTimeout(timer);
+        }
+        this.expiryTimers.clear();
+        for (const segment of this.queue.values()) {
+            segment.cancelWaiters(new Error('AudioQueue cleared'));
+        }
         this.queue.clear();
         this.stats.currentQueueSize = 0;
     }

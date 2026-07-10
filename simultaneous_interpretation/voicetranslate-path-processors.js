@@ -217,7 +217,6 @@ class TextPathProcessor {
         // 批量送信以避免过载
         const CHUNK_SIZE = 4800; // 200ms @ 24kHz
         let offset = 0;
-        let chunksent = 0;
         let sentSamples = 0;
 
         while (offset < audioData.length) {
@@ -232,7 +231,6 @@ class TextPathProcessor {
             // 送信音声块
             const sent = this.app.sendAudioData(chunk, { force: true });
             if (sent) {
-                chunksent++;
                 sentSamples += chunk.length;
             }
 
@@ -386,6 +384,23 @@ class TextPathProcessor {
      * @returns {Promise<string>} 翻译文本
      */
     async translateText(text) {
+        if (this.app.platform?.isElectron) {
+            const generation =
+                this.app.state.connectionGeneration || this.app.platform.connectionId;
+            if (!generation) {
+                throw new Error('Realtime 接続がありません');
+            }
+            const result = await this.app.platform.translateText({
+                sessionId: this.app.state.currentSessionId || 0,
+                generation,
+                segmentId: `legacy_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                text,
+                ...(this.app.state.sourceLang ? { sourceLanguage: this.app.state.sourceLang } : {}),
+                targetLanguage: this.app.state.targetLang || 'ja'
+            });
+            return Utils.stripAssistantBoilerplate(result.text || '');
+        }
+
         // OpenAI Chat Completions API を使用
         const chatModel = this.app.config?.chatModel || CONFIG.API.CHAT_MODEL;
         const apiKey = this.app.config?.apiKey || this.app.state?.apiKey;

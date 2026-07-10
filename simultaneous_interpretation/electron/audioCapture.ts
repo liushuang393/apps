@@ -36,6 +36,8 @@ export interface AudioSourceInfo {
  * システム音声キャプチャクラス
  */
 export class ElectronAudioCapture {
+    private static readonly debugSourceLogging = process.env['VOICETRANSLATE_DEBUG'] === '1';
+
     /**
      * 利用可能な音声ソースを取得
      *
@@ -75,15 +77,12 @@ export class ElectronAudioCapture {
     public static async detectMeetingApps(): Promise<AudioSourceInfo[]> {
         const sources = await this.getAudioSources(['window']);
 
-        // デバッグ: 全ウィンドウを出力
-        console.info('[ElectronAudioCapture] ========== 全ウィンドウ一覧 ==========');
         console.info(`[ElectronAudioCapture] 総ウィンドウ数: ${sources.length}`);
-        sources.forEach((source, index) => {
-            console.info(`  [${index}] ${source.name}`);
-            console.info(`       ID: ${source.id}`);
-            console.info(`       Type: ${source.type}`);
-        });
-        console.info('[ElectronAudioCapture] ========================================');
+        if (this.debugSourceLogging) {
+            sources.forEach((source, index) => {
+                console.info(`  [${index}] ${source.name} (${source.type})`);
+            });
+        }
 
         // 会議アプリのパターン（柔軟なマッチング）
         const meetingAppPatterns = [
@@ -156,33 +155,39 @@ export class ElectronAudioCapture {
             /^PowerPoint$/i
         ];
 
-        console.info('[ElectronAudioCapture] ========== 検出処理開始 ==========');
-
         // フィルタリング処理
         const filtered = sources.filter((source) => {
             const name = source.name;
 
             // 除外パターンに一致する場合はスキップ
             if (excludePatterns.some((pattern) => pattern.test(name))) {
-                console.info(`[ElectronAudioCapture] ❌ 除外: ${name}`);
+                if (this.debugSourceLogging) {
+                    console.info(`[ElectronAudioCapture] 除外: ${name}`);
+                }
                 return false;
             }
 
             // 会議アプリに一致するか確認
             const isMeetingApp = meetingAppPatterns.some((pattern) => pattern.test(name));
             if (isMeetingApp) {
-                console.info(`[ElectronAudioCapture] ✅ 会議アプリ: ${name}`);
+                if (this.debugSourceLogging) {
+                    console.info(`[ElectronAudioCapture] 会議アプリ: ${name}`);
+                }
                 return true;
             }
 
             // ブラウザかどうか確認
             const isBrowser = browserPatterns.some((pattern) => pattern.test(name));
             if (isBrowser) {
-                console.info(`[ElectronAudioCapture] ✅ ブラウザ: ${name}`);
+                if (this.debugSourceLogging) {
+                    console.info(`[ElectronAudioCapture] ブラウザ: ${name}`);
+                }
                 return true;
             }
 
-            console.info(`[ElectronAudioCapture] ❌ 不一致: ${name}`);
+            if (this.debugSourceLogging) {
+                console.info(`[ElectronAudioCapture] 不一致: ${name}`);
+            }
             return false;
         });
 
@@ -201,11 +206,13 @@ export class ElectronAudioCapture {
         });
 
         console.info(`[ElectronAudioCapture] ========== 検出結果: ${filtered.length}個 ==========`);
-        filtered.forEach((source, index) => {
-            const isMeeting = meetingAppPatterns.some((pattern) => pattern.test(source.name));
-            const label = isMeeting ? '🎤 会議' : '🌐 ブラウザ';
-            console.info(`  [${index + 1}] ${label} ${source.name}`);
-        });
+        if (this.debugSourceLogging) {
+            filtered.forEach((source, index) => {
+                const isMeeting = meetingAppPatterns.some((pattern) => pattern.test(source.name));
+                const label = isMeeting ? '会議' : 'ブラウザ';
+                console.info(`  [${index + 1}] ${label} ${source.name}`);
+            });
+        }
 
         return filtered;
     }

@@ -26,16 +26,26 @@ import {
     Menu,
     globalShortcut,
     shell,
-    systemPreferences
+    systemPreferences,
+    WebContents
 } from 'electron';
 import { ElectronAudioCapture } from './audioCapture';
-import { initializeRealtimeWebSocket, cleanupRealtimeWebSocket } from './realtimeWebSocket';
+import { RealtimeSessionManager } from './realtimeWebSocket';
 import { ConversationDatabase, isElectronEnvironment } from './ConversationDatabase';
+import type { SegmentTurnInput } from './ConversationDatabase';
+import { CredentialService } from './CredentialService';
+import { OpenAIConfigService } from './OpenAIConfigService';
+import { TranslationGateway, TranslationRequest } from './TranslationGateway';
 
 /**
  * .env から環境変数を読み込み、未設定の値を補完する
  */
 function loadEnvironmentVariables(): void {
+    // パッケージ版は起動ディレクトリの平文 .env を暗黙に読み込まない。
+    // 開発時だけプロジェクトルートの .env を利用する。
+    if (process.env['NODE_ENV'] !== 'development') {
+        return;
+    }
     const candidates = [
         path.resolve(process.cwd(), '.env'),
         path.resolve(__dirname, '..', '..', '.env')
@@ -102,6 +112,58 @@ let tray: InstanceType<typeof Tray> | null = null;
  */
 let conversationDB: ConversationDatabase | null = null;
 
+/** main プロセス専用サービス（app ready 後に userData を使って初期化） */
+let credentialService: CredentialService | null = null;
+let openAIConfigService: OpenAIConfigService | null = null;
+let realtimeSessionManager: RealtimeSessionManager | null = null;
+let translationGateway: TranslationGateway | null = null;
+
+const MAIN_HTML_FILE = 'teams-realtime-translator.html';
+const ALLOWED_EXTERNAL_HOSTS = new Set(['platform.openai.com', 'openai.com']);
+
+function resolveAppResource(...segments: string[]): string {
+    return path.join(app.getAppPath(), ...segments);
+}
+
+function isTrustedWebContents(webContents: WebContents): boolean {
+    if (!mainWindow || webContents.id !== mainWindow.webContents.id || webContents.isDestroyed()) {
+        return false;
+    }
+    try {
+        const current = new URL(webContents.getURL());
+        if (current.protocol !== 'file:') {
+            return false;
+        }
+        return path.basename(decodeURIComponent(current.pathname)) === MAIN_HTML_FILE;
+    } catch {
+        return false;
+    }
+}
+
+function assertTrustedSender(webContents: WebContents): void {
+    if (!isTrustedWebContents(webContents)) {
+        throw new Error('信頼されていない renderer からの IPC を拒否しました');
+    }
+}
+
+function isAllowedExternalUrl(rawUrl: string): boolean {
+    try {
+        const url = new URL(rawUrl);
+        if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') {
+            return false;
+        }
+        const configuredHosts = openAIConfigService
+            ? [
+                  openAIConfigService.getPublicConfig().chatHost,
+                  openAIConfigService.getPublicConfig().realtimeHost
+              ]
+            : [];
+        return ALLOWED_EXTERNAL_HOSTS.has(url.hostname) || configuredHosts.includes(url.host);
+    } catch {
+        return false;
+    }
+}
+
 /**
  * アプリケーション設定
  */
@@ -147,7 +209,7 @@ function createMainWindow(): void {
             webSecurity: true,
             allowRunningInsecureContent: false
         },
-        icon: path.join(__dirname, '../icons/icon.png'),
+        icon: resolveAppResource('icons', 'icon.png'),
         title: 'VoiceTranslate Pro',
         backgroundColor: '#1a1a1a',
         autoHideMenuBar: true
@@ -155,12 +217,12 @@ function createMainWindow(): void {
 
     // メディアアクセス権限のハンドラーを設定
     mainWindow.webContents.session.setPermissionRequestHandler(
-        (_webContents, permission, callback) => {
+        (webContents, permission, callback) => {
             console.info(`[Main] Permission requested: ${permission}`);
 
-            // マイク、カメラ、画面キャプチャを自動許可
-            const allowedPermissions = ['media', 'microphone', 'camera', 'desktop-capturer'];
-            if (allowedPermissions.includes(permission)) {
+            // 信頼済みローカル画面に必要な音声/画面キャプチャ権限だけを許可する。
+            const allowedPermissions = ['media', 'microphone', 'display-capture'];
+            if (isTrustedWebContents(webContents) && allowedPermissions.includes(permission)) {
                 console.info(`[Main] Permission granted: ${permission}`);
                 callback(true);
             } else {
@@ -190,7 +252,7 @@ function createMainWindow(): void {
                 ...details.responseHeaders,
                 'Content-Security-Policy':
                     "default-src 'self'; " +
-                    "script-src 'self' 'unsafe-inline'; " +
+                    "script-src 'self'; " +
                     "style-src 'self' 'unsafe-inline'; " +
                     "connect-src 'self' https://api.openai.com wss://api.openai.com; " +
                     "media-src 'self' blob:; " +
@@ -204,7 +266,7 @@ function createMainWindow(): void {
     const isDev = process.env['NODE_ENV'] === 'development';
     const htmlPath = isDev
         ? path.join(__dirname, '../../teams-realtime-translator.html')
-        : path.join(app.getAppPath(), 'teams-realtime-translator.html');
+        : resolveAppResource(MAIN_HTML_FILE);
 
     console.info(`[Main] Loading HTML from: ${htmlPath}`);
     mainWindow.loadFile(htmlPath).catch((error) => {
@@ -218,6 +280,7 @@ function createMainWindow(): void {
 
     // ウィンドウイベント
     mainWindow.on('closed', () => {
+        void realtimeSessionManager?.cleanup();
         mainWindow = null;
     });
 
@@ -232,8 +295,26 @@ function createMainWindow(): void {
 
     // 外部リンクをブラウザで開く
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-        shell.openExternal(url);
+        if (isAllowedExternalUrl(url)) {
+            void shell.openExternal(url);
+        }
         return { action: 'deny' };
+    });
+
+    // preload API を持つウィンドウが外部/別ファイルへ遷移することを禁止する。
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+        try {
+            const target = new URL(url);
+            const expected = new URL(`file:///${htmlPath.replace(/\\/g, '/')}`);
+            if (
+                target.protocol !== 'file:' ||
+                decodeURIComponent(target.pathname) !== decodeURIComponent(expected.pathname)
+            ) {
+                event.preventDefault();
+            }
+        } catch {
+            event.preventDefault();
+        }
     });
 
     console.info('[Main] Main window created');
@@ -243,7 +324,7 @@ function createMainWindow(): void {
  * システムトレイを作成
  */
 function createTray(): void {
-    const iconPath = path.join(__dirname, '../icons/tray-icon.png');
+    const iconPath = resolveAppResource('icons', 'tray-icon.png');
 
     // アイコンが存在しない場合はスキップ
     if (!fs.existsSync(iconPath)) {
@@ -334,19 +415,73 @@ function registerGlobalShortcuts(): void {
     }
 }
 
+function validWindowDimension(
+    value: number | undefined,
+    fallback: number,
+    minimum: number,
+    maximum: number
+): number {
+    return typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value >= minimum &&
+        value <= maximum
+        ? Math.round(value)
+        : fallback;
+}
+
+function validateIdentifier(value: string, name: string): void {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 200) {
+        throw new Error(`${name} が不正です`);
+    }
+}
+
+function requireCredentialService(): CredentialService {
+    if (credentialService === null) {
+        throw new Error('CredentialService が初期化されていません');
+    }
+    return credentialService;
+}
+
+function requireOpenAIConfigService(): OpenAIConfigService {
+    if (openAIConfigService === null) {
+        throw new Error('OpenAIConfigService が初期化されていません');
+    }
+    return openAIConfigService;
+}
+
+function requireRealtimeSessionManager(): RealtimeSessionManager {
+    if (realtimeSessionManager === null) {
+        throw new Error('RealtimeSessionManager が初期化されていません');
+    }
+    return realtimeSessionManager;
+}
+
+function requireTranslationGateway(): TranslationGateway {
+    if (translationGateway === null) {
+        throw new Error('TranslationGateway が初期化されていません');
+    }
+    return translationGateway;
+}
+
 /**
  * IPC ハンドラーを登録
  */
 function registerIPCHandlers(): void {
+    const requireTrusted = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): void => {
+        assertTrustedSender(event.sender);
+    };
+
     // ウィンドウを最小化
-    ipcMain.on('minimize-window', () => {
+    ipcMain.on('minimize-window', (event) => {
+        requireTrusted(event);
         if (mainWindow) {
             mainWindow.minimize();
         }
     });
 
     // ウィンドウを最大化/復元
-    ipcMain.on('maximize-window', () => {
+    ipcMain.on('maximize-window', (event) => {
+        requireTrusted(event);
         if (mainWindow) {
             if (mainWindow.isMaximized()) {
                 mainWindow.unmaximize();
@@ -357,14 +492,16 @@ function registerIPCHandlers(): void {
     });
 
     // ウィンドウを閉じる
-    ipcMain.on('close-window', () => {
+    ipcMain.on('close-window', (event) => {
+        requireTrusted(event);
         if (mainWindow) {
             mainWindow.close();
         }
     });
 
     // 常に最前面に表示を切り替え
-    ipcMain.on('toggle-always-on-top', () => {
+    ipcMain.on('toggle-always-on-top', (event) => {
+        requireTrusted(event);
         if (mainWindow) {
             const isAlwaysOnTop = !mainWindow.isAlwaysOnTop();
             mainWindow.setAlwaysOnTop(isAlwaysOnTop);
@@ -374,198 +511,113 @@ function registerIPCHandlers(): void {
     });
 
     // 設定を取得
-    ipcMain.handle('get-config', () => {
+    ipcMain.handle('get-config', (event) => {
+        requireTrusted(event);
         return loadConfig();
     });
 
     // 設定を保存
-    ipcMain.handle('save-config', (_event, config: Partial<AppConfig>) => {
-        saveConfig({ ...loadConfig(), ...config });
+    ipcMain.handle('save-config', (event, config: Partial<AppConfig>) => {
+        requireTrusted(event);
+        if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+            throw new Error('設定オブジェクトが不正です');
+        }
+        const current = loadConfig();
+        const next: AppConfig = {
+            width: validWindowDimension(config.width, current.width, 400, 8_000),
+            height: validWindowDimension(config.height, current.height, 300, 8_000),
+            minWidth: validWindowDimension(config.minWidth, current.minWidth, 400, 8_000),
+            minHeight: validWindowDimension(config.minHeight, current.minHeight, 300, 8_000),
+            alwaysOnTop:
+                typeof config.alwaysOnTop === 'boolean' ? config.alwaysOnTop : current.alwaysOnTop,
+            startMinimized:
+                typeof config.startMinimized === 'boolean'
+                    ? config.startMinimized
+                    : current.startMinimized
+        };
+        saveConfig(next);
         return true;
     });
 
     // 音声ソースを取得
-    ipcMain.handle('get-audio-sources', async (_event, types?: ('window' | 'screen')[]) => {
+    ipcMain.handle('get-audio-sources', async (event, types?: ('window' | 'screen')[]) => {
+        requireTrusted(event);
+        if (
+            types !== undefined &&
+            (!Array.isArray(types) || types.some((type) => type !== 'window' && type !== 'screen'))
+        ) {
+            throw new Error('音声ソース種別が不正です');
+        }
         return await ElectronAudioCapture.getAudioSources(types);
     });
 
     // 会議アプリを検出
-    ipcMain.handle('detect-meeting-apps', async () => {
+    ipcMain.handle('detect-meeting-apps', async (event) => {
+        requireTrusted(event);
         return await ElectronAudioCapture.detectMeetingApps();
     });
 
-    // 音声トラックの有無を確認（レンダラープロセスから呼ばれる）
-    ipcMain.handle('check-audio-track', async (_event, sourceId: string) => {
-        console.info(`[Main] ========== 音声トラック確認開始 ==========`);
-        console.info(`[Main] ソースID: ${sourceId}`);
-
-        // レンダラープロセスに確認を依頼
-        if (mainWindow) {
-            try {
-                const result = await mainWindow.webContents.executeJavaScript(`
-                    (async () => {
-                        try {
-                            console.info('[Audio Check] ストリーム取得開始...');
-                            const constraints = {
-                                audio: {
-                                    mandatory: {
-                                        chromeMediaSource: 'desktop',
-                                        chromeMediaSourceId: '${sourceId}'
-                                    }
-                                },
-                                video: {
-                                    mandatory: {
-                                        chromeMediaSource: 'desktop',
-                                        chromeMediaSourceId: '${sourceId}'
-                                    }
-                                }
-                            };
-                            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                            console.info('[Audio Check] ストリーム取得成功');
-
-                            const audioTracks = stream.getAudioTracks();
-                            const videoTracks = stream.getVideoTracks();
-                            console.info('[Audio Check] トラック情報:', {
-                                audio: audioTracks.length,
-                                video: videoTracks.length
-                            });
-
-                            const hasAudio = audioTracks.length > 0;
-
-                            // ストリームを停止
-                            stream.getTracks().forEach(track => track.stop());
-                            console.info('[Audio Check] ストリーム停止完了');
-
-                            return hasAudio;
-                        } catch (error) {
-                            console.error('[Audio Check] エラー:', error.message);
-                            return false;
-                        }
-                    })()
-                `);
-
-                console.info(`[Main] 音声トラック確認結果: ${result ? '音声あり' : '音声なし'}`);
-                console.info(`[Main] ========== 音声トラック確認終了 ==========`);
-                return result;
-            } catch (error) {
-                console.error(`[Main] executeJavaScript失敗:`, error);
-                return false;
-            }
-        }
-
-        console.info(`[Main] mainWindowが存在しません`);
-        return false;
-    });
-
-    // 音声ソース ID を検証
-    ipcMain.handle('validate-source-id', async (_event, sourceId: string) => {
-        return await ElectronAudioCapture.validateSourceId(sourceId);
-    });
-
-    // 環境変数からAPIキーを取得
-    ipcMain.handle('get-env-api-key', async () => {
-        // 複数の環境変数名をチェック
-        const apiKey =
-            process.env['OPENAI_API_KEY'] ||
-            process.env['OPENAI_REALTIME_API_KEY'] ||
-            process.env['VOICETRANSLATE_API_KEY'] ||
-            null;
-
-        if (apiKey) {
-            console.info('[Main] API key loaded from environment:', apiKey.substring(0, 7) + '...');
-        } else {
-            console.info('[Main] API key not found in environment variables');
-        }
-
-        return apiKey;
-    });
-
-    // 環境変数から設定を取得
-    ipcMain.handle('get-env-config', async () => {
-        const errors: string[] = [];
-
-        // 2種類のモデル設定（環境変数から読み込み）
-        // 優先順位: 環境変数 > .env ファイル > エラー
-
-        // 1. REALTIME_MODEL: Realtime API用（音声→音声翻訳、音声認識）
-        const realtimeModel = process.env['OPENAI_REALTIME_MODEL'];
-        if (!realtimeModel) {
-            errors.push('OPENAI_REALTIME_MODEL が設定されていません');
-        }
-
-        // 2. CHAT_MODEL: Chat Completions API用（言語検出、テキスト翻訳）
-        const chatModel = process.env['OPENAI_CHAT_MODEL'];
-        if (!chatModel) {
-            errors.push('OPENAI_CHAT_MODEL が設定されていません');
-        }
-
-        // 3. TRANSCRIBE_MODEL: 入力音声認識用（オプション）
-        // 旧名 OPENAI_TRANSCRIPTION_MODEL も互換で読む。
-        const transcribeModel =
-            process.env['OPENAI_TRANSCRIBE_MODEL'] ||
-            process.env['OPENAI_TRANSCRIPTION_MODEL'] ||
-            'gpt-realtime-whisper';
-
-        // Realtime URL（オプション、デフォルト値あり）
-        const realtimeUrl =
-            process.env['OPENAI_REALTIME_URL'] || 'wss://api.openai.com/v1/realtime/translations';
-
-        // エラーがある場合は例外を投げる
-        if (errors.length > 0) {
-            const errorMessage =
-                `設定エラー: 必須の環境変数が設定されていません\n` +
-                `${errors.join('\n')}\n\n` +
-                `.env ファイルに以下の設定を追加してください:\n` +
-                `OPENAI_REALTIME_MODEL=gpt-realtime-translate\n` +
-                `OPENAI_CHAT_MODEL=gpt-5-2025-08-07\n` +
-                `OPENAI_TRANSCRIBE_MODEL=gpt-realtime-whisper`;
-
-            console.error('[Main]', errorMessage);
-            throw new Error(errorMessage);
-        }
-
-        // 翻訳の区切り（ターン検出）設定（オプション、未設定はレンダラー側の既定値を使用）
-        // 数値は不正値を弾き、未設定なら undefined のままにしてレンダラー既定にフォールバックさせる
-        const parsePositiveInt = (raw: string | undefined): number | undefined => {
-            if (raw === undefined || raw === '') {
-                return undefined;
-            }
-            const n = Number.parseInt(raw, 10);
-            return Number.isFinite(n) && n > 0 ? n : undefined;
+    ipcMain.handle('credentials:get-status', (event) => {
+        requireTrusted(event);
+        const status = requireCredentialService().getStatus();
+        return {
+            configured: status.configured,
+            source:
+                status.source === 'environment' || status.source === 'secure-storage'
+                    ? status.source
+                    : 'none',
+            storedFallbackExists: status.storedFallbackExists
         };
-        const translation = {
-            turnMode: process.env['TRANSLATION_TURN_MODE'],
-            vadType: process.env['TRANSLATION_VAD_TYPE'],
-            semanticEagerness: process.env['TRANSLATION_SEMANTIC_EAGERNESS'],
-            maxSentences: parsePositiveInt(process.env['TRANSLATION_MAX_SENTENCES']),
-            postSentenceHoldMs: parsePositiveInt(process.env['TRANSLATION_POST_SENTENCE_HOLD_MS']),
-            maxBufferMs: parsePositiveInt(process.env['TRANSLATION_MAX_BUFFER_MS'])
-        };
-
-        const config = {
-            realtimeModel: realtimeModel!,
-            chatModel: chatModel!,
-            transcribeModel,
-            realtimeUrl,
-            translation
-        };
-
-        console.info('[Main] Config loaded from environment:', {
-            realtimeModel: config.realtimeModel,
-            chatModel: config.chatModel,
-            transcribeModel: config.transcribeModel,
-            realtimeUrl: config.realtimeUrl,
-            translation: config.translation
-        });
-
-        return config;
+    });
+    ipcMain.handle('credentials:store-key', (event, key: string) => {
+        requireTrusted(event);
+        return requireCredentialService().storeKey(key);
+    });
+    ipcMain.handle('credentials:clear-key', (event) => {
+        requireTrusted(event);
+        requireCredentialService().clearStoredKey();
+    });
+    ipcMain.handle('runtime:get-public-config', (event) => {
+        requireTrusted(event);
+        return requireOpenAIConfigService().getPublicConfig();
+    });
+    ipcMain.handle('realtime:connect', async (event) => {
+        requireTrusted(event);
+        return await requireRealtimeSessionManager().connect(event.sender);
+    });
+    ipcMain.handle('realtime:send', (event, connectionId: string, message: unknown) => {
+        requireTrusted(event);
+        validateIdentifier(connectionId, 'connectionId');
+        const manager = requireRealtimeSessionManager();
+        if (!manager.ownsConnection(connectionId, event.sender)) {
+            throw new Error('この renderer が所有していない接続です');
+        }
+        return manager.send(connectionId, message);
+    });
+    ipcMain.handle('realtime:close', async (event, connectionId: string) => {
+        requireTrusted(event);
+        validateIdentifier(connectionId, 'connectionId');
+        const manager = requireRealtimeSessionManager();
+        if (manager.ownsConnection(connectionId, event.sender)) {
+            await manager.close(connectionId);
+            requireTranslationGateway().cancelGeneration(connectionId);
+        }
+    });
+    ipcMain.handle('realtime:get-state', (event) => {
+        requireTrusted(event);
+        return requireRealtimeSessionManager().getState();
+    });
+    ipcMain.handle('translation:translate', async (event, request: TranslationRequest) => {
+        requireTrusted(event);
+        return await requireTranslationGateway().translate(request);
     });
 
     // ✅ 会話データベース IPC ハンドラー
     // セッション開始
     ipcMain.handle(
         'conversation:start-session',
-        (_event, sourceLanguage?: string, targetLanguage?: string) => {
+        (event, sourceLanguage?: string, targetLanguage?: string) => {
+            requireTrusted(event);
             if (!conversationDB) {
                 throw new Error('Conversation database not initialized');
             }
@@ -574,64 +626,25 @@ function registerIPCHandlers(): void {
     );
 
     // セッション終了
-    ipcMain.handle('conversation:end-session', () => {
+    ipcMain.handle('conversation:end-session', (event) => {
+        requireTrusted(event);
         if (!conversationDB) {
             throw new Error('Conversation database not initialized');
         }
         conversationDB.endSession();
     });
 
-    // ターン追加
-    ipcMain.handle(
-        'conversation:add-turn',
-        (
-            _event,
-            turn: {
-                role: 'user' | 'assistant';
-                content: string;
-                language?: string;
-                timestamp: number;
-            }
-        ) => {
-            if (!conversationDB) {
-                throw new Error('Conversation database not initialized');
-            }
-            return conversationDB.addTurn(turn);
-        }
-    );
-
-    // 最近のターンを取得
-    ipcMain.handle(
-        'conversation:get-recent-turns',
-        (_event, count: number = 10, sessionId?: number) => {
-            if (!conversationDB) {
-                throw new Error('Conversation database not initialized');
-            }
-            return conversationDB.getRecentTurns(count, sessionId);
-        }
-    );
-
-    // API用のコンテキストを取得
-    ipcMain.handle(
-        'conversation:get-context-for-api',
-        (_event, count: number = 10, sessionId?: number) => {
-            if (!conversationDB) {
-                throw new Error('Conversation database not initialized');
-            }
-            return conversationDB.getContextForAPI(count, sessionId);
-        }
-    );
-
-    // 統計情報を取得
-    ipcMain.handle('conversation:get-stats', () => {
+    ipcMain.handle('conversation:upsert-segment-turn', (event, turn: SegmentTurnInput) => {
+        requireTrusted(event);
         if (!conversationDB) {
             throw new Error('Conversation database not initialized');
         }
-        return conversationDB.getStats();
+        return conversationDB.upsertSegmentTurn(turn);
     });
 
     // すべてのセッションを取得
-    ipcMain.handle('conversation:get-all-sessions', (_event, limit: number = 100) => {
+    ipcMain.handle('conversation:get-all-sessions', (event, limit: number = 100) => {
+        requireTrusted(event);
         if (!conversationDB) {
             throw new Error('Conversation database not initialized');
         }
@@ -639,19 +652,20 @@ function registerIPCHandlers(): void {
     });
 
     // セッションのすべてのターンを取得
-    ipcMain.handle('conversation:get-session-turns', (_event, sessionId: number) => {
+    ipcMain.handle('conversation:get-session-turns', (event, sessionId: number) => {
+        requireTrusted(event);
         if (!conversationDB) {
             throw new Error('Conversation database not initialized');
         }
         return conversationDB.getSessionTurns(sessionId);
     });
 
-    // 古いセッションを削除
-    ipcMain.handle('conversation:cleanup-old-sessions', (_event, daysToKeep: number = 30) => {
+    ipcMain.handle('conversation:clear-all', (event) => {
+        requireTrusted(event);
         if (!conversationDB) {
             throw new Error('Conversation database not initialized');
         }
-        return conversationDB.cleanupOldSessions(daysToKeep);
+        return conversationDB.clearAll();
     });
 
     console.info('[Main] IPC handlers registered');
@@ -704,6 +718,21 @@ if (chromiumCommandLine && typeof chromiumCommandLine.appendSwitch === 'function
     console.warn('[Main] Failed to configure Chromium command line switches');
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+    app.quit();
+} else {
+    app.on('second-instance', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) {
+                mainWindow.restore();
+            }
+            mainWindow.show();
+            mainWindow.focus();
+        }
+    });
+}
+
 /**
  * メディアアクセス権限を要求（全プラットフォーム対応）
  *
@@ -725,21 +754,15 @@ async function requestMediaPermissions(): Promise<void> {
 
         try {
             const micStatus = systemPreferences.getMediaAccessStatus('microphone');
-            const cameraStatus = systemPreferences.getMediaAccessStatus('camera');
             const screenStatus = systemPreferences.getMediaAccessStatus('screen');
 
             console.info(
-                `[Main] macOS permissions - Microphone: ${micStatus}, Camera: ${cameraStatus}, Screen: ${screenStatus}`
+                `[Main] macOS permissions - Microphone: ${micStatus}, Screen: ${screenStatus}`
             );
 
             if (micStatus !== 'granted') {
                 console.info('[Main] Requesting microphone permission...');
                 await systemPreferences.askForMediaAccess('microphone');
-            }
-
-            if (cameraStatus !== 'granted') {
-                console.info('[Main] Requesting camera permission...');
-                await systemPreferences.askForMediaAccess('camera');
             }
 
             console.info('[Main] macOS: Media access permissions request completed');
@@ -762,47 +785,82 @@ async function requestMediaPermissions(): Promise<void> {
 /**
  * アプリケーション起動時
  */
-app.whenReady().then(async () => {
-    console.info('[Main] App is ready');
+async function initializeMainServices(): Promise<void> {
+    credentialService = new CredentialService(app.getPath('userData'));
+    openAIConfigService = new OpenAIConfigService();
+    realtimeSessionManager = new RealtimeSessionManager(credentialService, openAIConfigService);
+    translationGateway = new TranslationGateway(credentialService, openAIConfigService);
+}
 
-    // 全プラットフォーム対応: メディアアクセス権限を要求
-    await requestMediaPermissions();
-
-    // ✅ 会話データベース初期化（Electron 環境のみ）
-    if (isElectronEnvironment()) {
-        try {
-            // 環境変数 CONVERSATION_DB_PATH から カスタムパスを読み込み
-            // 空の場合はデフォルトパス (userData/conversations.db) を使用
-            const customDbPath = process.env['CONVERSATION_DB_PATH'];
-            if (customDbPath) {
-                console.info(
-                    '[Main] Using custom database path from CONVERSATION_DB_PATH:',
-                    customDbPath
-                );
-            }
-            conversationDB = new ConversationDatabase(customDbPath);
-            console.info('[Main] Conversation database initialized');
-        } catch (error) {
-            console.error('[Main] Failed to initialize conversation database:', error);
-            // データベース初期化失敗でもアプリは起動する
-        }
-    } else {
+async function initializeConversationDatabase(): Promise<void> {
+    if (!isElectronEnvironment()) {
         console.info('[Main] Skipping database initialization (not in Electron environment)');
+        return;
     }
+    try {
+        const customDbPath = process.env['CONVERSATION_DB_PATH'];
+        conversationDB = new ConversationDatabase(customDbPath);
+        console.info('[Main] Conversation database initialized');
+    } catch (error) {
+        console.error('[Main] Failed to initialize conversation database:', error);
+    }
+}
 
-    createMainWindow();
-    createTray();
-    registerGlobalShortcuts();
-    registerIPCHandlers();
-    initializeRealtimeWebSocket();
-
-    app.on('activate', () => {
-        // macOS: Dock アイコンクリック時
-        if (BrowserWindow.getAllWindows().length === 0) {
-            createMainWindow();
+async function runSmokeTest(): Promise<void> {
+    const requiredResources = [
+        resolveAppResource(MAIN_HTML_FILE),
+        resolveAppResource('icons', 'tray-icon.png'),
+        resolveAppResource('audio-processor-worklet.js')
+    ];
+    for (const resource of requiredResources) {
+        if (!fs.existsSync(resource)) {
+            throw new Error(`必要なリソースが見つかりません: ${resource}`);
         }
+    }
+    requireCredentialService().getStatus();
+    requireOpenAIConfigService().getPublicConfig();
+    if (conversationDB === null) {
+        throw new Error('会話データベースを初期化できませんでした');
+    }
+    conversationDB.close();
+    conversationDB = null;
+}
+
+if (hasSingleInstanceLock) {
+    void app.whenReady().then(async () => {
+        console.info('[Main] App is ready');
+
+        await initializeMainServices();
+        await initializeConversationDatabase();
+
+        if (process.argv.includes('--smoke-test')) {
+            try {
+                await runSmokeTest();
+                console.info('[Smoke] Packaged application smoke test passed');
+                app.exit(0);
+            } catch (error) {
+                console.error('[Smoke] Packaged application smoke test failed:', error);
+                app.exit(1);
+            }
+            return;
+        }
+
+        // 全プラットフォーム対応: メディアアクセス権限を要求
+        await requestMediaPermissions();
+
+        createMainWindow();
+        createTray();
+        registerGlobalShortcuts();
+        registerIPCHandlers();
+
+        app.on('activate', () => {
+            // macOS: Dock アイコンクリック時
+            if (BrowserWindow.getAllWindows().length === 0) {
+                createMainWindow();
+            }
+        });
     });
-});
+}
 
 /**
  * 全ウィンドウが閉じられた時
@@ -821,7 +879,8 @@ app.on('will-quit', () => {
     // グローバルショートカットを解除
     globalShortcut.unregisterAll();
     // WebSocket接続をクリーンアップ
-    cleanupRealtimeWebSocket();
+    void realtimeSessionManager?.cleanup();
+    translationGateway?.dispose();
     // ✅ 会話データベースを閉じる
     if (conversationDB) {
         conversationDB.close();

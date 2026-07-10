@@ -1,11 +1,4 @@
-/**
- * preload.ts の IPC リスナー登録/解除テスト（D7回帰）。
- *
- * 対象:
- *   electronAPI.off() が on() で登録した実際のラッパー関数を removeListener に渡すこと。
- *   （旧: on() が匿名ラッパーで登録する一方、off() は元コールバックを渡すため
- *     永久に解除できず、再購読のたびにリスナーが蓄積＝字幕二重の温床）
- */
+/** Explicit preload API regression tests. */
 
 jest.mock('electron', () => ({
     contextBridge: { exposeInMainWorld: jest.fn() },
@@ -18,53 +11,49 @@ jest.mock('electron', () => ({
 }));
 
 import { contextBridge, ipcRenderer } from 'electron';
-
-// preload はロード時に exposeInMainWorld を呼ぶ副作用モジュール
 import '../../electron/preload';
 
-/** exposeInMainWorld に渡された electronAPI を取り出す */
-function getExposedApi(): {
-    on: (channel: string, cb: (...args: unknown[]) => void) => void;
-    off: (channel: string, cb: (...args: unknown[]) => void) => void;
-} {
+function getExposedApi(): Record<string, any> {
     const calls = (contextBridge.exposeInMainWorld as jest.Mock).mock.calls;
     expect(calls.length).toBeGreaterThan(0);
-    return calls[0][1];
+    return calls[0][1] as Record<string, any>;
 }
 
-describe('electronAPI.on / off（D7: リスナー解除の実効性）', () => {
+describe('explicit electron preload API', () => {
     beforeEach(() => {
         (ipcRenderer.on as jest.Mock).mockClear();
         (ipcRenderer.removeListener as jest.Mock).mockClear();
     });
 
-    it('off() は on() が登録したラッパー関数そのものを removeListener に渡す', () => {
+    it('realtime.subscribe returns an effective unsubscribe callback', () => {
         const api = getExposedApi();
         const callback = jest.fn();
+        const unsubscribe = api.realtime.subscribe(callback);
 
-        api.on('realtime-ws-message', callback);
-        expect(ipcRenderer.on).toHaveBeenCalledTimes(1);
-        const registeredWrapper = (ipcRenderer.on as jest.Mock).mock.calls[0][1];
+        expect(ipcRenderer.on).toHaveBeenCalledWith('realtime:event', expect.any(Function));
+        const wrapper = (ipcRenderer.on as jest.Mock).mock.calls[0][1];
+        const payload = { connectionId: 'c1', kind: 'open' };
+        wrapper({}, payload);
+        expect(callback).toHaveBeenCalledWith(payload);
 
-        api.off('realtime-ws-message', callback);
-        expect(ipcRenderer.removeListener).toHaveBeenCalledTimes(1);
-        const removedListener = (ipcRenderer.removeListener as jest.Mock).mock.calls[0][1];
-
-        // 同一の関数参照であること（これが成立しないと永久にリスナーが残る）
-        expect(removedListener).toBe(registeredWrapper);
+        unsubscribe();
+        expect(ipcRenderer.removeListener).toHaveBeenCalledWith('realtime:event', wrapper);
     });
 
-    it('未登録のコールバックの off() は removeListener を呼ばない', () => {
+    it('does not expose generic channels, keys, URLs, or arbitrary chat', () => {
         const api = getExposedApi();
-        api.off('realtime-ws-message', jest.fn());
-        expect(ipcRenderer.removeListener).not.toHaveBeenCalled();
-    });
-
-    it('許可されていないチャネルは on() で登録されない', () => {
-        const api = getExposedApi();
-        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-        api.on('not-allowed-channel', jest.fn());
-        expect(ipcRenderer.on).not.toHaveBeenCalled();
-        warnSpy.mockRestore();
+        expect(api.on).toBeUndefined();
+        expect(api.off).toBeUndefined();
+        expect(api.getEnvApiKey).toBeUndefined();
+        expect(api.conversation).toBeUndefined();
+        expect(Object.keys(api.history).sort()).toEqual([
+            'clearAll',
+            'endSession',
+            'getSession',
+            'listSessions',
+            'startSession',
+            'upsertSegment'
+        ]);
+        expect(Object.keys(api.translation)).toEqual(['translate']);
     });
 });

@@ -203,7 +203,7 @@ describe('履歴保存失敗の通知（BUG4）', () => {
             state: { currentSessionId: 's1', sourceLang: 'zh' },
             platform: {
                 conversation: {
-                    addTurn() {
+                    upsertSegmentTurn() {
                         throw new Error('db locked');
                     }
                 }

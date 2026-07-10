@@ -13,7 +13,7 @@
 
 - [ ] `package.json` の `version` を更新（例: `2.0.0` → `2.0.1`）
 - [ ] `manifest.json` の `version` を更新（**Chromeストアは同一バージョンの再アップロード不可**。必ず上げる）
-- [ ] `.env` に本番用 `OPENAI_API_KEY` 等が設定されている
+- [ ] 必要な場合は OS/配布環境に `OPENAI_API_KEY` 等を設定した（本番パッケージは `.env` を含まない）
 - [ ] 既知の品質ゲートエラー（後述 §4）を解消した
 - [ ] `start-local.bat` で起動・動作確認した
 - [ ] CHANGELOG / リリースノートを用意した
@@ -102,21 +102,10 @@ npm run pack:extension
 
 ---
 
-## 4. ⚠️ 既知の課題（リリース前に要対応）
+## 4. Electron 安全性とデータ
 
-### 4-1. 品質ゲートが現状3件のエラーで失敗する（既存）
-`npm run check:extension`（= `npm run quality` の一部）が以下で失敗する。**今回のリファクタとは無関係の既存問題**:
-
-| ファイル | 行 | 内容 |
-|---|---|---|
-| `background.js` | 145 | Service Worker内で `window.id` 使用 → `globalThis` へ要修正（MV3では `window` が undefined） |
-| `config.js` | 63 | コメント `* - Browser: window.CONFIG`（誤検知に近いが要対応） |
-| `config.js` | 70 | `window.CONFIG = CONFIG`（SWとページ両対応の書き方へ要修正） |
-
-`background.js:145` は実害のあるバグ。リリース前に修正推奨。
-
-### 4-2. テストの既存失敗（25件）
-`npm test` は 25件失敗・239件成功。すべて未使用の `src/`(TypeScript) 側テストの脆弱性（Loggerのタイムスタンプ前置など）で、実行中の `voicetranslate-*.js` には影響しない。
+凭据、端点、履历保存と packaged smoke の仕様は
+[`ELECTRON_SECURITY_AND_DATA.md`](./ELECTRON_SECURITY_AND_DATA.md) を参照する。リリース前は `npm run quality`、`npm run test:runtime:coverage`、`npm run dist:win`、`npm run smoke:packaged` をすべて通過させる。
 
 ---
 

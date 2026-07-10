@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function loadWorklet() {
+function loadWorklet(sourceRate = 48000) {
     const file = path.join(__dirname, '../../audio-processor-worklet.js');
     const code = fs.readFileSync(file, 'utf8');
 
@@ -18,6 +18,7 @@ function loadWorklet() {
     const sandbox = {
         console,
         Float32Array,
+        sampleRate: sourceRate,
         /** AudioWorklet 環境のスタブ */
         AudioWorkletProcessor: class {
             constructor() {
@@ -42,14 +43,19 @@ describe('AudioProcessorWorklet（D8: ステレオダウンミックス）', () 
         const silentLeft = new Float32Array(128); // 全て0
         const loudRight = new Float32Array(128).fill(0.5);
 
-        expect(p.process([[silentLeft, loudRight]], null, null)).toBe(true);
+        for (let i = 0; i < 8; i++) {
+            expect(p.process([[silentLeft, loudRight]], null, null)).toBe(true);
+        }
 
         expect(p.port.postMessage).toHaveBeenCalledTimes(1);
-        const { type, data } = p.port.postMessage.mock.calls[0][0];
+        const [{ type, data, sampleRate }, transferList] = p.port.postMessage.mock.calls[0];
         expect(type).toBe('audiodata');
+        expect(sampleRate).toBe(24000);
+        expect(data).toHaveLength(480);
+        expect(transferList).toEqual([data.buffer]);
         // (0 + 0.5) / 2 = 0.25 の平均値が全サンプルに載る
         expect(data[0]).toBeCloseTo(0.25, 5);
-        expect(data[127]).toBeCloseTo(0.25, 5);
+        expect(data[479]).toBeCloseTo(0.25, 5);
     });
 
     it('モノラル入力はそのまま送出する', () => {
@@ -57,7 +63,9 @@ describe('AudioProcessorWorklet（D8: ステレオダウンミックス）', () 
         const p = new Worklet();
 
         const mono = new Float32Array(128).fill(0.3);
-        p.process([[mono]], null, null);
+        for (let i = 0; i < 8; i++) {
+            p.process([[mono]], null, null);
+        }
 
         const { data } = p.port.postMessage.mock.calls[0][0];
         expect(data[0]).toBeCloseTo(0.3, 5);
@@ -69,4 +77,24 @@ describe('AudioProcessorWorklet（D8: ステレオダウンミックス）', () 
         p.port.onmessage({ data: { type: 'stop' } });
         expect(p.process([[new Float32Array(128)]], null, null)).toBe(false);
     });
+
+    it.each([44100, 48000])(
+        '%iHz の連続入力で位相を保持し、出力数誤差が0.01%%未満',
+        (sourceRate) => {
+            const Worklet = loadWorklet(sourceRate);
+            const p = new Worklet();
+            let remaining = sourceRate * 2;
+            while (remaining > 0) {
+                const frames = Math.min(128, remaining);
+                p.process([[new Float32Array(frames).fill(0.2)]], null, null);
+                remaining -= frames;
+            }
+
+            const expected = 24000 * 2;
+            const actual = p.totalOutputSamples;
+            expect(Math.abs(actual - expected) / expected).toBeLessThan(0.0001);
+            expect(p.port.postMessage.mock.calls.length / 2).toBeLessThanOrEqual(60);
+            expect(p.pendingInput.length).toBeLessThanOrEqual(2);
+        }
+    );
 });

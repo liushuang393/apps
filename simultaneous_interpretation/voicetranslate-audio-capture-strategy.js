@@ -17,7 +17,6 @@ class AudioCaptureStrategy {
      * コンストラクタ
      *
      * @param {Object} config - 設定オブジェクト
-     * @param {number} config.sampleRate - サンプルレート
      * @param {boolean} config.echoCancellation - エコーキャンセレーション
      * @param {boolean} config.noiseSuppression - ノイズ抑制
      * @param {boolean} config.autoGainControl - 自動ゲイン制御
@@ -84,7 +83,6 @@ class ElectronAudioCaptureStrategy extends AudioCaptureStrategy {
      * @returns {Promise<MediaStream>} - 音声ストリーム
      */
     async capture() {
-
         try {
             // getUserMedia で音声をキャプチャ
             // Electron環境では mandatory 形式を使用（echoCancellation は使用不可）
@@ -143,7 +141,6 @@ class BrowserAudioCaptureStrategy extends AudioCaptureStrategy {
      * @returns {Promise<MediaStream>} - 音声ストリーム
      */
     async capture() {
-
         try {
             let stream;
 
@@ -157,7 +154,7 @@ class BrowserAudioCaptureStrategy extends AudioCaptureStrategy {
                 const constraints = {
                     audio: {
                         channelCount: 1,
-                        sampleRate: this.config.sampleRate,
+                        // sampleRate は設定しない（ネイティブレート採集。capture-profile.js の原則参照）
                         echoCancellation: this.config.echoCancellation,
                         noiseSuppression: this.config.noiseSuppression,
                         autoGainControl: this.config.autoGainControl
@@ -188,7 +185,6 @@ class BrowserAudioCaptureStrategy extends AudioCaptureStrategy {
 
             return stream;
         } catch (error) {
-
             // エラーメッセージがすでに詳細な場合はそのまま投げる
             if (error.message.includes('getDisplayMedia')) {
                 throw error;
@@ -211,11 +207,10 @@ class MicrophoneAudioCaptureStrategy extends AudioCaptureStrategy {
      * @returns {Promise<MediaStream>} - 音声ストリーム
      */
     async capture() {
-
         try {
             const audioConstraints = {
                 channelCount: 1,
-                sampleRate: this.config.sampleRate,
+                // sampleRate は設定しない（ネイティブレート採集で AEC を有効に保つ）
                 echoCancellation: this.config.echoCancellation,
                 noiseSuppression: this.config.noiseSuppression,
                 autoGainControl: this.config.autoGainControl
@@ -232,7 +227,6 @@ class MicrophoneAudioCaptureStrategy extends AudioCaptureStrategy {
 
             return stream;
         } catch (error) {
-
             if (error.name === 'NotAllowedError') {
                 throw new Error(
                     'マイク権限が拒否されました。\n' +

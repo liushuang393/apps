@@ -29,6 +29,54 @@ class AudioProcessorWorklet extends AudioWorkletProcessor {
         };
 
         this.shouldStop = false;
+        this.sourceRate = typeof sampleRate === 'number' ? sampleRate : 48000;
+        this.targetRate = 24000;
+        this.step = this.sourceRate / this.targetRate;
+        this.pendingInput = [];
+        this.readPosition = 0;
+        this.outputBuffer = new Float32Array(480);
+        this.outputIndex = 0;
+        this.totalOutputSamples = 0;
+    }
+
+    appendAndResample(input) {
+        for (let i = 0; i < input.length; i++) {
+            this.pendingInput.push(input[i]);
+        }
+
+        while (this.readPosition + 1 < this.pendingInput.length) {
+            const index = Math.floor(this.readPosition);
+            const fraction = this.readPosition - index;
+            const value =
+                this.pendingInput[index] +
+                (this.pendingInput[index + 1] - this.pendingInput[index]) * fraction;
+            this.outputBuffer[this.outputIndex++] = value;
+            this.totalOutputSamples++;
+            this.readPosition += this.step;
+
+            if (this.outputIndex === this.outputBuffer.length) {
+                const ownedBuffer = this.outputBuffer;
+                this.port.postMessage(
+                    {
+                        type: 'audiodata',
+                        data: ownedBuffer,
+                        sampleRate: this.targetRate
+                    },
+                    [ownedBuffer.buffer]
+                );
+                this.outputBuffer = new Float32Array(480);
+                this.outputIndex = 0;
+            }
+        }
+
+        const consumed = Math.min(
+            Math.floor(this.readPosition),
+            Math.max(0, this.pendingInput.length - 1)
+        );
+        if (consumed > 0) {
+            this.pendingInput.splice(0, consumed);
+            this.readPosition -= consumed;
+        }
     }
 
     /**
@@ -56,32 +104,17 @@ class AudioProcessorWorklet extends AudioWorkletProcessor {
 
         // 入力データが存在する場合
         if (input && input.length > 0) {
-            let channelData = input[0]; // モノラルはそのまま使用
-
-            // ステレオ以上は全チャンネル平均でモノラル化する。
-            // チャンネル0のみだと、右ch優勢の監視音源（一部の会議/ループバック構成）で
-            // 音声を取りこぼし認識漏れになる。
-            if (input.length > 1 && channelData) {
-                const mixed = new Float32Array(channelData.length);
-                for (let c = 0; c < input.length; c++) {
-                    const channel = input[c];
-                    for (let i = 0; i < channel.length; i++) {
-                        mixed[i] += channel[i];
+            const frames = input[0]?.length || 0;
+            if (frames > 0) {
+                // AudioWorklet が所有する mono buffer に全 channel を平均する。
+                const mono = new Float32Array(frames);
+                for (let channelIndex = 0; channelIndex < input.length; channelIndex++) {
+                    const channel = input[channelIndex];
+                    for (let frame = 0; frame < frames; frame++) {
+                        mono[frame] += channel[frame] / input.length;
                     }
                 }
-                for (let i = 0; i < mixed.length; i++) {
-                    mixed[i] /= input.length;
-                }
-                channelData = mixed;
-            }
-
-            if (channelData && channelData.length > 0) {
-                // メインスレッドに音声データを送信
-                // Float32Array をそのまま送信（転送可能オブジェクト）
-                this.port.postMessage({
-                    type: 'audiodata',
-                    data: channelData
-                });
+                this.appendAndResample(mono);
             }
         }
 

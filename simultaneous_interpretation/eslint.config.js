@@ -62,10 +62,13 @@ module.exports = [
             '@typescript-eslint/no-unused-vars': [
                 'error',
                 {
+                    args: 'none',
+                    caughtErrors: 'none',
                     argsIgnorePattern: '^_',
                     varsIgnorePattern: '^_'
                 }
             ],
+            'no-unused-vars': 'off',
 
             // 一般ルール
             'no-console': [
@@ -78,7 +81,7 @@ module.exports = [
             'no-alert': 'error',
             'no-var': 'error',
             'prefer-const': 'error',
-            eqeqeq: ['error', 'always'],
+            eqeqeq: ['error', 'always', { null: 'ignore' }],
             curly: ['error', 'all'],
 
             // Prettier
@@ -121,17 +124,20 @@ module.exports = [
             '@typescript-eslint/no-unused-vars': [
                 'error',
                 {
+                    args: 'none',
+                    caughtErrors: 'none',
                     argsIgnorePattern: '^_',
                     varsIgnorePattern: '^_'
                 }
             ],
+            'no-unused-vars': 'off',
 
             // 一般ルール
             'no-console': 'off',
             'no-debugger': 'error',
             'no-var': 'error',
             'prefer-const': 'error',
-            eqeqeq: ['error', 'always'],
+            eqeqeq: ['error', 'always', { null: 'ignore' }],
             curly: ['error', 'all'],
 
             // Prettier
@@ -216,11 +222,13 @@ module.exports = [
             'no-alert': 'error',
             'no-var': 'error',
             'prefer-const': 'error',
-            eqeqeq: ['error', 'always'],
+            eqeqeq: ['error', 'always', { null: 'ignore' }],
             curly: ['error', 'all'],
             'no-unused-vars': [
                 'error',
                 {
+                    args: 'none',
+                    caughtErrors: 'none',
                     argsIgnorePattern: '^_',
                     varsIgnorePattern: '^_'
                 }

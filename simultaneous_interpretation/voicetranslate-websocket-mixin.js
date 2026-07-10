@@ -860,7 +860,6 @@ const WebSocketMixin = {
      *   重複チェック、発話時長検証、音声データ抽出を実行
      */
     handleAudioBufferCommitted(message = {}) {
-        const queueStatus = this.responseQueue.getStatus();
         const now = Date.now();
         const speechDuration = this.speechStartTime ? now - this.speechStartTime : 0;
 
@@ -1496,7 +1495,6 @@ const WebSocketMixin = {
      * 発話停止イベント処理
      */
     handleSpeechStopped() {
-        const duration = this.speechStartTime ? Date.now() - this.speechStartTime : 0;
         this.updateStatus('recording', '処理中...');
         this.state.isNewResponse = true;
     },
@@ -1600,6 +1598,40 @@ const WebSocketMixin = {
      */
     async translateSegmentViaChat(segmentId, text, sourceLang) {
         try {
+            if (this.platform?.isElectron) {
+                const generation = this.state.connectionGeneration || this.platform.connectionId;
+                if (!generation) {
+                    this.setSegmentOutputStatus?.(segmentId, 'stream-final');
+                    return;
+                }
+                const result = await this.platform.translateText({
+                    sessionId: this.state.currentSessionId || 0,
+                    generation,
+                    segmentId,
+                    text,
+                    ...(sourceLang ? { sourceLanguage: sourceLang } : {}),
+                    targetLanguage: this.state.targetLang || 'ja'
+                });
+                if (
+                    result?.generation !== this.state.connectionGeneration ||
+                    result?.segmentId !== segmentId
+                ) {
+                    this.traceTranslation?.('refine:stale-drop', { seg: segmentId });
+                    return;
+                }
+                const translated = (result.text || '').trim();
+                const row = this.getTranscriptContainer?.('output')?.querySelector(
+                    `.transcript-message[data-segment-id="${segmentId}"]`
+                );
+                if (translated && row) {
+                    this.upsertSegmentOutput(segmentId, translated, { status: 'translated' });
+                    this.traceTranslation?.('refine:apply', { seg: segmentId });
+                } else {
+                    this.setSegmentOutputStatus?.(segmentId, 'stream-final');
+                }
+                return;
+            }
+
             if (!this.state.apiKey || typeof fetch !== 'function') {
                 // 補精度が走れない場合はストリーム訳のまま確定扱いにする（'responding' 放置を防ぐ）。
                 this.setSegmentOutputStatus?.(segmentId, 'stream-final');
@@ -1909,6 +1941,9 @@ const WebSocketMixin = {
      * WebSocketエラー処理
      */
     handleWSError(error) {
+        if (error?.authError) {
+            this.state.userWantsActive = false;
+        }
         this.notify('接続エラー', 'WebSocket接続でエラーが発生しました', 'error');
     },
 
@@ -2131,15 +2166,18 @@ const WebSocketMixin = {
         // 出力専用AudioContextが存在しない場合は作成
         // 入力処理と分離することで、出力音声の優先度を確保
         if (!this.state.outputAudioContext) {
-            this.state.outputAudioContext = new (
-                globalThis.AudioContext || globalThis.webkitAudioContext
-            )({
+            this.state.outputAudioContext = new (globalThis.AudioContext ||
+                globalThis.webkitAudioContext)({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
             // 翻訳音声を物理スピーカー/ヘッドホンへ固定（既定出力が仮想カードでも聞こえるように）
             // applyOutputSink は pro.js 側の実体。mixin 単体適用(テスト等)では未定義のため guard する。
             if (typeof this.applyOutputSink === 'function') {
                 await this.applyOutputSink(this.state.outputAudioContext);
+            }
+            // 最小化等で suspended になった場合の自動復帰を監視（実体は pro.js 側、guard 同上）
+            if (typeof this.watchAudioContextSuspension === 'function') {
+                this.watchAudioContextSuspension(this.state.outputAudioContext);
             }
         }
 
@@ -2222,10 +2260,18 @@ const WebSocketMixin = {
      *   正常終了と異常終了を区別して処理
      */
     handleWSClose(event) {
+        if (
+            event?.connectionId &&
+            this.state.connectionGeneration &&
+            event.connectionId !== this.state.connectionGeneration
+        ) {
+            return;
+        }
+        if (event?.reason === 'client-close' && this.state.connectionState === 'closing') {
+            return;
+        }
         // イベントオブジェクトの安全な取得
         const code = event?.code || event || 1005;
-        const reason = event?.reason || '';
-        const wasClean = event?.wasClean !== undefined ? event.wasClean : true;
 
         // エラーコード詳細
         let errorDetail = '';
@@ -2281,7 +2327,7 @@ const WebSocketMixin = {
 
         // 自動再接続: ユーザーが「開始」状態かつ終了中でなく、異常切断なら背景で再接続する。
         // 認証エラー(4000)は再接続しても解決しないため除外する。
-        const isAuthError = code === 4000;
+        const isAuthError = code === 4000 || code === 1008 || !!event?.authError;
         if (
             this.state.userWantsActive &&
             !this.state.isUnloading &&
@@ -2301,7 +2347,7 @@ const WebSocketMixin = {
         if (isAuthError) {
             this.state.userWantsActive = false;
         }
-        this.disconnect();
+        void this.disconnect();
     }
 };
 

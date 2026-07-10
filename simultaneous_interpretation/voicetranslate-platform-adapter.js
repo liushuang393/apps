@@ -83,6 +83,16 @@
             return null;
         }
 
+        async getCredentialStatus() {
+            return { configured: false, source: 'none', storedFallbackExists: false };
+        }
+
+        async storeCredential() {
+            return { success: false, persisted: false };
+        }
+
+        async clearStoredCredential() {}
+
         /** @returns {Promise<object|null>} 環境変数のモデル設定（非対応環境は null） */
         async getEnvConfig() {
             return null;
@@ -105,6 +115,7 @@
          */
         subscribeRealtimeEvents(_handlers) {
             // ブラウザ環境では不要
+            return () => {};
         }
 
         /**
@@ -159,6 +170,10 @@
         constructor() {
             /** @private */
             this._api = root.window.electronAPI;
+            /** @private */
+            this._connectionId = null;
+            /** @private */
+            this._unsubscribeRealtime = null;
         }
 
         get kind() {
@@ -169,12 +184,26 @@
             return true;
         }
 
+        get connectionId() {
+            return this._connectionId;
+        }
+
         get supportsConversation() {
-            return typeof this._api.conversation !== 'undefined';
+            return typeof this._api.history !== 'undefined';
         }
 
         get conversation() {
-            return this.supportsConversation ? this._api.conversation : null;
+            if (!this.supportsConversation) {
+                return null;
+            }
+            return {
+                startSession: (...args) => this._api.history.startSession(...args),
+                endSession: () => this._api.history.endSession(),
+                upsertSegmentTurn: (turn) => this._api.history.upsertSegment(turn),
+                getAllSessions: (limit) => this._api.history.listSessions(limit),
+                getSessionTurns: (sessionId) => this._api.history.getSession(sessionId),
+                clearAll: () => this._api.history.clearAll()
+            };
         }
 
         // ストレージは Electron でも localStorage を使用（既存挙動を踏襲）
@@ -187,11 +216,24 @@
         }
 
         async getEnvApiKey() {
-            return this._api.getEnvApiKey();
+            // 完全なキーは main から renderer へ返さない。
+            return null;
         }
 
         async getEnvConfig() {
-            return this._api.getEnvConfig();
+            return this._api.runtime.getPublicConfig();
+        }
+
+        async getCredentialStatus() {
+            return this._api.credentials.getStatus();
+        }
+
+        async storeCredential(key) {
+            return this._api.credentials.storeKey(key);
+        }
+
+        async clearStoredCredential() {
+            return this._api.credentials.clearStoredKey();
         }
 
         async detectMeetingApps() {
@@ -199,22 +241,56 @@
         }
 
         subscribeRealtimeEvents(handlers) {
-            this._api.on('realtime-ws-open', () => handlers.onOpen());
-            this._api.on('realtime-ws-message', (message) => handlers.onMessage(message));
-            this._api.on('realtime-ws-error', (error) => handlers.onError(error));
-            this._api.on('realtime-ws-close', (data) => handlers.onClose(data));
+            if (this._unsubscribeRealtime) {
+                return this._unsubscribeRealtime;
+            }
+            this._unsubscribeRealtime = this._api.realtime.subscribe((event) => {
+                if (!event || !event.connectionId) {
+                    return;
+                }
+                if (event.kind === 'open') {
+                    this._connectionId = event.connectionId;
+                    handlers.onOpen(event);
+                    return;
+                }
+                if (event.connectionId !== this._connectionId) {
+                    return;
+                }
+                if (event.kind === 'message') {
+                    handlers.onMessage(event.message);
+                } else if (event.kind === 'error') {
+                    handlers.onError(event);
+                } else if (event.kind === 'close') {
+                    this._connectionId = null;
+                    handlers.onClose(event);
+                }
+            });
+            return this._unsubscribeRealtime;
         }
 
-        async connectRealtime({ url, apiKey, model }) {
-            return this._api.realtimeWebSocketConnect({ url, apiKey, model });
+        async connectRealtime() {
+            const result = await this._api.realtime.connect();
+            this._connectionId = result.connectionId;
+            return { success: true, connectionId: result.connectionId };
         }
 
         async sendRealtime(message) {
-            return this._api.realtimeWebSocketSend(JSON.stringify(message));
+            if (!this._connectionId) {
+                return { success: false, message: 'Realtime 接続がありません' };
+            }
+            return this._api.realtime.send(this._connectionId, message);
         }
 
         async closeRealtime() {
-            return this._api.realtimeWebSocketClose();
+            const connectionId = this._connectionId;
+            this._connectionId = null;
+            if (connectionId) {
+                await this._api.realtime.close(connectionId);
+            }
+        }
+
+        async translateText(request) {
+            return this._api.translation.translate(request);
         }
     }
 

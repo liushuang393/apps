@@ -5,6 +5,8 @@
   "main": "dist/electron/main.js",
   "scripts": {
     "clean": "rimraf dist coverage",
+    "clean:electron": "rimraf dist/electron",
+    "clean:release": "rimraf release",
     "dev": "concurrently \"npm run build -- --watch\" \"wait-on dist/electron/main.js && cross-env NODE_ENV=development electron .\"",
     "start": "npm run electron:dev",
     "test": "jest",
@@ -15,9 +17,11 @@
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "lint:electron": "eslint \"electron/**/*.ts\"",
     "lint:electron:fix": "eslint \"electron/**/*.ts\" --fix",
+    "lint:runtime": "eslint \"voicetranslate-*.js\" \"audio-processor-worklet.js\"",
+    "lint:runtime:fix": "eslint \"voicetranslate-*.js\" \"audio-processor-worklet.js\" --fix",
     "lint:all": "eslint \"src/**/*.ts\" \"electron/**/*.ts\"",
-    "format": "prettier --write \"src/**/*.{ts,js,json}\" \"electron/**/*.{ts,js,json}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,js,json}\" \"electron/**/*.{ts,js,json}\"",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\" \"electron/**/*.{ts,js,json}\" \"voicetranslate-*.js\" \"audio-processor-worklet.js\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\" \"electron/**/*.{ts,js,json}\" \"voicetranslate-*.js\" \"audio-processor-worklet.js\"",
     "type-check": "tsc --noEmit",
     "build": "tsc",
     "build:core": "tsc",
@@ -29,12 +33,14 @@
     "electron": "npm run build:electron && npm run electron:run",
     "electron:run": "node scripts/run-electron.js",
     "electron:dev": "cross-env NODE_ENV=development npm run electron",
-    "pack": "npm run build:electron && electron-builder --dir",
-    "dist": "npm run build:electron && electron-builder --dir",
-    "dist:win": "npm run build:electron && electron-builder --win",
-    "dist:mac": "npm run build:electron && electron-builder --mac",
-    "dist:linux": "npm run build:electron && electron-builder --linux",
-    "quality": "npm run type-check && npm run lint && npm run format:check && npm run check:extension"
+    "pack": "npm run clean:electron && npm run clean:release && npm run build:electron && electron-builder --dir",
+    "dist": "npm run clean:electron && npm run clean:release && npm run build:electron && electron-builder --dir",
+    "dist:win": "npm run clean:electron && npm run clean:release && npm run build:electron && electron-builder --win",
+    "dist:mac": "npm run clean:electron && npm run clean:release && npm run build:electron && electron-builder --mac",
+    "dist:linux": "npm run clean:electron && npm run clean:release && npm run build:electron && electron-builder --linux",
+    "smoke:packaged": "node scripts/smoke-packaged.js",
+    "test:runtime:coverage": "jest --config jest.runtime.config.js --coverage --runInBand",
+    "quality": "npm run type-check && npm run lint:runtime && npm run lint:electron && npm run format:check && npm test -- --runInBand && npm run check:extension"
   },
   "keywords": [],
   "author": "",
@@ -81,7 +87,7 @@
       "buildResources": "build"
     },
     "files": [
-      "dist/**/*",
+      "dist/electron/**/*",
       "teams-realtime-translator.html",
       "voicetranslate-*.js",
       "audio-processor-worklet.js",
@@ -90,6 +96,9 @@
       "vendor/**/*",
       "icons/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
     ],
     "win": {
       "target": [

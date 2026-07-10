@@ -187,7 +187,35 @@ const UIMixin = {
         }
 
         container.scrollTop = 0;
+
+        const finalInput = type === 'input' && options.status === 'input-ready' && !!text;
+        const finalOutput =
+            type === 'output' &&
+            (options.status === 'stream-final' || options.status === 'translated') &&
+            !!text;
+        if (finalInput || finalOutput) {
+            this.trackHistoryWrite(
+                this.saveSegmentTurnToDatabase(type, segmentId, text, options.status)
+            );
+        }
         return message;
+    },
+
+    /** Track pending history writes so session shutdown can flush them before endSession. */
+    trackHistoryWrite(promise) {
+        if (!this._historyWrites) {
+            this._historyWrites = new Set();
+        }
+        const tracked = Promise.resolve(promise);
+        this._historyWrites.add(tracked);
+        void tracked.finally(() => this._historyWrites?.delete(tracked));
+        return tracked;
+    },
+
+    async drainHistoryWrites() {
+        while (this._historyWrites?.size) {
+            await Promise.allSettled(Array.from(this._historyWrites));
+        }
     },
 
     /**
@@ -493,34 +521,29 @@ const UIMixin = {
      * @param {number} transcriptId - トランスクリプトID
      */
     async saveTranscriptToDatabase(type, text, transcriptId) {
-        // ✅ 音声入力のみ保存（音声出力は保存しない）
-        if (type !== 'input') {
-            return;
-        }
-
         // 会話保存(SQLite)はElectronのみ対応
         if (!this.platform.conversation) {
             return;
         }
 
-        // セッションIDチェック
+        await this.ensureConversationSession?.();
         if (!this.state.currentSessionId) {
             return;
         }
 
         try {
-            // ✅ 音声入力として保存（role = user）
-            const role = 'user';
-
-            // 言語情報取得
-            const language = this.state.sourceLang || 'auto';
-
-            // ターン追加
-            await this.platform.conversation.addTurn({
-                role: role,
+            await this.platform.conversation.upsertSegmentTurn({
+                sessionId: this.state.currentSessionId,
+                segmentId: `legacy_${transcriptId || Date.now()}`,
+                role: type === 'output' ? 'assistant' : 'user',
                 content: text,
-                language: language,
-                timestamp: transcriptId || Date.now()
+                language:
+                    type === 'output'
+                        ? this.state.targetLang || 'ja'
+                        : this.state.sourceLang || 'auto',
+                timestamp: transcriptId || Date.now(),
+                isFinal: true,
+                source: 'legacy-renderer'
             });
         } catch (error) {
             // 履歴保存(SQLite)の失敗は翻訳継続には致命的でないが、無言で履歴を
@@ -531,6 +554,53 @@ const UIMixin = {
                 this.notify(
                     '履歴保存の警告',
                     '会話履歴の保存に失敗しました（翻訳は継続します）: ' + detail,
+                    'warning'
+                );
+            }
+        }
+    },
+
+    /**
+     * segment の確定原文/訳文を同じキーで暗号化履歴へ UPSERT する。
+     */
+    async saveSegmentTurnToDatabase(type, segmentId, text, status) {
+        if (!this.platform.conversation || !segmentId || !text) {
+            return;
+        }
+        const expectedGeneration = this.state.connectionGeneration;
+        await this.ensureConversationSession?.();
+        if (
+            !this.state.currentSessionId ||
+            expectedGeneration !== this.state.connectionGeneration
+        ) {
+            return;
+        }
+        const sessionId = this.state.currentSessionId;
+        const segment = this.segmentAlignment?.getSegment?.(segmentId);
+        try {
+            await this.platform.conversation.upsertSegmentTurn({
+                sessionId,
+                segmentId: String(segmentId),
+                role: type === 'input' ? 'user' : 'assistant',
+                content: text,
+                language:
+                    type === 'input'
+                        ? segment?.input?.sourceLang || this.state.sourceLang || 'auto'
+                        : this.state.targetLang || 'ja',
+                timestamp: segment?.createdAt || Date.now(),
+                isFinal: true,
+                source:
+                    type === 'input'
+                        ? segment?.input?.source || 'translation-stream'
+                        : status || 'stream-final'
+            });
+        } catch (error) {
+            if (!this._historySaveWarned) {
+                this._historySaveWarned = true;
+                this.notify(
+                    '履歴保存の警告',
+                    '会話履歴の保存に失敗しました（翻訳は継続します）: ' +
+                        (error?.message || String(error)),
                     'warning'
                 );
             }
