@@ -16,7 +16,7 @@ module.exports = {
 
     // JSX 設定
     jsxSingleQuote: false,
-    jsxBracketSameLine: false,
+    bracketSameLine: false,
 
     // 末尾カンマ
     trailingComma: 'none',

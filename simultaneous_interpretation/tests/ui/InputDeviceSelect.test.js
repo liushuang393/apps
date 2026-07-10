@@ -122,6 +122,59 @@ describe('populateInputDeviceSelect', () => {
     });
 });
 
+describe('resolveAutoInputDeviceId', () => {
+    it('自動マイクは仮想カード/内蔵よりヘッドセットを優先する', async () => {
+        const { App, sandbox } = loadProApp();
+        sandbox.navigator.mediaDevices = {
+            enumerateDevices: async () => [
+                {
+                    kind: 'audioinput',
+                    deviceId: 'default',
+                    label: 'Default - Microphone Array (Intel Smart Sound)'
+                },
+                {
+                    kind: 'audioinput',
+                    deviceId: 'vb1',
+                    label: 'CABLE Output (VB-Audio Virtual Cable)'
+                },
+                {
+                    kind: 'audioinput',
+                    deviceId: 'headset1',
+                    label: 'Headset Microphone (Jabra Evolve2)'
+                }
+            ]
+        };
+
+        const fake = Object.create(App.prototype);
+        fake.state = { preferredInputDeviceId: '' };
+
+        await expect(fake.resolveAutoInputDeviceId()).resolves.toBe('headset1');
+    });
+
+    it('強い候補が無い場合は deviceId を固定せず OS 既定に委ねる', async () => {
+        const { App, sandbox } = loadProApp();
+        sandbox.navigator.mediaDevices = {
+            enumerateDevices: async () => [
+                {
+                    kind: 'audioinput',
+                    deviceId: 'default',
+                    label: 'Default - Microphone Array (Intel Smart Sound)'
+                },
+                {
+                    kind: 'audioinput',
+                    deviceId: 'mic1',
+                    label: 'Microphone Array (Realtek Audio)'
+                }
+            ]
+        };
+
+        const fake = Object.create(App.prototype);
+        fake.state = { preferredInputDeviceId: '' };
+
+        await expect(fake.resolveAutoInputDeviceId()).resolves.toBe('');
+    });
+});
+
 describe('startPinnedDeviceCapture', () => {
     function createCaptureHarness(App, sandbox) {
         const created = [];
@@ -171,6 +224,43 @@ describe('startPinnedDeviceCapture', () => {
         // ネイティブレート採集でAECを効かせるため sampleRate は固定しない
         expect(created[0].config.sampleRate).toBeUndefined();
         expect(stages).toEqual(['microphone']);
+    });
+});
+
+describe('startMicrophoneCapture', () => {
+    it('自動選択時は解決したヘッドセット deviceId でマイクを取得する', async () => {
+        const { App, sandbox } = loadProApp();
+        sandbox.navigator.mediaDevices = {
+            enumerateDevices: async () => [
+                {
+                    kind: 'audioinput',
+                    deviceId: 'default',
+                    label: 'Default - Microphone Array (Intel Smart Sound)'
+                },
+                {
+                    kind: 'audioinput',
+                    deviceId: 'headset1',
+                    label: 'ヘッドセット マイク (Realtek)'
+                }
+            ]
+        };
+        const created = [];
+        sandbox.AudioCaptureStrategyFactory = {
+            createStrategy(options) {
+                created.push(options);
+                return { capture: async () => ({ getAudioTracks: () => [] }) };
+            }
+        };
+
+        const fake = Object.create(App.prototype);
+        fake.state = { preferredInputDeviceId: '' };
+        fake.notify = () => {};
+
+        await fake.startMicrophoneCapture();
+
+        expect(created).toHaveLength(1);
+        expect(created[0].deviceId).toBe('headset1');
+        expect(created[0].config.echoCancellation).toBe(true);
     });
 });
 

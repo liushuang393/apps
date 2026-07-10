@@ -508,8 +508,7 @@ function registerIPCHandlers(): void {
 
         // Realtime URL（オプション、デフォルト値あり）
         const realtimeUrl =
-            process.env['OPENAI_REALTIME_URL'] ||
-            'wss://api.openai.com/v1/realtime/translations';
+            process.env['OPENAI_REALTIME_URL'] || 'wss://api.openai.com/v1/realtime/translations';
 
         // エラーがある場合は例外を投げる
         if (errors.length > 0) {

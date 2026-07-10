@@ -88,7 +88,7 @@ function deriveCaptureProfileId({ isElectron, audioSourceType, fallbackStage }) 
  * | electron-mic          | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | play                 | null（検証なし）     |
  * | electron-virtual-card | virtual-card | full                           | SYSTEM     | play/隔離不可→suppress| loopback           |
  * | electron-loopback     | loopback     | full                           | SYSTEM     | suppress             | microphone         |
- * | electron-mic-fallback | microphone   | 通訳×隔離=full / 他=mic-protected | MICROPHONE | play                 | null（警告のみ）     |
+ * | electron-mic-fallback | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | play                 | null（警告のみ）     |
  * | browser-mic           | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | play                 | null               |
  * | browser-tab           | tab          | full                           | SYSTEM     | play                 | null（警告のみ）     |
  *
@@ -98,8 +98,8 @@ function deriveCaptureProfileId({ isElectron, audioSourceType, fallbackStage }) 
  *                     ループバックは ttsPolicy=suppress により回灌自体が発生しない。
  *                     同時通訳セッションの物理マイクも full（TTSがほぼ連続再生されるため、
  *                     半二重だと発話の大半を破棄してしまう。エコーは AEC で抑制する）。
- *                     ただし mic-fallback（system→マイク降格）は TTS がスピーカーから
- *                     マイクへ直入りするため、出力隔離済みの場合のみ full。
+ *                     mic-fallback（system→マイク降格）も通訳セッションでは full。
+ *                     ここを半二重化すると「PCマイク監視」で訳音再生中の相手発話を落とす。
  *   'mic-protected' = 物理マイク（通訳セッション以外）。TTS再生中＋再生終了後
  *                     bufferWindow 内はスキップ（スピーカー→マイクのエコー再入力防止）。
  *
@@ -154,7 +154,7 @@ function buildCaptureProfile({
         },
         [CAPTURE_PROFILE_IDS.ELECTRON_MIC_FALLBACK]: {
             effectiveDevice: 'microphone',
-            duplex: realtime && isolated ? 'full' : 'mic-protected',
+            duplex: realtime ? 'full' : 'mic-protected',
             vadPreset: 'MICROPHONE',
             ttsPolicy: 'play',
             silenceFallbackNext: null

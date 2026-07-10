@@ -398,30 +398,32 @@ class VoiceTranslateApp {
 
         // 言語設定変更
         // ✅ D2: 入力言語を指定したら state.sourceLang に反映。'auto' は null（自動判定）。
-        //    接続中は session.update で転写設定を再送し、buildInputTranscriptionConfig が
-        //    language を固定 → 短文の言語誤検出を抑え認識精度を上げる。
+        //    /v1/realtime/translations の input.transcription は language を受け付けないため、
+        //    入力言語変更では session.update を送らない。指定値は Chat 補正/言語検出のバイアスに使う。
         if (this.elements.sourceLang) {
             this.elements.sourceLang.addEventListener('change', (e) => {
-                this.state.sourceLang = e.target.value === 'auto' ? null : e.target.value;
-                if (this.state.isConnected) {
-                    this.updateSession();
-                }
+                this.runSettingChange('入力言語', () => {
+                    this.state.sourceLang = e.currentTarget.value === 'auto' ? null : e.currentTarget.value;
+                    this.saveToStorage('source_lang', e.currentTarget.value);
+                });
             });
         }
 
         this.elements.targetLang.addEventListener('change', (e) => {
-            this.state.targetLang = e.target.value;
-            this.elements.targetLangDisplay.textContent = Utils.getNativeLanguageName(
-                e.target.value
-            );
-            this.saveToStorage('target_lang', e.target.value);
+            this.runSettingChange('出力言語', async () => {
+                this.state.targetLang = e.currentTarget.value;
+                this.elements.targetLangDisplay.textContent = Utils.getNativeLanguageName(
+                    e.currentTarget.value
+                );
+                this.saveToStorage('target_lang', e.currentTarget.value);
 
-            // 言語変更時にトランスクリプトをクリア
-            this.clearTranscript('both');
+                // 言語変更時にトランスクリプトをクリア
+                this.clearTranscript('both');
 
-            if (this.state.isConnected) {
-                this.updateSession();
-            }
+                if (this.state.isConnected) {
+                    await this.applySessionUpdate('出力言語');
+                }
+            });
         });
 
         // 音色/モデル選択UIは廃止（CONFIG / .env から決定）
@@ -430,133 +432,161 @@ class VoiceTranslateApp {
         const audioSourceType = document.getElementById('audioSourceType');
         const systemAudioSourceGroup = document.getElementById('systemAudioSourceGroup');
 
-        audioSourceType.addEventListener('change', async (e) => {
-            const sourceType = e.target.value;
-            this.state.audioSourceType = sourceType;
-            this.saveToStorage('audio_source_type', sourceType);
+        if (audioSourceType) {
+            audioSourceType.addEventListener('change', (e) => {
+                this.runSettingChange('音声ソース', async () => {
+                    const sourceType = e.currentTarget.value;
+                    this.state.audioSourceType = sourceType;
+                    this.saveToStorage('audio_source_type', sourceType);
 
-            // システム音声選択時は追加UIを表示
-            if (sourceType === 'system') {
-                systemAudioSourceGroup.style.display = 'block';
+                    // システム音声選択時は追加UIを表示
+                    if (sourceType === 'system') {
+                        if (systemAudioSourceGroup) {
+                            systemAudioSourceGroup.style.display = 'block';
+                        }
 
-                // キャプチャ方式はプラットフォームで自動決定する
-                //   Electron → 仮想サウンドカード(VB-CABLE)を裏で自動検出
-                //   ブラウザ → getDisplayMedia（タブ音声共有）の会議アプリを自動検出
-                if (this.platform.isElectron) {
-                    await this.autoDetectVirtualCard();
-                } else {
-                    await this.detectAudioSources();
-                }
-            } else {
-                systemAudioSourceGroup.style.display = 'none';
-            }
+                        // キャプチャ方式はプラットフォームで自動決定する
+                        //   Electron → 仮想サウンドカード(VB-CABLE)を裏で自動検出
+                        //   ブラウザ → getDisplayMedia（タブ音声共有）の会議アプリを自動検出
+                        if (this.platform.isElectron) {
+                            await this.autoDetectVirtualCard();
+                        } else {
+                            await this.detectAudioSources();
+                        }
+                    } else {
+                        if (systemAudioSourceGroup) {
+                            systemAudioSourceGroup.style.display = 'none';
+                        }
+                    }
 
-            // VAD設定を再適用（新モードのプロファイル基準）。refreshCaptureProfile が
-            // 実効デバイスに応じたVADプリセットまで追随させる。
-            this.refreshCaptureProfile();
+                    // VAD設定を再適用（新モードのプロファイル基準）。refreshCaptureProfile が
+                    // 実効デバイスに応じたVADプリセットまで追随させる。
+                    this.refreshCaptureProfile();
 
-            // ✅ #1 録音中にソースを変更した場合は、新ソースでキャプチャを取り直す（即時切替）。
-            //    再起動は restartCapture に一本化（3経路の同時実行による二重パイプラインを防ぐ）。
-            await this.restartCapture('音声ソース切替に失敗');
-        });
+                    // ✅ #1 録音中にソースを変更した場合は、新ソースでキャプチャを取り直す（即時切替）。
+                    //    再起動は restartCapture に一本化（3経路の同時実行による二重パイプラインを防ぐ）。
+                    await this.restartCapture('音声ソース切替に失敗');
+                });
+            });
+        }
 
         // 会議アプリ検出ボタン
         const detectSourcesBtn = document.getElementById('detectSourcesBtn');
-        detectSourcesBtn.addEventListener('click', () => this.detectAudioSources());
+        if (detectSourcesBtn) {
+            detectSourcesBtn.addEventListener('click', () => {
+                this.runSettingChange('会議アプリ検出', () => this.detectAudioSources());
+            });
+        }
 
         // ✅ システム音声ソース選択時の処理（ブラウザ拡張機能用）
         const systemAudioSource = document.getElementById('systemAudioSource');
-        systemAudioSource.addEventListener('change', async (e) => {
-            const selectedValue = e.target.value;
+        if (systemAudioSource) {
+            systemAudioSource.addEventListener('change', (e) => {
+                this.runSettingChange('キャプチャ対象', async () => {
+                    const selectedValue = e.currentTarget.value;
 
-            // ブラウザ拡張機能環境で「画面/ウィンドウを選択」が選択された場合
-            if (selectedValue === 'display-media') {
-                try {
-                    // getDisplayMedia で選択ダイアログを表示
-                    const stream = await navigator.mediaDevices.getDisplayMedia({
-                        audio: {
-                            channelCount: 1,
-                            sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
-                            echoCancellation: false,
-                            noiseSuppression: false,
-                            autoGainControl: false
-                        },
-                        video: true // 互換性のため
-                    });
+                    // ブラウザ拡張機能環境で「画面/ウィンドウを選択」が選択された場合
+                    if (selectedValue === 'display-media') {
+                        try {
+                            // getDisplayMedia で選択ダイアログを表示
+                            const stream = await navigator.mediaDevices.getDisplayMedia({
+                                audio: {
+                                    channelCount: 1,
+                                    sampleRate: CONFIG.AUDIO.SAMPLE_RATE,
+                                    echoCancellation: false,
+                                    noiseSuppression: false,
+                                    autoGainControl: false
+                                },
+                                video: true // 互換性のため
+                            });
 
-                    // ビデオトラックを停止
-                    stream.getVideoTracks().forEach((track) => track.stop());
+                            // ビデオトラックを停止
+                            stream.getVideoTracks().forEach((track) => track.stop());
 
-                    // ✅ 音声トラックの有無を即座にチェック
-                    const audioTrack = stream.getAudioTracks()[0];
-                    if (audioTrack) {
-                        this.notify('選択完了', `${audioTrack.label} を選択しました`, 'success');
+                            // ✅ 音声トラックの有無を即座にチェック
+                            const audioTrack = stream.getAudioTracks()[0];
+                            if (audioTrack) {
+                                this.notify('選択完了', `${audioTrack.label} を選択しました`, 'success');
 
-                        // 選択された音声ソースを保存
-                        this.state.selectedDisplayMediaStream = stream;
-                    } else {
-                        // ストリームを停止
-                        stream.getTracks().forEach((track) => track.stop());
+                                // 選択された音声ソースを保存
+                                this.state.selectedDisplayMediaStream = stream;
+                            } else {
+                                // ストリームを停止
+                                stream.getTracks().forEach((track) => track.stop());
 
-                        // ドロップダウンを元に戻す
-                        e.target.value = '';
+                                // ドロップダウンを元に戻す
+                                e.currentTarget.value = '';
 
-                        this.notify(
-                            '音声トラックなし',
-                            '【重要】音声をキャプチャするには「タブ」を選択してください。\n\n' +
-                                '画面全体やウィンドウを選択した場合、音声は含まれません。\n' +
-                                'または、音声ソースを「マイク」に変更してください。',
-                            'warning'
-                        );
+                                this.notify(
+                                    '音声トラックなし',
+                                    '【重要】音声をキャプチャするには「タブ」を選択してください。\n\n' +
+                                        '画面全体やウィンドウを選択した場合、音声は含まれません。\n' +
+                                        'または、音声ソースを「マイク」に変更してください。',
+                                    'warning'
+                                );
+                            }
+                        } catch (error) {
+                            // ユーザーがキャンセルした場合、ドロップダウンを元に戻す
+                            e.currentTarget.value = '';
+
+                            if (error.name === 'NotAllowedError') {
+                                this.notify(
+                                    'キャンセル',
+                                    '画面/ウィンドウの選択がキャンセルされました',
+                                    'info'
+                                );
+                            } else {
+                                this.notify('エラー', '画面/ウィンドウの選択に失敗しました', 'error');
+                            }
+                        }
                     }
-                } catch (error) {
-                    // ユーザーがキャンセルした場合、ドロップダウンを元に戻す
-                    e.target.value = '';
-
-                    if (error.name === 'NotAllowedError') {
-                        this.notify(
-                            'キャンセル',
-                            '画面/ウィンドウの選択がキャンセルされました',
-                            'info'
-                        );
-                    } else {
-                        this.notify('エラー', '画面/ウィンドウの選択に失敗しました', 'error');
-                    }
-                }
-            }
-        });
+                });
+            });
+        }
 
         // 詳細設定トグル
         ['vadEnabled', 'showInputTranscript', 'showOutputTranscript'].forEach((id) => {
-            this.elements[id].addEventListener('click', (e) => {
-                this.handleToggleSetting(id, e.currentTarget);
-            });
+            if (this.elements[id]) {
+                this.elements[id].addEventListener('click', (e) => {
+                    this.runSettingChange(id, () => {
+                        this.handleToggleSetting(id, e.currentTarget);
+                    });
+                });
+            }
         });
 
         // 翻訳音声の再生 ON/OFF（再生段の単一スイッチ。OFFでも認識・テキスト翻訳は動き続ける）
         if (this.elements.audioOutputMode) {
             this.elements.audioOutputMode.addEventListener('click', () => {
-                this.handleAudioOutputToggleClick();
+                this.runSettingChange('翻訳音声再生', () => {
+                    this.handleAudioOutputToggleClick();
+                });
             });
         }
 
         // ヘッダの入力デバイス選択（auto=モード既定 / 手動=ピン留め）。録音中は即時切替。
         // 再起動は restartCapture に一本化（3経路の同時実行による二重パイプラインを防ぐ）。
         if (this.elements.inputDeviceSelect) {
-            this.elements.inputDeviceSelect.addEventListener('change', async (e) => {
-                const value = e.target.value === 'auto' ? '' : e.target.value;
-                this.state.preferredInputDeviceId = value;
-                this.saveToStorage('preferred_input_device', value);
-                await this.restartCapture('入力デバイス切替に失敗');
+            this.elements.inputDeviceSelect.addEventListener('change', (e) => {
+                this.runSettingChange('入力デバイス', async () => {
+                    const value = e.currentTarget.value === 'auto' ? '' : e.currentTarget.value;
+                    this.state.preferredInputDeviceId = value;
+                    this.saveToStorage('preferred_input_device', value);
+                    await this.restartCapture('入力デバイス切替に失敗');
+                });
             });
         }
 
         // VAD感度（自動音声検出OFF時のクライアントVADのみが参照する。
         //   翻訳エンドポイントは turn_detection を受け付けないため、サーバ更新分岐は廃止）
-        this.elements.vadSensitivity.addEventListener('change', (e) => {
-            this.updateVADSensitivity(e.target.value);
-            this.saveToStorage('vad_sensitivity', e.target.value);
-        });
+        if (this.elements.vadSensitivity) {
+            this.elements.vadSensitivity.addEventListener('change', (e) => {
+                this.runSettingChange('VAD感度', () => {
+                    this.updateVADSensitivity(e.currentTarget.value);
+                    this.saveToStorage('vad_sensitivity', e.currentTarget.value);
+                });
+            });
+        }
 
         // コントロールボタン
         // 「接続/切断」ボタンは廃止（非表示のためリスナーは張らない。要素は接続状態
@@ -617,6 +647,70 @@ class VoiceTranslateApp {
 
     async getFromStorage(key) {
         return this.platform.getFromStorage(key);
+    }
+
+    /**
+     * 設定UIイベントを安全に実行する。
+     *
+     * DOM の change/click イベントは Promise を待たないため、async 処理をそのまま
+     * ぶら下げると Electron IPC やデバイス検出の失敗が未処理 rejection になり、
+     * 「切り替えただけで画面側エラー」に見える。設定変更はここで必ず捕捉する。
+     *
+     * @param {string} label 設定名（通知用）
+     * @param {Function} handler 同期/非同期の設定変更処理
+     */
+    runSettingChange(label, handler) {
+        try {
+            const result = handler();
+            if (result && typeof result.catch === 'function') {
+                result.catch((error) => {
+                    this.notifySettingChangeError(label, error);
+                });
+            }
+        } catch (error) {
+            this.notifySettingChangeError(label, error);
+        }
+    }
+
+    /**
+     * 設定変更失敗をユーザーへ通知する。
+     *
+     * @param {string} label 設定名
+     * @param {unknown} error 失敗理由
+     */
+    notifySettingChangeError(label, error) {
+        this.notify(
+            '設定変更エラー',
+            `${label}の変更に失敗しました: ${this.extractErrorMessage(error)}`,
+            'error'
+        );
+    }
+
+    /**
+     * 接続中の session.update を安全に送る。
+     *
+     * @param {string} label 設定名（通知用）
+     * @returns {Promise<boolean>} 送信できたか
+     */
+    async applySessionUpdate(label) {
+        try {
+            const sent = await this.updateSession();
+            if (!sent) {
+                this.notify(
+                    '設定変更未反映',
+                    `${label}は現在の接続へ反映できませんでした。停止→開始で反映されます。`,
+                    'warning'
+                );
+            }
+            return sent;
+        } catch (error) {
+            this.notify(
+                '設定変更エラー',
+                `${label}を現在の接続へ反映できませんでした: ${this.extractErrorMessage(error)}`,
+                'error'
+            );
+            return false;
+        }
     }
 
     initVisualizer() {
@@ -899,8 +993,7 @@ class VoiceTranslateApp {
         // ストレージから設定を読み込み
         const settings = {
             apiKey: await this.getFromStorage('openai_api_key'),
-            // ✅ 修正: sourceLang は自動検出に変更、ストレージから読む必要なし
-            // sourceLang: await this.getFromStorage('source_lang'),
+            sourceLang: await this.getFromStorage('source_lang'),
             targetLang: await this.getFromStorage('target_lang'),
             vadSensitivity: await this.getFromStorage('vad_sensitivity')
         };
@@ -912,6 +1005,13 @@ class VoiceTranslateApp {
             if (progress) {
                 progress.style.width = '100%';
             }
+        }
+
+        if (settings.sourceLang) {
+            if (this.elements.sourceLang) {
+                this.elements.sourceLang.value = settings.sourceLang;
+            }
+            this.state.sourceLang = settings.sourceLang === 'auto' ? null : settings.sourceLang;
         }
 
         if (settings.targetLang) {
@@ -1255,6 +1355,128 @@ class VoiceTranslateApp {
             return device ? device.label || null : null;
         } catch (enumerateError) {
             return null;
+        }
+    }
+
+    /**
+     * 「自動」時に優先すべきマイクをラベルからスコアリングする。
+     *
+     * 目的:
+     *   getUserMedia の既定マイク任せだと、OS既定が内蔵マイクのままの環境で
+     *   ヘッドセットマイクを拾えず、PCマイク監視の認識漏れが起きる。
+     *   ただし弱い推測で内蔵マイクを勝手に固定すると逆に悪化するため、
+     *   耳機/BT/USB 等の強い手掛かりがある場合だけ自動選択する。
+     *
+     * @param {MediaDeviceInfo} device
+     * @returns {number} 高いほど優先。仮想/ループバック系は -Infinity。
+     */
+    scoreAutoInputDevice(device) {
+        if (!device || device.kind !== 'audioinput' || !device.deviceId) {
+            return Number.NEGATIVE_INFINITY;
+        }
+
+        const label = device.label || '';
+        const virtualPattern =
+            /CABLE|VB-Audio|VoiceMeeter|Virtual|BlackHole|Loopback|Stereo Mix|ステレオ|仮想/i;
+        if (virtualPattern.test(label)) {
+            return Number.NEGATIVE_INFINITY;
+        }
+
+        let score = 0;
+        const headsetPattern =
+            /ヘッドセット|ヘッドホン|イヤホン|headset|headphone|earphone|earbud|hands[-\s]?free|airpods?|buds?|耳机|耳機/i;
+        const bluetoothPattern =
+            /bluetooth|蓝牙|藍牙|BT\s|Jabra|Plantronics|Poly|Logitech|Bose|Sony|WH-|WF-/i;
+        const externalPattern =
+            /USB|外付け|外置|external|standalone|condenser|Yeti|Rode|Shure|Audio[-\s]?Technica/i;
+        const micPattern = /microphone|mic|マイク|麦克|麥克/i;
+        const builtInPattern =
+            /built[-\s]?in|internal|integrated|array|内蔵|内置|内建|camera|webcam|Realtek/i;
+
+        if (headsetPattern.test(label)) {
+            score += 1000;
+        }
+        if (bluetoothPattern.test(label)) {
+            score += 850;
+        }
+        if (externalPattern.test(label)) {
+            score += 700;
+        }
+        if (micPattern.test(label)) {
+            score += 40;
+        }
+        if (builtInPattern.test(label)) {
+            score -= 120;
+        }
+        if (device.deviceId === 'default') {
+            score -= 20;
+        } else if (device.deviceId === 'communications') {
+            score += 20;
+        }
+
+        return score;
+    }
+
+    /**
+     * マイクモード/マイクフォールバックの「自動」入力デバイスを解決する。
+     *
+     * 戻り値が '' の場合は getUserMedia に deviceId を渡さず、OS既定に委ねる。
+     * ラベル未解放の場合は一度だけ権限を取り、即停止してから再列挙する。
+     *
+     * @returns {Promise<string>} deviceId または ''
+     */
+    async resolveAutoInputDeviceId() {
+        if (this.state.preferredInputDeviceId) {
+            return this.state.preferredInputDeviceId;
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+            return '';
+        }
+
+        try {
+            let devices = await navigator.mediaDevices.enumerateDevices();
+            let inputs = devices.filter((d) => d.kind === 'audioinput' && d.deviceId);
+
+            const labelsEmpty = inputs.length > 0 && inputs.every((d) => !d.label);
+            if (labelsEmpty && navigator.mediaDevices.getUserMedia) {
+                try {
+                    const probe = await navigator.mediaDevices.getUserMedia({
+                        audio: captureConstraintsFor('microphone')
+                    });
+                    probe.getTracks().forEach((track) => track.stop());
+                    devices = await navigator.mediaDevices.enumerateDevices();
+                    inputs = devices.filter((d) => d.kind === 'audioinput' && d.deviceId);
+                } catch (permissionError) {
+                    return '';
+                }
+            }
+
+            const ranked = inputs
+                .map((device, index) => ({
+                    device,
+                    index,
+                    score: this.scoreAutoInputDevice(device)
+                }))
+                .filter((item) => item.score >= 500)
+                .sort((a, b) => {
+                    if (b.score !== a.score) {
+                        return b.score - a.score;
+                    }
+                    const aAlias =
+                        a.device.deviceId === 'default' ||
+                        a.device.deviceId === 'communications';
+                    const bAlias =
+                        b.device.deviceId === 'default' ||
+                        b.device.deviceId === 'communications';
+                    if (aAlias !== bAlias) {
+                        return aAlias ? 1 : -1;
+                    }
+                    return a.index - b.index;
+                });
+
+            return ranked[0]?.device.deviceId || '';
+        } catch (enumerateError) {
+            return '';
         }
     }
 
@@ -1651,14 +1873,7 @@ class VoiceTranslateApp {
         // ※ noise_reduction はこの session.update には付けない。/v1/realtime/translations は
         //   未知フィールドを 400 で拒否し得る厳格EPで、付与は未検証のため実機確認後に有効化する
         //   （去噪改善は Phase D4 の live 検証項目）。
-        const targetLang = this.state.targetLang || 'ja';
-        this.sendMessage({
-            type: 'session.update',
-            session: buildTranslationSessionConfig({
-                targetLang,
-                transcription: this.buildInputTranscriptionConfig()
-            })
-        });
+        void this.applySessionUpdate('セッション初期化');
     }
 
     /**
@@ -2521,12 +2736,13 @@ class VoiceTranslateApp {
         // マイクモードは EC/NS/AGC を強制ON（同一マシンのスピーカーから出る訳音の再入力を AEC で抑制）。
         // sampleRate は固定しない（ネイティブレートで採集し AEC を有効に保つ。24k固定だと AEC が働かない）。
         const config = captureConstraintsFor('microphone');
+        const autoDeviceId = await this.resolveAutoInputDeviceId();
 
-        // 戦略を作成（ヘッダでピン留めされた入力デバイスがあればそこから取得。auto は既定マイク）
+        // 戦略を作成（ピン留め優先。auto は耳機/USB 等の強い候補だけ自動固定し、無ければOS既定）
         const strategy = AudioCaptureStrategyFactory.createStrategy({
             sourceType: 'microphone',
             config: config,
-            deviceId: this.state.preferredInputDeviceId || undefined
+            deviceId: autoDeviceId || undefined
         });
 
         // 音声キャプチャを実行
@@ -3472,16 +3688,16 @@ class VoiceTranslateApp {
         }
     }
 
-    updateSession() {
+    async updateSession() {
         if (!this.state.isConnected) {
-            return;
+            return true;
         }
 
         // 出力言語を更新する。併せて入力転写(audio.input.transcription)も必ず再送する。
         // ※ このAPIは session.update の audio を「マージではなく置換」するため、
         //   output だけ送ると input.transcription が消え、左カラム(音声認識)が止まる。
         const targetLang = this.state.targetLang || 'ja';
-        this.sendMessage({
+        return await this.sendMessage({
             type: 'session.update',
             session: buildTranslationSessionConfig({
                 targetLang,

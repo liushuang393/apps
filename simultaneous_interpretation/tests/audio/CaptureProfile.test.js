@@ -118,7 +118,7 @@ describe('deriveCaptureProfileId / buildCaptureProfile（決定表）', () => {
         ['electron-mic は通訳セッションで全二重', true, 'microphone', null, false, 'full'],
         ['browser-mic は通訳セッションで全二重', false, 'microphone', null, false, 'full'],
         [
-            'mic-fallback は通訳×出力隔離済みのみ全二重（TTSがスピーカー→マイク直入りするため）',
+            'mic-fallback は通訳セッションで全二重（PCマイク監視の文落ち防止）',
             true,
             'system',
             'microphone',
@@ -126,12 +126,12 @@ describe('deriveCaptureProfileId / buildCaptureProfile（決定表）', () => {
             'full'
         ],
         [
-            'mic-fallback は通訳でも出力未隔離なら mic-protected',
+            'mic-fallback は出力未隔離でも通訳セッションなら全二重',
             true,
             'system',
             'microphone',
             false,
-            'mic-protected'
+            'full'
         ]
     ])('%s', (_desc, isElectron, audioSourceType, fallbackStage, outputIsolated, duplex) => {
         const profile = buildCaptureProfile({
@@ -238,7 +238,7 @@ describe('shouldSkipCapture（半二重ゲート・D1回帰）', () => {
         ).toBe(false);
     });
 
-    it('マイクへのフォールバック中は再生中スキップ＋bufferWindow内スキップ（物理マイク保護）', () => {
+    it('非通訳のマイクフォールバック中は再生中スキップ＋bufferWindow内スキップ（物理マイク保護）', () => {
         const profile = buildCaptureProfile({
             isElectron: true,
             audioSourceType: 'system',

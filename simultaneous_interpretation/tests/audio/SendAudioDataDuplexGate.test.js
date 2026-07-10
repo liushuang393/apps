@@ -125,6 +125,19 @@ describe('sendAudioData 半二重ゲート（D1）', () => {
         expect(app.sendMessage).toHaveBeenCalledTimes(1);
     });
 
+    it('通訳セッション×マイクフォールバック×出力未隔離×TTS再生中 → 送信する（PCマイク監視の漏れ防止）', () => {
+        const profile = buildCaptureProfile({
+            isElectron: true,
+            audioSourceType: 'system',
+            fallbackStage: 'microphone',
+            outputIsolated: false,
+            realtimeSession: true
+        });
+        const app = makeApp(App, { profile, isPlayingAudio: true });
+        expect(app.sendAudioData(AUDIO)).toBe(true);
+        expect(app.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
     it('非通訳セッション×マイクフォールバック中×TTS再生中 → スキップ（物理マイク保護）', () => {
         const profile = buildCaptureProfile({
             isElectron: true,

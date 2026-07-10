@@ -368,6 +368,31 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         expect(app._pendingOutputSegments).toHaveLength(0); // キュー自体は正しく進む
     });
 
+    it('Chat確定済みの旧行は次ターンの流訳を消費せず、新しい行対の最上部へ回す', () => {
+        const { app, inputContainer, outputContainer } = createTranslationApp();
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'A原文' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        const firstRight = committedRows(outputContainer)[0];
+        const firstSegId = firstRight.dataset.segmentId;
+        app.upsertSegmentOutput(firstSegId, 'A Chat確定訳', { status: 'translated' });
+
+        // B の入力が始まった後に B の流訳が届く。旧Aの pending が残っていても、
+        // translated 行は保護され、B訳は保留→B入力確定時に新しい行へ入る。
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'B原文' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'B流訳' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+
+        const left = committedRows(inputContainer);
+        const right = committedRows(outputContainer);
+        expect(left.map(textOf)).toEqual(['B原文', 'A原文']);
+        expect(right.map(textOf)).toEqual(['B流訳', 'A Chat確定訳']);
+        expect(right[0].dataset.segmentId).toBe(left[0].dataset.segmentId);
+        expect(right[1].dataset.segmentId).toBe(left[1].dataset.segmentId);
+        expect(right[1].dataset.status).toBe('translated');
+    });
+
     it('訳文ゼロのターンが先頭に滞留しても後続の右列がズレ続けない（キュー有界化）', () => {
         const { app, inputContainer, outputContainer } = createTranslationApp();
 

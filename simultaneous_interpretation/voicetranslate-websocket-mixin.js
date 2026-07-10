@@ -515,6 +515,8 @@ const WebSocketMixin = {
             // 先頭句読点のみを除去して空になった場合は、空のライブ行を作らない。
             return;
         }
+        const releasedProtectedHead =
+            kind === 'output' ? this.releaseProtectedPendingOutputHeads() : false;
         // ✅ 左右1:1（FIFO）: 訳文は原文より遅れて届くため「入力確定時点のバッファ」をペアに
         //    すると右列が1行ズレる（旧実装の主因）。訳文デルタは「訳文確定待ちの最古の行対」
         //    ＝キュー先頭の右セルへ直接描画する。キューが空（先行訳文/転写OFF）の間のみライブ行。
@@ -527,9 +529,20 @@ const WebSocketMixin = {
                 status: 'responding'
             });
         } else {
-            // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
-            //    （確定時に commitTranslationCaption がライブ行を確定行へ置き換える）
-            this.renderLiveCaption(kind, buffered);
+            if (
+                kind === 'output' &&
+                releasedProtectedHead &&
+                !(this.translationCaption.input || '').trim()
+            ) {
+                // Chat確定済みの旧行に遅延ストリームが来たケース。ここで孤児行化すると
+                // 「新しい訳が下/別行に出る」ように見えるため、入力が始まるまでは描画しない。
+                this._dropNextProtectedOutput = true;
+            } else {
+                this._dropNextProtectedOutput = false;
+                // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
+                //    （確定時に commitTranslationCaption がライブ行を確定行へ置き換える）
+                this.renderLiveCaption(kind, buffered);
+            }
         }
         // ✅ BUG1(左右1:1): 確定境界はサーバの session.*_transcript.done に一本化する。
         //    .done が来ない場合の取りこぼし防止としてアイドル確定のみ保険で残す(両列同一規則。
@@ -563,6 +576,7 @@ const WebSocketMixin = {
             return;
         }
         // output の確定（サーバ .done またはアイドルflush）
+        this.releaseProtectedPendingOutputHeads();
         if (this._pendingOutputSegments?.length) {
             // ✅ 左右1:1: 訳文確定待ちの最古の行対（キュー先頭）の訳文として確定し、次へ進む。
             //    アイドルflush由来（ターン途中の停滞の可能性がある）は 'stream-final' にせず
@@ -582,6 +596,14 @@ const WebSocketMixin = {
             // 空（禁則除去で消えた等）なら placeholder を維持し、路径3(Chat確定訳)が埋める。
             return;
         }
+        if (this._dropNextProtectedOutput && !this.translationCaption.input) {
+            // Chat確定済みの行へ後着した同一ターンのストリーム訳。確定訳を守り、孤児行も作らない。
+            this._dropNextProtectedOutput = false;
+            this.clearLiveCaption(kind);
+            this.traceTranslation?.('output:drop-protected-late', { len: text.length });
+            return;
+        }
+        this._dropNextProtectedOutput = false;
         if (!text) {
             this.clearLiveCaption(kind);
             return;
@@ -685,6 +707,35 @@ const WebSocketMixin = {
     },
 
     /**
+     * Chat確定済みの右行は「旧ターンの終端」とみなし、後続の output ストリームで消費しない。
+     * そのまま FIFO 先頭に残すと、次ターンの訳文が旧行を上書きしようとしてから捨てられ、
+     * 右列の位置ズレ/消失に見える。
+     *
+     * @returns {boolean} 先頭を1件以上解放した場合 true
+     */
+    releaseProtectedPendingOutputHeads() {
+        if (!this._pendingOutputSegments || !this._pendingOutputSegments.length) {
+            return false;
+        }
+
+        let released = false;
+        while (this._pendingOutputSegments.length) {
+            const segmentId = this._pendingOutputSegments[0];
+            const row = this.getTranscriptContainer?.('output')?.querySelector(
+                `.transcript-message[data-segment-id="${segmentId}"]`
+            );
+            const rank = SEGMENT_STATUS_RANK[row?.dataset?.status];
+            if (rank == null || rank < SEGMENT_STATUS_RANK.translated) {
+                break;
+            }
+            this._pendingOutputSegments.shift();
+            released = true;
+            this.traceTranslation?.('pair:release-protected', { seg: segmentId });
+        }
+        return released;
+    },
+
+    /**
      * デルタが TRANSLATION_CAPTION_IDLE_MS 途切れたら確定するタイマーを張り直す。
      *
      * @param {'input'|'output'} kind
@@ -747,6 +798,7 @@ const WebSocketMixin = {
         this.translationCaption = { input: '', output: '' };
         this._pendingOutputSegments = [];
         this._heldOutputs = [];
+        this._dropNextProtectedOutput = false;
         this.latencyTurnStartAt = null;
         // ✅ ゴースト行防止: 保留中の路径3(refine)デバウンスタイマーも破棄する。
         //    残すとクリア/再接続後に発火し、消去済み segmentId の行を再生成してしまう。
