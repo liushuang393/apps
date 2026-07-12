@@ -36,7 +36,7 @@ describe('deriveCaptureProfileId / buildCaptureProfile（決定表）', () => {
             true,
             'electron-virtual-card',
             'full',
-            'SYSTEM',
+            'MICROPHONE',
             'play',
             'loopback'
         ],
@@ -47,7 +47,7 @@ describe('deriveCaptureProfileId / buildCaptureProfile（決定表）', () => {
             false,
             'electron-virtual-card',
             'full',
-            'SYSTEM',
+            'MICROPHONE',
             'suppress',
             'loopback'
         ],
@@ -170,6 +170,71 @@ describe('deriveCaptureProfileId / buildCaptureProfile（決定表）', () => {
                 fallbackStage: null
             })
         ).toBe(CAPTURE_PROFILE_IDS.ELECTRON_VIRTUAL_CARD);
+    });
+
+    it('仮想カードは captionPolicy=chat-authoritative と preferContinuousCapture=true', () => {
+        const profile = buildCaptureProfile({
+            isElectron: true,
+            audioSourceType: 'system',
+            fallbackStage: 'virtual-card',
+            outputIsolated: true
+        });
+        expect(profile.captionPolicy).toBe('chat-authoritative');
+        expect(profile.preferContinuousCapture).toBe(true);
+        expect(profile.vadPreset).toBe('MICROPHONE');
+    });
+
+    it('仮想カードは物理出力へ隔離済みなら TTS を再生する', () => {
+        const profile = buildCaptureProfile({
+            isElectron: true,
+            audioSourceType: 'system',
+            fallbackStage: 'virtual-card',
+            outputIsolated: true
+        });
+        expect(profile.ttsPolicy).toBe('play');
+    });
+
+    it('仮想カードは物理出力が無ければ回灌防止のため TTS を抑止する', () => {
+        const profile = buildCaptureProfile({
+            isElectron: true,
+            audioSourceType: 'system',
+            fallbackStage: 'virtual-card',
+            outputIsolated: false
+        });
+        expect(profile.ttsPolicy).toBe('suppress');
+    });
+
+    it('仮想カードのデジタル音声にはマイク用 noiseReduction を適用しない', () => {
+        const profile = buildCaptureProfile({
+            isElectron: true,
+            audioSourceType: 'system',
+            fallbackStage: 'virtual-card',
+            outputIsolated: true
+        });
+        expect(profile.noiseReduction).toBeNull();
+    });
+
+    it('マイクは noiseReduction=null・ttsPolicy=play（他経路を変えない）', () => {
+        const profile = buildCaptureProfile({
+            isElectron: true,
+            audioSourceType: 'microphone',
+            fallbackStage: null,
+            outputIsolated: true
+        });
+        expect(profile.noiseReduction).toBeNull();
+        expect(profile.ttsPolicy).toBe('play');
+    });
+
+    it('マイクは stream-preview のまま（他経路を変えない）', () => {
+        const profile = buildCaptureProfile({
+            isElectron: true,
+            audioSourceType: 'microphone',
+            fallbackStage: null,
+            outputIsolated: false,
+            realtimeSession: true
+        });
+        expect(profile.captionPolicy).toBe('stream-preview');
+        expect(profile.preferContinuousCapture).toBe(false);
     });
 
     it('マイクモードは段を無視してマイク行に解決する（フォールバック対象外）', () => {

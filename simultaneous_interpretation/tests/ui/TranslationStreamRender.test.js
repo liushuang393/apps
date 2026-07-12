@@ -22,6 +22,7 @@ const vm = require('vm');
 const { SegmentAlignmentManager } = require('../../voicetranslate-segment-alignment.js');
 const { TextPathProcessor } = require('../../voicetranslate-path-processors.js');
 const { buildTransportDescriptor } = require('../../voicetranslate-transport-config.js');
+const { AudioUtils } = require('../../voicetranslate-utils.js');
 
 function loadMixins(document) {
     const root = path.join(__dirname, '../..');
@@ -44,7 +45,7 @@ function loadMixins(document) {
                 REALTIME_MODEL: 'gpt-realtime-translate'
             }
         },
-        Utils: {},
+        Utils: AudioUtils,
         WebSocket: { OPEN: 1 },
         module: { exports: {} }
     };
@@ -448,6 +449,127 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         });
         expect(textOf(right[0])).toBe('Chat確定訳'); // 昇格上書きは許可される
     }, 5000);
+});
+
+describe('仮想声卡 captionPolicy=chat-authoritative（路径3正本・路径2遮断）', () => {
+    /**
+     * 仮想声卡プロファイル付きの翻訳アプリを作る
+     *
+     * @returns {{app: object, inputContainer: Element, outputContainer: Element}}
+     */
+    function createVirtualCardApp() {
+        const ctx = createTranslationApp();
+        ctx.app.captureProfile = {
+            profileId: 'electron-virtual-card',
+            captionPolicy: 'chat-authoritative',
+            preferContinuousCapture: true,
+            vadPreset: 'MICROPHONE'
+        };
+        return ctx;
+    }
+
+    it('路径2の訳文デルタは右列に出ず、入力確定で路径3だけ起動する', async () => {
+        const { app, inputContainer, outputContainer } = createVirtualCardApp();
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'たくさんだ。' });
+        app.dispatchWSMessage({
+            type: 'session.output_transcript.delta',
+            delta: '哪用在那种可怕的地方睡觉呢'
+        });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+
+        const left = committedRows(inputContainer);
+        const right = committedRows(outputContainer);
+        expect(left).toHaveLength(1);
+        expect(textOf(left[0])).toBe('たくさんだ。');
+        expect(right).toHaveLength(1);
+        // 路径2の幻覚訳は右列に載らない（placeholder のまま）
+        expect(textOf(right[0])).toBe('翻訳中...');
+        expect(right[0].dataset.segmentId).toBe(left[0].dataset.segmentId);
+        expect(app._pendingOutputSegments || []).toHaveLength(0);
+
+        await sleep(650);
+        expect(app.refineCalls).toHaveLength(1);
+        expect(app.refineCalls[0].text).toBe('たくさんだ。');
+        expect(app.refineCalls[0].id).toBe(left[0].dataset.segmentId);
+    });
+
+    it('路径3のChat確定訳が右列の正本になる（流訳は後からも入らない）', async () => {
+        const { app, outputContainer } = createVirtualCardApp();
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'おかみさんどうした?' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        const right = committedRows(outputContainer);
+        const segId = right[0].dataset.segmentId;
+
+        app.upsertSegmentOutput(segId, '老板娘，怎么了？', { status: 'translated' });
+
+        // 遅延ストリームは無視される
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '夫人怎么了乱译' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+
+        expect(textOf(right[0])).toBe('老板娘，怎么了？');
+        expect(right[0].dataset.status).toBe('translated');
+        expect(committedRows(outputContainer)).toHaveLength(1);
+    });
+
+    it('連続2ターンでも流訳混入なく左右1:1で路径3が起動する', async () => {
+        const { app, inputContainer, outputContainer } = createVirtualCardApp();
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'A原文' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '幻覚A' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'B原文' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '幻覚Bしかも長い混入' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+
+        const left = committedRows(inputContainer).map(textOf);
+        const right = committedRows(outputContainer);
+        expect(left).toEqual(['B原文', 'A原文']);
+        expect(right.map(textOf)).toEqual(['翻訳中...', '翻訳中...']);
+        expect(right[0].dataset.segmentId).toBe(
+            committedRows(inputContainer)[0].dataset.segmentId
+        );
+        expect(right[1].dataset.segmentId).toBe(
+            committedRows(inputContainer)[1].dataset.segmentId
+        );
+
+        await sleep(650);
+        expect(app.refineCalls.map((c) => c.text)).toEqual(['A原文', 'B原文']);
+    });
+
+    it('ハングル優勢 ASR は行対も路径3も作らない（日韓誤認ゲート）', async () => {
+        const { app, inputContainer, outputContainer } = createVirtualCardApp();
+        const traces = [];
+        app.traceTranslation = (tag, payload) => traces.push({ tag, payload });
+
+        app.dispatchWSMessage({
+            type: 'session.input_transcript.delta',
+            delta: '안녕하세요 반갑습니다'
+        });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+
+        expect(committedRows(inputContainer)).toHaveLength(0);
+        expect(committedRows(outputContainer)).toHaveLength(0);
+        await sleep(650);
+        expect(app.refineCalls).toHaveLength(0);
+        expect(traces.some((t) => t.tag === 'asr:hangul-reject')).toBe(true);
+    });
+
+    it('日本語 ASR は従来どおり路径3へ進む（ハングルゲートの誤破棄防止）', async () => {
+        const { app, inputContainer } = createVirtualCardApp();
+        app.state.sourceLang = 'ja';
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'こんにちは' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+
+        expect(committedRows(inputContainer)).toHaveLength(1);
+        await sleep(650);
+        expect(app.refineCalls).toHaveLength(1);
+        expect(app.refineCalls[0].text).toBe('こんにちは');
+        expect(app.refineCalls[0].lang).toBe('ja');
+    });
 });
 
 describe('翻訳セッションの graceful close（P1: session.close ハンドシェイク）', () => {

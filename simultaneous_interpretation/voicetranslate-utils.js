@@ -410,6 +410,8 @@ const JAPANESE_KANA_RE = /[\u3040-\u309F\u30A0-\u30FF]/;
 const CJK_RE = /[\u3400-\u4DBF\u4E00-\u9FFF]/;
 const SIMPLIFIED_CHINESE_HINT_RE = /[这们汉语吗没过说让对会后发现为国个来]/;
 const LATIN_RE = /[A-Za-z]/;
+/** ハングル音節・字母（Whisper の日韓誤認検知用。対応言語外） */
+const HANGUL_RE = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/;
 
 /**
  * 現在のプリセット設定を取得
@@ -506,6 +508,47 @@ const AudioUtils = {
         return SUPPORTED_LANGUAGE_CODES.includes(code);
     },
 
+    /**
+     * ハングル優勢テキストか（日韓誤認 ASR のクライアント側ゲート）。
+     *
+     * 判定: 文字種カウントのうちハングルが過半、かつハングルが1文字以上。
+     * かな／漢字が主でハングルが混じるだけのケースは false（誤破棄を避ける）。
+     *
+     * @param {string} text
+     * @returns {boolean}
+     */
+    isHangulDominantText(text) {
+        const trimmed = (text || '').trim();
+        if (!trimmed || !HANGUL_RE.test(trimmed)) {
+            return false;
+        }
+        let hangul = 0;
+        let otherScript = 0;
+        for (const ch of trimmed) {
+            if (
+                /\s/u.test(ch) ||
+                /[\u3000-\u303F\uFF00-\uFFEF.,!?！？、。·…〜～「」『』（）()[\]【】]/u.test(ch)
+            ) {
+                continue;
+            }
+            if (HANGUL_RE.test(ch)) {
+                hangul += 1;
+            } else if (
+                JAPANESE_KANA_RE.test(ch) ||
+                CJK_RE.test(ch) ||
+                LATIN_RE.test(ch) ||
+                VIETNAMESE_MARK_RE.test(ch)
+            ) {
+                otherScript += 1;
+            }
+        }
+        const total = hangul + otherScript;
+        if (total === 0) {
+            return false;
+        }
+        return hangul / total > 0.5;
+    },
+
     normalizeLanguageCode(code, fallback = 'en') {
         if (this.isSupportedLanguage(code)) {
             return code;
@@ -516,6 +559,11 @@ const AudioUtils = {
     detectSupportedLanguageFromText(text, fallback = 'en') {
         const trimmed = (text || '').trim();
         if (!trimmed) {
+            return null;
+        }
+
+        // ハングル優勢は対応言語外（ko を返さない）。呼び出し側で破棄する。
+        if (this.isHangulDominantText(trimmed)) {
             return null;
         }
 

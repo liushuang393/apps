@@ -83,14 +83,23 @@ function deriveCaptureProfileId({ isElectron, audioSourceType, fallbackStage }) 
  * キャプチャプロファイル（決定表の1行）を構築する。
  *
  * 決定表:
- * | profileId             | 実効デバイス  | duplex                         | vadPreset  | ttsPolicy            | 無音フォールバック先 |
- * |-----------------------|--------------|--------------------------------|------------|----------------------|--------------------|
- * | electron-mic          | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | play                 | null（検証なし）     |
- * | electron-virtual-card | virtual-card | full                           | SYSTEM     | play/隔離不可→suppress| loopback           |
- * | electron-loopback     | loopback     | full                           | SYSTEM     | suppress             | microphone         |
- * | electron-mic-fallback | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | play                 | null（警告のみ）     |
- * | browser-mic           | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | play                 | null               |
- * | browser-tab           | tab          | full                           | SYSTEM     | play                 | null（警告のみ）     |
+ * | profileId             | 実効デバイス  | duplex                         | vadPreset  | captionPolicy       | ttsPolicy            | 無音フォールバック先 |
+ * |-----------------------|--------------|--------------------------------|------------|---------------------|----------------------|--------------------|
+ * | electron-mic          | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | stream-preview      | play                 | null（検証なし）     |
+ * | electron-virtual-card | virtual-card | full                           | MICROPHONE | chat-authoritative  | 出力隔離済み→play     | loopback           |
+ * | electron-loopback     | loopback     | full                           | SYSTEM     | stream-preview      | suppress             | microphone         |
+ * | electron-mic-fallback | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | stream-preview      | play                 | null（警告のみ）     |
+ * | browser-mic           | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | stream-preview      | play                 | null               |
+ * | browser-tab           | tab          | full                           | SYSTEM     | stream-preview      | play                 | null（警告のみ）     |
+ *
+ * captionPolicy の意味:
+ *   'stream-preview'     = 路径2(Realtime output_transcript)を右列に暫定表示し、路径3(Chat)で上書き。
+ *   'chat-authoritative' = 仮想声卡監視専用。路径2は右列に載せない（音声訳ストリームの幻覚・行ズレを排除）。
+ *                         右列の正本は左確定原文→路径3(Chat文本翻訳)のみ。AEC等のマイク制約は持ち込まない。
+ *
+ * preferContinuousCapture:
+ *   true のときクライアントVADゲートをbypassして常時送信（翻訳EPは turn_detection 無しの連続ストリーム）。
+ *   仮想声卡のみ true（マイク経路は従来どおり Server VAD UI / クライアントVAD）。
  *
  * duplex の意味:
  *   'full'          = 常時連続採集（TTS再生中も入力を落とさない）。
@@ -106,9 +115,12 @@ function deriveCaptureProfileId({ isElectron, audioSourceType, fallbackStage }) 
  * ttsPolicy の意味:
  *   'play'     = audioOutputMode 設定に従い翻訳音声を再生する。
  *   'suppress' = 回灌（訳音の再取り込み）を防ぐため翻訳音声を一時ミュートする。
- *                仮想カード監視でも出力先を物理デバイスへ隔離できていない場合
- *                （物理出力なし/setSinkId失敗）は既定出力＝仮想カードへ訳音が流れ
- *                回灌するため suppress とする（入力は落とさず出力側で断つ）。
+ *                仮想声卡は物理出力へ隔離できない場合だけ suppress とする。
+ *                ヘッドホン等へ setSinkId できる場合は play、ループバックは常時 suppress。
+ *
+ * noiseReduction:
+ *   全プロファイル null。near_field / far_field はマイク距離用であり、
+ *   仮想声卡のデジタル音声には適用しない。
  *
  * @param {Object} input
  * @param {boolean} input.isElectron - Electron 環境か
@@ -135,42 +147,63 @@ function buildCaptureProfile({
             effectiveDevice: 'microphone',
             duplex: realtime ? 'full' : 'mic-protected',
             vadPreset: 'MICROPHONE',
+            captionPolicy: 'stream-preview',
+            preferContinuousCapture: false,
             ttsPolicy: 'play',
+            noiseReduction: null,
             silenceFallbackNext: null
         },
         [CAPTURE_PROFILE_IDS.ELECTRON_VIRTUAL_CARD]: {
             effectiveDevice: 'virtual-card',
             duplex: 'full',
-            vadPreset: 'SYSTEM',
+            // 感度のみマイクを借りる（AEC/NS/AGC は captureConstraintsFor で OFF のまま）
+            vadPreset: 'MICROPHONE',
+            captionPolicy: 'chat-authoritative',
+            preferContinuousCapture: true,
+            // 物理ヘッドホン等へ隔離済みなら再生し、未隔離時だけ回灌防止でミュート。
             ttsPolicy: isolated ? 'play' : 'suppress',
+            // 仮想声卡はデジタル入力。マイク距離用の去噪は音声認識を劣化させ得るため無効。
+            noiseReduction: null,
             silenceFallbackNext: 'loopback'
         },
         [CAPTURE_PROFILE_IDS.ELECTRON_LOOPBACK]: {
             effectiveDevice: 'loopback',
             duplex: 'full',
             vadPreset: 'SYSTEM',
+            captionPolicy: 'stream-preview',
+            preferContinuousCapture: false,
             ttsPolicy: 'suppress',
+            noiseReduction: null,
             silenceFallbackNext: 'microphone'
         },
         [CAPTURE_PROFILE_IDS.ELECTRON_MIC_FALLBACK]: {
             effectiveDevice: 'microphone',
             duplex: realtime ? 'full' : 'mic-protected',
             vadPreset: 'MICROPHONE',
+            captionPolicy: 'stream-preview',
+            preferContinuousCapture: false,
             ttsPolicy: 'play',
+            noiseReduction: null,
             silenceFallbackNext: null
         },
         [CAPTURE_PROFILE_IDS.BROWSER_MIC]: {
             effectiveDevice: 'microphone',
             duplex: realtime ? 'full' : 'mic-protected',
             vadPreset: 'MICROPHONE',
+            captionPolicy: 'stream-preview',
+            preferContinuousCapture: false,
             ttsPolicy: 'play',
+            noiseReduction: null,
             silenceFallbackNext: null
         },
         [CAPTURE_PROFILE_IDS.BROWSER_TAB]: {
             effectiveDevice: 'tab',
             duplex: 'full',
             vadPreset: 'SYSTEM',
+            captionPolicy: 'stream-preview',
+            preferContinuousCapture: false,
             ttsPolicy: 'play',
+            noiseReduction: null,
             silenceFallbackNext: null
         }
     };

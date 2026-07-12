@@ -1191,83 +1191,176 @@ class VoiceTranslateApp {
         });
     }
 
+    /**
+     * APIキー検証
+     *
+     * @description
+     * 取得優先順位:
+     *   1. 環境変数（Electron: CredentialService / ブラウザ: getEnvApiKey）
+     *   2. 画面入力
+     *   3. いずれも失敗したらユーザーへ提示
+     *
+     * @returns {Promise<void>}
+     */
     async validateApiKey() {
         const btn = this.elements.validateBtn;
-        const originalText = btn.querySelector('#validateBtnText').textContent;
+        const textEl = btn.querySelector('#validateBtnText');
+        const originalText = textEl ? textEl.textContent : '';
+        const progress = document.getElementById('apiKeyProgress');
 
-        if (this.platform.isElectron) {
-            const pendingKey = (
-                this.state.pendingApiKey ||
-                this.elements.apiKey.value ||
-                ''
-            ).trim();
-            if (!pendingKey) {
-                this.notify('エラー', '保存するAPIキーを入力してください', 'error');
-                return;
+        const resetValidateButton = () => {
+            if (textEl) {
+                textEl.textContent = originalText;
             }
-            btn.disabled = true;
-            try {
-                const result = await this.platform.storeCredential(pendingKey);
-                if (!result || !result.success) {
-                    throw new Error(result?.message || 'APIキーを保存できませんでした');
-                }
-                this.state.pendingApiKey = '';
-                this.elements.apiKey.value = '';
-                this.state.credentialConfigured = true;
-                this.state.apiKey = '';
-                localStorage.removeItem('openai_api_key');
-                const progress = document.getElementById('apiKeyProgress');
-                if (progress) {
-                    progress.style.width = '100%';
-                }
-                this.notify(
-                    'APIキーを保存しました',
-                    result.persisted
-                        ? 'OSの安全なストレージに暗号化して保存しました'
-                        : result.message || '今回の起動中のみ使用します',
-                    result.persisted ? 'success' : 'warning'
-                );
-            } catch (error) {
-                this.notify('エラー', this.extractErrorMessage(error), 'error');
-            } finally {
-                btn.disabled = false;
-            }
-            return;
-        }
+            btn.disabled = false;
+        };
 
-        if (!this.state.apiKey) {
-            this.notify('エラー', '有効なAPIキーを入力してください', 'error');
-            return;
-        }
+        const markValidateSuccess = (label) => {
+            if (progress) {
+                progress.style.width = '100%';
+            }
+            if (textEl) {
+                textEl.textContent = label;
+            }
+            setTimeout(resetValidateButton, 2000);
+        };
 
         btn.disabled = true;
-        btn.querySelector('#validateBtnText').innerHTML = '<span class="spinner"></span> 検証中...';
+        if (textEl) {
+            textEl.innerHTML = '<span class="spinner"></span> 検証中...';
+        }
 
         try {
+            if (this.platform.isElectron) {
+                // 1. 環境変数を優先確認（キー本体は main 専有のため status のみ参照）
+                let credentialStatus = null;
+                try {
+                    credentialStatus = await this.platform.getCredentialStatus();
+                } catch (_error) {
+                    credentialStatus = null;
+                }
+
+                if (
+                    credentialStatus != null &&
+                    credentialStatus.configured &&
+                    credentialStatus.source === 'environment'
+                ) {
+                    this.state.credentialConfigured = true;
+                    this.state.apiKey = '';
+                    if (this.elements.apiKey) {
+                        this.elements.apiKey.value = '';
+                        this.elements.apiKey.placeholder =
+                            'APIキー設定済み (' + credentialStatus.source + ')';
+                    }
+                    this.notify('検証完了', '環境変数のAPIキーを使用します', 'success');
+                    markValidateSuccess('✓ 環境変数');
+                    return;
+                }
+
+                // 2. 画面入力を検証・保存
+                const pendingKey = (
+                    this.state.pendingApiKey ||
+                    (this.elements.apiKey ? this.elements.apiKey.value : '') ||
+                    ''
+                ).trim();
+
+                if (pendingKey) {
+                    const result = await this.platform.storeCredential(pendingKey);
+                    if (!result || !result.success) {
+                        throw new Error(result?.message || 'APIキーを保存できませんでした');
+                    }
+                    this.state.pendingApiKey = '';
+                    if (this.elements.apiKey) {
+                        this.elements.apiKey.value = '';
+                        this.elements.apiKey.placeholder = 'APIキー設定済み (secure-storage)';
+                    }
+                    this.state.credentialConfigured = true;
+                    this.state.apiKey = '';
+                    localStorage.removeItem('openai_api_key');
+                    this.notify(
+                        'APIキーを保存しました',
+                        result.persisted
+                            ? 'OSの安全なストレージに暗号化して保存しました'
+                            : result.message || '今回の起動中のみ使用します',
+                        result.persisted ? 'success' : 'warning'
+                    );
+                    markValidateSuccess('✓ 保存済み');
+                    return;
+                }
+
+                // 既に secure-storage / memory にあれば検証OK（過去の画面保存）
+                if (credentialStatus != null && credentialStatus.configured) {
+                    this.state.credentialConfigured = true;
+                    if (this.elements.apiKey) {
+                        this.elements.apiKey.placeholder =
+                            'APIキー設定済み (' + credentialStatus.source + ')';
+                    }
+                    this.notify(
+                        '検証完了',
+                        'APIキー設定済み (' + credentialStatus.source + ')',
+                        'success'
+                    );
+                    markValidateSuccess('✓ 設定済み');
+                    return;
+                }
+
+                // 3. 環境変数も画面入力もない → ユーザーへ提示
+                this.notify(
+                    'エラー',
+                    'APIキーが未設定です。環境変数（OPENAI_API_KEY）を設定するか、画面に入力して検証してください',
+                    'error'
+                );
+                resetValidateButton();
+                return;
+            }
+
+            // ブラウザ版: 環境変数 → 画面入力 → エラー提示
+            let apiKey = null;
+            try {
+                const envKey = await this.platform.getEnvApiKey();
+                if (typeof envKey === 'string' && envKey.trim() !== '') {
+                    apiKey = envKey.trim();
+                }
+            } catch (_error) {
+                apiKey = null;
+            }
+
+            if (apiKey == null) {
+                apiKey = (
+                    this.state.apiKey ||
+                    (this.elements.apiKey ? this.elements.apiKey.value : '') ||
+                    ''
+                ).trim();
+                if (apiKey === '') {
+                    apiKey = null;
+                }
+            }
+
+            if (apiKey == null) {
+                this.notify(
+                    'エラー',
+                    '有効なAPIキーを入力してください（環境変数からも取得できませんでした）',
+                    'error'
+                );
+                resetValidateButton();
+                return;
+            }
+
+            this.state.apiKey = apiKey;
+            this.saveToStorage('openai_api_key', apiKey);
             // ブラウザ版では保存のみ行い、実際の認証は接続時に確定する。
             this.notify(
                 '保存完了',
                 'APIキーを保存しました。認証は接続時に確認されます。',
                 'success'
             );
-            btn.querySelector('#validateBtnText').textContent = '✓ 保存済み';
-
-            setTimeout(() => {
-                btn.querySelector('#validateBtnText').textContent = originalText;
-                btn.disabled = false;
-            }, 2000);
+            markValidateSuccess('✓ 保存済み');
         } catch (error) {
-            // エラーの詳細をログに記録（デバッグ用）
-
-            // ユーザーに分かりやすいエラーメッセージを表示
             const errorMessage = error.message
-                ? `APIキーの検証に失敗しました: ${error.message}`
+                ? 'APIキーの検証に失敗しました: ' + error.message
                 : 'APIキーの検証に失敗しました';
             this.notify('エラー', errorMessage, 'error');
-
-            // UIを元の状態に戻す
-            btn.querySelector('#validateBtnText').textContent = originalText;
-            btn.disabled = false;
+            resetValidateButton();
         }
     }
 
@@ -1348,6 +1441,78 @@ class VoiceTranslateApp {
         return this.platform.isElectron ? !!this.state.credentialConfigured : !!this.state.apiKey;
     }
 
+    /**
+     * APIキーを環境変数→画面の順で解決し、利用可能なら true を返す
+     *
+     * @description
+     * 検証・開始・接続の共通解決ロジック。
+     * いずれも失敗した場合は false（呼び出し側でユーザーへ提示）。
+     *
+     * @returns {Promise<boolean>}
+     */
+    async ensureApiCredential() {
+        if (this.platform.isElectron) {
+            if (this.state.credentialConfigured) {
+                return true;
+            }
+            try {
+                const status = await this.platform.getCredentialStatus();
+                this.state.credentialConfigured = !!(status && status.configured);
+                if (this.state.credentialConfigured) {
+                    return true;
+                }
+            } catch (_error) {
+                // 環境変数取得失敗 → 画面入力へ
+            }
+
+            const pendingKey = (
+                this.state.pendingApiKey ||
+                (this.elements.apiKey ? this.elements.apiKey.value : '') ||
+                ''
+            ).trim();
+            if (!pendingKey) {
+                return false;
+            }
+            try {
+                const result = await this.platform.storeCredential(pendingKey);
+                if (!result || !result.success) {
+                    return false;
+                }
+                this.state.pendingApiKey = '';
+                this.state.credentialConfigured = true;
+                this.state.apiKey = '';
+                if (this.elements.apiKey) {
+                    this.elements.apiKey.value = '';
+                }
+                localStorage.removeItem('openai_api_key');
+                return true;
+            } catch (_error) {
+                return false;
+            }
+        }
+
+        if (this.state.apiKey) {
+            return true;
+        }
+
+        try {
+            const envKey = await this.platform.getEnvApiKey();
+            if (typeof envKey === 'string' && envKey.trim() !== '') {
+                this.state.apiKey = envKey.trim();
+                return true;
+            }
+        } catch (_error) {
+            // 環境変数取得失敗 → 画面入力へ
+        }
+
+        const uiKey = (this.elements.apiKey ? this.elements.apiKey.value : '').trim();
+        if (uiKey) {
+            this.state.apiKey = uiKey;
+            return true;
+        }
+        return false;
+    }
+
     async ensureConversationSession() {
         if (!this.platform.conversation || this.state.currentSessionId) {
             return this.state.currentSessionId;
@@ -1410,8 +1575,12 @@ class VoiceTranslateApp {
      * 接続成功後の録音開始は handleWSOpen() が担う（接続→翻訳を1アクションに）。
      */
     async start() {
-        if (!this.hasApiCredential()) {
-            this.notify('エラー', 'APIキーを入力してください', 'error');
+        if (!(await this.ensureApiCredential())) {
+            this.notify(
+                'エラー',
+                'APIキーが未設定です。環境変数（OPENAI_API_KEY）を設定するか、画面に入力してください',
+                'error'
+            );
             return;
         }
         this.state.userWantsActive = true;
@@ -1845,8 +2014,12 @@ class VoiceTranslateApp {
     }
 
     async connectInternal() {
-        if (!this.hasApiCredential()) {
-            this.notify('エラー', 'APIキーを入力してください', 'error');
+        if (!(await this.ensureApiCredential())) {
+            this.notify(
+                'エラー',
+                'APIキーが未設定です。環境変数（OPENAI_API_KEY）を設定するか、画面に入力してください',
+                'error'
+            );
             return;
         }
 
@@ -2082,9 +2255,8 @@ class VoiceTranslateApp {
         // 入力転写（audio.input.transcription）を設定することで session.input_transcript.delta
         // （＝左カラムの音声認識）が返るようになる（公式仕様）。
         // セッション設定はトランスポート決定表(buildTranslationSessionConfig)に集約する。
-        // ※ noise_reduction はこの session.update には付けない。/v1/realtime/translations は
-        //   未知フィールドを 400 で拒否し得る厳格EPで、付与は未検証のため実機確認後に有効化する
-        //   （去噪改善は Phase D4 の live 検証項目）。
+        // ※ noise_reduction は captureProfile.noiseReduction 経由で付与する（仮想声卡=far_field）。
+        //   マイク等は null のため session.update に載せない（従来どおり）。
         void this.applySessionUpdate('セッション初期化');
     }
 
@@ -2734,6 +2906,10 @@ class VoiceTranslateApp {
      * @returns {Readonly<Object>} 構築済みプロファイル
      */
     refreshCaptureProfile() {
+        const previousNoise =
+            this.captureProfile?.noiseReduction?.type != null
+                ? this.captureProfile.noiseReduction.type
+                : null;
         this.captureProfile = buildCaptureProfile({
             isElectron: this.platform.isElectron,
             audioSourceType: this.state.audioSourceType,
@@ -2748,7 +2924,7 @@ class VoiceTranslateApp {
             this.updateVADSensitivity(this.elements.vadSensitivity.value);
         }
 
-        // TTS抑止（回灌防止）をプロファイルに追随。入力は落とさず出力側で断つ。
+        // TTS抑止（回灌防止＋仮想声卡の不正確な路径2訳音を聞かせない）をプロファイルに追随。
         const suppress = this.captureProfile.ttsPolicy === 'suppress';
         if (suppress !== Boolean(this._ttsSuppressedByLoopback)) {
             this._ttsSuppressedByLoopback = suppress;
@@ -2756,10 +2932,19 @@ class VoiceTranslateApp {
             if (suppress) {
                 this.notify(
                     '翻訳音声を一時ミュート',
-                    '翻訳音声が監視入力へ再取り込みされ認識が乱れるのを防ぐため、字幕のみで運用します',
+                    '監視モードでは字幕（高精度テキスト翻訳）を正本とし、Realtime訳音は再生しません',
                     'warning'
                 );
             }
+        }
+
+        // 仮想声卡確定で far_field が付いた／外れたとき、接続中なら session.update で追随する。
+        const nextNoise =
+            this.captureProfile?.noiseReduction?.type != null
+                ? this.captureProfile.noiseReduction.type
+                : null;
+        if (previousNoise !== nextNoise && this.state?.isConnected) {
+            void this.applySessionUpdate('監視去噪');
         }
         return this.captureProfile;
     }
@@ -3225,20 +3410,23 @@ class VoiceTranslateApp {
                         this.feedSilenceVerifier(this.vad.calculateEnergy(inputData));
                     }
 
-                    // Server VADが有効かどうかをチェック
+                    // Server VAD UI、または仮想声卡の常時送信プロファイルなら全フレーム送信。
+                    // （翻訳EPは turn_detection 無し。クライアントVADゲートだと監視音が欠ける）
                     const vadEnabledElement = this.elements.vadEnabled;
                     const isServerVadEnabled = vadEnabledElement.classList.contains('active');
+                    const preferContinuous =
+                        isServerVadEnabled ||
+                        this.captureProfile?.preferContinuousCapture === true;
 
-                    if (isServerVadEnabled) {
-                        // Server VAD有効: すべての音声データをサーバーに送信
-                        // サーバー側で音声検出を行う
+                    if (preferContinuous) {
+                        // 連続送信: すべての音声データをサーバーに送信
                         this.sendAudioData(inputData);
 
                         // ビジュアライザーのみ更新（VAD解析は不要）
                         const energy = this.vad.calculateEnergy(inputData);
                         this.updateVisualizer(inputData, { isSpeaking: true, energy: energy });
                     } else {
-                        // Server VAD無効: クライアント側VADで音声検出
+                        // クライアント側VADで音声検出
                         const vadResult = this.vad.analyze(inputData);
                         this.updateVisualizer(inputData, vadResult);
 
@@ -3297,20 +3485,23 @@ class VoiceTranslateApp {
                     this.feedSilenceVerifier(this.vad.calculateEnergy(inputData));
                 }
 
-                // Server VADが有効かどうかをチェック
+                // Server VAD UI、または仮想声卡の常時送信プロファイルなら全フレーム送信。
+                // （翻訳EPは turn_detection 無し。クライアントVADゲートだと監視音が欠ける）
                 const vadEnabledElement = this.elements.vadEnabled;
                 const isServerVadEnabled = vadEnabledElement.classList.contains('active');
+                const preferContinuous =
+                    isServerVadEnabled ||
+                    this.captureProfile?.preferContinuousCapture === true;
 
-                if (isServerVadEnabled) {
-                    // Server VAD有効: すべての音声データをサーバーに送信
-                    // サーバー側で音声検出を行う
+                if (preferContinuous) {
+                    // 連続送信: すべての音声データをサーバーに送信
                     this.sendAudioData(inputData);
 
                     // ビジュアライザーのみ更新（VAD解析は不要）
                     const energy = this.vad.calculateEnergy(inputData);
                     this.updateVisualizer(inputData, { isSpeaking: true, energy: energy });
                 } else {
-                    // Server VAD無効: クライアント側VADで音声検出
+                    // クライアント側VADで音声検出
                     const vadResult = this.vad.analyze(inputData);
                     this.updateVisualizer(inputData, vadResult);
 
@@ -3939,12 +4130,14 @@ class VoiceTranslateApp {
         // 出力言語を更新する。併せて入力転写(audio.input.transcription)も必ず再送する。
         // ※ このAPIは session.update の audio を「マージではなく置換」するため、
         //   output だけ送ると input.transcription が消え、左カラム(音声認識)が止まる。
+        // noiseReduction は captureProfile 経由（仮想声卡のみ far_field。他は null＝フィールド省略）。
         const targetLang = this.state.targetLang || 'ja';
         return await this.sendMessage({
             type: 'session.update',
             session: buildTranslationSessionConfig({
                 targetLang,
-                transcription: this.buildInputTranscriptionConfig()
+                transcription: this.buildInputTranscriptionConfig(),
+                noiseReduction: this.captureProfile?.noiseReduction ?? null
             })
         });
     }

@@ -43,6 +43,15 @@ describe('buildTranslationSessionConfig（設定本体）', () => {
         expect(cfg.audio.input.noise_reduction).toEqual({ type: 'near_field' });
     });
 
+    it('noiseReduction=null は去噪を明示的に無効化するため送信する', () => {
+        const cfg = buildTranslationSessionConfig({
+            targetLang: 'en',
+            transcription: { model: 'm' },
+            noiseReduction: null
+        });
+        expect(cfg.audio.input.noise_reduction).toBeNull();
+    });
+
     it('targetLang 未指定は ja に既定化する', () => {
         const cfg = buildTranslationSessionConfig({ transcription: { model: 'm' } });
         expect(cfg.audio.output.language).toBe('ja');

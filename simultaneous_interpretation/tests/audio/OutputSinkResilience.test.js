@@ -112,4 +112,30 @@ describe('applyOutputSink の setSinkId 失敗耐性（R3）', () => {
 
         expect(app.notify).toHaveBeenCalledTimes(1);
     });
+
+});
+
+describe('autoDetectPhysicalSpeaker の出力優先順位', () => {
+    let App;
+    let sandbox;
+
+    beforeAll(() => {
+        ({ App, sandbox } = loadProApp());
+    });
+
+    it('仮想カードを除外し、物理スピーカーよりヘッドホンを優先する', async () => {
+        const app = makeApp(App, { outputDeviceId: null });
+        sandbox.navigator.mediaDevices = {
+            enumerateDevices: jest.fn().mockResolvedValue([
+                { kind: 'audiooutput', deviceId: 'virtual-1', label: 'CABLE Input' },
+                { kind: 'audiooutput', deviceId: 'speaker-1', label: 'Realtek Speakers' },
+                { kind: 'audiooutput', deviceId: 'headphone-1', label: 'USB ヘッドホン' }
+            ])
+        };
+
+        await app.autoDetectPhysicalSpeaker();
+
+        expect(app.state.outputDeviceId).toBe('headphone-1');
+        expect(app.state.outputDeviceLabel).toBe('USB ヘッドホン');
+    });
 });

@@ -57,9 +57,8 @@ function selectTransportKind({ isElectron, isTranslationSession }) {
  * WebRTC は client_secret 発行 body の { session: { model, ...<本戻り値> } } に展開する。
  * noise_reduction は呼び出し側が渡したときのみ含める（判定はここに持たせない）:
  *   - WebRTC(client_secret)経路は従来どおり near_field を渡す（発行 body では実績あり）。
- *   - WS/Electron の session.update は既定で渡さない。/v1/realtime/translations は
- *     未知フィールドを 400 で拒否し得る厳格EP（transcription.language の前例あり）で、
- *     session.update への noise_reduction 付与は未検証のため実機確認後に有効化する。
+ *   - null は既存の去噪を明示的に無効化するため送信する。
+ *   - undefined（引数省略）の場合だけフィールド自体を省略する。
  *
  * @param {Object} input
  * @param {string} input.targetLang - 出力言語（例 'ja'）
@@ -69,7 +68,7 @@ function selectTransportKind({ isElectron, isTranslationSession }) {
  */
 function buildTranslationSessionConfig({ targetLang, transcription, noiseReduction }) {
     const input = { transcription };
-    if (noiseReduction != null) {
+    if (noiseReduction !== undefined) {
         input.noise_reduction = noiseReduction;
     }
     return Object.freeze({

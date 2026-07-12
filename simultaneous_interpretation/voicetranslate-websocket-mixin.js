@@ -495,11 +495,26 @@ const WebSocketMixin = {
         }
     },
 
+    /**
+     * 仮想声卡監視など「右列は路径3(Chat)のみ正本」モードか。
+     *
+     * @returns {boolean}
+     */
+    isChatAuthoritativeCaptions() {
+        return this.captureProfile?.captionPolicy === 'chat-authoritative';
+    },
+
     handleTranslationTranscriptDelta(kind, delta) {
         if (!delta) {
             return;
         }
         this.recordTranslationLatency(kind === 'input' ? 'input' : 'output');
+        // 仮想声卡: 路径2(output_transcript)は右列に載せない（幻覚・FIFOズレの主因を遮断）。
+        // レイテンシ観測だけ行い、字幕バッファ／描画には進まない。音声は output_audio 側。
+        if (kind === 'output' && this.isChatAuthoritativeCaptions()) {
+            this.traceTranslation?.('output:chat-auth-skip', { len: delta.length });
+            return;
+        }
         if (!this.translationCaption) {
             this.translationCaption = { input: '', output: '' };
         }
@@ -576,6 +591,12 @@ const WebSocketMixin = {
             return;
         }
         // output の確定（サーバ .done またはアイドルflush）
+        // 仮想声卡(chat-authoritative): 路径2の確定も右列へ書かない（路径3待ちの placeholder を守る）。
+        if (this.isChatAuthoritativeCaptions()) {
+            this.clearLiveCaption?.(kind);
+            this.traceTranslation?.('output:chat-auth-drop', { len: text.length });
+            return;
+        }
         this.releaseProtectedPendingOutputHeads();
         if (this._pendingOutputSegments?.length) {
             // ✅ 左右1:1: 訳文確定待ちの最古の行対（キュー先頭）の訳文として確定し、次へ進む。
@@ -653,6 +674,22 @@ const WebSocketMixin = {
             return;
         }
 
+        // 仮想声卡: ハングル優勢 ASR は行対を作らず破棄（日韓誤認を下流に流さない）
+        if (
+            this.isChatAuthoritativeCaptions() &&
+            typeof Utils !== 'undefined' &&
+            typeof Utils.isHangulDominantText === 'function' &&
+            Utils.isHangulDominantText(inputText)
+        ) {
+            this.traceTranslation?.('asr:hangul-reject', { len: inputText.length });
+            if (this.translationCaption) {
+                this.translationCaption.output = '';
+            }
+            this.clearLiveCaption?.('input');
+            this.clearLiveCaption?.('output');
+            return;
+        }
+
         const sourceLang =
             this.textPathProcessor?.detectLanguageFromTranscript?.(inputText) || null;
         const created = this.segmentAlignment.createSegment({ sourceLang });
@@ -663,6 +700,32 @@ const WebSocketMixin = {
             status: 'input-ready'
         });
         this.upsertSegmentInput(segment.id, inputText, { status: 'input-ready' });
+
+        // 仮想声卡監視: 路径2 FIFO を使わず、右列は路径3(Chat)のみで埋める。
+        // （Realtime output_transcript の幻覚・ターン結合を右列の正本にしない）
+        if (this.isChatAuthoritativeCaptions()) {
+            // UI で源言語が固定されていれば検出より優先（Chat バイアス）
+            const uiSource = this.state?.sourceLang;
+            const refineSourceLang =
+                uiSource &&
+                typeof Utils !== 'undefined' &&
+                typeof Utils.isSupportedLanguage === 'function' &&
+                Utils.isSupportedLanguage(uiSource)
+                    ? uiSource
+                    : sourceLang;
+            this.upsertSegmentOutput(segment.id, '', {
+                status: 'collecting',
+                placeholder: '翻訳中...'
+            });
+            if (this.translationCaption) {
+                this.translationCaption.output = '';
+            }
+            this.clearLiveCaption?.('output');
+            this._heldOutputs = [];
+            this.traceTranslation?.('pair:chat-auth', { seg: segment.id });
+            this.refineSegmentTranslation(segment.id, inputText, refineSourceLang);
+            return;
+        }
 
         if (this._heldOutputs && this._heldOutputs.length) {
             // 訳文が入力確定より先に完了していたターン: 保留分を本行対の訳文として回収する
