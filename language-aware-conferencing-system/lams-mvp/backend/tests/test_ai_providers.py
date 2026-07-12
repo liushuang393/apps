@@ -41,7 +41,7 @@ def print_result(name: str, success: bool, message: str = "") -> None:
         print(f"       {message}")
 
 
-async def test_gemini_api() -> bool:
+async def check_gemini_api() -> bool:  # pytest 収集対象外の接続診断
     """
     Gemini API 接続テスト
     シンプルなテキスト生成でAPIが動作するか確認
@@ -83,7 +83,7 @@ async def test_gemini_api() -> bool:
         return False
 
 
-async def test_openai_api() -> bool:
+async def check_openai_api() -> bool:  # pytest 収集対象外の接続診断
     """
     OpenAI API 接続テスト
     通常の Chat Completions でAPIが動作するか確認
@@ -140,10 +140,10 @@ async def main() -> int:
     results = []
 
     # Gemini テスト
-    results.append(await test_gemini_api())
+    results.append(await check_gemini_api())
 
     # OpenAI テスト
-    results.append(await test_openai_api())
+    results.append(await check_openai_api())
 
     # 結果サマリー
     print(f"\n{YELLOW}=== 結果サマリー ==={RESET}")
@@ -504,10 +504,10 @@ async def test_collect_response_happy_path():
     provider = _realtime_provider()
     ws = _FakeWs(
         [
-            {"type": "response.audio.delta",
+            {"type": "response.output_audio.delta",
              "delta": base64.b64encode(b"\x01\x02").decode()},
-            {"type": "response.audio_transcript.delta", "delta": "Hel"},
-            {"type": "response.audio_transcript.delta", "delta": "lo"},
+            {"type": "response.output_audio_transcript.delta", "delta": "Hel"},
+            {"type": "response.output_audio_transcript.delta", "delta": "lo"},
             {"type": "response.done"},
         ]
     )
@@ -522,12 +522,17 @@ def test_session_configs_disable_turn_detection():
 
     asr_cfg = provider._build_transcribe_session_config("ja")
     assert asr_cfg["type"] == "session.update"
-    assert asr_cfg["session"]["turn_detection"] is None
-    assert asr_cfg["session"]["input_audio_transcription"]["language"] == "ja"
+    assert asr_cfg["session"]["type"] == "transcription"
+    asr_input = asr_cfg["session"]["audio"]["input"]
+    assert asr_input["turn_detection"] is None
+    assert asr_input["transcription"]["language"] == "ja"
+    assert asr_input["format"] == {"type": "audio/pcm", "rate": 24000}
 
     s2s_cfg = provider._build_translate_session_config("ja", "en")
     assert s2s_cfg["type"] == "session.update"
-    assert s2s_cfg["session"]["turn_detection"] is None
+    assert s2s_cfg["session"]["type"] == "realtime"
+    assert s2s_cfg["session"]["output_modalities"] == ["audio"]
+    assert s2s_cfg["session"]["audio"]["input"]["turn_detection"] is None
     assert "instructions" in s2s_cfg["session"]
 
 

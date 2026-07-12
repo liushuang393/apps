@@ -67,13 +67,23 @@ class GPTRealtimeProvider(AIProvider):
         transcription_config: dict = {"model": settings.openai_transcribe_model}
         if lang_for_transcribe:
             transcription_config["language"] = lang_for_transcribe
+        # GA プロトコル: session.type="transcription" + audio.input 階層
+        # （beta 形状は beta_api_shape_disabled で拒否される）
         return {
             "type": "session.update",
             "session": {
-                "input_audio_format": "pcm16",
-                "input_audio_transcription": transcription_config,
-                # 手動 commit と自動 VAD の競合防止（欠陥 #5）
-                "turn_detection": None,
+                "type": "transcription",
+                "audio": {
+                    "input": {
+                        "format": {
+                            "type": "audio/pcm",
+                            "rate": REALTIME_INPUT_RATE,
+                        },
+                        "transcription": transcription_config,
+                        # 手動 commit と自動 VAD の競合防止（欠陥 #5）
+                        "turn_detection": None,
+                    },
+                },
             },
         }
 
@@ -92,10 +102,12 @@ class GPTRealtimeProvider(AIProvider):
         """
         src_name = LANGUAGE_NAMES.get(source_language, source_language)
         tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
+        # GA プロトコル: session.type="realtime" + output_modalities + audio 階層
         return {
             "type": "session.update",
             "session": {
-                "modalities": ["text", "audio"],
+                "type": "realtime",
+                "output_modalities": ["audio"],
                 "instructions": (
                     f"【警告】あなたは翻訳機です。翻訳以外は絶対禁止です。\n\n"
                     f"[CRITICAL WARNING] You are a TRANSLATION MACHINE, NOT a conversation partner.\n\n"
@@ -115,14 +127,26 @@ class GPTRealtimeProvider(AIProvider):
                     f"If someone says '今日は会議があります', output ONLY the translation like "
                     f"'There is a meeting today' - NEVER add 'I understand' or any response."
                 ),
-                "voice": settings.openai_tts_voice,
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "input_audio_transcription": {
-                    "model": settings.openai_transcribe_model,
+                "audio": {
+                    "input": {
+                        "format": {
+                            "type": "audio/pcm",
+                            "rate": REALTIME_INPUT_RATE,
+                        },
+                        "transcription": {
+                            "model": settings.openai_transcribe_model,
+                        },
+                        # 手動 commit と自動 VAD の競合防止（欠陥 #5）
+                        "turn_detection": None,
+                    },
+                    "output": {
+                        "format": {
+                            "type": "audio/pcm",
+                            "rate": REALTIME_INPUT_RATE,
+                        },
+                        "voice": settings.openai_tts_voice,
+                    },
                 },
-                # 手動 commit と自動 VAD の競合防止（欠陥 #5）
-                "turn_detection": None,
             },
         }
 
@@ -191,12 +215,11 @@ class GPTRealtimeProvider(AIProvider):
         """WebSocket Realtime APIで音声認識"""
         import websockets
 
-        model = settings.openai_realtime_model
-        url = f"{REALTIME_API_URL}?model={model}"
+        # GA の transcription セッションは intent=transcription で接続する
+        url = f"{REALTIME_API_URL}?intent=transcription"
 
         headers = {
             "Authorization": f"Bearer {settings.openai_api_key}",
-            "OpenAI-Beta": "realtime=v1",
         }
 
         try:
@@ -523,7 +546,6 @@ class GPTRealtimeProvider(AIProvider):
 
         headers = {
             "Authorization": f"Bearer {settings.openai_api_key}",
-            "OpenAI-Beta": "realtime=v1",
         }
 
         async with websockets.connect(
@@ -616,13 +638,13 @@ class GPTRealtimeProvider(AIProvider):
             event = json.loads(msg)
             event_type = event.get("type", "")
 
-            # 音声データ（デルタ）
-            if event_type == "response.audio.delta":
+            # 音声データ（デルタ）— GA イベント名
+            if event_type == "response.output_audio.delta":
                 delta = event.get("delta", "")
                 if delta:
                     audio_chunks.append(base64.b64decode(delta))
-            # 翻訳テキスト（デルタ）
-            elif event_type == "response.audio_transcript.delta":
+            # 翻訳テキスト（デルタ）— GA イベント名
+            elif event_type == "response.output_audio_transcript.delta":
                 translated_text += event.get("delta", "")
             # レスポンス完了
             elif event_type == "response.done":
