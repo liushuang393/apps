@@ -59,7 +59,16 @@ describe('RealtimeSessionManager', () => {
         expect(manager.send(result.connectionId, { type: 'session.update', session: {} })).toEqual({
             success: true
         });
-        expect(manager.send(result.connectionId, { type: 'arbitrary.request' }).success).toBe(false);
+        // Realtime GA 翻訳セッションの音声追記型。拒否すると全音声フレームが落ちる（回帰防止）。
+        expect(
+            manager.send(result.connectionId, {
+                type: 'session.input_audio_buffer.append',
+                audio: 'AAAA'
+            })
+        ).toEqual({ success: true });
+        expect(manager.send(result.connectionId, { type: 'arbitrary.request' }).success).toBe(
+            false
+        );
     });
 
     it('ignores delayed events from an old socket after reconnect', async () => {
@@ -73,14 +82,16 @@ describe('RealtimeSessionManager', () => {
         const firstPromise = manager.connect(renderer as never);
         await Promise.resolve();
         // socket 0 has been shifted; keep explicit references for stale-event simulation.
-        const firstSocket = (manager as unknown as { active: { socket: FakeSocket } }).active.socket;
+        const firstSocket = (manager as unknown as { active: { socket: FakeSocket } }).active
+            .socket;
         firstSocket.open();
         const firstConnection = await firstPromise;
 
         const secondPromise = manager.connect(renderer as never);
         await Promise.resolve();
         await Promise.resolve();
-        const secondSocket = (manager as unknown as { active: { socket: FakeSocket } }).active.socket;
+        const secondSocket = (manager as unknown as { active: { socket: FakeSocket } }).active
+            .socket;
         secondSocket.open();
         const secondConnection = await secondPromise;
         firstSocket.emit('close', 1006, Buffer.from('late close'));
@@ -201,5 +212,4 @@ describe('RealtimeSessionManager', () => {
             expect.objectContaining({ kind: 'close', authError: true })
         );
     });
-
 });

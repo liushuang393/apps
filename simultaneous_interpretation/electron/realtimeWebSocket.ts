@@ -19,6 +19,11 @@ const ALLOWED_EVENT_TYPES = new Set([
     'session.update',
     'session.close',
     'input_audio_buffer.append',
+    // Realtime GA の翻訳セッション（/v1/realtime/translations）は音声追記を
+    // session.* 名前空間で送る。renderer 側 (voicetranslate-websocket-mixin.js の
+    // sendAudioData) が isRealtimeTranslationSession() 時にこの型を使うため、
+    // 許可しないと全音声フレームが拒否され音声・字幕が丸ごと欠落する。
+    'session.input_audio_buffer.append',
     'input_audio_buffer.commit',
     'input_audio_buffer.clear',
     'response.create'
