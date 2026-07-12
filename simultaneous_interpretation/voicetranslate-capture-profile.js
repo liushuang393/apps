@@ -86,16 +86,15 @@ function deriveCaptureProfileId({ isElectron, audioSourceType, fallbackStage }) 
  * | profileId             | 実効デバイス  | duplex                         | vadPreset  | captionPolicy       | ttsPolicy            | 無音フォールバック先 |
  * |-----------------------|--------------|--------------------------------|------------|---------------------|----------------------|--------------------|
  * | electron-mic          | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | stream-preview      | play                 | null（検証なし）     |
- * | electron-virtual-card | virtual-card | full                           | MICROPHONE | chat-authoritative  | 出力隔離済み→play     | loopback           |
+ * | electron-virtual-card | virtual-card | full                           | MICROPHONE | stream-preview      | 出力隔離済み→play     | loopback           |
  * | electron-loopback     | loopback     | full                           | SYSTEM     | stream-preview      | suppress             | microphone         |
  * | electron-mic-fallback | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | stream-preview      | play                 | null（警告のみ）     |
  * | browser-mic           | microphone   | 通訳=full / 他=mic-protected     | MICROPHONE | stream-preview      | play                 | null               |
  * | browser-tab           | tab          | full                           | SYSTEM     | stream-preview      | play                 | null（警告のみ）     |
  *
  * captionPolicy の意味:
- *   'stream-preview'     = 路径2(Realtime output_transcript)を右列に暫定表示し、路径3(Chat)で上書き。
- *   'chat-authoritative' = 仮想声卡監視専用。路径2は右列に載せない（音声訳ストリームの幻覚・行ズレを排除）。
- *                         右列の正本は左確定原文→路径3(Chat文本翻訳)のみ。AEC等のマイク制約は持ち込まない。
+ *   'stream-preview' = 路径2(Realtime output_transcript)を右列の正本とする。
+ *                      自動Chat後補正は行わない（音声翻訳と同時に確定する路径2を表示）。
  *
  * preferContinuousCapture:
  *   true のときクライアントVADゲートをbypassして常時送信（翻訳EPは turn_detection 無しの連続ストリーム）。
@@ -158,7 +157,7 @@ function buildCaptureProfile({
             duplex: 'full',
             // 感度のみマイクを借りる（AEC/NS/AGC は captureConstraintsFor で OFF のまま）
             vadPreset: 'MICROPHONE',
-            captionPolicy: 'chat-authoritative',
+            captionPolicy: 'stream-preview',
             preferContinuousCapture: true,
             // 物理ヘッドホン等へ隔離済みなら再生し、未隔離時だけ回灌防止でミュート。
             ttsPolicy: isolated ? 'play' : 'suppress',

@@ -500,8 +500,13 @@ const WebSocketMixin = {
      *
      * @returns {boolean}
      */
-    isChatAuthoritativeCaptions() {
-        return this.captureProfile?.captionPolicy === 'chat-authoritative';
+    /**
+     * 仮想声卡監視モードか（ハングル誤認ゲート等の監視専用分岐用）。
+     *
+     * @returns {boolean}
+     */
+    isVirtualCardMonitoring() {
+        return this.captureProfile?.effectiveDevice === 'virtual-card';
     },
 
     handleTranslationTranscriptDelta(kind, delta) {
@@ -511,10 +516,7 @@ const WebSocketMixin = {
         this.recordTranslationLatency(kind === 'input' ? 'input' : 'output');
         // 仮想声卡: 路径2(output_transcript)は右列に載せない（幻覚・FIFOズレの主因を遮断）。
         // レイテンシ観測だけ行い、字幕バッファ／描画には進まない。音声は output_audio 側。
-        if (kind === 'output' && this.isChatAuthoritativeCaptions()) {
-            this.traceTranslation?.('output:chat-auth-skip', { len: delta.length });
-            return;
-        }
+
         if (!this.translationCaption) {
             this.translationCaption = { input: '', output: '' };
         }
@@ -591,17 +593,12 @@ const WebSocketMixin = {
             return;
         }
         // output の確定（サーバ .done またはアイドルflush）
-        // 仮想声卡(chat-authoritative): 路径2の確定も右列へ書かない（路径3待ちの placeholder を守る）。
-        if (this.isChatAuthoritativeCaptions()) {
-            this.clearLiveCaption?.(kind);
-            this.traceTranslation?.('output:chat-auth-drop', { len: text.length });
-            return;
-        }
+
         this.releaseProtectedPendingOutputHeads();
         if (this._pendingOutputSegments?.length) {
             // ✅ 左右1:1: 訳文確定待ちの最古の行対（キュー先頭）の訳文として確定し、次へ進む。
             //    アイドルflush由来（ターン途中の停滞の可能性がある）は 'stream-final' にせず
-            //    'responding' のまま dequeue し、最終確定は路径3(Chat)に委ねる（早期確定の無害化）。
+            //    'responding' のまま dequeue し、後続 .done で stream-final に確定する。
             const segmentId = this._pendingOutputSegments.shift();
             this.clearLiveCaption(kind);
             this.traceTranslation?.('output:finalize', {
@@ -614,7 +611,7 @@ const WebSocketMixin = {
                     status: options.fromIdle ? 'responding' : 'stream-final'
                 });
             }
-            // 空（禁則除去で消えた等）なら placeholder を維持し、路径3(Chat確定訳)が埋める。
+            // 空（禁則除去で消えた等）なら placeholder を維持する。
             return;
         }
         if (this._dropNextProtectedOutput && !this.translationCaption.input) {
@@ -655,7 +652,7 @@ const WebSocketMixin = {
      * 「一段一翻译」（サーバ .done = 境界、1入力セグメント↔1訳文）を FIFO の順序で対応付ける。
      * 訳文側は handleTranslationTranscriptDelta がキュー先頭の右セルへ描画し、
      * output の .done（commitTranslationCaption）が先頭を確定して次の行対へ進む。
-     * 最終的には路径3（Chat 高精度翻訳）が右セルを原文ベースで確定更新する（准）。
+     * 右列は Realtime output_transcript を正本とする（自動Chat後補正なし）。
      *
      * @param {string} inputText 確定した原文
      */
@@ -676,7 +673,7 @@ const WebSocketMixin = {
 
         // 仮想声卡: ハングル優勢 ASR は行対を作らず破棄（日韓誤認を下流に流さない）
         if (
-            this.isChatAuthoritativeCaptions() &&
+            this.isVirtualCardMonitoring() &&
             typeof Utils !== 'undefined' &&
             typeof Utils.isHangulDominantText === 'function' &&
             Utils.isHangulDominantText(inputText)
@@ -700,32 +697,6 @@ const WebSocketMixin = {
             status: 'input-ready'
         });
         this.upsertSegmentInput(segment.id, inputText, { status: 'input-ready' });
-
-        // 仮想声卡監視: 路径2 FIFO を使わず、右列は路径3(Chat)のみで埋める。
-        // （Realtime output_transcript の幻覚・ターン結合を右列の正本にしない）
-        if (this.isChatAuthoritativeCaptions()) {
-            // UI で源言語が固定されていれば検出より優先（Chat バイアス）
-            const uiSource = this.state?.sourceLang;
-            const refineSourceLang =
-                uiSource &&
-                typeof Utils !== 'undefined' &&
-                typeof Utils.isSupportedLanguage === 'function' &&
-                Utils.isSupportedLanguage(uiSource)
-                    ? uiSource
-                    : sourceLang;
-            this.upsertSegmentOutput(segment.id, '', {
-                status: 'collecting',
-                placeholder: '翻訳中...'
-            });
-            if (this.translationCaption) {
-                this.translationCaption.output = '';
-            }
-            this.clearLiveCaption?.('output');
-            this._heldOutputs = [];
-            this.traceTranslation?.('pair:chat-auth', { seg: segment.id });
-            this.refineSegmentTranslation(segment.id, inputText, refineSourceLang);
-            return;
-        }
 
         if (this._heldOutputs && this._heldOutputs.length) {
             // 訳文が入力確定より先に完了していたターン: 保留分を本行対の訳文として回収する
@@ -765,8 +736,6 @@ const WebSocketMixin = {
                 this.clearLiveCaption('output');
             }
         }
-        // ✅ 路径3(补精度): Chat 高精度翻訳で同じ行対の右セルを確定更新（デバウンス付き・非ブロッキング）。
-        this.refineSegmentTranslation(segment.id, inputText, sourceLang);
     },
 
     /**
@@ -2229,8 +2198,9 @@ const WebSocketMixin = {
         // 出力専用AudioContextが存在しない場合は作成
         // 入力処理と分離することで、出力音声の優先度を確保
         if (!this.state.outputAudioContext) {
-            this.state.outputAudioContext = new (globalThis.AudioContext ||
-                globalThis.webkitAudioContext)({
+            this.state.outputAudioContext = new (
+                globalThis.AudioContext || globalThis.webkitAudioContext
+            )({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
             // 翻訳音声を物理スピーカー/ヘッドホンへ固定（既定出力が仮想カードでも聞こえるように）

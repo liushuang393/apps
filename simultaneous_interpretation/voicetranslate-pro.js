@@ -2255,9 +2255,29 @@ class VoiceTranslateApp {
         // 入力転写（audio.input.transcription）を設定することで session.input_transcript.delta
         // （＝左カラムの音声認識）が返るようになる（公式仕様）。
         // セッション設定はトランスポート決定表(buildTranslationSessionConfig)に集約する。
-        // ※ noise_reduction は captureProfile.noiseReduction 経由で付与する（仮想声卡=far_field）。
-        //   マイク等は null のため session.update に載せない（従来どおり）。
+        // ※ noise_reduction は resolveSessionNoiseReduction 経由。マイク等は省略（400回避）。
         void this.applySessionUpdate('セッション初期化');
+    }
+
+    /**
+     * session.update / client_secret 用の去噪パラメータを解決する。
+     *
+     * @description
+     * captureProfile.noiseReduction がオブジェクトのときのみ送信する。
+     * null/未設定は WS ではフィールド省略(undefined)。WebRTC マイクのみ near_field を既定とする。
+     *
+     * @param {boolean} [forWebRtc=false] - client_secret 発行経路か
+     * @returns {{type:string}|undefined}
+     */
+    resolveSessionNoiseReduction(forWebRtc = false) {
+        const nr = this.captureProfile?.noiseReduction;
+        if (nr != null && typeof nr === 'object') {
+            return nr;
+        }
+        if (forWebRtc && this.captureProfile?.effectiveDevice === 'microphone') {
+            return { type: 'near_field' };
+        }
+        return undefined;
     }
 
     /**
@@ -2311,7 +2331,7 @@ class VoiceTranslateApp {
                 ...buildTranslationSessionConfig({
                     targetLang,
                     transcription: this.buildInputTranscriptionConfig(),
-                    noiseReduction: { type: 'near_field' }
+                    noiseReduction: this.resolveSessionNoiseReduction(true)
                 })
             }
         };
@@ -2938,13 +2958,13 @@ class VoiceTranslateApp {
             }
         }
 
-        // 仮想声卡確定で far_field が付いた／外れたとき、接続中なら session.update で追随する。
+        // 去噪オブジェクトが付いた／外れたとき、接続中なら session.update で追随する。
         const nextNoise =
             this.captureProfile?.noiseReduction?.type != null
                 ? this.captureProfile.noiseReduction.type
                 : null;
         if (previousNoise !== nextNoise && this.state?.isConnected) {
-            void this.applySessionUpdate('監視去噪');
+            void this.applySessionUpdate('去噪設定');
         }
         return this.captureProfile;
     }
@@ -3415,8 +3435,7 @@ class VoiceTranslateApp {
                     const vadEnabledElement = this.elements.vadEnabled;
                     const isServerVadEnabled = vadEnabledElement.classList.contains('active');
                     const preferContinuous =
-                        isServerVadEnabled ||
-                        this.captureProfile?.preferContinuousCapture === true;
+                        isServerVadEnabled || this.captureProfile?.preferContinuousCapture === true;
 
                     if (preferContinuous) {
                         // 連続送信: すべての音声データをサーバーに送信
@@ -3490,8 +3509,7 @@ class VoiceTranslateApp {
                 const vadEnabledElement = this.elements.vadEnabled;
                 const isServerVadEnabled = vadEnabledElement.classList.contains('active');
                 const preferContinuous =
-                    isServerVadEnabled ||
-                    this.captureProfile?.preferContinuousCapture === true;
+                    isServerVadEnabled || this.captureProfile?.preferContinuousCapture === true;
 
                 if (preferContinuous) {
                     // 連続送信: すべての音声データをサーバーに送信
@@ -3807,8 +3825,9 @@ class VoiceTranslateApp {
         // 出力専用AudioContextが存在しない場合は作成
         // 入力処理と分離することで、出力音声の優先度を確保
         if (!this.state.outputAudioContext) {
-            this.state.outputAudioContext = new (globalThis.AudioContext ||
-                globalThis.webkitAudioContext)({
+            this.state.outputAudioContext = new (
+                globalThis.AudioContext || globalThis.webkitAudioContext
+            )({
                 sampleRate: CONFIG.AUDIO.SAMPLE_RATE
             });
             // 翻訳音声は既定スピーカーで再生（出力先分離は廃止）
@@ -4130,14 +4149,14 @@ class VoiceTranslateApp {
         // 出力言語を更新する。併せて入力転写(audio.input.transcription)も必ず再送する。
         // ※ このAPIは session.update の audio を「マージではなく置換」するため、
         //   output だけ送ると input.transcription が消え、左カラム(音声認識)が止まる。
-        // noiseReduction は captureProfile 経由（仮想声卡のみ far_field。他は null＝フィールド省略）。
+        // noiseReduction は resolveSessionNoiseReduction 経由（null は省略＝400回避）。
         const targetLang = this.state.targetLang || 'ja';
         return await this.sendMessage({
             type: 'session.update',
             session: buildTranslationSessionConfig({
                 targetLang,
                 transcription: this.buildInputTranscriptionConfig(),
-                noiseReduction: this.captureProfile?.noiseReduction ?? null
+                noiseReduction: this.resolveSessionNoiseReduction(false)
             })
         });
     }

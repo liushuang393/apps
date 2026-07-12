@@ -88,12 +88,8 @@ function createTranslationApp() {
     Object.assign(app, UIMixin, WebSocketMixin);
     // ✅ mixin メソッドのスタブは Object.assign の「後」に設定する（前だと実装で上書きされる）。
     app.segmentAlignment = new SegmentAlignmentManager();
+    // 自動Chat後補正が起動していないことを検証するための呼び出し記録（本番コードは書き込まない）。
     app.refineCalls = [];
-    // 実装（失敗ハンドリング）を直接検証するテスト用に退避してからスタブする。
-    app.realTranslateSegmentViaChat = app.translateSegmentViaChat;
-    app.translateSegmentViaChat = (id, text, lang) => {
-        app.refineCalls.push({ id, text, lang });
-    };
     return { app, inputContainer, outputContainer };
 }
 
@@ -147,17 +143,15 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         expect(left[0].dataset.segmentId).toBeTruthy();
         expect(left[0].dataset.segmentId).toBe(right[0].dataset.segmentId); // 左右1:1
 
-        // 路径3(补精度): 同じ segment に対し Chat 翻訳がデバウンス後に1回だけ起動する。
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
         await sleep(650);
-        expect(app.refineCalls).toHaveLength(1);
-        expect(app.refineCalls[0].id).toBe(left[0].dataset.segmentId);
-        expect(app.refineCalls[0].text).toBe('こんにちは');
+        expect(app.refineCalls).toHaveLength(0);
+        expect(right[0].dataset.status).toBe('stream-final');
     });
 
-    it('TTS抑止(_ttsSuppressedByLoopback)中でも左右のストリーム描画と路径3(Chat T2T)は通常どおり動く', async () => {
-        // 音声出力の抑止/ミュートは applyAudioOutputMode（voicetranslate-pro.js）側の関心事であり、
-        // ui-mixin/websocket-mixin のテキストパイプラインはこのフラグを一切参照しない設計。
-        // 抑止時でも右カラムが左カラムの認識文からT2T翻訳される不変条件をロックする。
+    it('TTS抑止中でもRealtime確定字幕を維持し、自動Chat後補正を起動しない', async () => {
+        // 音声出力の抑止/ミュートは applyAudioOutputMode 側の関心事。
+        // 抑止時でも右カラムは Realtime 確定訳を正本とする。
         const { app, inputContainer, outputContainer } = createTranslationApp();
         app._ttsSuppressedByLoopback = true;
         app.state.audioOutputMode = 'off';
@@ -165,6 +159,7 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'こんにちは' });
         app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '你好' });
         app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
 
         const left = committedRows(inputContainer);
         const right = committedRows(outputContainer);
@@ -173,9 +168,7 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         expect(left[0].dataset.segmentId).toBe(right[0].dataset.segmentId);
 
         await sleep(650);
-        expect(app.refineCalls).toHaveLength(1);
-        expect(app.refineCalls[0].id).toBe(left[0].dataset.segmentId);
-        expect(app.refineCalls[0].text).toBe('こんにちは');
+        expect(app.refineCalls).toHaveLength(0);
     });
 
     it('入力確定後に遅れて届く訳文の尻尾は同じ行対の右セルへ追記され、孤児行を作らない', () => {
@@ -314,9 +307,9 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         expect(app._pendingOutputSegments).toHaveLength(0); // キューが掃けている
     }, 5000);
 
-    it('路径3(Chat確定訳)が実行不能でも右セルは stream-final へ確定し responding が残らない', async () => {
+    it('APIキー無しでも Realtime .done で右セルは stream-final へ確定し responding が残らない', async () => {
         const { app, outputContainer } = createTranslationApp();
-        app.state.apiKey = null; // 補精度が走れない環境（fetch/APIキー無し）
+        app.state.apiKey = null;
 
         app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'A原文' });
         app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'A訳' });
@@ -325,9 +318,10 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         const right = committedRows(outputContainer);
         expect(right[0].dataset.status).toBe('responding');
 
-        await app.realTranslateSegmentViaChat(right[0].dataset.segmentId, 'A原文', 'ja');
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
         expect(right[0].dataset.status).toBe('stream-final');
-        expect(textOf(right[0])).toBe('A訳'); // テキストは消えない（不漏）
+        expect(textOf(right[0])).toBe('A訳');
+        expect(app.refineCalls).toHaveLength(0);
     });
 
     it('resetTranslationStreamState が残留キュー/保留/バッファを破棄し、次の訳文を誤結線しない', () => {
@@ -451,7 +445,7 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
     }, 5000);
 });
 
-describe('仮想声卡 captionPolicy=chat-authoritative（路径3正本・路径2遮断）', () => {
+describe('仮想声卡 stream-preview（自動Chat後補正なし）', () => {
     /**
      * 仮想声卡プロファイル付きの翻訳アプリを作る
      *
@@ -461,14 +455,15 @@ describe('仮想声卡 captionPolicy=chat-authoritative（路径3正本・路径
         const ctx = createTranslationApp();
         ctx.app.captureProfile = {
             profileId: 'electron-virtual-card',
-            captionPolicy: 'chat-authoritative',
+            effectiveDevice: 'virtual-card',
+            captionPolicy: 'stream-preview',
             preferContinuousCapture: true,
             vadPreset: 'MICROPHONE'
         };
         return ctx;
     }
 
-    it('路径2の訳文デルタは右列に出ず、入力確定で路径3だけ起動する', async () => {
+    it('路径2の確定訳を右列の正本とし、Chat後補正を起動しない', async () => {
         const { app, inputContainer, outputContainer } = createVirtualCardApp();
 
         app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'たくさんだ。' });
@@ -477,21 +472,19 @@ describe('仮想声卡 captionPolicy=chat-authoritative（路径3正本・路径
             delta: '哪用在那种可怕的地方睡觉呢'
         });
         app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
 
         const left = committedRows(inputContainer);
         const right = committedRows(outputContainer);
         expect(left).toHaveLength(1);
         expect(textOf(left[0])).toBe('たくさんだ。');
         expect(right).toHaveLength(1);
-        // 路径2の幻覚訳は右列に載らない（placeholder のまま）
-        expect(textOf(right[0])).toBe('翻訳中...');
+        expect(textOf(right[0])).toBe('哪用在那种可怕的地方睡觉呢');
         expect(right[0].dataset.segmentId).toBe(left[0].dataset.segmentId);
         expect(app._pendingOutputSegments || []).toHaveLength(0);
 
         await sleep(650);
-        expect(app.refineCalls).toHaveLength(1);
-        expect(app.refineCalls[0].text).toBe('たくさんだ。');
-        expect(app.refineCalls[0].id).toBe(left[0].dataset.segmentId);
+        expect(app.refineCalls).toHaveLength(0);
     });
 
     it('路径3のChat確定訳が右列の正本になる（流訳は後からも入らない）', async () => {
@@ -513,33 +506,28 @@ describe('仮想声卡 captionPolicy=chat-authoritative（路径3正本・路径
         expect(committedRows(outputContainer)).toHaveLength(1);
     });
 
-    it('連続2ターンでも流訳混入なく左右1:1で路径3が起動する', async () => {
+    it('連続2ターンでもRealtime確定訳を左右1:1で維持する', async () => {
         const { app, inputContainer, outputContainer } = createVirtualCardApp();
 
         app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'A原文' });
-        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '幻覚A' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'A訳' });
         app.dispatchWSMessage({ type: 'session.input_transcript.done' });
         app.dispatchWSMessage({ type: 'session.output_transcript.done' });
         app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'B原文' });
-        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '幻覚Bしかも長い混入' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'B訳' });
         app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
 
         const left = committedRows(inputContainer).map(textOf);
-        const right = committedRows(outputContainer);
+        const right = committedRows(outputContainer).map(textOf);
         expect(left).toEqual(['B原文', 'A原文']);
-        expect(right.map(textOf)).toEqual(['翻訳中...', '翻訳中...']);
-        expect(right[0].dataset.segmentId).toBe(
-            committedRows(inputContainer)[0].dataset.segmentId
-        );
-        expect(right[1].dataset.segmentId).toBe(
-            committedRows(inputContainer)[1].dataset.segmentId
-        );
+        expect(right).toEqual(['B訳', 'A訳']);
 
         await sleep(650);
-        expect(app.refineCalls.map((c) => c.text)).toEqual(['A原文', 'B原文']);
+        expect(app.refineCalls).toHaveLength(0);
     });
 
-    it('ハングル優勢 ASR は行対も路径3も作らない（日韓誤認ゲート）', async () => {
+    it('ハングル優勢 ASR は行対も作らない（日韓誤認ゲート）', async () => {
         const { app, inputContainer, outputContainer } = createVirtualCardApp();
         const traces = [];
         app.traceTranslation = (tag, payload) => traces.push({ tag, payload });
@@ -557,18 +545,19 @@ describe('仮想声卡 captionPolicy=chat-authoritative（路径3正本・路径
         expect(traces.some((t) => t.tag === 'asr:hangul-reject')).toBe(true);
     });
 
-    it('日本語 ASR は従来どおり路径3へ進む（ハングルゲートの誤破棄防止）', async () => {
-        const { app, inputContainer } = createVirtualCardApp();
+    it('日本語 ASR はRealtime確定訳へ進む（ハングルゲートの誤破棄防止）', async () => {
+        const { app, inputContainer, outputContainer } = createVirtualCardApp();
         app.state.sourceLang = 'ja';
 
         app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'こんにちは' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '你好' });
         app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
 
         expect(committedRows(inputContainer)).toHaveLength(1);
+        expect(textOf(committedRows(outputContainer)[0])).toBe('你好');
         await sleep(650);
-        expect(app.refineCalls).toHaveLength(1);
-        expect(app.refineCalls[0].text).toBe('こんにちは');
-        expect(app.refineCalls[0].lang).toBe('ja');
+        expect(app.refineCalls).toHaveLength(0);
     });
 });
 

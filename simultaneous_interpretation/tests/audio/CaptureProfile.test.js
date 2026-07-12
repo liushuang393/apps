@@ -172,14 +172,14 @@ describe('deriveCaptureProfileId / buildCaptureProfile（決定表）', () => {
         ).toBe(CAPTURE_PROFILE_IDS.ELECTRON_VIRTUAL_CARD);
     });
 
-    it('仮想カードは captionPolicy=chat-authoritative と preferContinuousCapture=true', () => {
+    it('仮想カードは stream-preview と preferContinuousCapture=true', () => {
         const profile = buildCaptureProfile({
             isElectron: true,
             audioSourceType: 'system',
             fallbackStage: 'virtual-card',
             outputIsolated: true
         });
-        expect(profile.captionPolicy).toBe('chat-authoritative');
+        expect(profile.captionPolicy).toBe('stream-preview');
         expect(profile.preferContinuousCapture).toBe(true);
         expect(profile.vadPreset).toBe('MICROPHONE');
     });
