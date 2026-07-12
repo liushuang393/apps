@@ -88,14 +88,16 @@ services:
       - JWT_SECRET=${JWT_SECRET:-lams-jwt-secret-change-in-production}
       # AIプロバイダー設定
       - AI_PROVIDER=${AI_PROVIDER:-gpt4o_transcribe}
+      # start-common.sh が解決した値を明示注入し、シェル環境変数 > .env の
+      # 優先順位をコンテナ内でも維持する。
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Gemini設定
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_BASE_URL=${GEMINI_BASE_URL:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-models/gemini-2.5-flash-native-audio-preview-12-2025}
       # Gemini Live S2S 翻訳モデル（AI_PROVIDER=gemini_live 時に使用）
       - GEMINI_LIVE_MODEL=${GEMINI_LIVE_MODEL:-models/gemini-3.5-live-translate-preview}
-      # OpenAI設定。OPENAI_API_KEY / OPENAI_BASE_URL は env_file(.env) から注入する。
-      # （environment に ${OPENAI_API_KEY} と書くとシェルの無効キーを拾うため、ここには書かない）
+      # OpenAI設定。OPENAI_BASE_URL は env_file(.env) から注入する。
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL:-gpt-realtime-2025-08-28}
       # LiveKit / WebRTC 設定（Phase 3 C1：単一トランスポート）
       # LIVEKIT_URL: サーバ→LiveKit の内部接続先（同一ネットワーク内のサービス名）
@@ -105,8 +107,9 @@ services:
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecret_change_in_production}
       - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-}
-      # トークン発行時にバックエンド内で Agent worker を自動起動するか（既定 false）
-      - LIVEKIT_AGENT_AUTOSTART=${LIVEKIT_AGENT_AUTOSTART:-false}
+      # Docker 配備ではトークン発行時に Agent worker を自動起動する。
+      # 無効化する場合だけ LIVEKIT_AGENT_AUTOSTART=false を明示する。
+      - LIVEKIT_AGENT_AUTOSTART=${LIVEKIT_AGENT_AUTOSTART:-true}
       # CORS用ホストIP（前後端で共有）
       - HOST_IP=${HOST_IP:-localhost}
       # フロントエンドポート（CORS許可オリジン自動生成用。.envのFRONTEND_PORTから注入）
