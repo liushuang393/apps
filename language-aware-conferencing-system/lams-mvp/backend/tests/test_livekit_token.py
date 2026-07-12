@@ -74,6 +74,8 @@ def test_create_token_claims(monkeypatch: pytest.MonkeyPatch) -> None:
     assert claims["video"]["room"] == "room1"
     assert claims["video"]["roomJoin"] is True
     assert claims["video"]["canPublish"] is True
+    # setAttributes（言語・音声モード同期）に必須。無いと入室が失敗扱いになる。
+    assert claims["video"]["canUpdateOwnMetadata"] is True
 
 
 @pytest.mark.asyncio

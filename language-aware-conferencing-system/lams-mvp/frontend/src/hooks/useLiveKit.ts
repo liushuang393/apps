@@ -414,6 +414,8 @@ export function useLiveKit(roomId: string | null) {
           setConnectionError('ブラウザの自動再生制限により音声再生を開始できませんでした。画面を操作して再試行してください。');
         });
       } catch (err) {
+        // 障害解析用に生エラーを必ず出す（UI には整形メッセージのみ表示）
+        console.error('[LiveKit] 会議室接続エラー:', err);
         if (!cancelled) {
           setConnectionStatus('disconnected');
           if (err instanceof ApiError) {

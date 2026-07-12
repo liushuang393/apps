@@ -52,6 +52,9 @@ def create_join_token(
         can_publish=can_publish,
         can_subscribe=True,
         can_publish_data=True,
+        # フロントは participant attributes（言語・音声モード）を自分で更新する。
+        # この権限が無いと setAttributes がサーバに拒否され入室が失敗扱いになる。
+        can_update_own_metadata=True,
     )
     token = (
         api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
