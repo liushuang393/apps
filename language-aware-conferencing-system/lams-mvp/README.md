@@ -358,15 +358,17 @@ New-NetFirewallRule -DisplayName "LAMS LiveKit UDP" -Direction Inbound -LocalPor
 他PCのブラウザから `http://<WindowsのLAN IP>:5273` でアクセスする。
 
 > - HTTP の LAN IP はブラウザ上の安全なコンテキストではない。検証時は各参加端末の Chrome/Edge で `chrome://flags/#unsafely-treat-insecure-origin-as-secure` に `http://<IP>:5273` を登録してブラウザを再起動する。これは検証専用であり、実運用は HTTPS 化する。
-> - Docker Desktop 利用時は公開ポートが Windows 側で直接 listen されるため `netsh portproxy` は**不要**。
->   WSL 内で非Docker のローカル起動をした場合のみ、以下のポート転送が必要（WSL の IP が変わったら再実行）:
+> - **Docker エンジンが WSL 内で動いている場合**（`docker inspect` の PID が WSL の `/proc` に見える構成）、公開ポートは WSL 側にしか bind されない。LAN 公開の推奨は **WSL mirrored ネットワーク**（Windows 11: `%UserProfile%\.wslconfig` に `[wsl2]` `networkingMode=mirrored` → `wsl --shutdown`）。これで TCP/UDP 全ポートが Windows の LAN IP で直接 listen され、portproxy 不要になる。
+> - mirrored にできない場合は portproxy で TCP を転送する（**UDP は portproxy 非対応**のため、LiveKit メディアは TCP 7881 フォールバックで動く。音質・遅延はやや劣化）:
 >
 >   ```powershell
 >   $wslIp = (wsl hostname -I).Trim().Split(' ')[0]
->   netsh interface portproxy reset
->   netsh interface portproxy add v4tov4 listenport=5273 listenaddress=0.0.0.0 connectport=5273 connectaddress=$wslIp
->   netsh interface portproxy add v4tov4 listenport=8090 listenaddress=0.0.0.0 connectport=8090 connectaddress=$wslIp
+>   # 古い転送先 IP が残っていると LAN アクセスを乗っ取るため、まず対象ポートを削除
+>   foreach ($p in 5273,8090,7880,7881,3478) { netsh interface portproxy delete v4tov4 listenport=$p listenaddress=0.0.0.0 2>$null }
+>   foreach ($p in 5273,8090,7880,7881,3478) { netsh interface portproxy add v4tov4 listenport=$p listenaddress=0.0.0.0 connectport=$p connectaddress=$wslIp }
 >   ```
+>
+>   WSL の IP は再起動で変わるため、変わったら再実行する。
 
 接続確認は参加端末から次を実行する。
 
