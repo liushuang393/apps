@@ -5,7 +5,13 @@ LAMS データベース接続モジュール
 
 from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.config import settings
 from app.db.models import Base
@@ -26,10 +32,40 @@ async_session = async_sessionmaker(
 )
 
 
+async def _reconcile_legacy_schema(conn: AsyncConnection) -> None:
+    """旧版の既存テーブルへ現行モデルで必須となる列を補完する。
+
+    Args:
+        conn: 初期化トランザクションで使用する非同期DB接続。
+
+    Returns:
+        None。
+
+    Notes:
+        ``create_all`` は既存テーブルへ列を追加しないため、Alembic 管理導入前に
+        作成された永続ボリュームを現行スキーマへ安全に収束させる。各DDLは
+        ``IF NOT EXISTS`` を使用し、再起動時にも冪等である。
+    """
+    statements = (
+        "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS "
+        "default_mode VARCHAR(10) NOT NULL DEFAULT 'a'",
+        "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS "
+        "enable_openai_s2s BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS "
+        "language_routes JSON NOT NULL DEFAULT '{}'::json",
+        "ALTER TABLE meeting_sessions ADD COLUMN IF NOT EXISTS "
+        "mode VARCHAR(10) NOT NULL DEFAULT 'a'",
+        "ALTER TABLE meeting_sessions ADD COLUMN IF NOT EXISTS qos_summary JSON",
+    )
+    for statement in statements:
+        await conn.execute(text(statement))
+
+
 async def init_db() -> None:
-    """データベース初期化（テーブル作成）"""
+    """現行テーブルを作成し、旧版の永続スキーマを補完する。"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _reconcile_legacy_schema(conn)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
