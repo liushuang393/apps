@@ -125,3 +125,28 @@ profileId: ___________
 
 **P0/P1 修正により、マイクモードの ASR 停止・誤訳・順序乱れの主要因を除去。**  
 自動テスト 505 件すべて合格。実機 E2E（E1–E4）は上記チェックリストで最終確認すること。
+
+---
+
+## 9. 追記: 左右翻訳ズレ根因修正（2026-07-12 夜）
+
+### 症状（スクショ）
+
+原文「你好请翻译」に訳「会議を始めます」が着地する FIFO 1行ずれ。
+
+### 根因と修正
+
+| 項目 | 内容 |
+|------|------|
+| output idle | dequeue 禁止（UI 再描画のみ） |
+| input idle | 無効化（行対はサーバ `.done` のみ） |
+| elapsed_ms | `resolveOutputSegmentId()` で時間距離最小の未完了行へ |
+| stale | 上限4、破棄せず `stream-final` で閉じてから外す |
+| Chat モデル | `gpt-5.6`（Realtime translate/whisper は維持） |
+
+### 証拠
+
+- `docs/qa/evidence/jest-align-2026-07-12.log` — 507 tests PASS
+- lint:runtime PASS
+
+実 `.env` の `OPENAI_CHAT_MODEL` は手動で `gpt-5.6` に更新すること。

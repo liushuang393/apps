@@ -1,4 +1,4 @@
-/**
+﻿/**
  * VoiceTranslate Pro 2.0 - ユーティリティモジュール
  *
  * 目的:
@@ -318,7 +318,7 @@ const CONFIG = {
         REALTIME_URL: OPENAI_REALTIME_TRANSLATION_URL,
         REALTIME_MODEL: 'gpt-realtime-translate',
         // ↓ モデル名は .env (OPENAI_*_MODEL) で設定・上書きする。ここは env 未読込時のフォールバック既定値。
-        CHAT_MODEL: 'gpt-5.5',
+        CHAT_MODEL: 'gpt-5.6',
         // テキスト翻訳・言語検出に使う Chat Completions エンドポイント。
         CHAT_URL: OPENAI_CHAT_COMPLETIONS_URL,
         // ライブ入力音声の並行STT用モデル（低遅延ストリーミング）。

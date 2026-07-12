@@ -3,7 +3,7 @@
 const DEFAULT_REALTIME_URL = 'wss://api.openai.com/v1/realtime/translations';
 const DEFAULT_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_REALTIME_MODEL = 'gpt-realtime-translate';
-const DEFAULT_CHAT_MODEL = 'gpt-5.5';
+const DEFAULT_CHAT_MODEL = 'gpt-5.6';
 const DEFAULT_TRANSCRIBE_MODEL = 'gpt-realtime-whisper';
 const MAX_ENDPOINT_LENGTH = 2048;
 

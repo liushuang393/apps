@@ -292,20 +292,82 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         expect(right[0].dataset.segmentId).toBe(left[0].dataset.segmentId);
     });
 
-    it('output の .done が欠落してもアイドルflushがキュー先頭を確定し、次ターンへ累積しない', async () => {
-        const { app, outputContainer } = createTranslationApp();
+    it('output idle flush は dequeue せず、後続 .done が同じ行対へ着地する（1行ズレ防止）', async () => {
+        const { app, inputContainer, outputContainer } = createTranslationApp();
 
-        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'A原文' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: '你好请翻译' });
         app.dispatchWSMessage({ type: 'session.input_transcript.done' });
-        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'A訳' });
-        // .done が来ないままアイドル時間（1500ms）が経過する。
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'こんにちは' });
+        // .done が来ないまま idle（旧実装はここで dequeue → 次訳が前行へ着地）
         await sleep(1700);
 
+        expect(app._pendingOutputSegments).toHaveLength(1);
+        expect(textOf(committedRows(outputContainer)[0])).toBe('こんにちは');
+        expect(committedRows(outputContainer)[0].dataset.status).toBe('responding');
+
+        // 次ターンの原文が来ても、旧訳はまだ A 行に残る
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: '我们开始开会' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        expect(app._pendingOutputSegments).toHaveLength(2);
+
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+        const left = committedRows(inputContainer);
         const right = committedRows(outputContainer);
-        expect(right).toHaveLength(1);
-        expect(textOf(right[0])).toBe('A訳');
-        expect(app._pendingOutputSegments).toHaveLength(0); // キューが掃けている
+        expect(textOf(left[1])).toBe('你好请翻译');
+        expect(textOf(right[1])).toBe('こんにちは');
+        expect(right[1].dataset.segmentId).toBe(left[1].dataset.segmentId);
+        expect(right[1].dataset.status).toBe('stream-final');
     }, 5000);
+
+    it('連続2ターンで A訳が B行に入らない', () => {
+        const { app, inputContainer, outputContainer } = createTranslationApp();
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: '你好请翻译' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'こんにちは、翻訳してください。' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: '我们开始开会' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '会議を始めます。' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.done' });
+
+        const left = committedRows(inputContainer).map(textOf);
+        const right = committedRows(outputContainer).map(textOf);
+        expect(left).toEqual(['我们开始开会', '你好请翻译']);
+        expect(right).toEqual(['会議を始めます。', 'こんにちは、翻訳してください。']);
+    });
+
+    it('elapsed_ms 付き delta は時間距離が近い行対へ着地する', () => {
+        const { app, inputContainer, outputContainer } = createTranslationApp();
+
+        app.dispatchWSMessage({
+            type: 'session.input_transcript.delta',
+            delta: 'A原文',
+            elapsed_ms: 1000
+        });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({
+            type: 'session.input_transcript.delta',
+            delta: 'B原文',
+            elapsed_ms: 5000
+        });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+
+        // B の時間帯の訳が先に来る → B 行へ（FIFO先頭の A ではない）
+        app.dispatchWSMessage({
+            type: 'session.output_transcript.delta',
+            delta: 'B訳',
+            elapsed_ms: 5100
+        });
+
+        const left = committedRows(inputContainer);
+        const right = committedRows(outputContainer);
+        const rowB = right.find((el) => textOf(el) === 'B訳');
+        expect(rowB).toBeTruthy();
+        expect(rowB.dataset.segmentId).toBe(left[0].dataset.segmentId); // 最新=Bが上
+        expect(textOf(left[0])).toBe('B原文');
+    });
 
     it('APIキー無しでも Realtime .done で右セルは stream-final へ確定し responding が残らない', async () => {
         const { app, outputContainer } = createTranslationApp();
@@ -388,24 +450,26 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         expect(right[1].dataset.status).toBe('translated');
     });
 
-    it('訳文ゼロのターンが先頭に滞留しても後続の右列がズレ続けない（キュー有界化）', () => {
+    it('訳文ゼロのターンが先頭に滞留しても上限超過時は stream-final で閉じる', () => {
         const { app, inputContainer, outputContainer } = createTranslationApp();
 
-        // ターンA/Bは訳文が一切来ない。Cの確定時に最古の滞留分が外れる。
-        for (const text of ['A原文', 'B原文', 'C原文']) {
+        // 上限4まで積む。5件目で最古が stream-final 化される。
+        for (const text of ['A原文', 'B原文', 'C原文', 'D原文', 'E原文']) {
             app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: text });
             app.dispatchWSMessage({ type: 'session.input_transcript.done' });
         }
-        expect(app._pendingOutputSegments.length).toBeLessThanOrEqual(2);
+        expect(app._pendingOutputSegments.length).toBeLessThanOrEqual(4);
 
         app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: 'B訳' });
         app.dispatchWSMessage({ type: 'session.output_transcript.done' });
 
-        // 訳文は最古の未確定ターンの行へ着地する（segmentIdの対応が保たれる）
+        // 訳文は未確定キュー先頭へ着地する（segmentId の対応が保たれる）
         const rowB = committedRows(outputContainer).find((el) => textOf(el) === 'B訳');
-        const leftB = committedRows(inputContainer).find((el) => textOf(el) === 'B原文');
         expect(rowB).toBeTruthy();
-        expect(rowB.dataset.segmentId).toBe(leftB.dataset.segmentId);
+        const leftMatch = committedRows(inputContainer).find(
+            (el) => el.dataset.segmentId === rowB.dataset.segmentId
+        );
+        expect(leftMatch).toBeTruthy();
     });
 
     it('入力確定が来ないまま保留された訳文も flush で必ず排出される（不漏）', () => {
@@ -426,7 +490,7 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         expect(app._heldOutputs).toHaveLength(0);
     });
 
-    it('アイドルflushの早期確定は responding のままで、後からChat確定訳が上書きできる', async () => {
+    it('アイドルflushは responding のまま dequeue せず、後からChat確定訳が上書きできる', async () => {
         const { app, outputContainer } = createTranslationApp();
 
         app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: 'A原文' });
@@ -437,6 +501,7 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         const right = committedRows(outputContainer);
         expect(right[0].dataset.status).toBe('responding'); // stream-final で固定しない
         expect(textOf(right[0])).toBe('部分訳');
+        expect(app._pendingOutputSegments).toHaveLength(1); // dequeue しない
 
         app.upsertSegmentOutput(right[0].dataset.segmentId, 'Chat確定訳', {
             status: 'translated'

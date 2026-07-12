@@ -16,9 +16,12 @@
 const REALTIME_MIN_COMMIT_AUDIO_MS = 100;
 
 // 翻訳セッションの字幕確定ポリシー:
-// デルタが途切れてから本時間(ms)を超えたら、句末標点が無くても確定表示する。
-// 左カラムの原文STTは句末標点が来ないことが多く、これが無いと累積したまま表示されない。
+// output のみ: デルタが途切れてから本時間(ms)で UI を再描画する（dequeue はしない）。
+// input の行対作成はサーバ .done のみ（idle で行対を増やすと FIFO 本数が崩れ1行ズレる）。
 const TRANSLATION_CAPTION_IDLE_MS = 1500;
+
+// 訳文待ち FIFO の上限。超えた最古は破棄せず stream-final で閉じてから外す。
+const TRANSLATION_PENDING_OUTPUT_MAX = 4;
 
 // 観測トレース（リングバッファ）の上限件数。実セッションのイベント列とペアリング判断を
 // 後から検証するための基盤（推測駆動の再発防止。判定は体感でなく計測で行う）。
@@ -336,21 +339,23 @@ const WebSocketMixin = {
             //     入力確定時に同じ行対の右セルへ吸収（never-empty＝不漏）。音声は session.output_audio。
             //   路径3(补精度): 入力確定文を Chat 高精度翻訳し、同じ行対の右セルを確定更新（准）。
             case 'session.input_transcript.delta':
-                this.handleTranslationTranscriptDelta('input', message.delta);
+                this.handleTranslationTranscriptDelta('input', message.delta, message.elapsed_ms);
                 break;
             case 'session.output_transcript.delta':
-                this.handleTranslationTranscriptDelta('output', message.delta);
+                this.handleTranslationTranscriptDelta('output', message.delta, message.elapsed_ms);
                 break;
             // セグメント終端イベントで確定する（句末標点に依存しない正規の境界）。
             // API のイベント名揺れに備えて .done / .completed の両方を受ける。
-            // .done が来ない場合はアイドル確定（scheduleTranslationCaptionFlush）が保険。
+            // output の .done 欠落時は idle で UI 再描画のみ（dequeue しない）。
             case 'session.input_transcript.done':
             case 'session.input_transcript.completed':
                 this.commitTranslationCaption('input');
                 break;
             case 'session.output_transcript.done':
             case 'session.output_transcript.completed':
-                this.commitTranslationCaption('output');
+                this.commitTranslationCaption('output', {
+                    elapsedMs: message.elapsed_ms
+                });
                 break;
             case 'session.closed':
                 // 公式手順: session.close 後にサーバが残余の翻訳出力を flush してから返す確認応答。
@@ -509,13 +514,18 @@ const WebSocketMixin = {
         return this.captureProfile?.effectiveDevice === 'virtual-card';
     },
 
-    handleTranslationTranscriptDelta(kind, delta) {
+    /**
+     * 翻訳セッションの字幕デルタをバッファし、行対へライブ描画する。
+     *
+     * @param {'input'|'output'} kind
+     * @param {string} delta
+     * @param {number|null|undefined} [elapsedMs] - 公式アライン用メタデータ（200ms 刻み）
+     */
+    handleTranslationTranscriptDelta(kind, delta, elapsedMs) {
         if (!delta) {
             return;
         }
         this.recordTranslationLatency(kind === 'input' ? 'input' : 'output');
-        // 仮想声卡: 路径2(output_transcript)は右列に載せない（幻覚・FIFOズレの主因を遮断）。
-        // レイテンシ観測だけ行い、字幕バッファ／描画には進まない。音声は output_audio 側。
 
         if (!this.translationCaption) {
             this.translationCaption = { input: '', output: '' };
@@ -532,19 +542,30 @@ const WebSocketMixin = {
             // 先頭句読点のみを除去して空になった場合は、空のライブ行を作らない。
             return;
         }
+
+        const elapsed =
+            elapsedMs != null && Number.isFinite(Number(elapsedMs)) ? Number(elapsedMs) : null;
+        if (kind === 'input' && elapsed != null) {
+            if (this._inputElapsedStartMs == null) {
+                this._inputElapsedStartMs = elapsed;
+            }
+            this._lastInputElapsedMs = elapsed;
+        }
+        if (kind === 'output' && elapsed != null) {
+            this._lastOutputElapsedMs = elapsed;
+        }
+
         const releasedProtectedHead =
             kind === 'output' ? this.releaseProtectedPendingOutputHeads() : false;
-        // ✅ 左右1:1（FIFO）: 訳文は原文より遅れて届くため「入力確定時点のバッファ」をペアに
-        //    すると右列が1行ズレる（旧実装の主因）。訳文デルタは「訳文確定待ちの最古の行対」
-        //    ＝キュー先頭の右セルへ直接描画する。キューが空（先行訳文/転写OFF）の間のみライブ行。
-        if (
-            kind === 'output' &&
-            this._pendingOutputSegments?.length &&
-            typeof this.upsertSegmentOutput === 'function'
-        ) {
-            this.upsertSegmentOutput(this._pendingOutputSegments[0], buffered, {
-                status: 'responding'
-            });
+        // ✅ 左右1:1: 訳文デルタは elapsed_ms が最も近い未完了行対へ描画。
+        //    欠落時は FIFO 先頭。キューが空の間のみライブ行。
+        if (kind === 'output' && this._pendingOutputSegments?.length) {
+            const targetId = this.resolveOutputSegmentId(elapsed);
+            if (targetId && typeof this.upsertSegmentOutput === 'function') {
+                this.upsertSegmentOutput(targetId, buffered, {
+                    status: 'responding'
+                });
+            }
         } else {
             if (
                 kind === 'output' &&
@@ -557,14 +578,53 @@ const WebSocketMixin = {
             } else {
                 this._dropNextProtectedOutput = false;
                 // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
-                //    （確定時に commitTranslationCaption がライブ行を確定行へ置き換える）
                 this.renderLiveCaption(kind, buffered);
             }
         }
-        // ✅ BUG1(左右1:1): 確定境界はサーバの session.*_transcript.done に一本化する。
-        //    .done が来ない場合の取りこぼし防止としてアイドル確定のみ保険で残す(両列同一規則。
-        //    output側はキュー先頭行対の確定+dequeueとして働く＝ターンを跨ぐ累積を防ぐ)。
+        // output のみ idle で UI 再描画（dequeue しない）。input 行対はサーバ .done のみ。
         this.scheduleTranslationCaptionFlush(kind);
+    },
+
+    /**
+     * 訳文を着地させる未完了 segment を選ぶ。
+     *
+     * @description
+     * 公式 elapsed_ms があるときは未完了キュー内で時間距離が最小の行を選ぶ。
+     * 無いときは FIFO 先頭（従来互換）。
+     *
+     * @param {number|null} elapsedMs
+     * @returns {string|null}
+     */
+    resolveOutputSegmentId(elapsedMs) {
+        if (!this._pendingOutputSegments?.length) {
+            return null;
+        }
+        if (elapsedMs == null || !Number.isFinite(elapsedMs)) {
+            return this._pendingOutputSegments[0];
+        }
+
+        let bestId = this._pendingOutputSegments[0];
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (const id of this._pendingOutputSegments) {
+            const seg = this.segmentAlignment?.getSegment?.(id);
+            const start = seg?.timing?.elapsedStartMs;
+            const end = seg?.timing?.elapsedEndMs;
+            if (start == null || !Number.isFinite(start)) {
+                continue;
+            }
+            const endMs = end != null && Number.isFinite(end) ? end : start;
+            let dist = 0;
+            if (elapsedMs < start) {
+                dist = start - elapsedMs;
+            } else if (elapsedMs > endMs) {
+                dist = elapsedMs - endMs;
+            }
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestId = id;
+            }
+        }
+        return bestId;
     },
 
     /**
@@ -572,6 +632,9 @@ const WebSocketMixin = {
      * アイドルflushタイマーも併せて解除する。
      *
      * @param {'input'|'output'} kind
+     * @param {Object} [options]
+     * @param {boolean} [options.fromIdle]
+     * @param {number} [options.elapsedMs]
      */
     commitTranslationCaption(kind, options = {}) {
         if (this.captionFlushTimers && this.captionFlushTimers[kind]) {
@@ -581,9 +644,19 @@ const WebSocketMixin = {
         if (!this.translationCaption) {
             return;
         }
+
+        // input の idle は行対を作らない（サーバ .done 待ち）。バッファは維持。
+        if (kind === 'input' && options.fromIdle) {
+            this.traceTranslation?.('input:idle-skip', {
+                len: (this.translationCaption.input || '').length
+            });
+            return;
+        }
+
         const text = (this.translationCaption[kind] || '').trim();
-        this.translationCaption[kind] = '';
+
         if (kind === 'input') {
+            this.translationCaption[kind] = '';
             // ✅ ライブ表示中の暫定行を消し、確定行へ置き換える。
             this.clearLiveCaption(kind);
             if (!text) {
@@ -592,26 +665,45 @@ const WebSocketMixin = {
             this.commitTranslationPair(text);
             return;
         }
-        // output の確定（サーバ .done またはアイドルflush）
 
-        this.releaseProtectedPendingOutputHeads();
-        if (this._pendingOutputSegments?.length) {
-            // ✅ 左右1:1: 訳文確定待ちの最古の行対（キュー先頭）の訳文として確定し、次へ進む。
-            //    アイドルflush由来（ターン途中の停滞の可能性がある）は 'stream-final' にせず
-            //    'responding' のまま dequeue し、後続 .done で stream-final に確定する。
-            const segmentId = this._pendingOutputSegments.shift();
-            this.clearLiveCaption(kind);
-            this.traceTranslation?.('output:finalize', {
-                seg: segmentId,
-                len: text.length,
-                idle: Boolean(options.fromIdle)
-            });
-            if (text && typeof this.upsertSegmentOutput === 'function') {
-                this.upsertSegmentOutput(segmentId, text, {
-                    status: options.fromIdle ? 'responding' : 'stream-final'
+        // output idle: キュー先頭（または elapsed 最近傍）へ再描画のみ。dequeue 禁止。
+        if (options.fromIdle) {
+            const targetId = this.resolveOutputSegmentId(
+                options.elapsedMs ?? this._lastOutputElapsedMs ?? null
+            );
+            if (targetId && text && typeof this.upsertSegmentOutput === 'function') {
+                this.upsertSegmentOutput(targetId, text, { status: 'responding' });
+                this.traceTranslation?.('output:idle-refresh', {
+                    seg: targetId,
+                    len: text.length
                 });
             }
-            // 空（禁則除去で消えた等）なら placeholder を維持する。
+            return;
+        }
+
+        // output のサーバ .done: バッファを消費して dequeue
+        this.translationCaption[kind] = '';
+        this.releaseProtectedPendingOutputHeads();
+        if (this._pendingOutputSegments?.length) {
+            const targetId =
+                this.resolveOutputSegmentId(
+                    options.elapsedMs ?? this._lastOutputElapsedMs ?? null
+                ) || this._pendingOutputSegments[0];
+            const idx = this._pendingOutputSegments.indexOf(targetId);
+            if (idx >= 0) {
+                this._pendingOutputSegments.splice(idx, 1);
+            } else {
+                this._pendingOutputSegments.shift();
+            }
+            this.clearLiveCaption(kind);
+            this.traceTranslation?.('output:finalize', {
+                seg: targetId,
+                len: text.length,
+                idle: false
+            });
+            if (text && typeof this.upsertSegmentOutput === 'function') {
+                this.upsertSegmentOutput(targetId, text, { status: 'stream-final' });
+            }
             return;
         }
         if (this._dropNextProtectedOutput && !this.translationCaption.input) {
@@ -628,8 +720,6 @@ const WebSocketMixin = {
         }
         if (this.translationCaption.input) {
             // 訳文が入力確定より先に完了したターン: 保留し、直後の入力確定が同一行対として回収する。
-            // 回収されない残余は flushTranslationCaptions が必ず排出する（不漏）。
-            // ライブ行は残す＝回収まで訳文が画面から消えないようにする。
             if (!this._heldOutputs) {
                 this._heldOutputs = [];
             }
@@ -638,7 +728,7 @@ const WebSocketMixin = {
             return;
         }
         this.clearLiveCaption(kind);
-        // 入力転写が無い（転写設定OFF・転写失敗）場合の不漏フォールバック: 訳文のみを時系列で確定。
+        // 入力転写が無い場合の不漏フォールバック: 訳文のみを時系列で確定。
         this.traceTranslation?.('output:orphan', { len: text.length });
         if (typeof this.addTranscript === 'function') {
             this.addTranscript('output', text, null);
@@ -696,6 +786,15 @@ const WebSocketMixin = {
             sourceLang,
             status: 'input-ready'
         });
+        // 公式 elapsed_ms を行対に記録（後続 output のルーティング用）
+        if (segment?.timing) {
+            segment.timing.elapsedStartMs =
+                this._inputElapsedStartMs != null ? this._inputElapsedStartMs : null;
+            segment.timing.elapsedEndMs =
+                this._lastInputElapsedMs != null ? this._lastInputElapsedMs : null;
+        }
+        this._inputElapsedStartMs = null;
+        this._lastInputElapsedMs = null;
         this.upsertSegmentInput(segment.id, inputText, { status: 'input-ready' });
 
         if (this._heldOutputs && this._heldOutputs.length) {
@@ -712,12 +811,9 @@ const WebSocketMixin = {
             if (!this._pendingOutputSegments) {
                 this._pendingOutputSegments = [];
             }
-            // ✅ ズレ有界化: 訳文が一度も来ないターンが先頭に滞留すると以後の右列が恒久的に
-            //    1行ズレる。新しい行対を積む時点で待ちが2件以上あれば、最古の先頭は
-            //    「訳文なし」とみなして placeholder のまま外す（最終的に路径3が埋める）。
-            while (this._pendingOutputSegments.length >= 2) {
-                const stale = this._pendingOutputSegments.shift();
-                this.traceTranslation?.('pair:stale-dequeue', { seg: stale });
+            // ✅ ズレ有界化: 待ちが上限超なら最古を破棄せず stream-final で閉じてから外す。
+            while (this._pendingOutputSegments.length >= TRANSLATION_PENDING_OUTPUT_MAX) {
+                this.finalizeStalePendingOutputHead();
             }
             this._pendingOutputSegments.push(segment.id);
             this.traceTranslation?.('pair:enqueue', {
@@ -736,6 +832,29 @@ const WebSocketMixin = {
                 this.clearLiveCaption('output');
             }
         }
+    },
+
+    /**
+     * 訳文待ちが上限超過した最古の行対を stream-final で閉じてキューから外す。
+     *
+     * @description
+     * 無言破棄だと後着訳が次行へ流れ1行ズレが固定化する。既存テキストがあれば保持する。
+     */
+    finalizeStalePendingOutputHead() {
+        if (!this._pendingOutputSegments?.length) {
+            return;
+        }
+        const stale = this._pendingOutputSegments.shift();
+        const row = this.getTranscriptContainer?.('output')?.querySelector(
+            `.transcript-message[data-segment-id="${stale}"]`
+        );
+        const existing = (row?.querySelector?.('.transcript-text')?.textContent || '').trim();
+        if (existing && typeof this.upsertSegmentOutput === 'function') {
+            this.upsertSegmentOutput(stale, existing, { status: 'stream-final' });
+        } else {
+            this.setSegmentOutputStatus?.(stale, 'stream-final');
+        }
+        this.traceTranslation?.('pair:stale-finalize', { seg: stale, hasText: Boolean(existing) });
     },
 
     /**
@@ -768,11 +887,18 @@ const WebSocketMixin = {
     },
 
     /**
-     * デルタが TRANSLATION_CAPTION_IDLE_MS 途切れたら確定するタイマーを張り直す。
+     * デルタが TRANSLATION_CAPTION_IDLE_MS 途切れたら UI を再描画するタイマーを張り直す。
+     *
+     * @description
+     * input はサーバ .done まで行対を作らない（idle スキップ）。
+     * output は idle で再描画のみ（dequeue 禁止）。
      *
      * @param {'input'|'output'} kind
      */
     scheduleTranslationCaptionFlush(kind) {
+        if (kind === 'input') {
+            return;
+        }
         if (!this.captionFlushTimers) {
             this.captionFlushTimers = { input: null, output: null };
         }
@@ -831,6 +957,9 @@ const WebSocketMixin = {
         this._pendingOutputSegments = [];
         this._heldOutputs = [];
         this._dropNextProtectedOutput = false;
+        this._inputElapsedStartMs = null;
+        this._lastInputElapsedMs = null;
+        this._lastOutputElapsedMs = null;
         this.latencyTurnStartAt = null;
         // ✅ ゴースト行防止: 保留中の路径3(refine)デバウンスタイマーも破棄する。
         //    残すとクリア/再接続後に発火し、消去済み segmentId の行を再生成してしまう。
