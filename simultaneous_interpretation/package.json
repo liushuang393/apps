@@ -39,6 +39,9 @@
     "dist:mac": "npm run clean:electron && npm run clean:release && npm run build:electron && electron-builder --mac",
     "dist:linux": "npm run clean:electron && npm run clean:release && npm run build:electron && electron-builder --linux",
     "smoke:packaged": "node scripts/smoke-packaged.js",
+    "agent:electron": "node scripts/agent/launch-electron-cdp.js",
+    "agent:extension": "node scripts/agent/launch-extension-cdp.js",
+    "agent:smoke": "node scripts/agent/smoke-harness.js",
     "test:runtime:coverage": "jest --config jest.runtime.config.js --coverage --runInBand",
     "quality": "npm run type-check && npm run lint:runtime && npm run lint:electron && npm run format:check && npm test -- --runInBand && npm run check:extension"
   },

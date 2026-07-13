@@ -17,8 +17,10 @@ const REALTIME_MIN_COMMIT_AUDIO_MS = 100;
 
 // 翻訳セッションの字幕確定ポリシー:
 // 公式 translation EP は transcript の .done を定義しない（delta の連続ストリームのみ）。
-// そのため発話区切りはクライアント idle で行う（音声/翻訳品質パスには触れない・表示のみ）。
+// そのため発話区切りはクライアント idle と「次原文確定」で行う（音声/翻訳品質パスには触れない・表示のみ）。
 //   - input idle : 行対（新枠）を確定。これが「独立した1塊」の境界。
+//   - 次の input 確定時: 未完了の前ターン訳を stream-final で閉じ、訳バッファを切る
+//     （閉じないと右列が1枠に追記され続ける）。
 //   - output idle: 原文バッファが空のときだけ stream-final+dequeue。
 //                  原文がまだ伸びている最中は再描画のみ（左右ズレ防止）。
 const TRANSLATION_CAPTION_IDLE_MS = 1500;
@@ -847,6 +849,12 @@ const WebSocketMixin = {
             return;
         }
 
+        // 新行対の前に未完了の旧行対を閉じる。閉じないと訳バッファが単一蓄積のまま
+        // FIFO 先頭へ増え続け、右列が「1枠に追記され続ける」ように見える。
+        while (this._pendingOutputSegments && this._pendingOutputSegments.length > 0) {
+            this.closePendingOutputHeadForNewInput();
+        }
+
         const sourceLang =
             this.textPathProcessor?.detectLanguageFromTranscript?.(inputText) || null;
         const created = this.segmentAlignment.createSegment({ sourceLang });
@@ -902,6 +910,38 @@ const WebSocketMixin = {
                 this.clearLiveCaption('output');
             }
         }
+    },
+
+    /**
+     * 新入力行対を開く直前に、FIFO 先頭の未完了訳を stream-final で閉じる。
+     *
+     * @description
+     * 公式 translation EP は output .done が無いため、次の原文境界が来た時点で
+     * 前ターン訳を確定しないと、translationCaption.output がセッション全体で連結され
+     * 右列1枠へ追記され続ける。後着の同ターン尻尾は late-extend で同一行へ吸収する。
+     */
+    closePendingOutputHeadForNewInput() {
+        if (!this._pendingOutputSegments?.length) {
+            return;
+        }
+        const targetId = this._pendingOutputSegments.shift();
+        const text = (this.translationCaption?.output || '').trim();
+        if (this.translationCaption) {
+            this.translationCaption.output = '';
+        }
+        this.clearLiveCaption?.('output');
+        this.clearTranslationCaptionFlushTimer?.('output');
+        this.traceTranslation?.('pair:close-prev-on-new-input', {
+            seg: targetId,
+            len: text.length
+        });
+        if (text && typeof this.upsertSegmentOutput === 'function') {
+            this.upsertSegmentOutput(targetId, text, { status: 'stream-final' });
+        } else if (typeof this.setSegmentOutputStatus === 'function') {
+            this.setSegmentOutputStatus(targetId, 'stream-final');
+        }
+        this._lastFinalizedOutputSegmentId = targetId;
+        this._lastFinalizedOutputBase = text || '';
     },
 
     /**

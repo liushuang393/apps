@@ -234,7 +234,7 @@ describe('deriveCaptureProfileId / buildCaptureProfile（決定表）', () => {
             realtimeSession: true
         });
         expect(profile.captionPolicy).toBe('stream-preview');
-        expect(profile.preferContinuousCapture).toBe(false);
+        expect(profile.preferContinuousCapture).toBe(true);
     });
 
     it('マイクモードは段を無視してマイク行に解決する（フォールバック対象外）', () => {

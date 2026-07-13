@@ -1,0 +1,17 @@
+---
+description: UI/アプリ/拡張のバグ調査時は手動確認をユーザーに頼まず自動操作で検証する
+alwaysApply: true
+---
+
+# エージェント UI 自動検証
+
+バグ調査・UI変更では、ユーザーに現象説明や手動クリックを求めない。
+先に `npm run agent:electron` / `agent:extension` / Playwright MCP で証拠を取る。
+
+| 対象 | コマンド | CDP |
+|------|----------|-----|
+| Electron | `npm run agent:electron` | `9222` |
+| Chrome 拡張 | `npm run agent:extension` | `9223` |
+| HTML | Playwright で `file://` | — |
+
+例外（だけユーザー依頼可）: OS マイク権限、実会議音声必須、MCP 未接続で Cursor 再起動が必要。

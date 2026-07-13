@@ -1,0 +1,39 @@
+---
+description: Windows Shell の日本語文字化け防止。毎回の Shell 呼び出しで UTF-8 を強制する（忘れ禁止）
+alwaysApply: true
+---
+
+# 文字コード / Shell UTF-8（必須・毎回）
+
+## 結論（先にこれ）
+
+Cursor エージェントの Shell は **ランダムではない**。Windows では多くの場合 **PowerShell + システム既定コードページ（昔は CP932）** で起動する。
+そのため **日本語を含むツール出力がチャットに流れると乱码になりやすい**。  
+**記憶に頼らない。このルールに従う。**
+
+## 優先順位（日本語を画面/チャットに出すとき）
+
+1. **Read ツール**（ファイル内容）← 最優先
+2. **`node -e "...utf8..."`**（シェルでテキストを出すとき）
+3. PowerShell を使う場合のみ → **必ず UTF-8 プリアンブル付き**
+
+```powershell
+chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding; <本番コマンド>
+```
+
+## 禁止
+
+- プリアンブルなしの `Get-Content` / `Select-String` / `Write-Host` で日本語ファイルを読んでチャットに出す
+- 乱码を見て「ファイルが壊れた」と即断すること（多くは表示経路の問題）
+- UTF-8 ソースを Shift_JIS / CP932 で保存し直すこと
+
+## 設定の置き場（参照用）
+
+| 何 | どこ |
+|----|------|
+| このルール（毎回注入） | `.cursor/rules/encoding-utf8.mdc`（alwaysApply） |
+| プロジェクト端末 | `.vscode/settings.json` → `PowerShell UTF-8` |
+| Cursor 自動化端末 | User `settings.json` → `terminal.integrated.automationProfile.windows` |
+| ユーザー用プロファイル | User `settings.json` → `terminal.integrated.profiles.windows["PowerShell UTF-8"]` |
+
+ユーザーに「端末を選べ」と頼まない。エージェント側で上記を守る。

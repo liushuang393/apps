@@ -351,7 +351,8 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
 
         const left = committedRows(inputContainer).map(textOf);
         expect(left).toEqual(['第二句', '第一句']);
-        expect(app._pendingOutputSegments.length).toBeGreaterThanOrEqual(2);
+        // 2句目確定時に1句目の未完了訳待ちは閉じるため、pending は最新1件のみ
+        expect(app._pendingOutputSegments).toHaveLength(1);
     }, 8000);
 
     it('連続2ターンで A訳が B行に入らない', () => {
@@ -371,6 +372,33 @@ describe('翻訳セッションのストリーム描画（P0: dispatchWSMessage 
         const right = committedRows(outputContainer).map(textOf);
         expect(left).toEqual(['我们开始开会', '你好请翻译']);
         expect(right).toEqual(['会議を始めます。', 'こんにちは、翻訳してください。']);
+    });
+
+    it('次ターン原文確定時に前ターン訳を閉じて新枠へ切り替える（右列1枠追記の根絶）', () => {
+        const { app, inputContainer, outputContainer } = createTranslationApp();
+
+        // 公式 EP は output .done が無い。A訳が流れている最中に B 原文が確定する典型シナリオ。
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: '第一句' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '一文目の訳' });
+
+        app.dispatchWSMessage({ type: 'session.input_transcript.delta', delta: '第二句' });
+        app.dispatchWSMessage({ type: 'session.input_transcript.done' });
+        app.dispatchWSMessage({ type: 'session.output_transcript.delta', delta: '二文目の訳' });
+
+        const left = committedRows(inputContainer);
+        const right = committedRows(outputContainer);
+        expect(left.map(textOf)).toEqual(['第二句', '第一句']);
+        // 右列も2枠。A訳とB訳が同一セルへ連結されてはならない。
+        expect(right).toHaveLength(2);
+        expect(textOf(right[1])).toBe('一文目の訳');
+        expect(right[1].dataset.status).toBe('stream-final');
+        expect(textOf(right[0])).toBe('二文目の訳');
+        expect(right[0].dataset.segmentId).toBe(left[0].dataset.segmentId);
+        expect(right[1].dataset.segmentId).toBe(left[1].dataset.segmentId);
+        expect(textOf(right[0])).not.toContain('一文目');
+        expect(app.translationCaption.output).toBe('二文目の訳');
+        expect(app._pendingOutputSegments).toHaveLength(1);
     });
 
     it('elapsed_ms 付き delta は時間距離が近い行対へ着地する', () => {

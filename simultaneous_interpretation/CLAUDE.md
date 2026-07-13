@@ -4,6 +4,11 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 **日本語で答えて**
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
+## Windows Shell / 文字化け（必須）
+
+エージェントの Shell はランダムではないが、Windows 既定だと日本語がチャットで乱码になる。
+**毎回** `.cursor/rules/encoding-utf8.mdc` に従う：日本語テキストは Read か `node ...utf8`、PowerShell なら UTF-8 プリアンブル必須。
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**

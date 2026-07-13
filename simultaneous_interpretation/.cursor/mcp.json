@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--allow-unrestricted-file-access",
+        "--caps=vision,devtools"
+      ]
+    },
+    "playwright-electron": {
+      "command": "node",
+      "args": [
+        "scripts/agent/mcp-playwright-cdp.js"
+      ],
+      "env": {
+        "AGENT_CDP_ENDPOINT": "http://127.0.0.1:9222"
+      }
+    },
+    "playwright-extension": {
+      "command": "node",
+      "args": [
+        "scripts/agent/mcp-playwright-cdp.js"
+      ],
+      "env": {
+        "AGENT_CDP_ENDPOINT": "http://127.0.0.1:9223"
+      }
+    }
+  }
+}

@@ -98,7 +98,9 @@ function deriveCaptureProfileId({ isElectron, audioSourceType, fallbackStage }) 
  *
  * preferContinuousCapture:
  *   true のときクライアントVADゲートをbypassして常時送信（翻訳EPは turn_detection 無しの連続ストリーム）。
- *   仮想声卡のみ true（マイク経路は従来どおり Server VAD UI / クライアントVAD）。
+ *   仮想声卡は常時 true。マイク系は realtimeSession=true（同時通訳）のとき true
+ *   （公式は句間の無音も含む連続 append を要求。UI「自動音声検出」OFF だと2文目以降が欠ける）。
+ *   非通訳のマイクのみ false（従来どおり Server VAD UI / クライアントVAD）。
  *
  * duplex の意味:
  *   'full'          = 常時連続採集（TTS再生中も入力を落とさない）。
@@ -147,7 +149,7 @@ function buildCaptureProfile({
             duplex: realtime ? 'full' : 'mic-protected',
             vadPreset: 'MICROPHONE',
             captionPolicy: 'stream-preview',
-            preferContinuousCapture: false,
+            preferContinuousCapture: realtime,
             ttsPolicy: 'play',
             noiseReduction: null,
             silenceFallbackNext: null
@@ -170,7 +172,7 @@ function buildCaptureProfile({
             duplex: 'full',
             vadPreset: 'SYSTEM',
             captionPolicy: 'stream-preview',
-            preferContinuousCapture: false,
+            preferContinuousCapture: true,
             ttsPolicy: 'suppress',
             noiseReduction: null,
             silenceFallbackNext: 'microphone'
@@ -180,7 +182,7 @@ function buildCaptureProfile({
             duplex: realtime ? 'full' : 'mic-protected',
             vadPreset: 'MICROPHONE',
             captionPolicy: 'stream-preview',
-            preferContinuousCapture: false,
+            preferContinuousCapture: realtime,
             ttsPolicy: 'play',
             noiseReduction: null,
             silenceFallbackNext: null
@@ -190,7 +192,7 @@ function buildCaptureProfile({
             duplex: realtime ? 'full' : 'mic-protected',
             vadPreset: 'MICROPHONE',
             captionPolicy: 'stream-preview',
-            preferContinuousCapture: false,
+            preferContinuousCapture: realtime,
             ttsPolicy: 'play',
             noiseReduction: null,
             silenceFallbackNext: null
@@ -200,7 +202,7 @@ function buildCaptureProfile({
             duplex: 'full',
             vadPreset: 'SYSTEM',
             captionPolicy: 'stream-preview',
-            preferContinuousCapture: false,
+            preferContinuousCapture: true,
             ttsPolicy: 'play',
             noiseReduction: null,
             silenceFallbackNext: null
