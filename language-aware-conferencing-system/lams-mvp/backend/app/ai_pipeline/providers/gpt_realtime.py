@@ -34,6 +34,7 @@ REALTIME_API_URL = "wss://api.openai.com/v1/realtime"
 
 # Realtime API の pcm16 入力が前提とするサンプルレート（欠陥 #2）。
 REALTIME_INPUT_RATE = 24000
+INPUT_TRANSCRIPT_GRACE_SECONDS = 2.0
 
 
 class GPTRealtimeProvider(AIProvider):
@@ -102,6 +103,9 @@ class GPTRealtimeProvider(AIProvider):
         """
         src_name = LANGUAGE_NAMES.get(source_language, source_language)
         tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
+        input_transcription: dict = {"model": settings.openai_transcribe_model}
+        if source_language not in ("zh", "multi"):
+            input_transcription["language"] = source_language
         # GA プロトコル: session.type="realtime" + output_modalities + audio 階層
         return {
             "type": "session.update",
@@ -133,9 +137,7 @@ class GPTRealtimeProvider(AIProvider):
                             "type": "audio/pcm",
                             "rate": REALTIME_INPUT_RATE,
                         },
-                        "transcription": {
-                            "model": settings.openai_transcribe_model,
-                        },
+                        "transcription": input_transcription,
                         # 手動 commit と自動 VAD の競合防止（欠陥 #5）
                         "turn_detection": None,
                     },
@@ -591,7 +593,9 @@ class GPTRealtimeProvider(AIProvider):
             await ws.send(json.dumps({"type": "response.create"}))
 
             # レスポンスを収集（応答ゼロのタイムアウトは TimeoutError → フォールバック）
-            translated_text, audio_chunks = await self._collect_response(ws)
+            original_text, translated_text, audio_chunks = await self._collect_response(
+                ws
+            )
 
             # 音声データを結合してWAV形式に変換
             translated_audio = None
@@ -605,51 +609,70 @@ class GPTRealtimeProvider(AIProvider):
             return TranslationResult(
                 source_language=source_language,
                 target_language=target_language,
-                original_text="",  # S2Sでは原文テキストは取得しない
+                original_text=original_text.strip(),
                 translated_text=translated_text.strip(),
                 audio_data=translated_audio,
             )
 
     async def _collect_response(
         self, ws, timeout: float = 15.0
-    ) -> tuple[str, list[bytes]]:
+    ) -> tuple[str, str, list[bytes]]:
         """S2S 応答（テキスト delta + 音声 delta）を response.done まで収集する。
 
         Returns:
-            (翻訳テキスト, 音声チャンク列)
+            (原文テキスト, 翻訳テキスト, 音声チャンク列)
         Raises:
             TimeoutError: 期限内に応答が一切得られなかった場合
                 （呼び出し側の 3 段階フォールバックを発動させる。欠陥 #4）
             RuntimeError: API がエラーイベントを返した場合
         """
+        original_text = ""
         translated_text = ""
         audio_chunks: list[bytes] = []
         done = False
+        done_at: float | None = None
         start_time = asyncio.get_event_loop().time()
 
         while True:
-            if asyncio.get_event_loop().time() - start_time > timeout:
+            now = asyncio.get_event_loop().time()
+            if now - start_time > timeout:
                 logger.warning("[GPT-Realtime] S2Sタイムアウト")
                 break
+            if done:
+                grace_elapsed = (
+                    done_at is not None
+                    and now - done_at >= INPUT_TRANSCRIPT_GRACE_SECONDS
+                )
+                if original_text or grace_elapsed:
+                    break
             try:
-                msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, timeout))
+                recv_timeout = INPUT_TRANSCRIPT_GRACE_SECONDS if done else 5.0
+                msg = await asyncio.wait_for(
+                    ws.recv(), timeout=min(recv_timeout, timeout)
+                )
             except asyncio.TimeoutError:
                 continue
             event = json.loads(msg)
             event_type = event.get("type", "")
 
             # 音声データ（デルタ）— GA イベント名
-            if event_type == "response.output_audio.delta":
+            if event_type in ("response.output_audio.delta", "response.audio.delta"):
                 delta = event.get("delta", "")
                 if delta:
                     audio_chunks.append(base64.b64decode(delta))
             # 翻訳テキスト（デルタ）— GA イベント名
-            elif event_type == "response.output_audio_transcript.delta":
+            elif event_type in (
+                "response.output_audio_transcript.delta",
+                "response.audio_transcript.delta",
+            ):
                 translated_text += event.get("delta", "")
+            # 入力音声の文字起こし。response.done 後に到着する場合があるため猶予する。
+            elif event_type == "conversation.item.input_audio_transcription.completed":
+                original_text = event.get("transcript", "").strip()
             # レスポンス完了
             elif event_type == "response.done":
                 done = True
-                break
+                done_at = asyncio.get_event_loop().time()
             # エラー
             elif event_type == "error":
                 error_msg = event.get("error", {}).get("message", "Unknown")
@@ -658,7 +681,7 @@ class GPTRealtimeProvider(AIProvider):
 
         if not done and not translated_text and not audio_chunks:
             raise TimeoutError("Realtime API 応答タイムアウト（response.done 未受信）")
-        return translated_text.strip(), audio_chunks
+        return original_text.strip(), translated_text.strip(), audio_chunks
 
     def _pcm16_to_wav(self, pcm_data: bytes, sample_rate: int = 24000) -> bytes:
         """PCM16データをWAV形式に変換"""
@@ -703,7 +726,7 @@ class GPTRealtimeProvider(AIProvider):
             client = await self._get_client()
 
             # 1. ASR
-            original_text = await self.transcribe_audio(audio_data, source_language)
+            original_text = await self._transcribe_fallback(audio_data, source_language)
             if not original_text:
                 return TranslationResult(
                     source_language=source_language,

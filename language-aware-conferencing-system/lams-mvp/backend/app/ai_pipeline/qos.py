@@ -14,6 +14,7 @@ import time
 from collections import Counter, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 
 from app.config import settings
@@ -36,11 +37,66 @@ _MAINLINE_TARGETS_MS: dict[str, float] = {
 # 数字・日付・金額の桁列を抽出する正規表現（区切り文字を含む連続桁、または単桁）。
 # 例: "2026-06-24" / "1,200" / "3.14" / "12:30" / "5" を 1 トークンとして抽出する。
 _NUMBER_RE = re.compile(r"\d[\d.,:/\-]*\d|\d")
+_NUMERIC_QUANTITY_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_QUANTITY_UNIT_RE = re.compile(
+    r"\s*(million yen|billion yen|thousand yen|万円|億円|パーセント|percent|"
+    r"million|billion|thousand|万|億|%)",
+    re.IGNORECASE,
+)
+_DATE_OR_TIME_SEPARATORS = ("-", ":", "/")
+
+_UNIT_MULTIPLIERS: dict[str, tuple[Decimal, str]] = {
+    "万": (Decimal("10000"), ""),
+    "万円": (Decimal("10000"), "yen"),
+    "億": (Decimal("100000000"), ""),
+    "億円": (Decimal("100000000"), "yen"),
+    "thousand": (Decimal("1000"), ""),
+    "thousand yen": (Decimal("1000"), "yen"),
+    "million": (Decimal("1000000"), ""),
+    "million yen": (Decimal("1000000"), "yen"),
+    "billion": (Decimal("1000000000"), ""),
+    "billion yen": (Decimal("1000000000"), "yen"),
+    "percent": (Decimal("1"), "%"),
+    "パーセント": (Decimal("1"), "%"),
+    "%": (Decimal("1"), "%"),
+}
 
 
 def extract_numbers(text: str) -> list[str]:
     """テキストから数字トークン（数値・日付・金額の桁列）を抽出する（純ロジック）。"""
     return [m.group(0) for m in _NUMBER_RE.finditer(text or "")]
+
+
+def _normalize_decimal(value: Decimal) -> str:
+    """Decimal を比較用の短い文字列表現へ正規化する。"""
+    normalized = value.normalize()
+    if normalized == normalized.to_integral():
+        return str(normalized.quantize(Decimal("1")))
+    return format(normalized, "f").rstrip("0").rstrip(".")
+
+
+def _normalized_number_tokens(text: str) -> list[str]:
+    """数字・日付・金額・割合を意味比較用トークンへ正規化する。"""
+    tokens: list[str] = []
+    for match in _NUMBER_RE.finditer(text or ""):
+        token = match.group(0)
+        if any(separator in token for separator in _DATE_OR_TIME_SEPARATORS):
+            tokens.append(token)
+            continue
+        numeric_match = _NUMERIC_QUANTITY_RE.fullmatch(token)
+        if numeric_match is None:
+            tokens.append(token)
+            continue
+        unit_match = _QUANTITY_UNIT_RE.match((text or "")[match.end() :])
+        unit = unit_match.group(1).lower() if unit_match else ""
+        multiplier, suffix = _UNIT_MULTIPLIERS.get(unit, (Decimal("1"), ""))
+        try:
+            value = Decimal(token.replace(",", "")) * multiplier
+        except InvalidOperation:
+            tokens.append(token)
+            continue
+        tokens.append(f"{_normalize_decimal(value)}{suffix}")
+    return tokens
 
 
 def number_retention(source: str, translation: str) -> float | None:
@@ -50,10 +106,10 @@ def number_retention(source: str, translation: str) -> float | None:
     照合し、保持された数字トークン数 / source の数字トークン数を返す。
     source に数字が無ければ評価対象外として None を返す。
     """
-    src = extract_numbers(source)
+    src = _normalized_number_tokens(source)
     if not src:
         return None
-    remaining = Counter(extract_numbers(translation))
+    remaining = Counter(_normalized_number_tokens(translation))
     kept = 0
     for token in src:
         if remaining[token] > 0:

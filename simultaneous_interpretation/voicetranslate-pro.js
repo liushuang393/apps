@@ -3452,6 +3452,8 @@ class VoiceTranslateApp {
                         // 音声が検出された場合のみ送信
                         if (vadResult.isSpeaking) {
                             this.sendAudioData(inputData);
+                        } else {
+                            this.recordAudioSendGate?.('skippedClientVad');
                         }
                     }
                 }
@@ -3526,6 +3528,8 @@ class VoiceTranslateApp {
                     // 音声が検出された場合のみ送信
                     if (vadResult.isSpeaking) {
                         this.sendAudioData(inputData);
+                    } else {
+                        this.recordAudioSendGate?.('skippedClientVad');
                     }
                 }
             };

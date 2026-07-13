@@ -134,15 +134,17 @@ profileId: ___________
 
 原文「你好请翻译」に訳「会議を始めます」が着地する FIFO 1行ずれ。
 
-### 根因と修正
+### 追記: 発話区切り（2026-07-12 夜・再改訂）
+
+公式 translation EP は `session.*_transcript.done` を定義しない（delta 連続ストリームのみ）。
+そのため「サーバ .done 待ち」は誤りで、全部1枠に見える原因だった。
 
 | 項目 | 内容 |
 |------|------|
-| output idle | dequeue 禁止（UI 再描画のみ） |
-| input idle | 無効化（行対はサーバ `.done` のみ） |
-| elapsed_ms | `resolveOutputSegmentId()` で時間距離最小の未完了行へ |
-| stale | 上限4、破棄せず `stream-final` で閉じてから外す |
-| Chat モデル | `gpt-5.6`（Realtime translate/whisper は維持） |
+| input idle (1.5s) | 行対（新枠）を確定。発話区切りの本線 |
+| output idle | 原文バッファ空なら stream-final+dequeue / 原文ストリーム中は再描画のみ |
+| 音声・翻訳API | 変更なし（表示レイヤのみ） |
+| .done ハンドラ | 互換のため残置（来れば idle と同じ経路） |
 
 ### 証拠
 

@@ -504,14 +504,21 @@ async def test_collect_response_happy_path():
     provider = _realtime_provider()
     ws = _FakeWs(
         [
-            {"type": "response.output_audio.delta",
-             "delta": base64.b64encode(b"\x01\x02").decode()},
+            {
+                "type": "response.output_audio.delta",
+                "delta": base64.b64encode(b"\x01\x02").decode(),
+            },
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": "こんにちは",
+            },
             {"type": "response.output_audio_transcript.delta", "delta": "Hel"},
             {"type": "response.output_audio_transcript.delta", "delta": "lo"},
             {"type": "response.done"},
         ]
     )
-    text, chunks = await provider._collect_response(ws, timeout=5.0)
+    original_text, text, chunks = await provider._collect_response(ws, timeout=5.0)
+    assert original_text == "こんにちは"
     assert text == "Hello"
     assert chunks == [b"\x01\x02"]
 
@@ -553,9 +560,7 @@ async def test_translate_audio_skips_asr_when_text_given(monkeypatch):
         return "hello"
 
     monkeypatch.setattr(provider, "transcribe_audio", fake_transcribe)
-    monkeypatch.setattr(
-        "app.translate.routes.translate_text_simple", fake_translate
-    )
+    monkeypatch.setattr("app.translate.routes.translate_text_simple", fake_translate)
 
     async def no_client():
         from types import SimpleNamespace

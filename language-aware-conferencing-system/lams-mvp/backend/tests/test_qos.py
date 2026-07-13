@@ -20,9 +20,7 @@ from app.ai_pipeline.qos import (
 def test_hearing_degraded_and_retry() -> None:
     """P95 超過で縮退し、クールダウン後に窓を捨てて再試行する（欠陥 #9）。"""
     now = {"t": 0.0}
-    monitor = HybridQoSMonitor(
-        window=10, retry_cooldown_s=60.0, clock=lambda: now["t"]
-    )
+    monitor = HybridQoSMonitor(window=10, retry_cooldown_s=60.0, clock=lambda: now["t"])
     assert monitor.hearing_degraded() is False  # 未計測は正常扱い
 
     for _ in range(10):
@@ -53,6 +51,17 @@ def test_number_retention_full_and_partial() -> None:
     )
     # source に 2 個（5, 5）、translation に 1 個 → 0.5
     assert number_retention("5 と 5", "only 5") == 0.5
+
+
+def test_number_retention_normalizes_money_units() -> None:
+    """日本語の万単位と英語の million 表現を同じ金額として扱う"""
+    assert (
+        number_retention(
+            "売上は300万円、増加率は12.5パーセント",
+            "Sales were 3 million yen, up 12.5 percent",
+        )
+        == 1.0
+    )
 
 
 def test_monitor_number_retention_accumulates_and_evaluates() -> None:

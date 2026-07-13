@@ -16,8 +16,11 @@
 const REALTIME_MIN_COMMIT_AUDIO_MS = 100;
 
 // 翻訳セッションの字幕確定ポリシー:
-// output のみ: デルタが途切れてから本時間(ms)で UI を再描画する（dequeue はしない）。
-// input の行対作成はサーバ .done のみ（idle で行対を増やすと FIFO 本数が崩れ1行ズレる）。
+// 公式 translation EP は transcript の .done を定義しない（delta の連続ストリームのみ）。
+// そのため発話区切りはクライアント idle で行う（音声/翻訳品質パスには触れない・表示のみ）。
+//   - input idle : 行対（新枠）を確定。これが「独立した1塊」の境界。
+//   - output idle: 原文バッファが空のときだけ stream-final+dequeue。
+//                  原文がまだ伸びている最中は再描画のみ（左右ズレ防止）。
 const TRANSLATION_CAPTION_IDLE_MS = 1500;
 
 // 訳文待ち FIFO の上限。超えた最古は破棄せず stream-final で閉じてから外す。
@@ -334,7 +337,7 @@ const WebSocketMixin = {
             //   response.* を発行しない。字幕は session.*_transcript.delta の連続ストリームで届き、
             //   item_id 等の左右対応キーは無い）:
             //   路径1(识别): session.input_transcript.delta → 左カラムへライブ表示、
-            //     入力確定（.done またはアイドル）で行対（segment）として確定する。
+            //     入力確定（idle＝公式 .done 不在の代替。互換で .done も受理）で行対を確定。
             //   路径2(声音实时翻译): session.output_transcript.delta → 右カラムへライブ表示、
             //     入力確定時に同じ行対の右セルへ吸収（never-empty＝不漏）。音声は session.output_audio。
             //   路径3(补精度): 入力確定文を Chat 高精度翻訳し、同じ行対の右セルを確定更新（准）。
@@ -344,9 +347,8 @@ const WebSocketMixin = {
             case 'session.output_transcript.delta':
                 this.handleTranslationTranscriptDelta('output', message.delta, message.elapsed_ms);
                 break;
-            // セグメント終端イベントで確定する（句末標点に依存しない正規の境界）。
-            // API のイベント名揺れに備えて .done / .completed の両方を受ける。
-            // output の .done 欠落時は idle で UI 再描画のみ（dequeue しない）。
+            // セグメント終端（互換）: 公式 translation EP は .done を定義しないが、
+            // 将来/非文書イベントが来ても idle と同じ確定経路へ通す。本境界は idle。
             case 'session.input_transcript.done':
             case 'session.input_transcript.completed':
                 this.commitTranslationCaption('input');
@@ -451,19 +453,55 @@ const WebSocketMixin = {
                 : { n: 0 };
         // console へは一切出力しない（ユーザー方針）。DevTools で app.dumpTranslationTrace() を
         // 実行すれば戻り値として表示される。直近のイベント列も recent に含めて返す。
+        const gate = this._audioSendGateStats || {};
+        const vadUiActive = !!this.elements?.vadEnabled?.classList?.contains('active');
         return {
             events: counts,
             inputDeltaCount: counts['session.input_transcript.delta'] || 0,
+            inputCommitCount: counts['input:commit'] || 0,
             leftRows:
                 this.getTranscriptContainer?.('input')?.querySelectorAll('.transcript-message')
                     .length ?? null,
             rightRows:
                 this.getTranscriptContainer?.('output')?.querySelectorAll('.transcript-message')
                     .length ?? null,
+            // Phase1 境界観測: 「認識が止まった」とき音声がサーバへ届いているかを切り分ける
+            audioPipeline: {
+                sent: gate.sent || 0,
+                skippedHalfDuplex: gate.skippedHalfDuplex || 0,
+                skippedClientVad: gate.skippedClientVad || 0,
+                skippedNotRecording: gate.skippedNotRecording || 0,
+                duplex: this.captureProfile?.duplex ?? null,
+                preferContinuousCapture: this.captureProfile?.preferContinuousCapture ?? null,
+                vadUiActive,
+                effectiveContinuous: vadUiActive || this.captureProfile?.preferContinuousCapture === true,
+                isPlayingAudio: !!this.state?.isPlayingAudio,
+                isRecording: !!this.state?.isRecording,
+                isConnected: !!this.state?.isConnected
+            },
             latencyStreamMs: stats(collect('streamDone')),
             latencyRefineMs: stats(collect('refined')),
             recent: trace.slice(-50)
         };
+    },
+
+    /**
+     * 音声送信ゲートの観測カウンタを加算する（ホットパス用・本文は保存しない）。
+     *
+     * @param {'sent'|'skippedHalfDuplex'|'skippedClientVad'|'skippedNotRecording'} key
+     */
+    recordAudioSendGate(key) {
+        if (!this._audioSendGateStats) {
+            this._audioSendGateStats = {
+                sent: 0,
+                skippedHalfDuplex: 0,
+                skippedClientVad: 0,
+                skippedNotRecording: 0
+            };
+        }
+        if (Object.prototype.hasOwnProperty.call(this._audioSendGateStats, key)) {
+            this._audioSendGateStats[key] += 1;
+        }
     },
 
     /**
@@ -501,17 +539,25 @@ const WebSocketMixin = {
     },
 
     /**
-     * 仮想声卡監視など「右列は路径3(Chat)のみ正本」モードか。
-     *
-     * @returns {boolean}
-     */
-    /**
      * 仮想声卡監視モードか（ハングル誤認ゲート等の監視専用分岐用）。
      *
      * @returns {boolean}
      */
     isVirtualCardMonitoring() {
         return this.captureProfile?.effectiveDevice === 'virtual-card';
+    },
+
+    /**
+     * 指定カラムの字幕 idle-flush タイマーを解除する。
+     *
+     * @param {'input'|'output'} kind
+     */
+    clearTranslationCaptionFlushTimer(kind) {
+        if (!this.captionFlushTimers?.[kind]) {
+            return;
+        }
+        clearTimeout(this.captionFlushTimers[kind]);
+        this.captionFlushTimers[kind] = null;
     },
 
     /**
@@ -531,12 +577,19 @@ const WebSocketMixin = {
             this.translationCaption = { input: '', output: '' };
         }
         this.translationCaption[kind] += delta;
-        // 禁則処理: 行頭(セグメント先頭)に句読点を置かない。サーバが句末句読点を次セグメントの
-        //   先頭 delta として送るため、放置すると「。」「、」始まりの確定行ができる。
-        this.translationCaption[kind] = this.translationCaption[kind].replace(
-            /^[\s、。，．,.!?！？;；:：]+/u,
-            ''
-        );
+        // 禁則処理: 行頭(セグメント先頭)に句読点を置かない。
+        // ただし stream-final 直後の同一行延長中は、文中の句読点デルタを落としてはいけない。
+        const extendingFinalizedOutput =
+            kind === 'output' &&
+            !!this._lastFinalizedOutputSegmentId &&
+            !(this._pendingOutputSegments && this._pendingOutputSegments.length) &&
+            !(this.translationCaption.input || '').trim();
+        if (!extendingFinalizedOutput) {
+            this.translationCaption[kind] = this.translationCaption[kind].replace(
+                /^[\s、。，．,.!?！？;；:：]+/u,
+                ''
+            );
+        }
         const buffered = this.translationCaption[kind];
         if (!buffered) {
             // 先頭句読点のみを除去して空になった場合は、空のライブ行を作らない。
@@ -558,30 +611,48 @@ const WebSocketMixin = {
         const releasedProtectedHead =
             kind === 'output' ? this.releaseProtectedPendingOutputHeads() : false;
         // ✅ 左右1:1: 訳文デルタは elapsed_ms が最も近い未完了行対へ描画。
-        //    欠落時は FIFO 先頭。キューが空の間のみライブ行。
+        //    欠落時は FIFO 先頭。キューが空の間は確定直後の延長、それ以外はライブ行。
         if (kind === 'output' && this._pendingOutputSegments?.length) {
             const targetId = this.resolveOutputSegmentId(elapsed);
             if (targetId && typeof this.upsertSegmentOutput === 'function') {
-                this.upsertSegmentOutput(targetId, buffered, {
-                    status: 'responding'
-                });
+                this.upsertSegmentOutput(targetId, buffered, { status: 'responding' });
             }
+        } else if (
+            kind === 'output' &&
+            this._lastFinalizedOutputSegmentId &&
+            !(this.translationCaption.input || '').trim()
+        ) {
+            // stream-final 直後の遅延尻尾: 同一行へ延長（孤児ライブ行・次行汚染を防ぐ）
+            const full = `${this._lastFinalizedOutputBase || ''}${buffered}`;
+            this.upsertSegmentOutput(this._lastFinalizedOutputSegmentId, full, {
+                status: 'stream-final'
+            });
+            this._lastFinalizedOutputBase = full;
+            // バッファを畳み込む（idle が孤児行化しないようにする）
+            this.translationCaption.output = '';
+            this.traceTranslation?.('output:late-extend', {
+                seg: this._lastFinalizedOutputSegmentId,
+                len: full.length
+            });
+        } else if (
+            kind === 'output' &&
+            releasedProtectedHead &&
+            !(this.translationCaption.input || '').trim()
+        ) {
+            // Chat確定済みの旧行に遅延ストリームが来たケース。ここで孤児行化すると
+            // 「新しい訳が下/別行に出る」ように見えるため、入力が始まるまでは描画しない。
+            this._dropNextProtectedOutput = true;
         } else {
-            if (
-                kind === 'output' &&
-                releasedProtectedHead &&
-                !(this.translationCaption.input || '').trim()
-            ) {
-                // Chat確定済みの旧行に遅延ストリームが来たケース。ここで孤児行化すると
-                // 「新しい訳が下/別行に出る」ように見えるため、入力が始まるまでは描画しない。
-                this._dropNextProtectedOutput = true;
-            } else {
-                this._dropNextProtectedOutput = false;
-                // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
-                this.renderLiveCaption(kind, buffered);
-            }
+            this._dropNextProtectedOutput = false;
+            // ✅ 増分レンダリング: 確定を待たず、到達デルタを即座にライブ行へ反映する。
+            this.renderLiveCaption(kind, buffered);
         }
-        // output のみ idle で UI 再描画（dequeue しない）。input 行対はサーバ .done のみ。
+        // 新発話の原文が始まったら、旧行への延長対象を捨てる
+        if (kind === 'input') {
+            this._lastFinalizedOutputSegmentId = null;
+            this._lastFinalizedOutputBase = '';
+        }
+        // input/output とも idle で境界処理（公式 EP は .done を出さない）
         this.scheduleTranslationCaptionFlush(kind);
     },
 
@@ -634,76 +705,75 @@ const WebSocketMixin = {
      * @param {'input'|'output'} kind
      * @param {Object} [options]
      * @param {boolean} [options.fromIdle]
+     * @param {boolean} [options.force] - session.closed 等の強制 flush（原文ストリーム中でも確定）
      * @param {number} [options.elapsedMs]
      */
     commitTranslationCaption(kind, options = {}) {
-        if (this.captionFlushTimers && this.captionFlushTimers[kind]) {
-            clearTimeout(this.captionFlushTimers[kind]);
-            this.captionFlushTimers[kind] = null;
-        }
+        this.clearTranslationCaptionFlushTimer(kind);
         if (!this.translationCaption) {
             return;
         }
 
-        // input の idle は行対を作らない（サーバ .done 待ち）。バッファは維持。
-        if (kind === 'input' && options.fromIdle) {
-            this.traceTranslation?.('input:idle-skip', {
-                len: (this.translationCaption.input || '').length
-            });
-            return;
-        }
-
         const text = (this.translationCaption[kind] || '').trim();
+        const fromIdle = !!options.fromIdle;
+        const outputElapsed = options.elapsedMs ?? this._lastOutputElapsedMs ?? null;
 
         if (kind === 'input') {
+            // idle / .done（互換）とも同じ確定経路。公式 EP に .done が無いため idle が本境界。
             this.translationCaption[kind] = '';
-            // ✅ ライブ表示中の暫定行を消し、確定行へ置き換える。
             this.clearLiveCaption(kind);
             if (!text) {
                 return;
             }
+            this.traceTranslation?.('input:commit', { len: text.length, idle: fromIdle });
             this.commitTranslationPair(text);
+            // 原文確定後に訳バッファが残っていれば、finalize 機会を保証する
+            if ((this.translationCaption?.output || '').trim()) {
+                this.scheduleTranslationCaptionFlush('output');
+            }
             return;
         }
 
-        // output idle: キュー先頭（または elapsed 最近傍）へ再描画のみ。dequeue 禁止。
-        if (options.fromIdle) {
-            const targetId = this.resolveOutputSegmentId(
-                options.elapsedMs ?? this._lastOutputElapsedMs ?? null
-            );
+        // output idle: 原文ストリーム中は再描画のみ＋タイマー再スケジュール。
+        // 互換 .done は従来どおり finalize（重畳ターンの FIFO を維持）。force は切断時。
+        const inputBusy = !!(this.translationCaption.input || '').trim();
+        if (fromIdle && !options.force && inputBusy) {
+            const targetId = this.resolveOutputSegmentId(outputElapsed);
             if (targetId && text && typeof this.upsertSegmentOutput === 'function') {
                 this.upsertSegmentOutput(targetId, text, { status: 'responding' });
-                this.traceTranslation?.('output:idle-refresh', {
+                this.traceTranslation?.('output:busy-refresh', {
                     seg: targetId,
                     len: text.length
                 });
             }
+            // refresh-only 後も idle を張り直し、原文空化後の finalize を保証する
+            this.scheduleTranslationCaptionFlush('output');
             return;
         }
+        if (fromIdle) {
+            this.traceTranslation?.('output:idle-finalize', { len: text.length });
+        }
 
-        // output のサーバ .done: バッファを消費して dequeue
+        // output 確定: バッファを消費して dequeue（idle 確定 or 互換 .done or force flush）
         this.translationCaption[kind] = '';
         this.releaseProtectedPendingOutputHeads();
         if (this._pendingOutputSegments?.length) {
             const targetId =
-                this.resolveOutputSegmentId(
-                    options.elapsedMs ?? this._lastOutputElapsedMs ?? null
-                ) || this._pendingOutputSegments[0];
+                this.resolveOutputSegmentId(outputElapsed) || this._pendingOutputSegments[0];
             const idx = this._pendingOutputSegments.indexOf(targetId);
-            if (idx >= 0) {
-                this._pendingOutputSegments.splice(idx, 1);
-            } else {
-                this._pendingOutputSegments.shift();
-            }
+            this._pendingOutputSegments.splice(idx >= 0 ? idx : 0, 1);
             this.clearLiveCaption(kind);
             this.traceTranslation?.('output:finalize', {
                 seg: targetId,
                 len: text.length,
-                idle: false
+                idle: fromIdle
             });
             if (text && typeof this.upsertSegmentOutput === 'function') {
                 this.upsertSegmentOutput(targetId, text, { status: 'stream-final' });
             }
+            // 確定直後の遅延尻尾を同一行へ延長できるよう記録する
+            this._lastFinalizedOutputSegmentId = targetId;
+            this._lastFinalizedOutputBase = text || '';
             return;
         }
         if (this._dropNextProtectedOutput && !this.translationCaption.input) {
@@ -739,9 +809,9 @@ const WebSocketMixin = {
      * 入力確定文を新しい行対（segment）として確定し、訳文確定待ちFIFOへ登録する。
      *
      * 翻訳エンドポイントの transcript ストリームには左右対応キー（item_id等）が無いため、
-     * 「一段一翻译」（サーバ .done = 境界、1入力セグメント↔1訳文）を FIFO の順序で対応付ける。
-     * 訳文側は handleTranslationTranscriptDelta がキュー先頭の右セルへ描画し、
-     * output の .done（commitTranslationCaption）が先頭を確定して次の行対へ進む。
+     * 「1入力セグメント↔1訳文」を FIFO の順序で対応付ける（境界は input idle／互換 .done）。
+     * 訳文側は handleTranslationTranscriptDelta が対象行対の右セルへ描画し、
+     * output の idle／互換 .done（commitTranslationCaption）が dequeue して次の行対へ進む。
      * 右列は Realtime output_transcript を正本とする（自動Chat後補正なし）。
      *
      * @param {string} inputText 確定した原文
@@ -887,24 +957,21 @@ const WebSocketMixin = {
     },
 
     /**
-     * デルタが TRANSLATION_CAPTION_IDLE_MS 途切れたら UI を再描画するタイマーを張り直す。
+     * デルタが TRANSLATION_CAPTION_IDLE_MS 途切れたら字幕境界処理するタイマーを張り直す。
      *
      * @description
-     * input はサーバ .done まで行対を作らない（idle スキップ）。
-     * output は idle で再描画のみ（dequeue 禁止）。
+     * 公式 translation EP は .done を出さないため、idle が発話区切りの本線。
+     *   - input: 行対（新枠）を確定
+     *   - output: 原文バッファ空なら finalize、そうでなければ再描画のみ
+     * setTimeout の張り直しのみで、音声送受信・翻訳API呼び出しには関与しない。
      *
      * @param {'input'|'output'} kind
      */
     scheduleTranslationCaptionFlush(kind) {
-        if (kind === 'input') {
-            return;
-        }
         if (!this.captionFlushTimers) {
             this.captionFlushTimers = { input: null, output: null };
         }
-        if (this.captionFlushTimers[kind]) {
-            clearTimeout(this.captionFlushTimers[kind]);
-        }
+        this.clearTranslationCaptionFlushTimer(kind);
         this.captionFlushTimers[kind] = setTimeout(() => {
             this.captionFlushTimers[kind] = null;
             this.traceTranslation?.('idle-flush', { kind });
@@ -922,7 +989,7 @@ const WebSocketMixin = {
         }
         // input を先に確定する（行対がFIFOへ載り、続く output 確定がその行対を埋める）。
         for (const kind of ['input', 'output']) {
-            this.commitTranslationCaption(kind);
+            this.commitTranslationCaption(kind, { force: true });
         }
         // ✅ 不漏: 入力確定が来ないまま保留された訳文（_heldOutputs 残余）を必ず排出する。
         //    ここで捨てると受信済みの翻訳が黙って消える（切断・session.closed 時の底線）。
@@ -945,18 +1012,21 @@ const WebSocketMixin = {
      * 新しいストリームの行対へ誤って紐づく（削除済みセグメントIDへの描画等）のを防ぐ。
      */
     resetTranslationStreamState() {
-        if (this.captionFlushTimers) {
-            for (const kind of ['input', 'output']) {
-                if (this.captionFlushTimers[kind]) {
-                    clearTimeout(this.captionFlushTimers[kind]);
-                    this.captionFlushTimers[kind] = null;
-                }
-            }
+        for (const kind of ['input', 'output']) {
+            this.clearTranslationCaptionFlushTimer(kind);
         }
         this.translationCaption = { input: '', output: '' };
         this._pendingOutputSegments = [];
         this._heldOutputs = [];
         this._dropNextProtectedOutput = false;
+        this._lastFinalizedOutputSegmentId = null;
+        this._lastFinalizedOutputBase = '';
+        this._audioSendGateStats = {
+            sent: 0,
+            skippedHalfDuplex: 0,
+            skippedClientVad: 0,
+            skippedNotRecording: 0
+        };
         this._inputElapsedStartMs = null;
         this._lastInputElapsedMs = null;
         this._lastOutputElapsedMs = null;
@@ -2131,6 +2201,7 @@ const WebSocketMixin = {
 
         // 録音状態チェック
         if (!this.state.isRecording && !force) {
+            this.recordAudioSendGate('skippedNotRecording');
             return false;
         }
 
@@ -2160,6 +2231,7 @@ const WebSocketMixin = {
         });
 
         if (shouldSkip && !force) {
+            this.recordAudioSendGate('skippedHalfDuplex');
             return false;
         }
 
@@ -2177,6 +2249,7 @@ const WebSocketMixin = {
         // 統計は同期で計上する（Path1 の「追記→同一ティック内 commit」があるため遅延不可）。
         // 送信失敗が判明したら取り消す（失敗フレームを「送信済み」に数えたままだと
         // commit 判定が実在しない音声を commit してしまう）。ホットパスのため await はしない。
+        this.recordAudioSendGate('sent');
         this.recordRealtimeInputAudioAppend(audioData);
         this.sendMessage(message).then((sent) => {
             if (!sent && this.realtimeInputAudioBufferStats) {
