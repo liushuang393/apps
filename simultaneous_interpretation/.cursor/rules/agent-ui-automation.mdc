@@ -5,12 +5,19 @@ alwaysApply: true
 
 # エージェント UI 自動検証
 
+## ローカル起動（人が使う既定）
+
+通常の Electron 起動はルートの **`start-local.bat`**（`build:electron` → `electron:run`）。
+「アプリを起動」「ローカルで動かして」はこれを使う。`agent:electron` は CDP 自動操作用であり、通常起動の代替ではない。
+
+## UI 自動検証（CDP）
+
 バグ調査・UI変更では、ユーザーに現象説明や手動クリックを求めない。
-先に `npm run agent:electron` / `agent:extension` / Playwright MCP で証拠を取る。
+自動操作が必要なときだけ `npm run agent:electron` / `agent:extension` / Playwright MCP で証拠を取る。
 
 | 対象 | コマンド | CDP |
 |------|----------|-----|
-| Electron | `npm run agent:electron` | `9222` |
+| Electron（自動操作） | `npm run agent:electron` | `9222` |
 | Chrome 拡張 | `npm run agent:extension` | `9223` |
 | HTML | Playwright で `file://` | — |
 

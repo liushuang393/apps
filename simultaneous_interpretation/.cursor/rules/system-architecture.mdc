@@ -29,7 +29,9 @@ alwaysApply: true
 - **メインプロセス**: [electron/main.ts](mdc:electron/main.ts)
 - **プリロード**: [electron/preload.ts](mdc:electron/preload.ts)
 - **レンダラー**: [teams-realtime-translator.html](mdc:teams-realtime-translator.html)
-- **起動**: `npm run electron:dev` または `npm run dev`
+- **起動（既定・推奨）**: ルートの `start-local.bat`（ダブルクリック可）
+- **起動（npm）**: `npm run electron:dev` / `npm run start` / `npm run electron:run`
+- **起動（エージェント CDP 自動操作用）**: `npm run agent:electron`（通常起動の代替ではない）
 - **用途**: デスクトップアプリとして実行、システム音声キャプチャが可能
 
 ### 3. ブラウザ拡張機能実行

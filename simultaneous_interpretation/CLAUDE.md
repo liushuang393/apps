@@ -107,8 +107,11 @@ npm run build:electron    # electron/** → dist/electron/**
 npm run build:all         # both
 
 # Run
+# 通常のローカル起動（推奨・Windows）: ルートの start-local.bat をダブルクリック
+#   → npm run build:electron → npm run electron:run
 npm run dev               # watch-build + launch Electron (NODE_ENV=development)
 npm run electron:dev      # build:electron then launch Electron
+npm run agent:electron    # CDP 9222 付き（エージェント自動操作用のみ。通常起動ではない）
 # HTML/JS version: just open teams-realtime-translator.html in a browser
 
 # Quality gate (must all pass — 0 errors)
