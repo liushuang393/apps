@@ -8,6 +8,7 @@ import type {
   SubtitleData,
   InterimSubtitleData,
   QosWarningData,
+  RoomMediaState,
 } from '../types';
 
 /** 接続状態タイプ */
@@ -36,6 +37,8 @@ interface RoomState {
   connectionError: string | null;
   /** QoS 警告履歴（最新数件） */
   qosWarnings: QosWarningData[];
+  /** 接続状態とは独立した翻訳メディア品質。 */
+  mediaState: RoomMediaState;
 
   // アクション
   setRoomState: (
@@ -61,6 +64,8 @@ interface RoomState {
   setConnectionStatus: (status: ConnectionStatus) => void;
   setConnectionError: (message: string | null) => void;
   addQosWarning: (warning: QosWarningData) => void;
+  clearQosWarnings: () => void;
+  setMediaState: (state: RoomMediaState) => void;
   reset: () => void;
 }
 
@@ -78,6 +83,7 @@ export const useRoomStore = create<RoomState>((set) => ({
   connectionStatus: 'disconnected',
   connectionError: null,
   qosWarnings: [],
+  mediaState: 'healthy',
 
   setRoomState: (roomId, roomName, policy, participants, myPreference) =>
     set({
@@ -90,6 +96,7 @@ export const useRoomStore = create<RoomState>((set) => ({
       connectionStatus: 'connected',
       connectionError: null,
       qosWarnings: [],
+      mediaState: 'healthy',
     }),
 
   addParticipant: (p) =>
@@ -178,6 +185,14 @@ export const useRoomStore = create<RoomState>((set) => ({
       // ★ストリーミング字幕を追加・更新
       // 同じIDの字幕があれば更新、なければ追加
       const newMap = new Map(state.interimSubtitles);
+      const current = newMap.get(subtitle.id);
+      if (
+        current?.revision !== undefined
+        && subtitle.revision !== undefined
+        && subtitle.revision <= current.revision
+      ) {
+        return state;
+      }
       if (subtitle.isFinal) {
         // 確定時は削除（通常のsubtitleとして追加される）
         newMap.delete(subtitle.id);
@@ -209,6 +224,10 @@ export const useRoomStore = create<RoomState>((set) => ({
       qosWarnings: [...state.qosWarnings, warning].slice(-5),
     })),
 
+  clearQosWarnings: () => set({ qosWarnings: [] }),
+
+  setMediaState: (mediaState) => set({ mediaState }),
+
   reset: () =>
     set({
       roomId: null,
@@ -224,5 +243,6 @@ export const useRoomStore = create<RoomState>((set) => ({
       connectionStatus: 'disconnected',
       connectionError: null,
       qosWarnings: [],
+      mediaState: 'healthy',
     }),
 }));

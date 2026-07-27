@@ -367,6 +367,16 @@ class Settings(BaseSettings):
     livekit_agent_name: str | None = None
     livekit_agent_autostart: bool = False
 
+    # 確定発話の取り込み制御。soft 超過では翻訳音声だけを縮退し、
+    # hard / max_age 超過時だけ観測付きで確定発話を破棄する。
+    ingress_soft_limit: int = 8
+    ingress_hard_limit: int = 64
+    ingress_max_age_ms: int = 30000
+
+    # Realtime 実行方式。既定は従来互換の発話単位接続。
+    realtime_runtime: Literal["per_utterance", "native_persistent"] = "per_utterance"
+    realtime_reconnect_max: int = 3
+
     def get_livekit_ws_url(self) -> str:
         """フロントへ返す LiveKit 接続 URL（公開 URL 優先、無ければ内部 URL）。"""
         return self.livekit_ws_url or self.livekit_url

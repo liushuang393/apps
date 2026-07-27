@@ -28,7 +28,10 @@ class _FakeSink:
         self.audio: list[tuple[str, bytes]] = []
         self.subtitles: list[tuple[str, dict]] = []
 
-    async def deliver_audio(self, user_id: str, audio: bytes) -> None:
+    async def deliver_audio(
+        self, user_id: str, audio: bytes, *, generation_id: int | None = None
+    ) -> None:
+        del generation_id
         self.audio.append((user_id, audio))
 
     async def deliver_subtitle(self, user_id: str, message: dict) -> None:
@@ -160,6 +163,59 @@ class _EventSink(_FakeSink):
 
     async def deliver_event(self, user_id: str, message: dict) -> None:
         self.events.append((user_id, message))
+
+
+class _InterimSink(_EventSink):
+    """暫定字幕対応の配信境界。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.interim: list[tuple[str, dict]] = []
+
+    async def deliver_interim(self, user_id: str, message: dict) -> None:
+        self.interim.append((user_id, message))
+
+
+@pytest.mark.asyncio
+async def test_mode_a_emits_revisioned_interim_before_final() -> None:
+    """Mode A の hearing text を interim 契約で配信し、final へ収束する。"""
+    orch, _ = _make_orchestrator()
+    sink = _InterimSink()
+
+    await orch.orchestrate(
+        audio_bytes=b"x",
+        source_language="ja",
+        original_text="text",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=sink,
+        mode="a",
+        room_id="room-1",
+        subtitle_id="utt-1",
+        seq=1,
+        speaker_id="spk",
+    )
+
+    assert sink.interim[0][1]["type"] == "subtitle_interim"
+    assert sink.interim[0][1]["revision"] == 1
+    assert sink.subtitles[0][1]["schema_version"] == 1
+
+
+def test_interim_revision_increases_for_same_utterance() -> None:
+    """同一発話・言語の暫定字幕 revision は単調増加する。"""
+    orch, _ = _make_orchestrator()
+    common = {
+        "subtitle_id": "utt-1",
+        "target_language": "en",
+        "seq": 1,
+        "room_id": "room-1",
+        "speaker_id": "spk",
+        "generation_id": 1,
+    }
+
+    first = orch._interim_message(text="hel", **common)
+    second = orch._interim_message(text="hello", **common)
+
+    assert (first["revision"], second["revision"]) == (1, 2)
 
 
 @pytest.mark.asyncio
@@ -385,7 +441,7 @@ async def test_hearing_receives_original_text():
         return "hello"
 
     class NullSink:
-        async def deliver_audio(self, user_id, audio):
+        async def deliver_audio(self, user_id, audio, *, generation_id=None):
             pass
 
         async def deliver_subtitle(self, user_id, message):
@@ -427,7 +483,10 @@ async def test_subtitle_not_blocked_by_slow_hearing():
         return "hello"
 
     class RecordingSink:
-        async def deliver_audio(self, _user_id, _audio):
+        async def deliver_audio(  # noqa: ARG002
+            self, _user_id, _audio, *, generation_id=None
+        ):
+            del generation_id
             times.setdefault("audio", time.perf_counter())
 
         async def deliver_subtitle(self, _user_id, _message):
@@ -472,7 +531,7 @@ async def test_degraded_monitor_suppresses_hearing():
         return "hello"
 
     class NullSink:
-        async def deliver_audio(self, _user_id, _audio):
+        async def deliver_audio(self, _user_id, _audio, *, generation_id=None):
             pass
 
         async def deliver_subtitle(self, _user_id, _message):

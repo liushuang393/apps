@@ -24,6 +24,9 @@ export type SupportedLanguage = AllLanguageCode;
 /** 音声モード: 原声 or 翻訳 */
 export type AudioMode = 'original' | 'translated';
 
+/** 会議メディアの品質状態（接続状態とは独立）。 */
+export type RoomMediaState = 'healthy' | 'degraded' | 'interrupted';
+
 /** ユーザーロール */
 export type UserRole = 'admin' | 'moderator' | 'user';
 
@@ -72,6 +75,8 @@ export interface Room {
 
 /** 字幕データ（クライアント側翻訳対応） */
 export interface SubtitleData {
+  /** DataChannel イベント契約の版 */
+  schemaVersion?: number;
   /** 字幕の一意識別子（重複排除用） */
   id?: string;
   /** シーケンス番号（順序保証用） */
@@ -108,6 +113,10 @@ export interface SubtitleData {
   modelId?: string | null;
   /** 話者分離ラベル（P4-A）。track 権威の speakerId を補う増強情報（未有効時 null） */
   speakerLabel?: string | null;
+  /** 発話識別子（イベント契約） */
+  utteranceId?: string;
+  /** barge-in 抑止に用いる音声世代 */
+  generationId?: number;
 }
 
 /** WebSocketメッセージ型 */
@@ -127,6 +136,7 @@ export type WSMessageType =
 
 /** ★暫定字幕データ（ストリーミングASR用） */
 export interface InterimSubtitleData {
+  schemaVersion?: number;
   /** 字幕の一意識別子 */
   id: string;
   /** 話者ID */
@@ -135,6 +145,8 @@ export interface InterimSubtitleData {
   text: string;
   /** 最終確定かどうか */
   isFinal: boolean;
+  /** 同一発話内で単調増加する更新番号 */
+  revision?: number;
 }
 
 /** QoS 警告イベント */

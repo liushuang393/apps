@@ -53,3 +53,51 @@
 - 設計・検証文書の更新
 - 追加機能のテスト整備
 **進捗状況**: 完了
+
+## ステージ6: 確定発話を保護する取り込み制御
+**目的**: 通常過負荷では確定発話を捨てず、翻訳音声を先に縮退させる。
+**成功条件**:
+- soft limit 内で final 欠落が発生しない
+- hard limit / max age の強制破棄が理由付きで観測できる
+- queue depth / age と degraded 状態を確認できる
+**タスク分解**:
+- SegmentIngress の追加
+- Agent キューと Mode Router 縮退の配線
+- degraded UI と回帰テストの追加
+**進捗状況**: 完了
+
+## ステージ7: Native 持続型 Realtime Runtime
+**目的**: Provider 接続を Runtime Port の背後に隠し、会議中の接続再利用を可能にする。
+**成功条件**:
+- 既定 per_utterance で後方互換を維持する
+- native_persistent で同一 session key の接続を再利用する
+- 再接続上限時に短命経路へ安全に切り戻す
+**タスク分解**:
+- RealtimeRuntimePort と RuntimeRegistry の追加
+- NativePersistentRuntime の追加
+- 接続再利用・再接続テストの追加
+**進捗状況**: 完了
+
+## ステージ8: 世代管理とイベント契約
+**目的**: 旧翻訳音声の再生を防ぎ、字幕イベントを版管理する。
+**成功条件**:
+- 新発話で旧 generation が無効化される
+- schema_version 付きイベントを後方互換で処理できる
+- interim revision を更新し final で削除できる
+**タスク分解**:
+- GenerationTracker と Publisher gate の追加
+- 共通イベント envelope の追加
+- interim 字幕のバックエンド送信とフロント更新
+**進捗状況**: 完了
+
+## ステージ9: WebRTC・AI 統合 QoE
+**目的**: Media / AI / Queue の品質から翻訳音声を自動縮退・回復する。
+**成功条件**:
+- ブラウザ RTCStats を本文・秘密情報なしで収集できる
+- packet loss 5% 超で字幕優先へ縮退する
+- ヒステリシスとクールダウン後に自動回復する
+**タスク分解**:
+- QoEStateMachine の追加
+- LiveKit DataChannel による Stats 集約
+- degraded / interrupted / recovered の UI 配線
+**進捗状況**: 完了

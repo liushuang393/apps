@@ -21,6 +21,7 @@ import type {
   AudioMode,
   ParticipantPreference,
   QosWarningData,
+  RoomMediaState,
   RoomPolicy,
   SubtitleData,
   SupportedLanguage,
@@ -34,6 +35,12 @@ const ATTR_SUBTITLE = 'subtitle_enabled';
 /** data channel トピック（backend sink と一致させる） */
 const TOPIC_SUBTITLE = 'subtitle';
 const TOPIC_EVENT = 'qos';
+const TOPIC_QOE_STATS = 'qoe_stats';
+const EVENT_SCHEMA_VERSION = 1;
+const QOE_STATS_INTERVAL_MS = 2000;
+const PACKET_LOSS_DEGRADE_RATIO = 0.05;
+const PACKET_LOSS_RECOVER_RATIO = 0.03;
+const QOE_RECOVERY_COOLDOWN_MS = 5000;
 /** 翻訳音声トラック名接頭辞（backend publisher と一致させる） */
 const TRACK_NAME_PREFIX = 'translation-';
 /** サーバ参加者（Agent）の identity 接頭辞（参加者一覧から除外する） */
@@ -59,6 +66,81 @@ interface AudioEntry {
   lang?: string;
   /** 翻訳音声の元話者 identity（自分由来のエコー抑止に使う） */
   speakerId?: string;
+  statsTrack: StatsCapableTrack;
+}
+
+type StatsCapableTrack = RemoteTrack & {
+  getRTCStatsReport?: () => Promise<RTCStatsReport | undefined>;
+};
+
+interface InboundAudioStats {
+  type?: string;
+  kind?: string;
+  packetsLost?: number;
+  packetsReceived?: number;
+  jitter?: number;
+  concealedSamples?: number;
+  roundTripTime?: number;
+}
+
+interface QoeStats {
+  packet_loss_ratio: number | null;
+  jitter_s: number | null;
+  round_trip_time_s: number | null;
+  concealed_samples: number;
+}
+
+/** 購読音声の RTCStats を本文なしの集約値へ変換する。 */
+async function collectQoeStats(entries: Map<string, AudioEntry>): Promise<QoeStats> {
+  let packetsLost = 0;
+  let packetsReceived = 0;
+  let jitter = 0;
+  let concealedSamples = 0;
+  let roundTripTime = 0;
+  let samples = 0;
+  for (const entry of entries.values()) {
+    const report = await entry.statsTrack.getRTCStatsReport?.();
+    report?.forEach((raw) => {
+      const stat = raw as InboundAudioStats;
+      if (stat.type !== 'inbound-rtp' || stat.kind !== 'audio') return;
+      packetsLost += stat.packetsLost ?? 0;
+      packetsReceived += stat.packetsReceived ?? 0;
+      jitter += stat.jitter ?? 0;
+      concealedSamples += stat.concealedSamples ?? 0;
+      roundTripTime += stat.roundTripTime ?? 0;
+      samples += 1;
+    });
+  }
+  const totalPackets = packetsLost + packetsReceived;
+  return {
+    packet_loss_ratio: totalPackets > 0 ? packetsLost / totalPackets : null,
+    jitter_s: samples > 0 ? jitter / samples : null,
+    round_trip_time_s: samples > 0 ? roundTripTime / samples : null,
+    concealed_samples: concealedSamples,
+  };
+}
+
+/** 未指定の旧契約を許容し、既知の版だけを処理する。 */
+function hasSupportedSchema(message: Record<string, unknown>): boolean {
+  const version = message.schema_version;
+  return typeof version !== 'number' || version === EVENT_SCHEMA_VERSION;
+}
+
+/** QoE イベントを接続状態とは独立したメディア状態へ変換する。 */
+function mediaStateForEvent(
+  message: Record<string, unknown>,
+  warning: QosWarningData
+): RoomMediaState | null {
+  if (warning.shouldFallbackToSubtitle || message.type === 'overload_degraded') {
+    return 'degraded';
+  }
+  if (message.type === 'qoe_recovered') {
+    return 'healthy';
+  }
+  if (message.type === 'translation_interrupted') {
+    return 'interrupted';
+  }
+  return null;
 }
 
 /** setSinkId 非対応ブラウザ向けに optional 化したメディア要素型 */
@@ -91,6 +173,7 @@ function prefFromAttributes(
 /** data channel の字幕メッセージ（snake_case）を SubtitleData へ変換 */
 function toSubtitle(msg: Record<string, unknown>): SubtitleData {
   return {
+    schemaVersion: msg.schema_version as number | undefined,
     id: msg.id as string | undefined,
     seq: msg.seq as number | undefined,
     speakerId: msg.speaker_id as string,
@@ -107,6 +190,8 @@ function toSubtitle(msg: Record<string, unknown>): SubtitleData {
     degraded: Boolean(msg.degraded),
     modelId: (msg.model_id as string | null | undefined) ?? null,
     speakerLabel: (msg.speaker_label as string | null | undefined) ?? null,
+    utteranceId: msg.utterance_id as string | undefined,
+    generationId: msg.generation_id as number | undefined,
   };
 }
 
@@ -184,6 +269,8 @@ export function useLiveKit(roomId: string | null) {
     addInterimSubtitle,
     removeInterimSubtitle,
     addQosWarning,
+    clearQosWarnings,
+    setMediaState,
     setConnectionStatus,
     setConnectionError,
     reset,
@@ -194,6 +281,8 @@ export function useLiveKit(roomId: string | null) {
   /** trackSid -> 購読中音声エントリ（原声 / 翻訳音声） */
   const audioEntriesRef = useRef<Map<string, AudioEntry>>(new Map());
   const outputDeviceIdRef = useRef<string | null>(null);
+  const mediaDegradedRef = useRef(false);
+  const recoverySinceRef = useRef<number | null>(null);
 
   const applyOutputDevice = useCallback(async (entry: AudioEntry, deviceId: string | null) => {
     if (!deviceId) return true;
@@ -215,6 +304,7 @@ export function useLiveKit(roomId: string | null) {
     audioEntriesRef.current.forEach((entry) => {
       entry.el.muted = entry.isTranslation
         ? !(
+            !mediaDegradedRef.current &&
             pref?.audioMode === 'translated' &&
             entry.lang === pref.targetLanguage &&
             entry.speakerId !== myId // 自分の発話の翻訳は再生しない（エコー抑止）
@@ -279,6 +369,7 @@ export function useLiveKit(roomId: string | null) {
   useEffect(() => {
     if (!roomId || !token || !user) return;
     let cancelled = false;
+    let statsTimer: ReturnType<typeof setInterval> | undefined;
     const room = new Room();
     roomRef.current = room;
     // cleanup 時点での ref 変化を避けるため、effect 内でローカルに束縛する
@@ -322,7 +413,13 @@ export function useLiveKit(roomId: string | null) {
             lang = sep === -1 ? rest : rest.slice(0, sep);
             speakerId = sep === -1 ? undefined : rest.slice(sep + 1);
           }
-          const entry = { el: track.attach(), isTranslation, lang, speakerId };
+          const entry: AudioEntry = {
+            el: track.attach(),
+            isTranslation,
+            lang,
+            speakerId,
+            statsTrack: track as StatsCapableTrack,
+          };
           audioEntriesRef.current.set(pub.trackSid, entry);
           void applyOutputDevice(entry, outputDeviceIdRef.current).catch(() => {
             setConnectionError('スピーカー出力先の適用に失敗しました。');
@@ -340,13 +437,18 @@ export function useLiveKit(roomId: string | null) {
       .on(RoomEvent.DataReceived, (payload, _p, _kind, topic) => {
         try {
           const msg = JSON.parse(new TextDecoder().decode(payload)) as Record<string, unknown>;
+          if (!hasSupportedSchema(msg)) {
+            return;
+          }
           if (topic === TOPIC_SUBTITLE) {
             if (msg.type === 'subtitle_interim') {
               addInterimSubtitle({
+                schemaVersion: msg.schema_version as number | undefined,
                 id: String(msg.id ?? ''),
                 speakerId: String(msg.speaker_id ?? ''),
                 text: String(msg.text ?? msg.original_text ?? ''),
                 isFinal: Boolean(msg.is_final),
+                revision: typeof msg.revision === 'number' ? msg.revision : undefined,
               });
               return;
             }
@@ -357,7 +459,16 @@ export function useLiveKit(roomId: string | null) {
             return;
           }
           if (topic === TOPIC_EVENT) {
-            addQosWarning(toQosWarning(msg));
+            const warning = toQosWarning(msg);
+            const nextMediaState = mediaStateForEvent(msg, warning);
+            if (msg.type === 'qoe_recovered') {
+              clearQosWarnings();
+            } else if (msg.type !== 'translation_interrupted') {
+              addQosWarning(warning);
+            }
+            if (nextMediaState !== null) {
+              setMediaState(nextMediaState);
+            }
           }
         } catch {
           // 不正な payload は無視する
@@ -410,6 +521,43 @@ export function useLiveKit(roomId: string | null) {
           }
         });
         setRoomState(info.id, info.name, policy, participants, myPref);
+        statsTimer = setInterval(() => {
+          void collectQoeStats(audioEntriesRef.current)
+            .then(async (stats) => {
+              const loss = stats.packet_loss_ratio;
+              if (loss !== null && loss > PACKET_LOSS_DEGRADE_RATIO) {
+                mediaDegradedRef.current = true;
+                recoverySinceRef.current = null;
+                audioEntriesRef.current.forEach((entry) => {
+                  if (entry.isTranslation) entry.el.muted = true;
+                });
+                setMediaState('degraded');
+              } else if (
+                mediaDegradedRef.current
+                && loss !== null
+                && loss < PACKET_LOSS_RECOVER_RATIO
+              ) {
+                const now = Date.now();
+                recoverySinceRef.current ??= now;
+                if (now - recoverySinceRef.current >= QOE_RECOVERY_COOLDOWN_MS) {
+                  mediaDegradedRef.current = false;
+                  recoverySinceRef.current = null;
+                  applyAudioRouting();
+                  setMediaState('healthy');
+                  clearQosWarnings();
+                }
+              } else if (loss === null || loss >= PACKET_LOSS_RECOVER_RATIO) {
+                recoverySinceRef.current = null;
+              }
+              await room.localParticipant.publishData(
+                new TextEncoder().encode(JSON.stringify(stats)),
+                { reliable: false, topic: TOPIC_QOE_STATS }
+              );
+            })
+            .catch(() => {
+              // Stats 収集失敗は会議接続へ影響させない
+            });
+        }, QOE_STATS_INTERVAL_MS);
         void room.startAudio().catch(() => {
           setConnectionError('ブラウザの自動再生制限により音声再生を開始できませんでした。画面を操作して再試行してください。');
         });
@@ -437,6 +585,7 @@ export function useLiveKit(roomId: string | null) {
 
     return () => {
       cancelled = true;
+      if (statsTimer !== undefined) clearInterval(statsTimer);
       audioEntries.forEach((entry) => {
         entry.el.pause();
         entry.el.remove();

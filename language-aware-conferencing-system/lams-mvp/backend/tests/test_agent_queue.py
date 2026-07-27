@@ -1,10 +1,12 @@
 """LiveKitAgent のセグメントキュー（欠陥 #11: head-of-line blocking 解消）のテスト。"""
+
 import asyncio
 import types
 
 import pytest
 
 from app.webrtc.agent import LiveKitAgent
+from app.webrtc.ingress import SegmentIngress
 from app.webrtc.segmenter import SegmentEvent
 
 
@@ -67,23 +69,41 @@ async def test_partial_routes_to_handle_partial(monkeypatch):
 @pytest.mark.asyncio
 async def test_enqueue_drops_oldest_when_full():
     agent = _agent()
+    agent._ingress = SegmentIngress(soft_limit=1, hard_limit=2)
     queue: asyncio.Queue = asyncio.Queue(maxsize=2)
     agent._enqueue_segment("sp", queue, _final(b"1"))
     agent._enqueue_segment("sp", queue, _final(b"2"))
     agent._enqueue_segment("sp", queue, _final(b"3"))  # 満杯 → 最古 b"1" を破棄
-    items = [queue.get_nowait().pcm, queue.get_nowait().pcm]
+    items = [queue.get_nowait().event.pcm, queue.get_nowait().event.pcm]
     assert items == [b"2", b"3"]
+    assert agent._ingress.snapshot().final_dropped == 1
+
+
+@pytest.mark.asyncio
+async def test_enqueue_keeps_all_segments_at_soft_limit():
+    """soft_limit 超過でも hard 未満なら確定発話を破棄せず縮退のみにする。"""
+    agent = _agent()
+    agent._ingress = SegmentIngress(soft_limit=2, hard_limit=4)
+    queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+    agent._enqueue_segment("sp", queue, _final(b"1"))
+    agent._enqueue_segment("sp", queue, _final(b"2"))
+    agent._enqueue_segment("sp", queue, _final(b"3"))
+    items = [queue.get_nowait().event.pcm for _ in range(3)]
+    assert items == [b"1", b"2", b"3"]
+    assert agent._speaker_overloaded.get("sp") is True
+    assert agent._ingress.snapshot().final_dropped == 0
 
 
 @pytest.mark.asyncio
 async def test_enqueue_full_drops_partial_keeps_finals():
     """満杯時、partial は破棄され既存 final は退避されない（final 漏れ防止）。"""
     agent = _agent()
+    agent._ingress = SegmentIngress(soft_limit=1, hard_limit=2)
     queue: asyncio.Queue = asyncio.Queue(maxsize=2)
     agent._enqueue_segment("sp", queue, _final(b"1"))
     agent._enqueue_segment("sp", queue, _final(b"2"))
     agent._enqueue_segment("sp", queue, _partial(b"p"))  # 満杯 → partial は捨てる
-    items = [queue.get_nowait().pcm, queue.get_nowait().pcm]
+    items = [queue.get_nowait().event.pcm, queue.get_nowait().event.pcm]
     assert items == [b"1", b"2"]  # final は温存される
 
 
@@ -189,3 +209,32 @@ async def test_leave_clears_partial_revision(monkeypatch):
     await agent._handle_participant_leave("u1")
     assert "u1" not in agent._partial_rev
     assert agent._partial_rev.get("u2") == 2  # 他話者は保持
+
+
+@pytest.mark.asyncio
+async def test_leave_clears_qoe_and_releases_runtime(monkeypatch):
+    """退室で QoE/過負荷状態を掃除し、Runtime 解放を呼ぶ。"""
+    from app.ai_pipeline.qoe import QoEStateMachine
+
+    agent = _agent()
+    agent._qoe_by_speaker["u1"] = QoEStateMachine()
+    agent._speaker_overloaded["u1"] = True
+    agent._ingresses["u1"] = agent._ingress
+    released: list[tuple[str, str]] = []
+
+    async def fake_release(room_id: str, speaker_id: str) -> None:
+        released.append((room_id, speaker_id))
+
+    async def fake_remove(room_id: str, pid: str) -> int:  # noqa: ARG001
+        return 1
+
+    monkeypatch.setattr(agent._processor, "release_speaker", fake_release)
+    monkeypatch.setattr("app.webrtc.agent.room_manager.remove_participant", fake_remove)
+
+    await agent._handle_participant_leave("u1")
+    assert "u1" not in agent._qoe_by_speaker
+    assert "u1" not in agent._speaker_overloaded
+    assert "u1" not in agent._ingresses
+    assert released == [("room-t", "u1")]
+    # 共有 Ingress を使っていた場合はクリーンな新インスタンスへ戻る
+    assert agent._ingress.snapshot().final_dropped == 0

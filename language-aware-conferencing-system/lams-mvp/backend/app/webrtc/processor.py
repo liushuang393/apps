@@ -23,6 +23,7 @@ from app.ai_pipeline.orchestrator import (
     OutputSink,
 )
 from app.ai_pipeline.qos import HybridQoSMonitor
+from app.ai_pipeline.runtime.generation import GenerationTracker
 from app.audio.archive import AudioArchive, compute_audio_hash
 from app.audio.pcm import wrap_wav16
 from app.audio.speaker_embedding import SpeakerEmbedder
@@ -109,6 +110,8 @@ class SegmentProcessor:
         self._enrollment_loader = enrollment_loader
         # consent 済み登録話者のキャッシュ（会議設定データ。初回照会でロード）。
         self._enrollments: list[Enrollment] | None = None
+        # 話者ごとの generation 管理（barge-in / 旧音声抑止）
+        self._generation_trackers: dict[str, GenerationTracker] = {}
 
     def forget_room(self, room_id: str) -> None:
         """room 終了時に採番・重複排除・話者クラスタの状態を破棄する（状態リーク防止）。"""
@@ -198,6 +201,29 @@ class SegmentProcessor:
             trace_id=f"{room_id}:{speaker_id}:{revision}",
         )
 
+    def _tracker_for(self, speaker_id: str) -> GenerationTracker:
+        """話者に対応する世代管理を返す。"""
+        return self._generation_trackers.setdefault(speaker_id, GenerationTracker())
+
+    def interrupt_speaker(self, room_id: str, speaker_id: str) -> int:
+        """新しい確定発話の到着時に旧 hearing 世代だけを無効化する。"""
+        tracker = self._tracker_for(speaker_id)
+        old_generation = tracker.current
+        new_generation = tracker.begin()
+        if old_generation > 0:
+            self._orchestrator.interrupt_speaker(room_id, speaker_id, old_generation)
+        return new_generation
+
+    async def release_speaker(self, room_id: str, speaker_id: str) -> None:
+        """退室話者の世代状態と持続 Runtime を解放する。"""
+        self._generation_trackers.pop(speaker_id, None)
+        await self._orchestrator.release_speaker(room_id, speaker_id)
+
+    async def release_room(self, room_id: str) -> None:
+        """会議終了時に全世代状態と持続 Runtime を解放する。"""
+        self._generation_trackers.clear()
+        await self._orchestrator.release_room(room_id)
+
     @staticmethod
     def _is_provider_error_text(text: str) -> bool:
         """ASR 失敗を示す疑似テキストを通常字幕として流さない。"""
@@ -230,6 +256,9 @@ class SegmentProcessor:
         participants: dict[str, ParticipantPreference],
         sink_factory: SinkFactory,
         config: MeetingConfig,
+        hearing_available: bool = True,
+        qoe_state: str = "healthy",
+        qoe_changed: bool = False,
     ) -> OrchestrationResult | None:
         """1 発話セグメントを収束させる（配信は sink、記録は DB へ）。
 
@@ -302,6 +331,11 @@ class SegmentProcessor:
                 seq=seq,
                 speaker_id=speaker_id,
                 speaker_label=speaker_label,
+                hearing_available=hearing_available,
+                qoe_state=qoe_state,
+                qoe_changed=qoe_changed,
+                room_id=room_id,
+                generation_tracker=self._tracker_for(speaker_id),
             )
         finally:
             reset_ab_context(ab_token)

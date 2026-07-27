@@ -11,11 +11,32 @@ import { useRoomStore } from '../store/roomStore';
 import { PreferencePanel } from '../components/PreferencePanel';
 import { SubtitleDisplay } from '../components/SubtitleDisplay';
 import { ParticipantList } from '../components/ParticipantList';
+import type { RoomMediaState } from '../types';
+
+function qualityWarningMessage(
+  mediaState: RoomMediaState,
+  shouldFallbackToSubtitle: boolean
+): string {
+  if (mediaState === 'interrupted') {
+    return '新しい発話を検出したため、前の翻訳音声を停止しました。';
+  }
+  if (mediaState === 'degraded' || shouldFallbackToSubtitle) {
+    return '翻訳音声の品質が低下しています。字幕を優先して利用してください。';
+  }
+  return '字幕品質に関する警告が発生しています。';
+}
 
 export function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
-  const { connectionStatus, connectionError, qosWarnings, roomName, policy } = useRoomStore();
+  const {
+    connectionStatus,
+    connectionError,
+    qosWarnings,
+    mediaState,
+    roomName,
+    policy,
+  } = useRoomStore();
   const {
     sendPreferenceChange,
     disconnect,
@@ -176,11 +197,12 @@ export function RoomPage() {
           {connectionError}
         </div>
       )}
-      {qosWarnings.length > 0 && (
+      {(qosWarnings.length > 0 || mediaState !== 'healthy') && (
         <div className="warning" role="status">
-          {qosWarnings[qosWarnings.length - 1].shouldFallbackToSubtitle
-            ? '翻訳音声の品質が低下しています。字幕を優先して利用してください。'
-            : '字幕品質に関する警告が発生しています。'}
+          {qualityWarningMessage(
+            mediaState,
+            Boolean(qosWarnings[qosWarnings.length - 1]?.shouldFallbackToSubtitle)
+          )}
         </div>
       )}
       {!audioOutputSelectionSupported && (
