@@ -87,8 +87,12 @@ async def test_endpoint_success(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_get_or_create_session(_room_id: str) -> str:
         return "sess-active"
 
-    monkeypatch.setattr(room_routes, "get_or_create_session", fake_get_or_create_session)
-    monkeypatch.setattr(room_routes.agent_supervisor, "ensure_running", lambda _room_id: None)
+    monkeypatch.setattr(
+        room_routes, "get_or_create_session", fake_get_or_create_session
+    )
+    monkeypatch.setattr(
+        room_routes.agent_supervisor, "ensure_running", lambda _room_id: None
+    )
 
     db = _FakeSession([_room(is_private=False)])
     res = await issue_livekit_token("room1", user=_user("owner"), db=db)

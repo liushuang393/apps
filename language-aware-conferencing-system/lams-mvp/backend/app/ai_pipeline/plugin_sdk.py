@@ -151,9 +151,7 @@ def register_plugin(
     if not name:
         raise PluginError("プラグイン name は必須です")
     if stage not in _VALID_STAGES:
-        raise PluginError(
-            f"未知の stage: {stage!r}（許可={sorted(_VALID_STAGES)}）"
-        )
+        raise PluginError(f"未知の stage: {stage!r}（許可={sorted(_VALID_STAGES)}）")
     if not callable(factory):
         raise PluginError("factory は呼び出し可能である必要があります")
     if name in registry.names(stage) and not allow_override:

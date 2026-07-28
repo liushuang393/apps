@@ -21,7 +21,9 @@ async def test_translate_audio_uses_shared_quality_mt_path():
 
     # TTS 用クライアントをモック（audio.speech.create が音声バイトを返す）
     mock_client = MagicMock()
-    mock_client.audio.speech.create = AsyncMock(return_value=MagicMock(content=b"WAVDATA"))
+    mock_client.audio.speech.create = AsyncMock(
+        return_value=MagicMock(content=b"WAVDATA")
+    )
     provider._get_client = AsyncMock(return_value=mock_client)
 
     # 共通MT経路をスパイ（用語集/文脈/補正を内包する関数）

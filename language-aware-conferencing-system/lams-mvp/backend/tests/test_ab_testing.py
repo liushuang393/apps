@@ -127,9 +127,7 @@ def test_resolve_unit_id_by_unit() -> None:
         == "u"
     )
     assert (
-        resolve_unit_id(
-            _exp(unit="session"), room_id="r", user_id="u", session_id="s"
-        )
+        resolve_unit_id(_exp(unit="session"), room_id="r", user_id="u", session_id="s")
         == "s"
     )
 

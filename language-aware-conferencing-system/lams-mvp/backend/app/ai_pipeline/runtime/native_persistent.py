@@ -24,7 +24,10 @@ from app.ai_pipeline.runtime.generation import GenerationTracker
 from app.ai_pipeline.runtime.per_utterance import PerUtteranceRuntime
 from app.ai_pipeline.runtime.types import (
     RuntimeEvent,
+    RuntimeEventType,
     SessionContext,
+    TurnInput,
+    TurnResult,
     interrupted_turn_events,
     make_session_key,
 )
@@ -82,11 +85,10 @@ class NativePersistentRuntime:
         self._fallback_mode = False
         self._connect_count = 0
         self._original_text: str | None = None
-        self._closed = False
 
     @property
     def generation_tracker(self) -> GenerationTracker:
-        """世代管理。"""
+        """世代管理（移行中の共有用。Port 公開面は is_generation_active）。"""
         return self._tracker
 
     @property
@@ -104,19 +106,36 @@ class NativePersistentRuntime:
         self._original_text = text
 
     async def open_session(self, context: SessionContext) -> None:
-        """セッションを開き、必要なら Provider 接続を確立する。"""
+        """セッションを開き、必要なら Provider 接続を確立する（冪等）。"""
         make_session_key(context)
         self._context = context
         self._buffer.clear()
         self._pending_events.clear()
-        self._closed = False
         if self._fallback_mode:
             await self._ensure_fallback().open_session(context)
             return
         await self._ensure_connected()
 
+    async def run_turn(self, turn: TurnInput) -> TurnResult:
+        """
+        一発話 turn を原子的に実行する。
+
+        Args:
+            turn: 発話 ID・音声・原文・任意の外部 generation_id
+        Returns:
+            generation_id と終端付きイベント列
+        """
+        self.set_original_text(turn.original_text)
+        if turn.audio:
+            await self.append_audio(turn.audio)
+        generation_id = await self.commit_turn(
+            turn.utterance_id, generation_id=turn.generation_id
+        )
+        events = tuple([event async for event in self.events()])
+        return TurnResult(generation_id=generation_id, events=events)
+
     async def append_audio(self, pcm: bytes) -> None:
-        """発話セグメント音声をバッファへ追加する。"""
+        """発話セグメント音声をバッファへ追加する（実装内部用）。"""
         if self._fallback_mode:
             await self._ensure_fallback().append_audio(pcm)
             return
@@ -153,25 +172,9 @@ class NativePersistentRuntime:
             self._reconnect_failures = 0
         except Exception as e:  # noqa: BLE001
             logger.warning("[NativePersistent] ターン失敗: %s", e)
-            recovered = await self._reconnect_or_fallback(
+            return await self._reconnect_or_fallback(
                 utterance_id, audio, e, generation_id=generation_id
             )
-            if recovered is not None:
-                return recovered
-            self._pending_events = [
-                RuntimeEvent(
-                    type="runtime_degraded",
-                    generation_id=generation_id,
-                    utterance_id=utterance_id,
-                    payload={"reason": str(e)},
-                ),
-                RuntimeEvent(
-                    type="turn_done",
-                    generation_id=generation_id,
-                    utterance_id=utterance_id,
-                ),
-            ]
-            return generation_id
 
         if not self._tracker.should_capture(generation_id):
             self._pending_events = interrupted_turn_events(generation_id, utterance_id)
@@ -199,15 +202,22 @@ class NativePersistentRuntime:
         except RuntimeError:
             return
 
+    def is_generation_active(self, generation_id: int) -> bool:
+        """世代が現行かつ未キャンセルか。"""
+        return self._tracker.is_active(generation_id)
+
+    def should_capture(self, generation_id: int) -> bool:
+        """当該世代の音声を capture してよいか。"""
+        return self._tracker.should_capture(generation_id)
+
     async def events(self) -> AsyncIterator[RuntimeEvent]:
-        """直近 commit_turn のイベントを返す。"""
+        """直近 commit_turn のイベントを返す（実装内部用）。"""
         for event in self._pending_events:
             yield event
         self._pending_events = []
 
     async def close_session(self) -> None:
-        """接続とバッファを解放する。"""
-        self._closed = True
+        """接続とバッファを解放する（冪等）。"""
         self._buffer.clear()
         self._pending_events.clear()
         if self._fallback is not None:
@@ -249,61 +259,61 @@ class NativePersistentRuntime:
         error: Exception,
         *,
         generation_id: int | None = None,
-    ) -> int | None:
+    ) -> int:
         """
         再接続を試し、上限超過なら per_utterance 相当へ切り戻す。
 
         Returns:
-            フォールバックで完了した generation_id。再接続継続不能で未完了なら None。
+            再接続またはフォールバックで完了した generation_id。
         """
-        await self._close_ws()
-        self._reconnect_failures += 1
         if generation_id is None:
             generation_id = self._tracker.current
 
-        degraded = RuntimeEvent(
-            type="runtime_degraded",
-            generation_id=generation_id,
-            utterance_id=utterance_id,
-            payload={
-                "reason": str(error),
-                "reconnect_attempt": self._reconnect_failures,
-            },
-        )
+        current_error = error
+        while True:
+            await self._close_ws()
+            self._reconnect_failures += 1
+            degraded = RuntimeEvent(
+                type=RuntimeEventType.RUNTIME_DEGRADED.value,
+                generation_id=generation_id,
+                utterance_id=utterance_id,
+                payload={
+                    "reason": str(current_error),
+                    "reconnect_attempt": self._reconnect_failures,
+                },
+            )
 
-        if self._reconnect_failures > self._reconnect_max:
-            logger.warning(
-                "[NativePersistent] 再接続上限超過 → per_utterance へ切り戻し"
-            )
-            self._fallback_mode = True
-            fb = self._ensure_fallback()
-            if self._context is not None:
-                await fb.open_session(self._context)
-            fb.set_original_text(self._original_text)
-            await fb.append_audio(audio)
-            # フォールバック側で新規 begin（tracker 非共有でも翻訳が走るようにする）
-            gen = await fb.commit_turn(utterance_id)
-            fb_events = [e async for e in fb.events()]
-            self._pending_events = [degraded, *fb_events]
-            return gen
+            if self._reconnect_failures > self._reconnect_max:
+                logger.warning(
+                    "[NativePersistent] 再接続上限超過 → per_utterance へ切り戻し"
+                )
+                self._fallback_mode = True
+                fb = self._ensure_fallback()
+                if self._context is not None:
+                    await fb.open_session(self._context)
+                fb.set_original_text(self._original_text)
+                await fb.append_audio(audio)
+                # 同一 generation を引き継ぎ、degraded と終端の世代を一致させる
+                gen = await fb.commit_turn(utterance_id, generation_id=generation_id)
+                fb_events = [e async for e in fb.events()]
+                self._pending_events = [degraded, *fb_events]
+                return gen
 
-        backoff_index = min(self._reconnect_failures - 1, len(_BACKOFF_SECONDS) - 1)
-        await asyncio.sleep(_BACKOFF_SECONDS[backoff_index])
-        try:
-            await self._ensure_connected()
-            assert self._ws is not None and self._context is not None
-            turn = self._turn_fn or self._default_turn
-            events = await turn(
-                self._ws, audio, self._context, generation_id, utterance_id
-            )
-            self._reconnect_failures = 0
-            self._pending_events = [degraded, *events]
-            return generation_id
-        except Exception as e2:  # noqa: BLE001
-            logger.warning("[NativePersistent] 再接続後も失敗: %s", e2)
-            return await self._reconnect_or_fallback(
-                utterance_id, audio, e2, generation_id=generation_id
-            )
+            backoff_index = min(self._reconnect_failures - 1, len(_BACKOFF_SECONDS) - 1)
+            await asyncio.sleep(_BACKOFF_SECONDS[backoff_index])
+            try:
+                await self._ensure_connected()
+                assert self._ws is not None and self._context is not None
+                turn = self._turn_fn or self._default_turn
+                events = await turn(
+                    self._ws, audio, self._context, generation_id, utterance_id
+                )
+                self._reconnect_failures = 0
+                self._pending_events = [degraded, *events]
+                return generation_id
+            except Exception as reconnect_error:  # noqa: BLE001
+                logger.warning("[NativePersistent] 再接続後も失敗: %s", reconnect_error)
+                current_error = reconnect_error
 
     async def _default_connect(self) -> WebSocketPort:
         """OpenAI Realtime WebSocket へ接続する（本番経路）。"""
@@ -381,7 +391,7 @@ class NativePersistentRuntime:
         if translated_text:
             events.append(
                 RuntimeEvent(
-                    type="transcript_delta",
+                    type=RuntimeEventType.TRANSCRIPT_DELTA.value,
                     generation_id=generation_id,
                     utterance_id=utterance_id,
                     text=translated_text,
@@ -393,7 +403,7 @@ class NativePersistentRuntime:
             translated_audio = self._pcm16_to_wav(pcm_out)
             events.append(
                 RuntimeEvent(
-                    type="audio",
+                    type=RuntimeEventType.AUDIO.value,
                     generation_id=generation_id,
                     utterance_id=utterance_id,
                     audio_data=translated_audio,
@@ -402,7 +412,7 @@ class NativePersistentRuntime:
             )
         events.append(
             RuntimeEvent(
-                type="turn_done",
+                type=RuntimeEventType.TURN_DONE.value,
                 generation_id=generation_id,
                 utterance_id=utterance_id,
                 text=translated_text,

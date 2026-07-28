@@ -99,9 +99,7 @@ async def test_evaluation_set_never_in_training_export(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_tts_consent_sets_granted_at(monkeypatch) -> None:
     maker = await _setup(monkeypatch)
-    cid = await training.record_tts_consent(
-        user_id="u1", voice_id="v1", granted=True
-    )
+    cid = await training.record_tts_consent(user_id="u1", voice_id="v1", granted=True)
     assert cid is not None
     from app.db.models import TTSConsent
 
@@ -115,9 +113,7 @@ async def test_tts_consent_sets_granted_at(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_tts_consent_not_granted_has_no_timestamp(monkeypatch) -> None:
     maker = await _setup(monkeypatch)
-    cid = await training.record_tts_consent(
-        user_id="u1", voice_id="v1", granted=False
-    )
+    cid = await training.record_tts_consent(user_id="u1", voice_id="v1", granted=False)
     from app.db.models import TTSConsent
 
     async with maker() as db:

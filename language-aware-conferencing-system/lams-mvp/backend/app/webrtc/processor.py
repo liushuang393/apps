@@ -22,8 +22,8 @@ from app.ai_pipeline.orchestrator import (
     OrchestrationResult,
     OutputSink,
 )
+from app.ai_pipeline.output_manager import DefaultOutputManager
 from app.ai_pipeline.qos import HybridQoSMonitor
-from app.ai_pipeline.runtime.generation import GenerationTracker
 from app.audio.archive import AudioArchive, compute_audio_hash
 from app.audio.pcm import wrap_wav16
 from app.audio.speaker_embedding import SpeakerEmbedder
@@ -110,8 +110,24 @@ class SegmentProcessor:
         self._enrollment_loader = enrollment_loader
         # consent 済み登録話者のキャッシュ（会議設定データ。初回照会でロード）。
         self._enrollments: list[Enrollment] | None = None
-        # 話者ごとの generation 管理（barge-in / 旧音声抑止）
-        self._generation_trackers: dict[str, GenerationTracker] = {}
+
+    def hearing_p95_exceeded(self) -> bool | None:
+        """orchestrator 内 monitor の聞く主線 P95 超過を観測事実として返す。"""
+        monitor = getattr(self._orchestrator, "_monitor", None)
+        if monitor is None:
+            return None
+        exceeded = getattr(monitor, "hearing_p95_exceeded", None)
+        if not callable(exceeded):
+            return None
+        result = exceeded()
+        return result if isinstance(result, (bool, type(None))) else None
+
+    def is_provider_recovering(self, speaker_id: str) -> bool:
+        """Runtime 由来の Provider 回復中観測を返す。"""
+        check = getattr(self._orchestrator, "is_provider_recovering", None)
+        if not callable(check):
+            return False
+        return bool(check(speaker_id))
 
     def forget_room(self, room_id: str) -> None:
         """room 終了時に採番・重複排除・話者クラスタの状態を破棄する（状態リーク防止）。"""
@@ -171,12 +187,14 @@ class SegmentProcessor:
         participants: dict[str, ParticipantPreference],
         sink_factory: SinkFactory,
         revision: int,
+        subtitle_id: str = "",
     ) -> None:
         """発話確定前の暫定字幕（ASR 原文 interim）を配信する（§P2 首字遅延短縮）。
 
         ASR のみ実行し翻訳・TTS・永続化・重複排除・採番は行わない（低遅延・低コスト・
         非破壊）。前端は speaker_id 単位の interim 行を revision で上書きし、final 到着で
         消去する。認識空・エラー文字列は配信しない。
+        revision／utterance identity は呼び出し側の RevisionAuthority が所有する。
         """
         if not pcm16:
             return
@@ -191,7 +209,7 @@ class SegmentProcessor:
         await self._orchestrator.deliver_partial_subtitle(
             sink=sink,
             listeners=listeners,
-            subtitle_id="",
+            subtitle_id=subtitle_id,
             seq=0,
             revision=revision,
             speaker_id=speaker_id,
@@ -201,27 +219,16 @@ class SegmentProcessor:
             trace_id=f"{room_id}:{speaker_id}:{revision}",
         )
 
-    def _tracker_for(self, speaker_id: str) -> GenerationTracker:
-        """話者に対応する世代管理を返す。"""
-        return self._generation_trackers.setdefault(speaker_id, GenerationTracker())
-
-    def interrupt_speaker(self, room_id: str, speaker_id: str) -> int:
+    def interrupt_speaker(self, room_id: str, speaker_id: str) -> None:
         """新しい確定発話の到着時に旧 hearing 世代だけを無効化する。"""
-        tracker = self._tracker_for(speaker_id)
-        old_generation = tracker.current
-        new_generation = tracker.begin()
-        if old_generation > 0:
-            self._orchestrator.interrupt_speaker(room_id, speaker_id, old_generation)
-        return new_generation
+        self._orchestrator.interrupt_speaker(room_id, speaker_id)
 
     async def release_speaker(self, room_id: str, speaker_id: str) -> None:
-        """退室話者の世代状態と持続 Runtime を解放する。"""
-        self._generation_trackers.pop(speaker_id, None)
+        """退室話者の持続 Runtime を解放する。"""
         await self._orchestrator.release_speaker(room_id, speaker_id)
 
     async def release_room(self, room_id: str) -> None:
-        """会議終了時に全世代状態と持続 Runtime を解放する。"""
-        self._generation_trackers.clear()
+        """会議終了時に持続 Runtime を解放する。"""
         await self._orchestrator.release_room(room_id)
 
     @staticmethod
@@ -259,6 +266,8 @@ class SegmentProcessor:
         hearing_available: bool = True,
         qoe_state: str = "healthy",
         qoe_changed: bool = False,
+        qoe_reason: str | None = None,
+        qoe_ui_reason: str | None = None,
     ) -> OrchestrationResult | None:
         """1 発話セグメントを収束させる（配信は sink、記録は DB へ）。
 
@@ -324,6 +333,7 @@ class SegmentProcessor:
                 original_text=original_text,
                 listeners=listeners,
                 sink=sink,
+                output_manager=DefaultOutputManager(adapter=sink),
                 mode=config.mode,
                 enable_openai_s2s=config.enable_openai_s2s,
                 language_routes=config.language_routes,
@@ -334,8 +344,9 @@ class SegmentProcessor:
                 hearing_available=hearing_available,
                 qoe_state=qoe_state,
                 qoe_changed=qoe_changed,
+                qoe_reason=qoe_reason,
+                qoe_ui_reason=qoe_ui_reason,
                 room_id=room_id,
-                generation_tracker=self._tracker_for(speaker_id),
             )
         finally:
             reset_ab_context(ab_token)

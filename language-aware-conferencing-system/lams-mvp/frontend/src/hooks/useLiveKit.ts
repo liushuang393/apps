@@ -15,6 +15,7 @@ import {
   type RemoteTrackPublication,
 } from 'livekit-client';
 import { ApiError, roomApi } from '../api/client';
+import { ListenerLocalQoE } from '../qoe/listenerLocalQoE';
 import { useAuthStore } from '../store/authStore';
 import { useRoomStore, type ConnectionStatus } from '../store/roomStore';
 import type {
@@ -38,9 +39,6 @@ const TOPIC_EVENT = 'qos';
 const TOPIC_QOE_STATS = 'qoe_stats';
 const EVENT_SCHEMA_VERSION = 1;
 const QOE_STATS_INTERVAL_MS = 2000;
-const PACKET_LOSS_DEGRADE_RATIO = 0.05;
-const PACKET_LOSS_RECOVER_RATIO = 0.03;
-const QOE_RECOVERY_COOLDOWN_MS = 5000;
 /** 翻訳音声トラック名接頭辞（backend publisher と一致させる） */
 const TRACK_NAME_PREFIX = 'translation-';
 /** サーバ参加者（Agent）の identity 接頭辞（参加者一覧から除外する） */
@@ -282,7 +280,7 @@ export function useLiveKit(roomId: string | null) {
   const audioEntriesRef = useRef<Map<string, AudioEntry>>(new Map());
   const outputDeviceIdRef = useRef<string | null>(null);
   const mediaDegradedRef = useRef(false);
-  const recoverySinceRef = useRef<number | null>(null);
+  const listenerQoERef = useRef(new ListenerLocalQoE());
 
   const applyOutputDevice = useCallback(async (entry: AudioEntry, deviceId: string | null) => {
     if (!deviceId) return true;
@@ -524,30 +522,19 @@ export function useLiveKit(roomId: string | null) {
         statsTimer = setInterval(() => {
           void collectQoeStats(audioEntriesRef.current)
             .then(async (stats) => {
-              const loss = stats.packet_loss_ratio;
-              if (loss !== null && loss > PACKET_LOSS_DEGRADE_RATIO) {
-                mediaDegradedRef.current = true;
-                recoverySinceRef.current = null;
-                audioEntriesRef.current.forEach((entry) => {
-                  if (entry.isTranslation) entry.el.muted = true;
-                });
-                setMediaState('degraded');
-              } else if (
-                mediaDegradedRef.current
-                && loss !== null
-                && loss < PACKET_LOSS_RECOVER_RATIO
-              ) {
-                const now = Date.now();
-                recoverySinceRef.current ??= now;
-                if (now - recoverySinceRef.current >= QOE_RECOVERY_COOLDOWN_MS) {
-                  mediaDegradedRef.current = false;
-                  recoverySinceRef.current = null;
+              const decision = listenerQoERef.current.evaluate(stats.packet_loss_ratio);
+              if (decision.changed) {
+                mediaDegradedRef.current = !decision.hearingAvailable;
+                if (!decision.hearingAvailable) {
+                  audioEntriesRef.current.forEach((entry) => {
+                    if (entry.isTranslation) entry.el.muted = true;
+                  });
+                  setMediaState('degraded');
+                } else {
                   applyAudioRouting();
                   setMediaState('healthy');
                   clearQosWarnings();
                 }
-              } else if (loss === null || loss >= PACKET_LOSS_RECOVER_RATIO) {
-                recoverySinceRef.current = null;
               }
               await room.localParticipant.publishData(
                 new TextEncoder().encode(JSON.stringify(stats)),
@@ -571,8 +558,6 @@ export function useLiveKit(roomId: string | null) {
               setConnectionError('この会議室へ参加する権限がありません。');
             } else if (err.status === 404) {
               setConnectionError('会議室が見つかりません。');
-            } else if (err.status === 503) {
-              setConnectionError(err.message);
             } else {
               setConnectionError(err.message);
             }

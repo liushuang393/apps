@@ -83,8 +83,9 @@ detect_lan_ip() {
     if [[ -n "${HOST_IP:-}" && "${HOST_IP}" != "127.0.0.1" && "${HOST_IP}" != "localhost" ]]; then
         candidate="$HOST_IP"
     elif grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe >/dev/null 2>&1; then
+        # Windows LAN IP を優先。仮想 NIC / ダミー接続（例: 2.0.0.1）は除外する。
         candidate="$(powershell.exe -NoProfile -Command \
-            "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -notlike '127.*' -and \$_.IPAddress -notlike '169.254.*' -and \$_.InterfaceAlias -notmatch 'vEthernet|Loopback|VPN' } | Sort-Object SkipAsSource | Select-Object -First 1 -ExpandProperty IPAddress" \
+            "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { (\$_.IPAddress -like '192.168.*' -or \$_.IPAddress -like '10.*') -and \$_.InterfaceAlias -notmatch 'vEthernet|Loopback|VPN|WSL|ローカル エリア接続|Local Area Connection' } | Sort-Object SkipAsSource, IPAddress | Select-Object -First 1 -ExpandProperty IPAddress" \
             2>/dev/null | tr -d '\r' | head -n1)"
     fi
 

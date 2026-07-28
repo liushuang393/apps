@@ -248,7 +248,7 @@ cd lams-mvp
 cp .env.example .env
 ```
 
-**手で記入するのは API キーだけ**でよい。起動スクリプトは `.env` を変更しない。
+**手で記入するのは API キーだけ**でよい。`HOST_IP` は起動スクリプトが自動検出して `.env` へ書き戻す。
 
 | 変数 | 記入 | 自動設定のされ方 |
 |---|---|---|
@@ -260,61 +260,27 @@ cp .env.example .env
 | `DATABASE_URL` / `REDIS_URL` | **不要** | Docker: compose がコンテナ内向けに自動注入 / ローカル: 起動スクリプトが `localhost:5433` / `localhost:6380` を既定設定 |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | 開発では不要 | dev 既定値（`devkey` / `devsecret...`）が `.env.example` と compose で一致済み。**本番では必ず変更** |
 | `JWT_SECRET` | 開発では不要 | dev 既定値あり。**本番では必ず変更** |
-| `HOST_IP` | 通常は不要 | 起動時に Windows の LAN IPv4 を自動検出。誤検出時だけコマンドで明示する |
+| `HOST_IP` | 通常は不要 | 起動前に LAN IPv4 を検出し `.env` を更新。誤検出時だけ `--host-ip` で明示 |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 不要 | 既定 `8090` / `5273`。ここを変えるだけで compose・CORS・nginx が追随 |
 | `ASR_PROVIDER` / `MT_PROVIDER` / `TTS_PROVIDER` | 任意 | 既定 `auto`（ステージ別差し替え用） |
 
-> **優先順位**: シェル環境変数 > `.env`。`.env` は `.gitignore` 済みでコミットされない。
-> 起動スクリプトは API キーや検出 IP を `.env` へ書き戻さない。
+> **優先順位**: `--host-ip` / シェルの `HOST_IP` > 自動検出（`.env` の古い値は検出に使わない）。
+> 入口スクリプトは検出結果を `.env` の `HOST_IP` へ書き戻す。
 > 本番ではクラウドの環境変数 / Docker secrets を使用し、キーをディスクに置かないこと。
 
-## Docker 起動（WSL2 へのローカル配備）
+## 実用起動手順
 
-frontend / backend / PostgreSQL / Redis / LiveKit / coturn をすべてコンテナで起動する。通常の動作確認と複数端末での会議テストはこちらを使用する。
+起動はリポジトリ直下の入口スクリプト1本だけを使用する。
 
 ```bash
-./scripts/start-docker.sh --build  # 初回、Dockerfile・依存変更後
-./scripts/start-docker.sh          # 2回目以降
+./start-with-keys.sh --build
 ```
 
-スクリプトは Docker、Compose、API キー、ポート値を事前検証し、LAN IP を自動検出して LiveKit の ICE 候補へ渡す。起動後は backend のヘルスチェックを待ち、localhost と LAN の両 URL を表示する。
+入口スクリプトは LAN IP を検出し、`.env` の `HOST_IP=` 行と異なる場合だけ値を置換してから全サービスを起動する。起動後は画面に表示された URL をブラウザで開く。
 
 ```bash
-# IP を誤検出する場合
-./scripts/start-docker.sh --host-ip 192.168.1.20
-
-# ログを前面に表示する場合（終了は Ctrl+C）
-./scripts/start-docker.sh --foreground
-
-# 停止（データは保持）/ 停止してデータも削除
+# 停止（データは保持）
 docker compose down
-docker compose down -v
-```
-
-> `docker compose down -v` は PostgreSQL と Redis の永続データを削除するため、必要な場合だけ実行する。
-
-## ローカル開発起動
-
-backend と frontend は WSL 上、PostgreSQL / Redis / LiveKit / coturn は Docker で起動する。コードのホットリロードが必要な開発時だけ使用する。
-
-```bash
-./scripts/start-local.sh
-```
-
-この 1 コマンドで依存コンテナと前後端を起動し、終了時には前後端の子プロセスも停止する。初回のみ `frontend/node_modules` がなければ `npm ci` を自動実行する。
-
-```bash
-# IP を明示する場合
-./scripts/start-local.sh --host-ip 192.168.1.20
-
-# node_modules を自動インストールさせない場合
-./scripts/start-local.sh --skip-install
-```
-
-ローカル開発を終了した後、依存コンテナも不要なら停止する。
-
-```bash
-docker compose stop postgres redis livekit coturn
 ```
 
 ### アクセス URL
@@ -333,16 +299,10 @@ docker compose stop postgres redis livekit coturn
 
 1 台の Windows + WSL2 マシンをホストにし、参加端末は同じ LAN からホストの Windows IPv4 へ接続する。ホスト IP は起動時に自動検出され、起動完了メッセージに表示される。
 
-```bash
-./scripts/start-docker.sh --build
-# 表示例: LAN 内の他マシン: http://192.168.1.20:5273
-```
-
 各参加端末で `http://<表示されたIP>:5273` を開く。全端末で同じ IP を使用し、`localhost` や WSL 内部 IP は使用しない。DHCP で IP が変わった場合は、Docker 起動スクリプトを再実行すれば LiveKit も新しい IP で再構成される。
 
 > **注意（IP 自動検出）**:
-> - `.env` に `HOST_IP` を固定値で書くと自動検出より**優先**され、IP 変更時に「画面は開くが音声が届かない」原因になる。`.env` の `HOST_IP` は通常コメントアウトのままにする。
-> - Windows に複数の LAN アダプタ（Wi-Fi + 有線、テザリング等）がある場合、自動検出が参加者と異なるサブネットの IP を選ぶことがある。その場合は `./scripts/start-docker.sh --host-ip <参加者と同じネットワークのIP>` で明示する。
+> - 入口スクリプトは毎回ローカル IP を検出し、`.env` の `HOST_IP` を最新値へ更新する。
 
 **Windows 側の初回設定**（PowerShell 管理者権限、1回だけ）:
 

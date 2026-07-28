@@ -93,11 +93,16 @@ def test_select_assigns_and_resolves(monkeypatch) -> None:
     """文脈あり → variant 割当 → provider_name 解決 → 実体を返す。"""
     inst_c = object()
     inst_t = object()
-    fake_reg = _FakeReg({("mt", "prov-control"): inst_c, ("mt", "prov-treatment"): inst_t})
+    fake_reg = _FakeReg(
+        {("mt", "prov-control"): inst_c, ("mt", "prov-treatment"): inst_t}
+    )
     monkeypatch.setattr(
         ab_runtime,
         "provider_name_for_model",
-        lambda mid: {"model-control": "prov-control", "model-treatment": "prov-treatment"}[mid],
+        lambda mid: {
+            "model-control": "prov-control",
+            "model-treatment": "prov-treatment",
+        }[mid],
     )
     sel = CompositeExperimentSelector(
         registry=fake_reg, experiments=_registry_with(_exp(stage="t2t", unit="user"))

@@ -68,7 +68,9 @@ def _user(user_id: str = "owner") -> User:
     return User(id=user_id, display_name="Owner", role="admin")
 
 
-def _session(session_id: str, *, is_active: bool, minutes_offset: int) -> MeetingSession:
+def _session(
+    session_id: str, *, is_active: bool, minutes_offset: int
+) -> MeetingSession:
     session = MeetingSession(
         id=session_id,
         room_id="room1",
@@ -121,7 +123,9 @@ async def test_get_room_transcript_uses_active_session_by_default() -> None:
 
 @pytest.mark.asyncio
 async def test_get_room_transcript_rejects_unknown_session() -> None:
-    db = _FakeSession([_room(), [_session("sess-known", is_active=True, minutes_offset=0)]])
+    db = _FakeSession(
+        [_room(), [_session("sess-known", is_active=True, minutes_offset=0)]]
+    )
 
     with pytest.raises(HTTPException) as ei:
         await get_room_transcript(
@@ -150,11 +154,17 @@ async def test_issue_livekit_token_starts_or_reuses_session(
     def fake_ensure_running(room_id: str) -> None:
         captured["ensure_running"] = room_id
 
-    monkeypatch.setattr(room_routes, "get_or_create_session", fake_get_or_create_session)
+    monkeypatch.setattr(
+        room_routes, "get_or_create_session", fake_get_or_create_session
+    )
     monkeypatch.setattr(room_routes, "create_join_token", fake_create_join_token)
-    monkeypatch.setattr(room_routes.agent_supervisor, "ensure_running", fake_ensure_running)
+    monkeypatch.setattr(
+        room_routes.agent_supervisor, "ensure_running", fake_ensure_running
+    )
 
-    response = await issue_livekit_token("room1", user=_user(), db=_FakeSession([_room()]))
+    response = await issue_livekit_token(
+        "room1", user=_user(), db=_FakeSession([_room()])
+    )
 
     assert response.token == "join-token"
     assert captured["room_id"] == "room1"

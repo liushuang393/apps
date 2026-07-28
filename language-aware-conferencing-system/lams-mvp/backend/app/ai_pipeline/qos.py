@@ -183,7 +183,6 @@ class HybridQoSMonitor:
         self._number_total = 0
         self._retry_cooldown_s = retry_cooldown_s
         self._clock = clock
-        self._degraded_since: float | None = None
 
     def record_latency(self, mainline: str, latency_ms: float) -> None:
         """主線の 1 サンプル遅延（ms）を記録する（未知主線・負値は無視）。"""
@@ -245,25 +244,26 @@ class HybridQoSMonitor:
             "should_fallback_to_subtitle": fallback,
         }
 
-    def hearing_degraded(self) -> bool:
-        """聞く主線の P95 目標超過による縮退判定（§9 の実配線。欠陥 #9）。
+    def hearing_p95_exceeded(self) -> bool | None:
+        """聞く主線 P95 の目標超過を観測事実として返す。
 
-        超過が続く場合も retry_cooldown_s 経過で窓を捨てて False を返し、
-        次のセグメントで S2S を再試行させる。
-        # ponytail: 単純クールダウン。ヒステリシスは必要になったら導入。
+        戻り値:
+            None: 未計測（unknown）
+            True: P95 が目標を超過
+            False: 計測済みで目標内
+        注意:
+            hearing 停止の最終判断は行わない（QoE authority が決定する）。
+            測定窓の破棄による独自復帰もしない。
         """
-        if self.evaluate_latency("hearing") is None:
-            self._degraded_since = None
-            return False
-        now = self._clock()
-        if self._degraded_since is None:
-            self._degraded_since = now
-            return True
-        if now - self._degraded_since >= self._retry_cooldown_s:
-            self._latency["hearing"].clear()
-            self._degraded_since = None
-            return False
-        return True
+        target = self._targets_ms.get("hearing")
+        value = self.p95("hearing")
+        if target is None or value is None:
+            return None
+        return value > target
+
+    def hearing_degraded(self) -> bool:
+        """後方互換: P95 超過の有無のみ返す（制御・履歴破棄はしない）。"""
+        return self.hearing_p95_exceeded() is True
 
     def evaluate_glossary(self) -> dict | None:
         """用語命中率が目標を下回れば qos_warning を返す（正常/未計測時 None）。"""

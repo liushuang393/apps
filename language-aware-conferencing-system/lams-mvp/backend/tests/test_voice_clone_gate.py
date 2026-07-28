@@ -35,9 +35,7 @@ async def test_no_consent_does_not_call_synth() -> None:
         _synth(b"RIFFxxxx", calls),
         consent_checker=_checker(ConsentDecision(False, True, "no_consent")),
     )
-    r = await gate.synthesize(
-        user_id="u1", voice_id="v1", text="hi", language="ja"
-    )
+    r = await gate.synthesize(user_id="u1", voice_id="v1", text="hi", language="ja")
     assert r.audio is None and r.allowed is False
     assert calls == []  # 合成関数は呼ばれない（最重要不変条件）
 
@@ -45,9 +43,7 @@ async def test_no_consent_does_not_call_synth() -> None:
 @pytest.mark.asyncio
 async def test_consent_applies_watermark(monkeypatch) -> None:
     """同意 + 透かし必須 → 合成し透かしを適用して返す。"""
-    monkeypatch.setattr(
-        voice_clone_gate, "apply_watermark", lambda wav: wav + b"::WM"
-    )
+    monkeypatch.setattr(voice_clone_gate, "apply_watermark", lambda wav: wav + b"::WM")
     monkeypatch.setattr(
         voice_clone_gate, "is_watermarked", lambda wav: wav.endswith(b"::WM")
     )

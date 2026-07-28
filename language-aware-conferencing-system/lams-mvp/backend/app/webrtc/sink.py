@@ -27,9 +27,10 @@ from __future__ import annotations
 import inspect
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
+from app.ai_pipeline.events import encode_event
 from app.audio.pcm import parse_wav16, resample16
 
 logger = logging.getLogger(__name__)
@@ -43,8 +44,21 @@ OUTPUT_FRAME_SAMPLES = OUTPUT_SAMPLE_RATE * FRAME_MS // 1000  # 480 標本/10ms
 TOPIC_SUBTITLE = "subtitle"
 TOPIC_EVENT = "qos"
 
-# 注入コールバック型（旧3引数コールバックも実行時判定で維持する）。
-AudioCapture = Callable[..., Awaitable[None]]
+
+# 注入コールバック型。generation_id は旧世代抑止のため必須の契約要素。
+class AudioCapture(Protocol):
+    """翻訳音声を世代情報付きで capture する固定契約。"""
+
+    def __call__(
+        self,
+        speaker_id: str,
+        language: str,
+        pcm48: bytes,
+        *,
+        generation_id: int | None = None,
+    ) -> Awaitable[None]: ...
+
+
 DataSend = Callable[[bytes, list[str], str], Awaitable[None]]  # (payload, ids, topic)
 
 
@@ -79,9 +93,49 @@ class LiveKitOutputSink:
         self._speaker_id = speaker_id
         self._hearing_sample_rate = hearing_sample_rate
         self._generation_gate = generation_gate
-        self._capture_supports_generation = self._supports_generation_id(capture_audio)
+        self._validate_audio_capture(capture_audio)
         # 言語ごとに「直近 capture 済みオブジェクト」を保持し重複 capture を防ぐ。
         self._last_audio: dict[str, bytes] = {}
+
+    async def publish_audio(
+        self,
+        *,
+        speaker_id: str,
+        language: str,
+        audio: bytes,
+        recipient_ids: Sequence[str],
+        generation_id: int | None,
+    ) -> None:
+        """Output Manager から言語トラック単位の翻訳音声を受け取る。"""
+        if not recipient_ids or not audio:
+            return
+        gate = self._generation_gate
+        if gate is not None and generation_id is not None:
+            if not gate.should_capture(speaker_id, language, generation_id):
+                logger.debug(
+                    "[LiveKitSink] 旧 generation を抑止: speaker=%s lang=%s gen=%s",
+                    speaker_id,
+                    language,
+                    generation_id,
+                )
+                return
+            gate.set_active(speaker_id, language, generation_id)
+        if self._last_audio.get(language) is audio:
+            return
+        self._last_audio[language] = audio
+        pcm, rate = parse_wav16(audio, fallback_rate=self._hearing_sample_rate)
+        pcm48 = resample16(pcm, rate, OUTPUT_SAMPLE_RATE)
+        await self._invoke_capture(speaker_id, language, pcm48, generation_id)
+
+    async def send_data(
+        self,
+        *,
+        user_id: str,
+        topic: str,
+        payload: bytes,
+    ) -> None:
+        """Output Manager の送信失敗集約のため、例外を伝播して送信する。"""
+        await self._send_data(payload, [user_id], topic)
 
     async def deliver_audio(
         self,
@@ -123,25 +177,28 @@ class LiveKitOutputSink:
         pcm48: bytes,
         generation_id: int | None,
     ) -> None:
-        """capture コールバックへ generation_id を可能な範囲で渡す。"""
-        if self._capture_supports_generation:
-            await self._capture_audio(
-                speaker_id, lang, pcm48, generation_id=generation_id
-            )
-            return
-        await self._capture_audio(speaker_id, lang, pcm48)
+        """capture コールバックへ generation_id を必ず渡す。"""
+        await self._capture_audio(speaker_id, lang, pcm48, generation_id=generation_id)
 
     @staticmethod
-    def _supports_generation_id(capture_audio: AudioCapture) -> bool:
-        """コールバックが generation_id キーワードを受理するか判定する。"""
+    def _validate_audio_capture(capture_audio: AudioCapture) -> None:
+        """構築時に generation-aware capture 契約を検証する。"""
         try:
-            parameters = inspect.signature(capture_audio).parameters
-        except (TypeError, ValueError):
-            return False
-        return "generation_id" in parameters or any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters.values()
-        )
+            signature = inspect.signature(capture_audio)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "capture_audio は generation_id を含む固定 signature が必要"
+            ) from exc
+        if "generation_id" not in signature.parameters:
+            raise TypeError(
+                "capture_audio は generation_id を含む固定 signature が必要"
+            )
+        try:
+            signature.bind("speaker", "language", b"", generation_id=None)
+        except TypeError as exc:
+            raise TypeError(
+                "capture_audio は generation_id を含む固定 signature が必要"
+            ) from exc
 
     async def deliver_subtitle(self, user_id: str, message: dict) -> None:
         """字幕を受信者宛てに data channel で配信する。"""
@@ -156,7 +213,13 @@ class LiveKitOutputSink:
         await self._send(user_id, message, TOPIC_EVENT)
 
     async def _send(self, user_id: str, message: dict, topic: str) -> None:
-        payload = json.dumps(message, ensure_ascii=False).encode("utf-8")
+        # version付き本番イベントはcanonical encoderだけを通す。
+        # versionなしは既存Sink API利用者との後方互換として送信形式のみ維持する。
+        payload = (
+            encode_event(message)
+            if "schema_version" in message
+            else json.dumps(message, ensure_ascii=False).encode("utf-8")
+        )
         try:
             await self._send_data(payload, [user_id], topic)
         except Exception as e:  # noqa: BLE001

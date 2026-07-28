@@ -61,7 +61,10 @@ async def test_version_change_blocked_while_in_use() -> None:
     )  # refs=1（未 release）
     with pytest.raises(VRAMCapacityError):
         await broker.get_or_load(
-            "mt:x", loader=_loader("new"), size_mb=100, priority=PRIORITY_MT,
+            "mt:x",
+            loader=_loader("new"),
+            size_mb=100,
+            priority=PRIORITY_MT,
             version="v2",
         )
 
@@ -93,7 +96,10 @@ async def test_in_use_model_not_evicted() -> None:
     )
     with pytest.raises(VRAMCapacityError):
         await broker.get_or_load(
-            "asr:x", loader=_loader("asr"), size_mb=400, priority=PRIORITY_ASR,
+            "asr:x",
+            loader=_loader("asr"),
+            size_mb=400,
+            priority=PRIORITY_ASR,
             version="v1",
         )
 
@@ -107,7 +113,10 @@ async def test_higher_priority_not_evicted_by_lower() -> None:
     # 低優先度 LLM は高優先度 ASR(idle) を退避できない。
     with pytest.raises(VRAMCapacityError):
         await broker.get_or_load(
-            "llm:x", loader=_loader("llm"), size_mb=400, priority=PRIORITY_LLM,
+            "llm:x",
+            loader=_loader("llm"),
+            size_mb=400,
+            priority=PRIORITY_LLM,
             version="v1",
         )
 
@@ -117,7 +126,10 @@ async def test_request_over_budget_raises() -> None:
     broker = VRAMBroker(budget_mb=500)
     with pytest.raises(VRAMCapacityError):
         await broker.get_or_load(
-            "asr:x", loader=_loader("asr"), size_mb=600, priority=PRIORITY_ASR,
+            "asr:x",
+            loader=_loader("asr"),
+            size_mb=600,
+            priority=PRIORITY_ASR,
             version="v1",
         )
 
@@ -178,7 +190,10 @@ async def test_close_called_on_evict() -> None:
             closed.append(True)
 
     await broker.warmup(
-        "llm:x", loader=lambda: Model(), size_mb=800, priority=PRIORITY_LLM,
+        "llm:x",
+        loader=lambda: Model(),
+        size_mb=800,
+        priority=PRIORITY_LLM,
         version="v1",
     )
     await broker.get_or_load(

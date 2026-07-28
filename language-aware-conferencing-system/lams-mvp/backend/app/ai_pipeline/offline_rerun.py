@@ -166,7 +166,8 @@ class OfflineReranker:
             # FAILED として再処理対象に残す（review 指摘 2: サイレント欠損の防止）。
             if rid is None:
                 logger.warning(
-                    "[RERUN] 事件 %s の結果保存に失敗（FAILED として再処理保留）", event.id
+                    "[RERUN] 事件 %s の結果保存に失敗（FAILED として再処理保留）",
+                    event.id,
                 )
                 await mark_rerun_status(event.id, RerunStatus.FAILED.value)
                 summary.failed += 1

@@ -3,8 +3,9 @@ LiveKit Agent Worker（Phase 3 C1-5）：音声フォーク Gateway の rtc 配�
 
 README §0「2 主線を混ぜない／フォークは音声複製のみ／収束は Output Manager と DB
 のみ」を rtc 層で実体化する単一の住処。room へサーバ参加者として接続し、各話者の
-購読トラックを 16kHz モノへ整え（AudioStream が内部リサンプル）、SpeechSegmenter
-で発話単位に切り、SegmentProcessor（transport 非依存）へ渡して 2 主線を駆動する。
+購読トラックを 16kHz モノ PCM へ整え（AudioStream が内部リサンプル）、
+IngressPipeline へ frame／end／cancel を渡す adapter に限定する。
+取り込み政策（VAD／Queue／worker／soft-hard）は pipeline が所有する。
 配信は LiveKitPublisher 経由（翻訳音声=track / 字幕=data channel）。
 
 設計原則:
@@ -17,21 +18,24 @@ import asyncio
 import contextlib
 import json
 import logging
-import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 
 from livekit import rtc
 
-from app.ai_pipeline.qoe import QoEInput, QoEStateMachine
-from app.audio.vad import SILERO_FRAME_MS, build_vad, resolve_backend
+from app.ai_pipeline.qoe import QoEInput, QoEScope, QoEStateMachine
+from app.ai_pipeline.revision_authority import (
+    RevisionAuthority,
+    RevisionStreamKey,
+    RevisionToken,
+    StreamKind,
+    get_revision_authority,
+)
 from app.config import settings
 from app.rooms.manager import ParticipantPreference, room_manager
-from app.webrtc.ingress import IngressAction, SegmentIngress
+from app.webrtc.ingress_pipeline import IngressPipeline
 from app.webrtc.persistence import MeetingConfig, end_session, get_meeting_config
 from app.webrtc.processor import SegmentProcessor
 from app.webrtc.publisher import LiveKitPublisher
-from app.webrtc.segmenter import SegmentEvent, SpeechSegmenter
 from app.webrtc.sink import LiveKitOutputSink
 from app.webrtc.token import create_join_token
 
@@ -92,15 +96,6 @@ def _build_default_processor() -> SegmentProcessor:
     )
 
 
-@dataclass(frozen=True)
-class _QueuedSegment:
-    """滞留時間を測定できる確定発話。"""
-
-    event: SegmentEvent
-    enqueued_at: float
-    tracked_by_ingress: bool
-
-
 class LiveKitAgent:
     """room の音声を購読し発話単位で 2 主線を駆動する rtc Agent（収束は processor）。"""
 
@@ -112,6 +107,7 @@ class LiveKitAgent:
         get_participants: ParticipantsProvider | None = None,
         get_config: ConfigProvider | None = None,
         room: rtc.Room | None = None,
+        revision_authority: RevisionAuthority | None = None,
     ) -> None:
         self._room_id = room_id
         self._processor = processor or _build_default_processor()
@@ -120,15 +116,14 @@ class LiveKitAgent:
         self._room = room or rtc.Room()
         self._publisher: LiveKitPublisher | None = None
         self._tasks: set[asyncio.Task] = set()
-        # 話者別の partial リビジョン（暫定字幕を単調増加で上書き。final でリセット）。
-        self._partial_rev: dict[str, int] = {}
-        self._ingress = SegmentIngress(
-            soft_limit=settings.ingress_soft_limit,
-            hard_limit=settings.ingress_hard_limit,
-            max_age_ms=settings.ingress_max_age_ms,
-        )
-        self._ingresses: dict[str, SegmentIngress] = {}
+        # Ingress／Runtime 共有の暫定字幕 revision 権威
+        self._revision_authority = revision_authority or get_revision_authority()
+        # 話者ごとの進行中 partial utterance（空 id を恒久 key にしない）
+        self._partial_utterances: dict[str, str] = {}
+        # 話者別 IngressPipeline（取り込み政策の所有は pipeline 側）。
+        self._pipelines: dict[str, IngressPipeline] = {}
         self._speaker_overloaded: dict[str, bool] = {}
+        self._provider_recovering: dict[str, bool] = {}
         self._qoe_by_speaker: dict[str, QoEStateMachine] = {}
 
     async def _default_participants(self) -> dict[str, ParticipantPreference]:
@@ -192,10 +187,11 @@ class LiveKitAgent:
             disconnected.set()
 
     async def _handle_qoe_stats(self, data_packet: rtc.DataPacket) -> None:
-        """クライアント集約の WebRTC 品質値を受理する（縮退判定は各クライアント側）。
+        """クライアント集約の WebRTC 品質値を受理する（検証のみ）。
 
-        packet loss による翻訳音声のミュート/回復はフロントがローカルで行う。
-        サーバは全員一括の hearing 停止に使わず、不正 payload の検証のみ行う。
+        packet loss による受聴者単位の mute/回復は前端の ListenerLocalQoE
+        （backend LISTENER_LOCAL と同一政策）が行う。サーバは全員一括の
+        Mode A 停止に使わず、不正 payload の検証のみ行う。
         """
         if data_packet.topic != "qoe_stats":
             return
@@ -218,23 +214,18 @@ class LiveKitAgent:
                 participant.identity,
             )
 
-    def _reset_shared_ingress_if_needed(self, removed: SegmentIngress | None) -> None:
-        """共有 Ingress が退室で解放された場合にクリーンなインスタンスへ戻す。"""
-        if removed is self._ingress:
-            self._ingress = SegmentIngress(
-                soft_limit=settings.ingress_soft_limit,
-                hard_limit=settings.ingress_hard_limit,
-                max_age_ms=settings.ingress_max_age_ms,
-            )
-
     async def _handle_participant_leave(self, participant_id: str) -> None:
         """参加者退室後、最後の1人なら session を終了する。"""
-        # 退室者の partial リビジョンを破棄（残留防止＋再入室で 1 から再開させる）。
-        self._partial_rev.pop(participant_id, None)
+        # 退室者の revision／partial utterance を破棄（残留防止＋再入室で新 stream）。
+        self._partial_utterances.pop(participant_id, None)
+        self._revision_authority.release_speaker(self._room_id, participant_id)
         self._qoe_by_speaker.pop(participant_id, None)
         self._speaker_overloaded.pop(participant_id, None)
-        removed = self._ingresses.pop(participant_id, None)
-        self._reset_shared_ingress_if_needed(removed)
+        self._provider_recovering.pop(participant_id, None)
+        # 取り込み worker／Queue を速やかに閉じ zombie task を残さない。
+        pipeline = self._pipelines.pop(participant_id, None)
+        if pipeline is not None:
+            await pipeline.cancel()
         await self._processor.release_speaker(self._room_id, participant_id)
         remaining = await room_manager.remove_participant(self._room_id, participant_id)
         if remaining == 0:
@@ -245,15 +236,16 @@ class LiveKitAgent:
     async def _finalize_if_room_empty(self) -> None:
         """Agent 切断時に人間参加者が残っていなければ session を閉じる。"""
         await self._processor.release_room(self._room_id)
-        self._partial_rev.clear()
+        self._revision_authority.release_room(self._room_id)
+        self._partial_utterances.clear()
         self._qoe_by_speaker.clear()
         self._speaker_overloaded.clear()
-        self._ingresses.clear()
-        self._ingress = SegmentIngress(
-            soft_limit=settings.ingress_soft_limit,
-            hard_limit=settings.ingress_hard_limit,
-            max_age_ms=settings.ingress_max_age_ms,
-        )
+        self._provider_recovering.clear()
+        # 残留 pipeline を cancel してから辞書を空にする。
+        pending = list(self._pipelines.values())
+        self._pipelines.clear()
+        for pipeline in pending:
+            await pipeline.cancel()
         try:
             remaining = await room_manager.count_participants(self._room_id)
         except Exception as e:  # noqa: BLE001
@@ -291,111 +283,48 @@ class LiveKitAgent:
     async def _ingest(
         self, track: rtc.RemoteAudioTrack, participant: rtc.RemoteParticipant
     ) -> None:
-        """1 話者トラックを 16kHz モノで購読し、発話単位に切り出して処理する。
+        """1 話者トラックを 16kHz モノで購読し Ingress pipeline へ渡す。
 
-        セグメント処理はワーカーへ委譲し、フレーム消費を塞がない（欠陥 #11）。
+        本メソッドは rtc frame → PCM 変換と pipeline lifecycle（登録／end／解除）
+        に限定する。VAD／Queue／worker／soft-hard は create_default が所有する。
         """
         speaker_id = participant.identity
         stream = rtc.AudioStream(track, sample_rate=_AI_SAMPLE_RATE, num_channels=1)
-        # VAD は設定に従い選択（既定 energy / silero 指定かつ導入時のみ Silero）。
-        # Silero は RNN 状態を持つため話者トラック毎に独立インスタンスを注入する。
-        # silero 有効時はフレーム長を窓長(32ms=512標本)へ整合し確率希釈を防ぐ。
-        seg_kwargs: dict[str, object] = {"sample_rate": _AI_SAMPLE_RATE}
-        if resolve_backend() == "silero":
-            seg_kwargs["frame_ms"] = SILERO_FRAME_MS
-        # partial 有効時のみ暫定字幕を切り出す（既定 0＝final のみ＝従来動作）。
-        if settings.enable_partial_subtitles:
-            seg_kwargs["partial_ms"] = settings.partial_ms
-        segmenter = SpeechSegmenter(
-            is_speech=build_vad(sample_rate=_AI_SAMPLE_RATE),
-            **seg_kwargs,
+
+        async def on_final(pcm: bytes) -> None:
+            await self._handle_segment(speaker_id, pcm)
+
+        async def on_partial(pcm: bytes) -> None:
+            await self._handle_partial(speaker_id, pcm)
+
+        def on_overload(overloaded: bool) -> None:
+            # QoE 権威へ渡す overload 事実のみ更新する（縮退判定はここでは行わない）。
+            self._speaker_overloaded[speaker_id] = overloaded
+
+        def on_final_accepted() -> None:
+            # producer 側で即時に旧 hearing 世代を無効化する。
+            self._processor.interrupt_speaker(self._room_id, speaker_id)
+
+        pipeline = IngressPipeline.create_default(
+            on_final=on_final,
+            on_partial=on_partial,
+            on_overload=on_overload,
+            on_final_accepted=on_final_accepted,
+            sample_rate=_AI_SAMPLE_RATE,
         )
-        ingress = self._ingress_for(speaker_id)
-        queue: asyncio.Queue[_QueuedSegment | None] = asyncio.Queue(
-            maxsize=ingress.hard_limit
-        )
-        worker = asyncio.ensure_future(self._segment_worker(speaker_id, queue))
+        self._pipelines[speaker_id] = pipeline
         try:
             async for event in stream:
-                pcm = bytes(event.frame.data)
-                # push_events は partial/final を返す（partial_ms=0 なら final のみ＝従来）。
-                for seg_event in segmenter.push_events(pcm):
-                    self._enqueue_segment(speaker_id, queue, seg_event)
+                pipeline.push_frame(bytes(event.frame.data))
         finally:
-            # tail flush は finally 内で行い、正常終了・例外・キャンセルの全離脱
-            # 経路で末尾発話を必ず emit する（改善点 M3）。flush 自身の失敗が
-            # worker 回収を妨げないよう suppress する。
+            # 正常終了・例外・キャンセルの全離脱で tail flush と worker 回収を行う。
+            # 退室側で既に cancel 済みなら end は冪等に閉じる。
             with contextlib.suppress(Exception):
-                tail = segmenter.flush()
-                if tail:
-                    self._enqueue_segment(speaker_id, queue, SegmentEvent(tail, False))
-            await queue.put(None)  # 終端シグナル（worker を確実に畳む）
-            await worker
+                await pipeline.end()
+            if self._pipelines.get(speaker_id) is pipeline:
+                self._pipelines.pop(speaker_id, None)
             with contextlib.suppress(AttributeError):
                 await stream.aclose()
-
-    def _enqueue_segment(
-        self,
-        speaker_id: str,
-        queue: asyncio.Queue[_QueuedSegment | None],
-        event: SegmentEvent,
-    ) -> None:
-        """partial は使い捨て、確定発話は上限内で保護して投入する。"""
-        now = time.monotonic()
-        if event.is_partial:
-            with contextlib.suppress(asyncio.QueueFull):
-                queue.put_nowait(_QueuedSegment(event, now, False))
-            return
-
-        ingress = self._ingress_for(speaker_id)
-        oldest_age_ms = ingress.oldest_age_ms(now)
-        decision = ingress.decide_enqueue(
-            depth=queue.qsize(), oldest_age_ms=oldest_age_ms
-        )
-        self._speaker_overloaded[speaker_id] = (
-            decision.action is IngressAction.ACCEPT_DEGRADED
-        )
-        if decision.action in (IngressAction.DROP_AGED, IngressAction.DROP_HARD):
-            dropped: _QueuedSegment | None = None
-            with contextlib.suppress(asyncio.QueueEmpty):
-                dropped = queue.get_nowait()
-            if dropped is not None and dropped.tracked_by_ingress:
-                ingress.record_dequeued()
-                ingress.record_drop(decision.reason)
-                logger.error(
-                    "[Agent] 確定発話を明示破棄: speaker=%s reason=%s",
-                    speaker_id,
-                    decision.reason,
-                )
-        queue.put_nowait(_QueuedSegment(event, now, True))
-        ingress.record_enqueued(now)
-        # producer 側で即時に旧 hearing 世代を無効化する。reading/final は
-        # 話者ワーカーで継続し、次の処理順序も維持する。
-        self._processor.interrupt_speaker(self._room_id, speaker_id)
-
-    async def _segment_worker(
-        self, speaker_id: str, queue: asyncio.Queue[_QueuedSegment | None]
-    ) -> None:
-        """話者ごとの直列ワーカー（発話順を保ちつつ ingest を塞がない）。"""
-        while True:
-            item = await queue.get()
-            if item is None:
-                return
-            ingress = self._ingress_for(speaker_id)
-            if item.tracked_by_ingress:
-                ingress.record_dequeued()
-            oldest_age_ms = ingress.oldest_age_ms(time.monotonic())
-            ingress.observe(depth=queue.qsize(), oldest_age_ms=oldest_age_ms)
-            self._speaker_overloaded[speaker_id] = ingress.snapshot().overload
-            try:
-                if item.event.is_partial:
-                    await self._handle_partial(speaker_id, item.event.pcm)
-                else:
-                    await self._handle_segment(speaker_id, item.event.pcm)
-            except Exception as e:  # noqa: BLE001
-                logger.error(
-                    "[Agent] セグメント処理エラー: speaker=%s err=%s", speaker_id, e
-                )
 
     def _make_sink_factory(
         self, publisher: LiveKitPublisher
@@ -415,32 +344,73 @@ class LiveKitAgent:
 
         return sink_factory
 
-    def _ingress_for(self, speaker_id: str) -> SegmentIngress:
-        """話者ごとに独立した取り込み状態を返す。"""
-        ingress = self._ingresses.get(speaker_id)
-        if ingress is not None:
-            return ingress
-        if not self._ingresses:
-            ingress = self._ingress
+    def report_provider_recovering(self, speaker_id: str, recovering: bool) -> None:
+        """Runtime 再接続などの Provider 状態を QoE 向け観測として記録する。"""
+        if recovering:
+            self._provider_recovering[speaker_id] = True
         else:
-            ingress = SegmentIngress(
-                soft_limit=settings.ingress_soft_limit,
-                hard_limit=settings.ingress_hard_limit,
-                max_age_ms=settings.ingress_max_age_ms,
+            self._provider_recovering.pop(speaker_id, None)
+
+    def _evaluate_server_qoe(self, speaker_id: str):
+        """Ingress / AI / Provider の事実を QoE 権威へ渡し server decision を得る。"""
+        machine = self._qoe_by_speaker.setdefault(speaker_id, QoEStateMachine())
+        provider_recovering = self._provider_recovering.get(
+            speaker_id, False
+        ) or self._processor.is_provider_recovering(speaker_id)
+        return machine.evaluate(
+            QoEInput(
+                queue_overloaded=self._speaker_overloaded.get(speaker_id, False),
+                hearing_degraded=self._processor.hearing_p95_exceeded(),
+                provider_recovering=provider_recovering,
+                scope=QoEScope.SERVER,
             )
-        self._ingresses[speaker_id] = ingress
-        return ingress
+        )
+
+    def _next_partial_token(self, speaker_id: str) -> RevisionToken:
+        """partial ASR 用に同一 authority から次 revision token を取得する。
+
+        入力:
+            speaker_id: 話者 identity。
+        出力:
+            PARTIAL_ASR stream の RevisionToken。
+        注意:
+            空の temporary id は使わず、発話開始時に begin で安定 id を割り当てる。
+        """
+        utterance_id = self._partial_utterances.get(speaker_id)
+        if utterance_id is None:
+            utterance_id = self._revision_authority.begin(self._room_id, speaker_id)
+            self._partial_utterances[speaker_id] = utterance_id
+        return self._revision_authority.advance(
+            self._room_id,
+            speaker_id,
+            utterance_id,
+            RevisionStreamKey(kind=StreamKind.PARTIAL_ASR),
+        )
+
+    def _finalize_partial_utterance(self, speaker_id: str) -> None:
+        """発話確定時に partial stream を finalize し、進行中 utterance を畳む。"""
+        utterance_id = self._partial_utterances.pop(speaker_id, None)
+        if utterance_id is None:
+            return
+        self._revision_authority.finalize(
+            self._room_id,
+            speaker_id,
+            utterance_id,
+            RevisionStreamKey(kind=StreamKind.PARTIAL_ASR),
+        )
 
     async def _handle_partial(self, speaker_id: str, pcm16: bytes) -> None:
         """確定前の暫定字幕（ASR 原文 interim）を配信する（§P2 首字遅延短縮）。"""
         publisher = self._publisher
         if publisher is None:
             return
+        qoe = self._evaluate_server_qoe(speaker_id)
+        if not qoe.partial_available:
+            return
         participants = await self._get_participants()
         speaker = participants.get(speaker_id)
         hint = speaker.native_language if speaker is not None else _DEFAULT_LANG
-        rev = self._partial_rev.get(speaker_id, 0) + 1
-        self._partial_rev[speaker_id] = rev
+        token = self._next_partial_token(speaker_id)
         await self._processor.process_partial(
             room_id=self._room_id,
             speaker_id=speaker_id,
@@ -448,7 +418,8 @@ class LiveKitAgent:
             speaker_lang_hint=hint,
             participants=participants,
             sink_factory=self._make_sink_factory(publisher),
-            revision=rev,
+            revision=token.revision,
+            subtitle_id=token.utterance_id,
         )
 
     async def _handle_segment(self, speaker_id: str, pcm16: bytes) -> None:
@@ -460,15 +431,10 @@ class LiveKitAgent:
         speaker = participants.get(speaker_id)
         hint = speaker.native_language if speaker is not None else _DEFAULT_LANG
         config = await self._get_config()
-        # 発話確定でこの話者の partial リビジョンを畳む（前端は final で interim を消す）。
-        self._partial_rev.pop(speaker_id, None)
+        # 発話確定でこの話者の partial stream を畳む（前端は final で interim を消す）。
+        self._finalize_partial_utterance(speaker_id)
 
-        machine = self._qoe_by_speaker.setdefault(speaker_id, QoEStateMachine())
-        qoe = machine.evaluate(
-            QoEInput(
-                queue_overloaded=self._speaker_overloaded.get(speaker_id, False),
-            )
-        )
+        qoe = self._evaluate_server_qoe(speaker_id)
         await self._processor.process(
             room_id=self._room_id,
             speaker_id=speaker_id,
@@ -480,6 +446,12 @@ class LiveKitAgent:
             hearing_available=qoe.hearing_available,
             qoe_state=qoe.state.value,
             qoe_changed=qoe.changed,
+            qoe_reason=qoe.primary_reason.value if qoe.primary_reason else None,
+            qoe_ui_reason=qoe.ui_reason.value,
+        )
+        # 発話処理後の Runtime 観測を次発話の QoE input へ反映する
+        self.report_provider_recovering(
+            speaker_id, self._processor.is_provider_recovering(speaker_id)
         )
 
 

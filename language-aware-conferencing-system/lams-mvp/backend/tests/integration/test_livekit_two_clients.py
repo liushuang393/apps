@@ -220,8 +220,7 @@ async def _wait_for_agent(room: rtc.Room, timeout: float = 30.0) -> None:
     while asyncio.get_event_loop().time() < deadline:
         remote = getattr(room, "remote_participants", {}) or {}
         if any(
-            pid.startswith(_AGENT_IDENTITY) or pid == _AGENT_IDENTITY
-            for pid in remote
+            pid.startswith(_AGENT_IDENTITY) or pid == _AGENT_IDENTITY for pid in remote
         ):
             return
         await asyncio.sleep(0.5)
@@ -274,9 +273,7 @@ async def _auth_token(
     return body["access_token"], body["user"]["id"]
 
 
-async def _issue_token(
-    client: httpx.AsyncClient, bearer: str, room_id: str
-) -> dict:
+async def _issue_token(client: httpx.AsyncClient, bearer: str, room_id: str) -> dict:
     """LiveKit 参加トークンを発行する。"""
     r = await client.post(
         f"{_API_BASE}/api/rooms/{room_id}/token",
@@ -299,9 +296,7 @@ async def test_b1_pipeline_direct() -> None:
     pcm, rate = parse_wav16(wav, fallback_rate=24000)
     wrapped = wrap_wav16(pcm, rate)
 
-    result = await ai_pipeline.process_audio(
-        wrapped, "ja", "en", speaker_id="b1-test"
-    )
+    result = await ai_pipeline.process_audio(wrapped, "ja", "en", speaker_id="b1-test")
     assert result.original_text, "ASR 原文が空"
     assert result.translated_text, "翻訳テキストが空"
     assert result.audio_data and len(result.audio_data) > 0, "翻訳音声が空"

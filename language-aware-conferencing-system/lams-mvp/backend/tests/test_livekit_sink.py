@@ -12,7 +12,7 @@ import json
 import numpy as np
 import pytest
 
-from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+from app.ai_pipeline.orchestrator import HearingOutput, HybridOrchestrator, Listener
 from app.webrtc.sink import (
     OUTPUT_FRAME_SAMPLES,
     TOPIC_EVENT,
@@ -28,7 +28,15 @@ class _Recorder:
         self.audio: list[tuple[str, str, int]] = []
         self.data: list[tuple[bytes, list[str], str]] = []
 
-    async def capture_audio(self, speaker_id: str, lang: str, frame: bytes) -> None:
+    async def capture_audio(
+        self,
+        speaker_id: str,
+        lang: str,
+        frame: bytes,
+        *,
+        generation_id: int | None = None,
+    ) -> None:
+        del generation_id
         self.audio.append((speaker_id, lang, len(frame)))
 
     async def send_data(self, payload: bytes, ids: list[str], topic: str) -> None:
@@ -122,11 +130,8 @@ async def test_orchestrator_drives_livekit_sink() -> None:
 
     async def hearing(
         _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
-    ) -> object:
-        from dataclasses import make_dataclass
-
-        proc = make_dataclass("P", ["audio_data", "translated_text"])
-        return proc(audio_data=_pcm(2400), translated_text="H:en")
+    ) -> HearingOutput:
+        return HearingOutput(audio_data=_pcm(2400), translated_text="H:en")
 
     async def reading(_text: str, _src: str, tgt: str) -> str:
         return f"R:{tgt}"
@@ -155,14 +160,24 @@ async def test_deliver_audio_strips_wav_header():
 
     captured: list[tuple[str, bytes]] = []
 
-    async def capture(_speaker_id: str, lang: str, frame: bytes) -> None:
+    async def capture(
+        _speaker_id: str,
+        lang: str,
+        frame: bytes,
+        *,
+        generation_id: int | None = None,
+    ) -> None:
+        del generation_id
         captured.append((lang, frame))
 
     async def send(payload: bytes, ids: list[str], topic: str) -> None:
         pass
 
     sink = LiveKitOutputSink(
-        user_language={"u1": "en"}, capture_audio=capture, send_data=send, speaker_id="sp"
+        user_language={"u1": "en"},
+        capture_audio=capture,
+        send_data=send,
+        speaker_id="sp",
     )
     pcm24k = b"\x01\x00" * 2400  # 24kHz で 100ms
     await sink.deliver_audio("u1", wrap_wav16(pcm24k, 24000))
@@ -179,7 +194,14 @@ async def test_deliver_audio_passes_speaker_and_language():
 
     captured: list[tuple[str, str]] = []
 
-    async def capture(speaker_id: str, lang: str, _pcm48: bytes) -> None:
+    async def capture(
+        speaker_id: str,
+        lang: str,
+        _pcm48: bytes,
+        *,
+        generation_id: int | None = None,
+    ) -> None:
+        del generation_id
         captured.append((speaker_id, lang))
 
     async def send(payload: bytes, ids: list[str], topic: str) -> None:

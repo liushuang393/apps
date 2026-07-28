@@ -61,7 +61,9 @@ async def test_normalized_match_ignores_case_and_trailing_punct(fake_redis) -> N
 
 @pytest.mark.asyncio
 async def test_fuzzy_match_above_threshold(fake_redis) -> None:  # noqa: ARG001
-    await tm.store("The quarterly revenue report is ready", "en", "ja", "四半期売上報告書")
+    await tm.store(
+        "The quarterly revenue report is ready", "en", "ja", "四半期売上報告書"
+    )
     # 1 語違い（report→reports）でも高類似で fuzzy 命中。
     hit = await tm.lookup("The quarterly revenue reports is ready", "en", "ja")
     assert hit == "四半期売上報告書"
@@ -69,7 +71,9 @@ async def test_fuzzy_match_above_threshold(fake_redis) -> None:  # noqa: ARG001
 
 @pytest.mark.asyncio
 async def test_fuzzy_miss_below_threshold(fake_redis) -> None:  # noqa: ARG001
-    await tm.store("The quarterly revenue report is ready", "en", "ja", "四半期売上報告書")
+    await tm.store(
+        "The quarterly revenue report is ready", "en", "ja", "四半期売上報告書"
+    )
     assert await tm.lookup("Completely different sentence here", "en", "ja") is None
 
 

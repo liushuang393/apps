@@ -1,0 +1,239 @@
+{
+  "valid": [
+    {
+      "name": "subtitle",
+      "event": {
+        "schema_version": 1,
+        "type": "subtitle",
+        "event_id": "evt-subtitle",
+        "timestamp_ms": 1700000000000,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": 2,
+        "sequence_id": 3,
+        "revision": 0,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "id": "subtitle-1",
+        "seq": 3,
+        "original_text": "こんにちは",
+        "source_language": "ja",
+        "translated_text": "Hello",
+        "target_language": "en",
+        "is_translated": true,
+        "is_final": true,
+        "optional_extension": "additive-v1"
+      }
+    },
+    {
+      "name": "subtitle_interim",
+      "event": {
+        "schema_version": 1,
+        "type": "subtitle_interim",
+        "event_id": "evt-interim",
+        "timestamp_ms": 1700000000001,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": 2,
+        "sequence_id": 3,
+        "revision": 1,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "id": "subtitle-1",
+        "seq": 3,
+        "text": "こん",
+        "is_final": false
+      }
+    },
+    {
+      "name": "qos_warning",
+      "event": {
+        "schema_version": 1,
+        "type": "qos_warning",
+        "event_id": "evt-warning",
+        "timestamp_ms": 1700000000002,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": 2,
+        "sequence_id": 3,
+        "revision": 0,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "metric": "latency_p95",
+        "mainline": "hearing",
+        "value_ms": 1300.0,
+        "target_ms": 1200.0,
+        "should_fallback_to_subtitle": true
+      }
+    },
+    {
+      "name": "qoe_degraded",
+      "event": {
+        "schema_version": 1,
+        "type": "qoe_degraded",
+        "event_id": "evt-degraded",
+        "timestamp_ms": 1700000000003,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": 2,
+        "sequence_id": 3,
+        "revision": 0,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "metric": "hearing_degraded",
+        "mainline": "hearing",
+        "should_fallback_to_subtitle": true,
+        "reason_code": "ai_hearing_degraded",
+        "ui_reason": "degraded"
+      }
+    },
+    {
+      "name": "qoe_recovered",
+      "event": {
+        "schema_version": 1,
+        "type": "qoe_recovered",
+        "event_id": "evt-recovered",
+        "timestamp_ms": 1700000000004,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": 3,
+        "sequence_id": 4,
+        "revision": 0,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "metric": "healthy",
+        "mainline": "hearing",
+        "should_fallback_to_subtitle": false
+      }
+    },
+    {
+      "name": "overload_degraded",
+      "event": {
+        "schema_version": 1,
+        "type": "overload_degraded",
+        "event_id": "evt-overload",
+        "timestamp_ms": 1700000000005,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": 3,
+        "sequence_id": 4,
+        "revision": 0,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "metric": "queue_overload",
+        "mainline": "hearing",
+        "should_fallback_to_subtitle": true
+      }
+    },
+    {
+      "name": "translation_interrupted",
+      "event": {
+        "schema_version": 1,
+        "type": "translation_interrupted",
+        "event_id": "evt-interrupted",
+        "timestamp_ms": 1700000000006,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": 3,
+        "sequence_id": 4,
+        "revision": 0,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "mainline": "hearing"
+      }
+    }
+  ],
+  "legacy_valid": [
+    {
+      "name": "legacy_final_subtitle",
+      "event": {
+        "type": "subtitle",
+        "id": "legacy-1",
+        "seq": 1,
+        "speaker_id": "speaker-legacy",
+        "original_text": "旧字幕",
+        "source_language": "ja",
+        "is_final": true
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "unknown_schema_version",
+      "event": {
+        "schema_version": 2,
+        "type": "subtitle"
+      }
+    },
+    {
+      "name": "unknown_event_type",
+      "event": {
+        "schema_version": 1,
+        "type": "future_event"
+      }
+    },
+    {
+      "name": "missing_required_field",
+      "event": {
+        "schema_version": 1,
+        "type": "subtitle",
+        "event_id": "evt-missing"
+      }
+    },
+    {
+      "name": "invalid_field_type",
+      "event": {
+        "schema_version": 1,
+        "type": "translation_interrupted",
+        "event_id": "evt-invalid",
+        "timestamp_ms": 1700000000007,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": "three",
+        "sequence_id": 4,
+        "revision": 0,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "mainline": "hearing"
+      }
+    },
+    {
+      "name": "diagnostic_event_with_meeting_text",
+      "event": {
+        "schema_version": 1,
+        "type": "qoe_degraded",
+        "event_id": "evt-secret",
+        "timestamp_ms": 1700000000008,
+        "room_id": "room-1",
+        "speaker_id": "speaker-1",
+        "utterance_id": "utterance-1",
+        "generation_id": 3,
+        "sequence_id": 4,
+        "revision": 0,
+        "runtime": "native",
+        "trace_id": "trace-1",
+        "metric": "hearing_degraded",
+        "mainline": "hearing",
+        "should_fallback_to_subtitle": true,
+        "original_text": "会議本文"
+      }
+    },
+    {
+      "name": "legacy_interim_is_not_accepted",
+      "event": {
+        "type": "subtitle_interim",
+        "id": "legacy-interim",
+        "speaker_id": "speaker-legacy",
+        "text": "旧暫定"
+      }
+    }
+  ]
+}

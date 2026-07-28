@@ -1,130 +1,16 @@
-"""LiveKitAgent のセグメントキュー（欠陥 #11: head-of-line blocking 解消）のテスト。"""
+"""LiveKitAgent の lifecycle／配線テスト（取り込み政策は test_ingress_pipeline）。"""
 
-import asyncio
 import types
 
 import pytest
 
 from app.webrtc.agent import LiveKitAgent
-from app.webrtc.ingress import SegmentIngress
-from app.webrtc.segmenter import SegmentEvent
-
-
-def _final(pcm: bytes) -> SegmentEvent:
-    return SegmentEvent(pcm, False)
-
-
-def _partial(pcm: bytes) -> SegmentEvent:
-    return SegmentEvent(pcm, True)
+from app.webrtc.ingress_pipeline import IngressPipeline
 
 
 def _agent() -> LiveKitAgent:
     # rtc.Room を作らないようダミー room を注入（run しない限り rtc 依存なし）
     return LiveKitAgent("room-t", room=object())  # type: ignore[arg-type]
-
-
-@pytest.mark.asyncio
-async def test_worker_processes_in_order(monkeypatch):
-    agent = _agent()
-    handled: list[bytes] = []
-
-    async def fake_handle(speaker_id: str, seg: bytes) -> None:  # noqa: ARG001
-        handled.append(seg)
-
-    monkeypatch.setattr(agent, "_handle_segment", fake_handle)
-    queue: asyncio.Queue = asyncio.Queue(maxsize=8)
-    worker = asyncio.ensure_future(agent._segment_worker("sp", queue))
-    for seg in (b"a", b"b", b"c"):
-        agent._enqueue_segment("sp", queue, _final(seg))
-    await queue.put(None)
-    await worker
-    assert handled == [b"a", b"b", b"c"]
-
-
-@pytest.mark.asyncio
-async def test_partial_routes_to_handle_partial(monkeypatch):
-    """partial イベントは _handle_partial、final は _handle_segment へ振り分けられる。"""
-    agent = _agent()
-    finals: list[bytes] = []
-    partials: list[bytes] = []
-
-    async def fake_final(speaker_id: str, seg: bytes) -> None:  # noqa: ARG001
-        finals.append(seg)
-
-    async def fake_partial(speaker_id: str, seg: bytes) -> None:  # noqa: ARG001
-        partials.append(seg)
-
-    monkeypatch.setattr(agent, "_handle_segment", fake_final)
-    monkeypatch.setattr(agent, "_handle_partial", fake_partial)
-    queue: asyncio.Queue = asyncio.Queue(maxsize=8)
-    worker = asyncio.ensure_future(agent._segment_worker("sp", queue))
-    agent._enqueue_segment("sp", queue, _partial(b"p1"))
-    agent._enqueue_segment("sp", queue, _final(b"f1"))
-    await queue.put(None)
-    await worker
-    assert partials == [b"p1"]
-    assert finals == [b"f1"]
-
-
-@pytest.mark.asyncio
-async def test_enqueue_drops_oldest_when_full():
-    agent = _agent()
-    agent._ingress = SegmentIngress(soft_limit=1, hard_limit=2)
-    queue: asyncio.Queue = asyncio.Queue(maxsize=2)
-    agent._enqueue_segment("sp", queue, _final(b"1"))
-    agent._enqueue_segment("sp", queue, _final(b"2"))
-    agent._enqueue_segment("sp", queue, _final(b"3"))  # 満杯 → 最古 b"1" を破棄
-    items = [queue.get_nowait().event.pcm, queue.get_nowait().event.pcm]
-    assert items == [b"2", b"3"]
-    assert agent._ingress.snapshot().final_dropped == 1
-
-
-@pytest.mark.asyncio
-async def test_enqueue_keeps_all_segments_at_soft_limit():
-    """soft_limit 超過でも hard 未満なら確定発話を破棄せず縮退のみにする。"""
-    agent = _agent()
-    agent._ingress = SegmentIngress(soft_limit=2, hard_limit=4)
-    queue: asyncio.Queue = asyncio.Queue(maxsize=4)
-    agent._enqueue_segment("sp", queue, _final(b"1"))
-    agent._enqueue_segment("sp", queue, _final(b"2"))
-    agent._enqueue_segment("sp", queue, _final(b"3"))
-    items = [queue.get_nowait().event.pcm for _ in range(3)]
-    assert items == [b"1", b"2", b"3"]
-    assert agent._speaker_overloaded.get("sp") is True
-    assert agent._ingress.snapshot().final_dropped == 0
-
-
-@pytest.mark.asyncio
-async def test_enqueue_full_drops_partial_keeps_finals():
-    """満杯時、partial は破棄され既存 final は退避されない（final 漏れ防止）。"""
-    agent = _agent()
-    agent._ingress = SegmentIngress(soft_limit=1, hard_limit=2)
-    queue: asyncio.Queue = asyncio.Queue(maxsize=2)
-    agent._enqueue_segment("sp", queue, _final(b"1"))
-    agent._enqueue_segment("sp", queue, _final(b"2"))
-    agent._enqueue_segment("sp", queue, _partial(b"p"))  # 満杯 → partial は捨てる
-    items = [queue.get_nowait().event.pcm, queue.get_nowait().event.pcm]
-    assert items == [b"1", b"2"]  # final は温存される
-
-
-@pytest.mark.asyncio
-async def test_worker_survives_handler_error(monkeypatch):
-    agent = _agent()
-    handled: list[bytes] = []
-
-    async def flaky(speaker_id: str, seg: bytes) -> None:  # noqa: ARG001
-        if seg == b"boom":
-            raise RuntimeError("provider down")
-        handled.append(seg)
-
-    monkeypatch.setattr(agent, "_handle_segment", flaky)
-    queue: asyncio.Queue = asyncio.Queue(maxsize=8)
-    worker = asyncio.ensure_future(agent._segment_worker("sp", queue))
-    agent._enqueue_segment("sp", queue, _final(b"boom"))
-    agent._enqueue_segment("sp", queue, _final(b"ok"))
-    await queue.put(None)
-    await worker
-    assert handled == [b"ok"]
 
 
 class _RaisingStream:
@@ -152,7 +38,7 @@ class _TailSegmenter:
 
 @pytest.mark.asyncio
 async def test_ingest_flushes_tail_on_abnormal_disconnect(monkeypatch):
-    """異常切断（async for 中の例外）でも tail flush が emit される（改善点 M3）。"""
+    """異常切断でも IngressPipeline.end 経由で tail flush される（改善点 M3）。"""
     agent = _agent()
     handled: list[bytes] = []
 
@@ -160,18 +46,22 @@ async def test_ingest_flushes_tail_on_abnormal_disconnect(monkeypatch):
         handled.append(seg)
 
     monkeypatch.setattr(agent, "_handle_segment", capture)
-    # AudioStream / SpeechSegmenter を差し替え（rtc 依存を排除）
+    # AudioStream / 既定 segmenter を差し替え（rtc・VAD 依存を排除）
     monkeypatch.setattr(
         "app.webrtc.agent.rtc.AudioStream", lambda *_a, **_k: _RaisingStream()
     )
-    monkeypatch.setattr("app.webrtc.agent.SpeechSegmenter", _TailSegmenter)
+    monkeypatch.setattr(
+        "app.webrtc.ingress_pipeline.build_default_segmenter",
+        lambda **_kw: _TailSegmenter(),
+    )
 
     participant = types.SimpleNamespace(identity="sp")
-    # 例外は finally で tail を flush した後に再送出される（本番では _spawn が捕捉）。
+    # 例外は finally で pipeline.end（tail flush）した後に再送出される。
     with pytest.raises(RuntimeError, match="connection dropped"):
         await agent._ingest(track=object(), participant=participant)
 
     assert handled == [b"tail"]
+    assert "sp" not in agent._pipelines
 
 
 @pytest.mark.asyncio
@@ -196,10 +86,18 @@ async def test_room_empty_leave_forgets_sequencer_state(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_leave_clears_partial_revision(monkeypatch):
-    """退室で当該話者の partial リビジョンが破棄される（残留/再入室連番防止）。"""
-    agent = _agent()
-    agent._partial_rev["u1"] = 5
-    agent._partial_rev["u2"] = 2
+    """退室で当該話者の revision authority state が破棄される（残留/再入室連番防止）。"""
+    from app.ai_pipeline.revision_authority import (
+        RevisionAuthority,
+        RevisionStreamKey,
+        RevisionUnknownError,
+        StreamKind,
+    )
+
+    auth = RevisionAuthority()
+    agent = LiveKitAgent("room-t", room=object(), revision_authority=auth)  # type: ignore[arg-type]
+    left = agent._next_partial_token("u1")
+    kept = agent._next_partial_token("u2")
 
     async def fake_remove(room_id: str, pid: str) -> int:  # noqa: ARG001
         return 1  # まだ残っている（room は空でない）
@@ -207,8 +105,20 @@ async def test_leave_clears_partial_revision(monkeypatch):
     monkeypatch.setattr("app.webrtc.agent.room_manager.remove_participant", fake_remove)
 
     await agent._handle_participant_leave("u1")
-    assert "u1" not in agent._partial_rev
-    assert agent._partial_rev.get("u2") == 2  # 他話者は保持
+    with pytest.raises(RevisionUnknownError):
+        auth.advance(
+            "room-t",
+            "u1",
+            left.utterance_id,
+            RevisionStreamKey(kind=StreamKind.PARTIAL_ASR),
+        )
+    next_kept = auth.advance(
+        "room-t",
+        "u2",
+        kept.utterance_id,
+        RevisionStreamKey(kind=StreamKind.PARTIAL_ASR),
+    )
+    assert next_kept.revision == kept.revision + 1
 
 
 @pytest.mark.asyncio
@@ -219,7 +129,20 @@ async def test_leave_clears_qoe_and_releases_runtime(monkeypatch):
     agent = _agent()
     agent._qoe_by_speaker["u1"] = QoEStateMachine()
     agent._speaker_overloaded["u1"] = True
-    agent._ingresses["u1"] = agent._ingress
+
+    async def on_final(pcm: bytes) -> None:  # noqa: ARG001
+        return None
+
+    async def on_partial(pcm: bytes) -> None:  # noqa: ARG001
+        return None
+
+    # 話者登録済み pipeline（退室で cancel されること）
+    pipe = IngressPipeline.create_default(
+        on_final=on_final,
+        on_partial=on_partial,
+        segmenter=_TailSegmenter(),
+    )
+    agent._pipelines["u1"] = pipe
     released: list[tuple[str, str]] = []
 
     async def fake_release(room_id: str, speaker_id: str) -> None:
@@ -234,7 +157,6 @@ async def test_leave_clears_qoe_and_releases_runtime(monkeypatch):
     await agent._handle_participant_leave("u1")
     assert "u1" not in agent._qoe_by_speaker
     assert "u1" not in agent._speaker_overloaded
-    assert "u1" not in agent._ingresses
+    assert "u1" not in agent._provider_recovering
+    assert "u1" not in agent._pipelines
     assert released == [("room-t", "u1")]
-    # 共有 Ingress を使っていた場合はクリーンな新インスタンスへ戻る
-    assert agent._ingress.snapshot().final_dropped == 0

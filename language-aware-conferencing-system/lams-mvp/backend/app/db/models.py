@@ -755,9 +755,7 @@ class ExperimentMetric(Base):
     metric_name: Mapped[str] = mapped_column(String(50))
     metric_value: Mapped[float] = mapped_column(Float)
 
-    room_id: Mapped[str | None] = mapped_column(
-        ForeignKey("rooms.id"), nullable=True
-    )
+    room_id: Mapped[str | None] = mapped_column(ForeignKey("rooms.id"), nullable=True)
     session_id: Mapped[str | None] = mapped_column(
         ForeignKey("meeting_sessions.id"), nullable=True
     )

@@ -133,7 +133,9 @@ class CompositeAIProvider(AIProvider):
         # A/B 実験セレクタ（None＝実験なし＝従来どおり固定ステージで処理）。
         self._selector = selector
 
-    def _pick(self, stage: str, default: object) -> tuple[object, str | None, str | None]:
+    def _pick(
+        self, stage: str, default: object
+    ) -> tuple[object, str | None, str | None]:
         """発話ごとのステージ実体を選ぶ（selector 無しなら固定実体）。
 
         返り値 (実体, experiment_key|None, variant名|None)。experiment_key が None なら
@@ -199,7 +201,9 @@ class CompositeAIProvider(AIProvider):
         mt, mt_ek, mt_vn = self._pick(STAGE_MT, self._mt)
         t0 = time.monotonic()
         translated = await mt.translate_text(original, source_language, target_language)
-        self._note(mt_ek, mt_vn, STAGE_MT, "latency_ms", (time.monotonic() - t0) * 1000.0)
+        self._note(
+            mt_ek, mt_vn, STAGE_MT, "latency_ms", (time.monotonic() - t0) * 1000.0
+        )
         # 品質代理指標: 数字保持率（原文に数字がある場合のみ・改善.md §15）。
         if translated and mt_ek:
             from app.ai_pipeline.qos import number_retention

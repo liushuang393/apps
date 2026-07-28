@@ -76,9 +76,7 @@ class Experiment:
         if not self.key:
             raise ValueError("experiment.key は必須です")
         if self.stage not in STAGES:
-            raise ValueError(
-                f"未知の stage: {self.stage!r}（許可={sorted(STAGES)}）"
-            )
+            raise ValueError(f"未知の stage: {self.stage!r}（許可={sorted(STAGES)}）")
         if self.unit not in UNITS:
             raise ValueError(f"未知の unit: {self.unit!r}（許可={sorted(UNITS)}）")
         if not self.variants:

@@ -86,7 +86,9 @@ class FasterWhisperASRStage:
 
     name = "local"
 
-    def __init__(self, model: object | None = None, broker: object | None = None) -> None:
+    def __init__(
+        self, model: object | None = None, broker: object | None = None
+    ) -> None:
         # model/broker はテスト用に注入可能。未注入時は遅延ロード・既定 broker を使う。
         self._model = model
         self._broker = broker
@@ -116,9 +118,7 @@ class FasterWhisperASRStage:
         detected = getattr(info, "language", "") or ""
         return text, detected
 
-    async def _infer(
-        self, audio_data: bytes, language: str | None
-    ) -> tuple[str, str]:
+    async def _infer(self, audio_data: bytes, language: str | None) -> tuple[str, str]:
         """WAV → 推論の共通経路。失敗・空は ("", "") を返す（雲フォールバック契機）。"""
         samples = _decode_wav(audio_data)
         if samples.size == 0:

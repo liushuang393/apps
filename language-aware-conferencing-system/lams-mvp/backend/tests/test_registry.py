@@ -279,9 +279,7 @@ def test_composite_uses_selector_mt_and_records() -> None:
     alt = _AltMT()
     sel = _RecordingSelector(alt)
     comp = CompositeAIProvider(_FakeASR(), _FakeMT(), _FakeTTS(), selector=sel)
-    r = asyncio.run(
-        comp.translate_audio(b"AUDIO", "ja", "en", original_text="12 個")
-    )
+    r = asyncio.run(comp.translate_audio(b"AUDIO", "ja", "en", original_text="12 個"))
     # 既定 _FakeMT ではなく selector の _AltMT が使われる。
     assert r.translated_text == "ALT[en]12 個"
     # MT レイテンシと数字保持率が記録される（数字 "12" を含むため）。
@@ -293,7 +291,5 @@ def test_composite_uses_selector_mt_and_records() -> None:
 def test_composite_without_selector_unchanged() -> None:
     """selector 無しなら従来どおり固定 MT（挙動不変）。"""
     comp = CompositeAIProvider(_FakeASR(), _FakeMT(), _FakeTTS())
-    r = asyncio.run(
-        comp.translate_audio(b"AUDIO", "ja", "en", original_text="hello")
-    )
+    r = asyncio.run(comp.translate_audio(b"AUDIO", "ja", "en", original_text="hello"))
     assert r.translated_text == "[en]hello"

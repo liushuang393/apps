@@ -53,7 +53,9 @@ def _make(
     async def fake_save(**kwargs) -> None:
         saved.append(kwargs)
 
-    async def fake_store_original(subtitle_id: str, original_text: str, source_language: str) -> None:
+    async def fake_store_original(
+        subtitle_id: str, original_text: str, source_language: str
+    ) -> None:
         originals.append(
             {
                 "subtitle_id": subtitle_id,
@@ -63,7 +65,9 @@ def _make(
         )
 
     monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
-    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
+    monkeypatch.setattr(
+        processor_mod.subtitle_cache, "store_original", fake_store_original
+    )
     orch = _RecordingOrchestrator()
     proc = SegmentProcessor(
         orchestrator=orch, sequencer=SubtitleSequencer(), detect_fn=detect
@@ -279,7 +283,9 @@ async def _run_with_event(
         return ("こんにちは", "ja")
 
     monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
-    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
+    monkeypatch.setattr(
+        processor_mod.subtitle_cache, "store_original", fake_store_original
+    )
     monkeypatch.setattr(processor_mod, "get_or_create_session", fake_get_session)
     proc = SegmentProcessor(
         orchestrator=orchestrator,
@@ -366,7 +372,9 @@ async def test_no_event_recorded_when_fn_absent(monkeypatch) -> None:
         return ("こんにちは", "ja")
 
     monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
-    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
+    monkeypatch.setattr(
+        processor_mod.subtitle_cache, "store_original", fake_store_original
+    )
     monkeypatch.setattr(processor_mod, "get_or_create_session", fake_get_session)
     proc = SegmentProcessor(
         orchestrator=_RecordingOrchestrator(),
@@ -406,7 +414,9 @@ async def test_event_recording_failure_does_not_break_process(monkeypatch) -> No
         return ("こんにちは", "ja")
 
     monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
-    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
+    monkeypatch.setattr(
+        processor_mod.subtitle_cache, "store_original", fake_store_original
+    )
     monkeypatch.setattr(processor_mod, "get_or_create_session", boom_session)
     proc = SegmentProcessor(
         orchestrator=_RecordingOrchestrator(),
@@ -489,7 +499,9 @@ async def _run_with_diarization(
         return ("こんにちは", "ja")
 
     monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
-    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
+    monkeypatch.setattr(
+        processor_mod.subtitle_cache, "store_original", fake_store_original
+    )
     monkeypatch.setattr(processor_mod, "get_or_create_session", fake_get_session)
     proc = SegmentProcessor(
         orchestrator=_RecordingOrchestrator(),
@@ -547,7 +559,9 @@ async def test_diarization_enrollments_loaded_and_cached(monkeypatch) -> None:
         return ("こんにちは", "ja")
 
     monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
-    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
+    monkeypatch.setattr(
+        processor_mod.subtitle_cache, "store_original", fake_store_original
+    )
     monkeypatch.setattr(processor_mod, "get_or_create_session", fake_get_session)
     proc = SegmentProcessor(
         orchestrator=_RecordingOrchestrator(),
@@ -617,9 +631,7 @@ async def test_diarization_none_when_not_injected(monkeypatch) -> None:
 def test_forget_room_clears_identifier_state() -> None:
     """forget_room で identifier のクラスタ状態も破棄される。"""
     ident = _FakeIdentifier()
-    proc = SegmentProcessor(
-        sequencer=SubtitleSequencer(), speaker_identifier=ident
-    )
+    proc = SegmentProcessor(sequencer=SubtitleSequencer(), speaker_identifier=ident)
     proc.forget_room("r")
     assert ident.forgotten == ["r"]
 
@@ -694,7 +706,9 @@ async def test_speaker_label_and_session_flow(monkeypatch) -> None:
         return ("こんにちは", "ja")
 
     monkeypatch.setattr(processor_mod, "save_transcript_segment", fake_save)
-    monkeypatch.setattr(processor_mod.subtitle_cache, "store_original", fake_store_original)
+    monkeypatch.setattr(
+        processor_mod.subtitle_cache, "store_original", fake_store_original
+    )
     monkeypatch.setattr(processor_mod, "get_or_create_session", fake_get_session)
     proc = SegmentProcessor(
         orchestrator=_CtxOrchestrator(),
@@ -702,6 +716,7 @@ async def test_speaker_label_and_session_flow(monkeypatch) -> None:
         detect_fn=detect,
         record_event_fn=fake_record,
     )
+
     # 話者ラベル解決を固定（diarization 実体なしでも検証できるよう差し替え）。
     async def _label(_room_id: str, _wav: bytes) -> str:
         return "Speaker 1"

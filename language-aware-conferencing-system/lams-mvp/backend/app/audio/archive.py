@@ -234,6 +234,8 @@ def build_audio_archive() -> AudioArchive | None:
         logger.warning("audio_archive_key の base64 デコードに失敗。アーカイブ無効")
         return None
     if len(key) != _AES_KEY_BYTES:
-        logger.warning("audio_archive_key の鍵長が不正（32 バイト必須）。アーカイブ無効")
+        logger.warning(
+            "audio_archive_key の鍵長が不正（32 バイト必須）。アーカイブ無効"
+        )
         return None
     return EncryptedFileAudioArchive(settings.audio_archive_dir, key)

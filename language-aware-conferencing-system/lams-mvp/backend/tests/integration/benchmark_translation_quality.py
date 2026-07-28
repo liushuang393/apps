@@ -160,9 +160,7 @@ async def _run_case(
     if not result.original_text or not result.translated_text or not result.audio_data:
         raise RuntimeError(f"翻訳パイプラインが空結果を返しました: case={index}")
 
-    adequacy, fluency = await _judge(
-        client, source, reference, result.translated_text
-    )
+    adequacy, fluency = await _judge(client, source, reference, result.translated_text)
     return CaseResult(
         source=source,
         recognized=result.original_text,
@@ -172,9 +170,7 @@ async def _run_case(
         chrf=chrf.sentence_score(result.translated_text, [reference]).score,
         adequacy=adequacy,
         fluency=fluency,
-        number_retention=number_retention(
-            result.original_text, result.translated_text
-        ),
+        number_retention=number_retention(result.original_text, result.translated_text),
         latency_ms=latency_ms,
         audio_bytes=len(result.audio_data),
     )

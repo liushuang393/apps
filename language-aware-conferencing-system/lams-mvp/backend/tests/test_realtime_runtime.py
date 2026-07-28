@@ -13,24 +13,28 @@ from typing import Any
 
 import pytest
 
+from app.ai_pipeline.orchestrator import HearingOutput
 from app.ai_pipeline.runtime.factory import RuntimeRegistry, create_realtime_runtime
 from app.ai_pipeline.runtime.generation import GenerationTracker
 from app.ai_pipeline.runtime.native_persistent import NativePersistentRuntime
 from app.ai_pipeline.runtime.per_utterance import PerUtteranceRuntime
 from app.ai_pipeline.runtime.types import (
     RuntimeEvent,
+    RuntimeTranslationOutput,
     SessionContext,
+    TurnInput,
     make_session_key,
 )
 
 
-@dataclass
-class _FakeTranslation:
-    """translate_audio 相当の最小戻り値。"""
-
-    audio_data: bytes | None
-    translated_text: str
-    original_text: str = ""
+def _translation(
+    *, audio_data: bytes | None, translated_text: str
+) -> RuntimeTranslationOutput:
+    """短命 Runtime と production が共有する翻訳結果を作る。"""
+    return RuntimeTranslationOutput(
+        translated_text=translated_text,
+        audio_data=audio_data,
+    )
 
 
 class _FakeWs:
@@ -136,9 +140,9 @@ async def test_per_utterance_commit_emits_events(session_ctx: SessionContext) ->
 
     async def translate(
         audio: bytes, src: str, tgt: str, _original: str | None = None
-    ) -> _FakeTranslation:
+    ) -> RuntimeTranslationOutput:
         calls.append((audio, src, tgt))
-        return _FakeTranslation(audio_data=b"WAV", translated_text="hello")
+        return _translation(audio_data=b"WAV", translated_text="hello")
 
     runtime = PerUtteranceRuntime(translate_fn=translate)
     await runtime.open_session(session_ctx)
@@ -167,10 +171,10 @@ async def test_per_utterance_interrupt_drops_old_audio(
 
     async def slow_translate(
         _audio: bytes, _src: str, _tgt: str, _original: str | None = None
-    ) -> _FakeTranslation:
+    ) -> RuntimeTranslationOutput:
         started.set()
         await release.wait()
-        return _FakeTranslation(audio_data=b"OLD", translated_text="old")
+        return _translation(audio_data=b"OLD", translated_text="old")
 
     runtime = PerUtteranceRuntime(translate_fn=slow_translate)
     tracker = runtime.generation_tracker
@@ -305,9 +309,9 @@ async def test_native_persistent_reconnect_then_fallback(
 
     async def fallback_translate(
         _audio: bytes, _src: str, _tgt: str, _original: str | None = None
-    ) -> _FakeTranslation:
+    ) -> RuntimeTranslationOutput:
         fallback_calls["n"] += 1
-        return _FakeTranslation(audio_data=b"FB", translated_text="fallback")
+        return _translation(audio_data=b"FB", translated_text="fallback")
 
     async def _no_sleep(_delay: float) -> None:
         return None
@@ -358,15 +362,24 @@ async def test_factory_native_persistent(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_registry_reuses_same_session_key(session_ctx: SessionContext) -> None:
-    """Registry は持続モードだけ同一 session_key を再利用する。"""
-    registry = RuntimeRegistry()
-    a = registry.get_or_create(session_ctx, mode="native_persistent")
-    b = registry.get_or_create(session_ctx, mode="native_persistent")
+async def test_registry_owns_session_for_both_modes(
+    session_ctx: SessionContext,
+) -> None:
+    """
+    Registry は mode によらず同一 session_key の Runtime を所有・再利用する。
+
+    接続再利用は持続 capability。短命も tracker 共有のため instance を保持する。
+    """
+    persistent = RuntimeRegistry(mode="native_persistent")
+    a = persistent.get_or_create(session_ctx)
+    b = persistent.get_or_create(session_ctx)
     assert a is b
-    short_a = registry.get_or_create(session_ctx, mode="per_utterance")
-    short_b = registry.get_or_create(session_ctx, mode="per_utterance")
-    assert short_a is not short_b
+
+    short_lived = RuntimeRegistry(mode="per_utterance")
+    short_a = short_lived.get_or_create(session_ctx)
+    short_b = short_lived.get_or_create(session_ctx)
+    assert short_a is short_b
+
     other = SessionContext(
         room_id="room-1",
         speaker_id="spk-b",
@@ -374,7 +387,7 @@ async def test_registry_reuses_same_session_key(session_ctx: SessionContext) -> 
         target_language="en",
         provider="gpt_realtime",
     )
-    c = registry.get_or_create(other, mode="native_persistent")
+    c = persistent.get_or_create(other)
     assert c is not a
 
 
@@ -382,14 +395,105 @@ async def test_registry_reuses_same_session_key(session_ctx: SessionContext) -> 
 async def test_registry_releases_speaker_sessions(
     session_ctx: SessionContext,
 ) -> None:
-    """退室話者の持続セッションを解放し、同じキーを再作成できる。"""
-    registry = RuntimeRegistry(max_sessions=1)
-    first = registry.get_or_create(session_ctx, mode="native_persistent")
+    """退室話者のセッションを解放し、同じキーを再作成できる。"""
+    registry = RuntimeRegistry(max_sessions=1, mode="native_persistent")
+    first = registry.get_or_create(session_ctx)
 
     await registry.release_speaker(session_ctx.room_id, session_ctx.speaker_id)
-    second = registry.get_or_create(session_ctx, mode="native_persistent")
+    second = registry.get_or_create(session_ctx)
 
     assert second is not first
+
+
+@pytest.mark.asyncio
+async def test_registry_room_release_closes_all_speakers(
+    session_ctx: SessionContext,
+) -> None:
+    """capability: room release は同一会議室の全 speaker session を閉じる。"""
+    registry = RuntimeRegistry(mode="native_persistent")
+    other = SessionContext(
+        room_id=session_ctx.room_id,
+        speaker_id="spk-b",
+        source_language="ja",
+        target_language="en",
+        provider="gpt_realtime",
+    )
+    first = registry.get_or_create(session_ctx)
+    second = registry.get_or_create(other)
+
+    await registry.release_room(session_ctx.room_id)
+
+    again_a = registry.get_or_create(session_ctx)
+    again_b = registry.get_or_create(other)
+    assert again_a is not first
+    assert again_b is not second
+
+
+@pytest.mark.asyncio
+async def test_registry_close_all_is_idempotent_after_partial_failure(
+    session_ctx: SessionContext,
+) -> None:
+    """
+    close_all は冪等で、途中失敗後も残セッションの解放を試みる。
+    """
+    registry = RuntimeRegistry(mode="native_persistent")
+    other = SessionContext(
+        room_id="room-2",
+        speaker_id="spk-z",
+        source_language="ja",
+        target_language="zh",
+        provider="gpt_realtime",
+    )
+    first = registry.get_or_create(session_ctx)
+    second = registry.get_or_create(other)
+
+    calls = {"n": 0}
+    original_close = first.close_session
+
+    async def boom_then_ok() -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("close failed once")
+        await original_close()
+
+    first.close_session = boom_then_ok  # type: ignore[method-assign]
+    await registry.close_all()
+    await registry.close_all()
+    # 失敗後も第二セッションは解放され、再取得は新規になる
+    assert registry.get_or_create(session_ctx) is not first
+    assert registry.get_or_create(other) is not second
+
+
+@pytest.mark.asyncio
+async def test_registry_interrupt_speaker_without_external_tracker(
+    session_ctx: SessionContext,
+) -> None:
+    """Registry 所有の Runtime へ generation_id 省略で現行世代を interrupt できる。"""
+
+    async def translate(
+        _audio: bytes, _src: str, _tgt: str, _original: str | None
+    ) -> RuntimeTranslationOutput:
+        return _translation(audio_data=b"A", translated_text="T")
+
+    def factory(
+        mode: str | None = None,
+        *,
+        generation_tracker: GenerationTracker | None = None,
+    ) -> PerUtteranceRuntime:
+        del mode
+        return PerUtteranceRuntime(
+            translate_fn=translate, generation_tracker=generation_tracker
+        )
+
+    registry = RuntimeRegistry(mode="per_utterance", runtime_factory=factory)
+    runtime = registry.get_or_create(session_ctx)
+    await runtime.open_session(session_ctx)
+    turn = await runtime.run_turn(TurnInput(utterance_id="utt-1", audio=b"x"))
+    assert runtime.should_capture(turn.generation_id) is True
+
+    registry.interrupt_speaker(session_ctx.room_id, session_ctx.speaker_id)
+    assert runtime.should_capture(turn.generation_id) is False
+    await runtime.close_session()
 
 
 @pytest.mark.asyncio
@@ -449,22 +553,27 @@ class _HearingState:
 
 @pytest.mark.asyncio
 async def test_orchestrator_barge_in_does_not_cancel_reading() -> None:
-    """新発話の generation 更新で旧 hearing 音声は抑止され、reading は完走する。"""
+    """
+    barge-in 相当で旧 hearing 音声は抑止され、reading は完走する。
+
+    世代抑止の契約は Port suite / registry 側。本テストは orchestrator が
+    reading をキャンセルしないことだけを注入スタブで観測する。
+    """
     from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
-    from app.ai_pipeline.runtime.generation import GenerationTracker
 
     state = _HearingState()
-    tracker = GenerationTracker()
     reading_done = asyncio.Event()
+    cancelled = {"v": False}
 
-    async def hearing(_a: bytes, _s: str, _t: str, _spk: str, _o: str | None) -> object:
-        gen = tracker.current
+    async def hearing(
+        _a: bytes, _s: str, _t: str, _spk: str, _o: str | None
+    ) -> HearingOutput:
         state.started.set()
         await state.release.wait()
-        if tracker.should_capture(gen):
-            state.delivered.append(gen)
-            return _FakeTranslation(audio_data=b"A", translated_text="H")
-        return _FakeTranslation(audio_data=None, translated_text="")
+        if cancelled["v"]:
+            return HearingOutput(audio_data=None, translated_text="")
+        state.delivered.append(1)
+        return HearingOutput(audio_data=b"A", translated_text="H")
 
     async def reading(_text: str, _src: str, _tgt: str) -> str:
         reading_done.set()
@@ -479,8 +588,7 @@ async def test_orchestrator_barge_in_does_not_cancel_reading() -> None:
         async def deliver_audio(
             self, _uid: str, audio: bytes, *, generation_id: int | None = None
         ) -> None:
-            if generation_id is not None and not tracker.should_capture(generation_id):
-                return
+            del generation_id
             self.audio.append(audio)
 
         async def deliver_subtitle(self, _uid: str, message: dict) -> None:
@@ -491,8 +599,6 @@ async def test_orchestrator_barge_in_does_not_cancel_reading() -> None:
 
     sink = _Sink()
     orch = HybridOrchestrator(hearing_fn=hearing, reading_fn=reading)
-    # 世代を orchestrator 外で begin（実装では orchestrate 内で発行）
-    g1 = tracker.begin()
     task = asyncio.create_task(
         orch.orchestrate(
             audio_bytes=b"x",
@@ -502,17 +608,14 @@ async def test_orchestrator_barge_in_does_not_cancel_reading() -> None:
             sink=sink,
             mode="hybrid",
             speaker_id="spk",
-            generation_id=g1,
-            generation_tracker=tracker,
+            generation_id=1,
         )
     )
     await state.started.wait()
     await reading_done.wait()
-    # barge-in: 新世代
-    g2 = tracker.begin()
-    assert tracker.should_capture(g1) is False
+    cancelled["v"] = True
     state.release.set()
     res = await task
     assert res.translations.get("en") == "R:en"
     assert sink.audio == []
-    assert g2 == 2
+    assert state.delivered == []

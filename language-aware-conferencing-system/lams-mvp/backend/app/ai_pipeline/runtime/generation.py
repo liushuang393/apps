@@ -18,7 +18,7 @@ class GenerationTracker:
 
     def __init__(self) -> None:
         self._current: int = 0
-        self._cancelled: set[int] = set()
+        self._current_cancelled = False
 
     @property
     def current(self) -> int:
@@ -34,24 +34,21 @@ class GenerationTracker:
         注意:
             直前の current は自動的に非アクティブ（cancel）扱いになる。
         """
-        if self._current > 0:
-            self._cancelled.add(self._current)
         self._current += 1
-        # 新世代はキャンセル集合から除外（再発行で同番号は起きない想定）
-        self._cancelled.discard(self._current)
+        self._current_cancelled = False
         return self._current
 
     def interrupt(self, generation_id: int) -> None:
         """指定 generation をキャンセルし、capture を禁止する。"""
-        if generation_id > 0:
-            self._cancelled.add(generation_id)
+        if generation_id == self._current:
+            self._current_cancelled = True
 
     def is_active(self, generation_id: int) -> bool:
         """世代が現行かつ未キャンセルか。"""
         return (
             generation_id > 0
             and generation_id == self._current
-            and generation_id not in self._cancelled
+            and not self._current_cancelled
         )
 
     def should_capture(self, generation_id: int) -> bool:
@@ -61,4 +58,4 @@ class GenerationTracker:
     def reset(self) -> None:
         """セッション再 open 時にカウンタを初期化する。"""
         self._current = 0
-        self._cancelled.clear()
+        self._current_cancelled = False

@@ -464,7 +464,10 @@ async def translate_text_simple(
                 logger.warning(f"[PreTranslate] キャッシュ保存エラー: {e}")
             # TM へも登録（跨会議再利用の蓄積）
             await translation_memory.store(
-                text, source_language, target_language, translated,
+                text,
+                source_language,
+                target_language,
+                translated,
                 version=glossary_version,
             )
 

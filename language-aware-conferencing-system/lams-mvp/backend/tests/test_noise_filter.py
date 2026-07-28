@@ -16,7 +16,9 @@ class _DummyProvider(AIProvider):
     ) -> TranslationResult:  # pragma: no cover - 本テストでは未使用
         raise NotImplementedError
 
-    async def transcribe_audio(self, audio_data: bytes, language: str) -> str:  # pragma: no cover
+    async def transcribe_audio(
+        self, audio_data: bytes, language: str
+    ) -> str:  # pragma: no cover
         raise NotImplementedError
 
 
@@ -65,7 +67,9 @@ NOISE = [
 
 def test_legit_utterances_are_not_noise():
     for text in LEGIT:
-        assert _P._is_noise_transcription(text) is False, f"正当な発話を誤除外: {text!r}"
+        assert _P._is_noise_transcription(text) is False, (
+            f"正当な発話を誤除外: {text!r}"
+        )
 
 
 def test_filler_and_hallucination_are_noise():

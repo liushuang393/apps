@@ -78,7 +78,9 @@ class LocalTTSStage:
 
     name = "local"
 
-    def __init__(self, engine: object | None = None, broker: object | None = None) -> None:
+    def __init__(
+        self, engine: object | None = None, broker: object | None = None
+    ) -> None:
         """
         Args:
             engine: 合成エンジン（テスト用に注入可能）。未注入時は遅延ロードする。
@@ -97,7 +99,9 @@ class LocalTTSStage:
             return self._engine
         from kokoro import KPipeline  # 遅延 import（先頭 import 禁止）
 
-        return KPipeline(model=settings.local_tts_model, device=settings.local_tts_device)
+        return KPipeline(
+            model=settings.local_tts_model, device=settings.local_tts_device
+        )
 
     @staticmethod
     def _synthesize_blocking(engine: object, text: str, voice: str) -> object:

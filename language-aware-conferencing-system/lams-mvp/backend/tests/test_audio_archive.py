@@ -158,9 +158,7 @@ def test_build_returns_instance_when_enabled(monkeypatch, tmp_path):
     key_b64 = base64.b64encode(os.urandom(_KEY_LEN)).decode()
     monkeypatch.setattr(archive_mod.settings, "enable_audio_archive", True)
     monkeypatch.setattr(archive_mod.settings, "audio_archive_key", key_b64)
-    monkeypatch.setattr(
-        archive_mod.settings, "audio_archive_dir", str(tmp_path)
-    )
+    monkeypatch.setattr(archive_mod.settings, "audio_archive_dir", str(tmp_path))
     arc = build_audio_archive()
     assert isinstance(arc, EncryptedFileAudioArchive)
     assert arc.available() is True

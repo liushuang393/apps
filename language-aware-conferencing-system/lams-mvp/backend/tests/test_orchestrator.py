@@ -5,20 +5,12 @@ HybridOrchestrator（Phase 3 ハイブリッド 2 主線同時オーケストレ
 「フォーク→2 主線同時投入→Output Manager 収束（混ぜない）」の各分岐を検証する。
 """
 
-from dataclasses import dataclass
-
 import pytest
 
-from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+from app.ai_pipeline.orchestrator import HearingOutput, HybridOrchestrator, Listener
 from app.ai_pipeline.qos import READING_P95_TARGET_MS, HybridQoSMonitor
 
-
-@dataclass
-class _FakeProcessed:
-    """ai_pipeline.process_audio 戻り値の最小スタブ。"""
-
-    audio_data: bytes | None
-    translated_text: str
+_FakeProcessed = HearingOutput
 
 
 class _FakeSink:
@@ -202,7 +194,11 @@ async def test_mode_a_emits_revisioned_interim_before_final() -> None:
 
 def test_interim_revision_increases_for_same_utterance() -> None:
     """同一発話・言語の暫定字幕 revision は単調増加する。"""
+    from app.ai_pipeline.revision_authority import RevisionAuthority
+
     orch, _ = _make_orchestrator()
+    # 注入権威で隔離（プロセス共有権威の残留 finalize を避ける）
+    orch._revision_authority = RevisionAuthority()
     common = {
         "subtitle_id": "utt-1",
         "target_language": "en",
@@ -225,7 +221,7 @@ async def test_runtime_fallback_hearing_failure_to_reading() -> None:
 
     async def hearing(
         _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
-    ) -> object:
+    ) -> HearingOutput:
         calls["hearing"] += 1
         raise RuntimeError("s2s down")
 
@@ -268,7 +264,7 @@ async def test_hearing_empty_string_triggers_reading_fallback() -> None:
 
     async def hearing(
         _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
-    ) -> object:
+    ) -> HearingOutput:
         calls["hearing"] += 1
         # 例外を投げず、失敗を空文字列（+ 音声なし）で表現する（空文字列プロトコル）。
         return _FakeProcessed(audio_data=None, translated_text="")
@@ -367,7 +363,7 @@ async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
 
     async def hearing(
         _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
-    ) -> object:
+    ) -> HearingOutput:
         return _FakeProcessed(audio_data=b"A", translated_text="H")
 
     async def reading(_text: str, _src: str, tgt: str) -> str:
@@ -430,12 +426,7 @@ async def test_hearing_receives_original_text():
 
     async def hearing_fn(_audio, _src, _tgt, _speaker, original_text):
         received["text"] = original_text
-
-        class Out:
-            audio_data = b"wav"
-            translated_text = "hello"
-
-        return Out()
+        return HearingOutput(audio_data=b"wav", translated_text="hello")
 
     async def reading_fn(_text, _src, _tgt):
         return "hello"
@@ -472,12 +463,7 @@ async def test_subtitle_not_blocked_by_slow_hearing():
 
     async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
         await asyncio.sleep(0.5)  # 遅い S2S を模擬
-
-        class Out:
-            audio_data = b"wav"
-            translated_text = "hello"
-
-        return Out()
+        return HearingOutput(audio_data=b"wav", translated_text="hello")
 
     async def reading_fn(_text, _src, _tgt):
         return "hello"
@@ -507,8 +493,65 @@ async def test_subtitle_not_blocked_by_slow_hearing():
 
 
 @pytest.mark.asyncio
-async def test_degraded_monitor_suppresses_hearing():
-    """hearing 縮退中は聞く主線を駆動せず読む主線のみで収束する（欠陥 #9）。"""
+async def test_qoe_decision_suppresses_hearing_keeps_reading():
+    """QoE decision 注入で聞く主線が止まり、読む主線と確定発話は継続する。"""
+    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+    from app.ai_pipeline.qos import HybridQoSMonitor
+
+    # monitor は測定・warning 用。hearing 停止は decision 側が決める。
+    monitor = HybridQoSMonitor(window=10)
+    for _ in range(10):
+        monitor.record_latency("hearing", 9000.0)
+
+    hearing_called = {"n": 0}
+    events: list[dict] = []
+
+    async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
+        hearing_called["n"] += 1
+        return HearingOutput(audio_data=b"wav", translated_text="x")
+
+    async def reading_fn(_text, _src, _tgt):
+        return "hello"
+
+    class NullSink:
+        async def deliver_audio(self, _user_id, _audio, *, generation_id=None):
+            pass
+
+        async def deliver_subtitle(self, _user_id, _message):
+            pass
+
+        async def deliver_event(self, _user_id, _message):
+            events.append(_message)
+
+    orch = HybridOrchestrator(
+        hearing_fn=hearing_fn, reading_fn=reading_fn, monitor=monitor
+    )
+    result = await orch.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=NullSink(),
+        mode="hybrid",
+        speaker_id="sp",
+        hearing_available=False,
+        qoe_state="hearing_degraded",
+        qoe_changed=True,
+        qoe_reason="ai_hearing_degraded",
+        qoe_ui_reason="degraded",
+    )
+    assert hearing_called["n"] == 0
+    assert result.translations["en"] == "hello"
+    qoe_events = [e for e in events if e.get("type") == "qoe_degraded"]
+    assert qoe_events
+    assert qoe_events[0]["should_fallback_to_subtitle"] is True
+    assert qoe_events[0]["reason_code"] == "ai_hearing_degraded"
+    assert qoe_events[0]["ui_reason"] == "degraded"
+
+
+@pytest.mark.asyncio
+async def test_monitor_p95_alone_does_not_suppress_hearing():
+    """monitor の P95 超過だけでは聞く主線を止めない（測定と制御の分離）。"""
     from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
     from app.ai_pipeline.qos import HybridQoSMonitor
 
@@ -520,12 +563,7 @@ async def test_degraded_monitor_suppresses_hearing():
 
     async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
         hearing_called["n"] += 1
-
-        class Out:
-            audio_data = b"wav"
-            translated_text = "x"
-
-        return Out()
+        return HearingOutput(audio_data=b"wav", translated_text="x")
 
     async def reading_fn(_text, _src, _tgt):
         return "hello"
@@ -543,7 +581,7 @@ async def test_degraded_monitor_suppresses_hearing():
     orch = HybridOrchestrator(
         hearing_fn=hearing_fn, reading_fn=reading_fn, monitor=monitor
     )
-    result = await orch.orchestrate(
+    await orch.orchestrate(
         audio_bytes=b"pcm",
         source_language="ja",
         original_text="こんにちは",
@@ -551,9 +589,9 @@ async def test_degraded_monitor_suppresses_hearing():
         sink=NullSink(),
         mode="hybrid",
         speaker_id="sp",
+        hearing_available=True,
     )
-    assert hearing_called["n"] == 0
-    assert result.translations["en"] == "hello"
+    assert hearing_called["n"] == 1
 
 
 def test_subtitle_message_includes_speaker_label() -> None:

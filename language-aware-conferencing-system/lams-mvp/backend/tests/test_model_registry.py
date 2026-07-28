@@ -69,9 +69,7 @@ def test_list_filters_by_stage_status_language() -> None:
     cat = ModelCatalog()
     cat.register(_make_card("asr1", stage=STAGE_ASR, languages=["ja"]))
     cat.register(
-        _make_card(
-            "t2t1", stage=STAGE_T2T, languages=["en"], status=STATUS_PRODUCTION
-        )
+        _make_card("t2t1", stage=STAGE_T2T, languages=["en"], status=STATUS_PRODUCTION)
     )
     cat.register(_make_card("t2t2", stage=STAGE_T2T, languages=["ja", "vi"]))
 
@@ -143,9 +141,7 @@ def test_set_status_unknown_status_raises_valueerror() -> None:
 def test_production_for_returns_matching_production_card() -> None:
     cat = ModelCatalog()
     cat.register(
-        _make_card(
-            "prod", stage=STAGE_T2T, languages=["ja"], status=STATUS_PRODUCTION
-        )
+        _make_card("prod", stage=STAGE_T2T, languages=["ja"], status=STATUS_PRODUCTION)
     )
     got = cat.production_for(STAGE_T2T, "ja")
     assert got is not None
@@ -156,9 +152,7 @@ def test_production_for_none_when_no_match() -> None:
     cat = ModelCatalog()
     # production だが言語不一致
     cat.register(
-        _make_card(
-            "prod", stage=STAGE_T2T, languages=["en"], status=STATUS_PRODUCTION
-        )
+        _make_card("prod", stage=STAGE_T2T, languages=["en"], status=STATUS_PRODUCTION)
     )
     # 言語一致だが staging
     cat.register(

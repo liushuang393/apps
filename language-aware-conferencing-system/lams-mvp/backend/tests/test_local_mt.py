@@ -41,7 +41,9 @@ class _FakeTranslator:
         return [_FakeResult(self._translated.split())]
 
 
-def _make_stage(translated: str = "hello world") -> tuple[LocalMTStage, _FakeTranslator]:
+def _make_stage(
+    translated: str = "hello world",
+) -> tuple[LocalMTStage, _FakeTranslator]:
     translator = _FakeTranslator(translated=translated)
     stage = LocalMTStage(translator=translator, tokenizer=_FakeTokenizer())
     return stage, translator

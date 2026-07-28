@@ -75,7 +75,10 @@ class SileroVAD:
             self._model = model
         except Exception:  # noqa: BLE001 - 取得失敗の原因を問わず安全側に倒す。
             self._load_failed = True
-            logger.warning("Silero VAD のロードに失敗しました。発話判定は False を返します", exc_info=True)
+            logger.warning(
+                "Silero VAD のロードに失敗しました。発話判定は False を返します",
+                exc_info=True,
+            )
 
     def _to_float32(self, frame: bytes) -> np.ndarray:
         """int16 PCM バイト列を float32 [-1,1] へ変換し、窓長に整える。"""
@@ -113,7 +116,10 @@ class SileroVAD:
         except Exception:  # noqa: BLE001 - 推論失敗時は安全側に False。
             if not self._warned_call:
                 self._warned_call = True
-                logger.warning("Silero VAD 推論に失敗しました。以降 False を返します", exc_info=True)
+                logger.warning(
+                    "Silero VAD 推論に失敗しました。以降 False を返します",
+                    exc_info=True,
+                )
             return False
         return prob >= self._threshold
 
@@ -157,5 +163,7 @@ def build_vad(
     if resolve_backend(backend) == "silero":
         return SileroVAD(sample_rate=sample_rate).is_speech
     if requested == "silero":
-        logger.info("silero 指定ですが torch 未導入のため energy VAD へフォールバックします")
+        logger.info(
+            "silero 指定ですが torch 未導入のため energy VAD へフォールバックします"
+        )
     return energy_is_speech

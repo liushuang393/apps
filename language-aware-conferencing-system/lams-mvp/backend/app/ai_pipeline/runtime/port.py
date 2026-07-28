@@ -2,49 +2,42 @@
 RealtimeRuntimePort プロトコル。
 
 目的:
-    聞く主線の Provider 接続ライフサイクルを抽象化し、呼び出し側が SDK に直接依存しない。
+    会議セッションのライフサイクルと一発話 turn を、呼出順序の暗黙知なしに表す。
+公開契約:
+    open_session / run_turn / interrupt / is_generation_active / should_capture / close_session
+注意:
+    generation の発行・active 判定は Port 側が所有する。
+    低レベル append/commit/events は実装内部用であり、Port 公開面ではない。
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from typing import Protocol
 
-from app.ai_pipeline.runtime.generation import GenerationTracker
-from app.ai_pipeline.runtime.types import RuntimeEvent, SessionContext
+from app.ai_pipeline.runtime.types import SessionContext, TurnInput, TurnResult
 
 
 class RealtimeRuntimePort(Protocol):
     """発話単位 / 持続接続の双方が満たす Runtime 境界。"""
 
-    @property
-    def generation_tracker(self) -> GenerationTracker:
-        """barge-in と音声出力判定に使う世代管理を返す。"""
-        ...
-
-    def set_original_text(self, text: str | None) -> None:
-        """上流で認識済みの原文を設定する。"""
-        ...
-
     async def open_session(self, context: SessionContext) -> None:
-        """セッションを開く（持続実装では Provider 接続を確立し得る）。"""
-        ...
-
-    async def append_audio(self, pcm: bytes) -> None:
-        """発話音声（セグメント PCM/WAV）を入力バッファへ追加する。"""
-        ...
-
-    async def commit_turn(
-        self, utterance_id: str, *, generation_id: int | None = None
-    ) -> int:
         """
-        ターン確定。翻訳生成を開始し、発行した generation_id を返す。
+        セッションを開く（冪等）。
+
+        持続実装では Provider 接続を確立し得る。同一 context の再呼出は失敗しない。
+        """
+        ...
+
+    async def run_turn(self, turn: TurnInput) -> TurnResult:
+        """
+        一発話 turn を原子的に実行する。
 
         Args:
-            utterance_id: 発話セグメント識別子
-            generation_id: 外部発行済み世代（省略時は内部 begin）
+            turn: 発話 ID・音声・原文・任意の外部 generation_id
         Returns:
-            本ターンの generation_id
+            発行した generation_id と終端付きイベント列
+        注意:
+            generation_id 省略時は Port 内 tracker が begin する。
         """
         ...
 
@@ -52,10 +45,14 @@ class RealtimeRuntimePort(Protocol):
         """指定 generation の未完了出力をキャンセルし、再生禁止にする。"""
         ...
 
-    def events(self) -> AsyncIterator[RuntimeEvent]:
-        """直近 commit_turn の結果イベント列を返す。"""
+    def is_generation_active(self, generation_id: int) -> bool:
+        """世代が現行かつ未キャンセルか。"""
+        ...
+
+    def should_capture(self, generation_id: int) -> bool:
+        """当該世代の音声を capture してよいか。"""
         ...
 
     async def close_session(self) -> None:
-        """セッションを閉じ、接続・バッファを解放する。"""
+        """セッションを閉じる（冪等）。接続・バッファを解放する。"""
         ...

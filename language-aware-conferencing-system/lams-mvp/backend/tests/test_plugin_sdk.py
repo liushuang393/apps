@@ -275,9 +275,7 @@ def test_load_configured_multiple_paths(monkeypatch) -> None:
         register_plugin(registry, name="c_tts", stage=STAGE_TTS, factory=_GoodTTS)
 
     monkeypatch.setattr(plugin_sdk.settings, "enable_provider_plugins", True)
-    monkeypatch.setattr(
-        plugin_sdk.settings, "provider_plugins", "mod.a, mod.b"
-    )
+    monkeypatch.setattr(plugin_sdk.settings, "provider_plugins", "mod.a, mod.b")
     monkeypatch.setattr(
         plugin_sdk.importlib,
         "import_module",

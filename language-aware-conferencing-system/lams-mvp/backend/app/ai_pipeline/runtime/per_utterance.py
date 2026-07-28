@@ -17,9 +17,14 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from app.ai_pipeline.runtime.generation import GenerationTracker
 from app.ai_pipeline.runtime.types import (
     RuntimeEvent,
+    RuntimeEventType,
+    RuntimeTranslationOutput,
     SessionContext,
+    TurnInput,
+    TurnResult,
     interrupted_turn_events,
     make_session_key,
+    turn_failed_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,7 +32,7 @@ logger = logging.getLogger(__name__)
 # (audio, src, tgt, original_text) → 音声付き翻訳結果
 TranslateFn = Callable[
     [bytes, str, str, str | None],
-    Awaitable[object],
+    Awaitable[RuntimeTranslationOutput],
 ]
 
 
@@ -45,12 +50,11 @@ class PerUtteranceRuntime:
         self._context: SessionContext | None = None
         self._buffer = bytearray()
         self._pending_events: list[RuntimeEvent] = []
-        self._active_task_gen: int | None = None
         self._original_text: str | None = None
 
     @property
     def generation_tracker(self) -> GenerationTracker:
-        """世代管理（barge-in / capture 判定用）。"""
+        """世代管理（barge-in / 移行中の共有用。Port 公開面は is_generation_active）。"""
         return self._tracker
 
     def set_original_text(self, text: str | None) -> None:
@@ -58,14 +62,32 @@ class PerUtteranceRuntime:
         self._original_text = text
 
     async def open_session(self, context: SessionContext) -> None:
-        """セッション文脈を保持する（接続は commit 時に都度確立）。"""
+        """セッション文脈を保持する（冪等。接続は commit 時に都度確立）。"""
         make_session_key(context)  # 空要素検証
         self._context = context
         self._buffer.clear()
         self._pending_events.clear()
 
+    async def run_turn(self, turn: TurnInput) -> TurnResult:
+        """
+        一発話 turn を原子的に実行する。
+
+        Args:
+            turn: 発話 ID・音声・原文・任意の外部 generation_id
+        Returns:
+            generation_id と終端付きイベント列
+        """
+        self.set_original_text(turn.original_text)
+        if turn.audio:
+            await self.append_audio(turn.audio)
+        generation_id = await self.commit_turn(
+            turn.utterance_id, generation_id=turn.generation_id
+        )
+        events = tuple([event async for event in self.events()])
+        return TurnResult(generation_id=generation_id, events=events)
+
     async def append_audio(self, pcm: bytes) -> None:
-        """発話セグメント音声をバッファへ追加する。"""
+        """発話セグメント音声をバッファへ追加する（実装内部用）。"""
         if pcm:
             self._buffer.extend(pcm)
 
@@ -85,7 +107,6 @@ class PerUtteranceRuntime:
             raise RuntimeError("open_session 前に commit_turn は呼べない")
         if generation_id is None:
             generation_id = self._tracker.begin()
-        self._active_task_gen = generation_id
         audio = bytes(self._buffer)
         self._buffer.clear()
         self._pending_events = []
@@ -100,27 +121,30 @@ class PerUtteranceRuntime:
         except Exception as e:  # noqa: BLE001
             logger.warning("[PerUtteranceRuntime] 翻訳失敗: %s", e)
             self._pending_events = [
-                RuntimeEvent(
-                    type="turn_done",
-                    generation_id=generation_id,
-                    utterance_id=utterance_id,
-                    payload={"error": str(e)},
+                turn_failed_event(
+                    generation_id,
+                    utterance_id,
+                    reason_code="translate_error",
+                    message=str(e),
                 )
             ]
             return generation_id
+
+        if not isinstance(result, RuntimeTranslationOutput):
+            raise TypeError("translate_fn は RuntimeTranslationOutput を返す必要がある")
 
         # interrupt 済みなら音声イベントを載せない
         if not self._tracker.should_capture(generation_id):
             self._pending_events = interrupted_turn_events(generation_id, utterance_id)
             return generation_id
 
-        text = str(getattr(result, "translated_text", "") or "")
-        audio_data = getattr(result, "audio_data", None)
+        text = result.translated_text
+        audio_data = result.audio_data
         events: list[RuntimeEvent] = []
         if text:
             events.append(
                 RuntimeEvent(
-                    type="transcript_delta",
+                    type=RuntimeEventType.TRANSCRIPT_DELTA.value,
                     generation_id=generation_id,
                     utterance_id=utterance_id,
                     text=text,
@@ -129,7 +153,7 @@ class PerUtteranceRuntime:
         if audio_data:
             events.append(
                 RuntimeEvent(
-                    type="audio",
+                    type=RuntimeEventType.AUDIO.value,
                     generation_id=generation_id,
                     utterance_id=utterance_id,
                     audio_data=audio_data if isinstance(audio_data, bytes) else None,
@@ -138,7 +162,7 @@ class PerUtteranceRuntime:
             )
         events.append(
             RuntimeEvent(
-                type="turn_done",
+                type=RuntimeEventType.TURN_DONE.value,
                 generation_id=generation_id,
                 utterance_id=utterance_id,
                 text=text,
@@ -151,14 +175,22 @@ class PerUtteranceRuntime:
         """旧 generation をキャンセルする（遅延到着音声の再生禁止）。"""
         self._tracker.interrupt(generation_id)
 
+    def is_generation_active(self, generation_id: int) -> bool:
+        """世代が現行かつ未キャンセルか。"""
+        return self._tracker.is_active(generation_id)
+
+    def should_capture(self, generation_id: int) -> bool:
+        """当該世代の音声を capture してよいか。"""
+        return self._tracker.should_capture(generation_id)
+
     async def events(self) -> AsyncIterator[RuntimeEvent]:
-        """直近 commit_turn のイベントを順に返す。"""
+        """直近 commit_turn のイベントを順に返す（実装内部用）。"""
         for event in self._pending_events:
             yield event
         self._pending_events = []
 
     async def close_session(self) -> None:
-        """バッファと文脈を解放する（接続は都度閉じ済み）。"""
+        """バッファと文脈を解放する（冪等。接続は都度閉じ済み）。"""
         self._buffer.clear()
         self._pending_events.clear()
         self._context = None
@@ -170,12 +202,16 @@ class PerUtteranceRuntime:
         src: str,
         tgt: str,
         original_text: str | None,
-    ) -> object:
+    ) -> RuntimeTranslationOutput:
         """注入または既定 provider で翻訳する。"""
         if self._translate_fn is not None:
             return await self._translate_fn(audio, src, tgt, original_text)
         from app.ai_pipeline.pipeline import ai_pipeline
 
-        return await ai_pipeline.process_audio(
+        result = await ai_pipeline.process_audio(
             audio, src, tgt, speaker_id="runtime", original_text=original_text
+        )
+        return RuntimeTranslationOutput(
+            translated_text=result.translated_text,
+            audio_data=result.audio_data,
         )

@@ -56,7 +56,13 @@ RUNTIME_LLAMA_CPP = "llama_cpp"
 RUNTIME_ONNX = "onnx"
 RUNTIME_CLOUD = "cloud"
 RUNTIMES: frozenset[str] = frozenset(
-    {RUNTIME_CT2, RUNTIME_FASTER_WHISPER, RUNTIME_LLAMA_CPP, RUNTIME_ONNX, RUNTIME_CLOUD}
+    {
+        RUNTIME_CT2,
+        RUNTIME_FASTER_WHISPER,
+        RUNTIME_LLAMA_CPP,
+        RUNTIME_ONNX,
+        RUNTIME_CLOUD,
+    }
 )
 
 # 許可されるライフサイクル遷移（それ以外は ValueError）。staging→draft は差し戻し。

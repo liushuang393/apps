@@ -42,11 +42,7 @@ def _iter_chunks(wav: bytes):
     注意点: 正当な RIFF/WAVE でない、または途中で切り詰められている場合は
             何も yield せず打ち切る（例外は投げない）。
     """
-    if (
-        len(wav) < _RIFF_HEADER_SIZE
-        or wav[0:4] != _RIFF_ID
-        or wav[8:12] != _WAVE_ID
-    ):
+    if len(wav) < _RIFF_HEADER_SIZE or wav[0:4] != _RIFF_ID or wav[8:12] != _WAVE_ID:
         return
     offset = _RIFF_HEADER_SIZE
     total = len(wav)

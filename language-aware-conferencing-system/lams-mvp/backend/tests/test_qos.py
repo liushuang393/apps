@@ -17,19 +17,19 @@ from app.ai_pipeline.qos import (
 )
 
 
-def test_hearing_degraded_and_retry() -> None:
-    """P95 超過で縮退し、クールダウン後に窓を捨てて再試行する（欠陥 #9）。"""
-    now = {"t": 0.0}
-    monitor = HybridQoSMonitor(window=10, retry_cooldown_s=60.0, clock=lambda: now["t"])
-    assert monitor.hearing_degraded() is False  # 未計測は正常扱い
+def test_hearing_p95_exceeded_is_observation_only() -> None:
+    """P95 超過は観測事実として返し、履歴破棄による独自復帰はしない。"""
+    monitor = HybridQoSMonitor(window=10)
+    assert monitor.hearing_p95_exceeded() is None  # 未計測は unknown
 
     for _ in range(10):
         monitor.record_latency("hearing", 9000.0)  # 目標 5000ms を大幅超過
-    assert monitor.hearing_degraded() is True
+    assert monitor.hearing_p95_exceeded() is True
+    assert monitor.p95("hearing") is not None  # 測定窓は維持（QoE が回復を決める）
 
-    now["t"] = 61.0  # クールダウン経過 → 再試行（窓クリア）
-    assert monitor.hearing_degraded() is False
-    assert monitor.p95("hearing") is None
+    monitor.record_latency("hearing", 100.0)
+    # 窓内に超過サンプルが残る限り exceeded は True（制御判断は QoE）
+    assert monitor.hearing_p95_exceeded() is True
 
 
 def test_extract_numbers_handles_dates_money_and_time() -> None:

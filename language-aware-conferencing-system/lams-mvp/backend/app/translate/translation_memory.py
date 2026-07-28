@@ -54,7 +54,9 @@ def _norm(text: str) -> str:
     """比較用の正規化：小文字化・空白畳み込み・前後記号除去（純関数）。"""
     lowered = text.lower().strip()
     collapsed = re.sub(r"\s+", " ", lowered)
-    return re.sub(r"^[\s\.\,\!\?\-\—、。！？]+|[\s\.\,\!\?\-\—、。！？]+$", "", collapsed)
+    return re.sub(
+        r"^[\s\.\,\!\?\-\—、。！？]+|[\s\.\,\!\?\-\—、。！？]+$", "", collapsed
+    )
 
 
 def _entry_key(norm: str, src: str, tgt: str, version: str) -> str:
@@ -114,7 +116,9 @@ async def _fuzzy_lookup(
         return None
     hit = await r.get(_entry_key(best_norm, src, tgt, version))
     if hit:
-        logger.debug("[TM] fuzzy 一致(%.2f): %s ≈ %s", best_ratio, norm[:20], best_norm[:20])
+        logger.debug(
+            "[TM] fuzzy 一致(%.2f): %s ≈ %s", best_ratio, norm[:20], best_norm[:20]
+        )
     return hit or None
 
 
