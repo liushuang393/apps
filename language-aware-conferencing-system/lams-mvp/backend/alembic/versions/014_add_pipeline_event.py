@@ -14,6 +14,10 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 
 from alembic import op
+from app.db.migration_guards import (
+    create_index_if_absent,
+    create_table_if_absent,
+)
 
 revision: str = "014_pipeline_event"
 down_revision: str | None = "013_training_data"
@@ -22,8 +26,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """回放ログと重跑結果の 2 テーブルを作成する。"""
-    op.create_table(
+    """回放ログと重跑結果の 2 テーブルを作成する（既存オブジェクトは skip し冪等）。"""
+    create_table_if_absent(
         "pipeline_event",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("room_id", sa.String(36), sa.ForeignKey("rooms.id"), nullable=True),
@@ -60,19 +64,19 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index("ix_pipeline_event_room_id", "pipeline_event", ["room_id"])
-    op.create_index("ix_pipeline_event_session_id", "pipeline_event", ["session_id"])
-    op.create_index(
+    create_index_if_absent("ix_pipeline_event_room_id", "pipeline_event", ["room_id"])
+    create_index_if_absent("ix_pipeline_event_session_id", "pipeline_event", ["session_id"])
+    create_index_if_absent(
         "ix_pipeline_event_segment", "pipeline_event", ["transcript_segment_id"]
     )
-    op.create_index("ix_pipeline_event_created", "pipeline_event", ["created_at"])
-    op.create_index(
+    create_index_if_absent("ix_pipeline_event_created", "pipeline_event", ["created_at"])
+    create_index_if_absent(
         "ix_pipeline_event_session_status",
         "pipeline_event",
         ["session_id", "rerun_status"],
     )
 
-    op.create_table(
+    create_table_if_absent(
         "rerun_result",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column(
@@ -99,8 +103,8 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index("ix_rerun_result_event", "rerun_result", ["pipeline_event_id"])
-    op.create_index(
+    create_index_if_absent("ix_rerun_result_event", "rerun_result", ["pipeline_event_id"])
+    create_index_if_absent(
         "ix_rerun_result_segment", "rerun_result", ["transcript_segment_id"]
     )
 

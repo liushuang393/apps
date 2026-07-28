@@ -1,0 +1,22 @@
+{
+  "browser": {
+    "launchOptions": {
+      "headless": true,
+      "args": [
+        "--use-fake-ui-for-media-stream",
+        "--use-fake-device-for-media-stream",
+        "--use-file-for-fake-audio-capture=/mnt/d/apps/language-aware-conferencing-system/lams-mvp/output/playwright/release-acceptance-20260728/acceptance-ja.wav",
+        "--autoplay-policy=no-user-gesture-required"
+      ]
+    },
+    "contextOptions": {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "permissions": [
+        "microphone"
+      ]
+    }
+  }
+}

@@ -1,0 +1,53 @@
+- generic [ref=e25]:
+  - banner [ref=e26]:
+    - generic [ref=e27]:
+      - heading "🌐 LAMS" [level=1] [ref=e28]
+      - generic [ref=e29]: Internal Communication Portal
+    - generic [ref=e30]:
+      - combobox [ref=e31] [cursor=pointer]:
+        - option "日本語"
+        - option "English" [selected]
+        - option "中文"
+        - option "Tiếng Việt"
+      - generic "验收用户C" [ref=e33]
+      - button "Logout" [ref=e34] [cursor=pointer]
+  - main [ref=e35]:
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - heading "💬 Communication" [level=2] [ref=e38]:
+          - generic [ref=e39]: 💬
+          - text: Communication
+        - link "🌐 Multilingual Meeting LAMS Voice meeting with real-time translation →" [ref=e41] [cursor=pointer]:
+          - /url: /rooms
+          - generic [ref=e42]: 🌐
+          - generic [ref=e43]:
+            - heading "Multilingual Meeting LAMS" [level=3] [ref=e44]:
+              - text: Multilingual Meeting
+              - generic [ref=e45]: LAMS
+            - paragraph [ref=e46]: Voice meeting with real-time translation
+          - generic [ref=e47]: →
+      - generic [ref=e48]:
+        - heading "⚙️ Management & Settings" [level=2] [ref=e49]:
+          - generic [ref=e50]: ⚙️
+          - text: Management & Settings
+        - generic [ref=e51]:
+          - link "👤 Profile Settings Coming Soon Change display name and language settings →" [ref=e52]:
+            - /url: /menu
+            - generic [ref=e53]: 👤
+            - generic [ref=e54]:
+              - heading "Profile Settings Coming Soon" [level=3] [ref=e55]:
+                - text: Profile Settings
+                - generic [ref=e56]: Coming Soon
+              - paragraph [ref=e57]: Change display name and language settings
+            - generic [ref=e58]: →
+          - link "📊 Usage History Coming Soon View meeting participation history →" [ref=e59]:
+            - /url: /menu
+            - generic [ref=e60]: 📊
+            - generic [ref=e61]:
+              - heading "Usage History Coming Soon" [level=3] [ref=e62]:
+                - text: Usage History
+                - generic [ref=e63]: Coming Soon
+              - paragraph [ref=e64]: View meeting participation history
+            - generic [ref=e65]: →
+  - contentinfo [ref=e66]:
+    - paragraph [ref=e67]: © 2024 LAMS - Language-Aware Meeting System

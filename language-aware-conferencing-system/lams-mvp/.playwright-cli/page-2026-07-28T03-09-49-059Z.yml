@@ -1,0 +1,35 @@
+- generic [ref=f2e607]:
+  - banner [ref=f2e608]:
+    - heading "🎤 会議室" [level=1] [ref=f2e609]
+    - generic [ref=f2e610]:
+      - generic [ref=f2e611]: 接続中...
+      - generic [ref=f2e613]:
+        - generic "マイク選択" [ref=f2e614]:
+          - generic [ref=f2e615]: 🎤
+          - combobox [disabled] [ref=f2e616] [cursor=pointer]
+        - generic "スピーカー選択" [ref=f2e617]:
+          - generic [ref=f2e618]: 🔊
+          - combobox [disabled] [ref=f2e619] [cursor=pointer]
+      - button "📝 記録" [ref=f2e620] [cursor=pointer]
+      - button "退室" [ref=f2e621] [cursor=pointer]
+  - generic [ref=f2e622]:
+    - complementary [ref=f2e623]:
+      - generic [ref=f2e624]:
+        - button "👥 参加者 (0)" [expanded] [ref=f2e625] [cursor=pointer]:
+          - generic [ref=f2e626]:
+            - generic [ref=f2e627]: 👥
+            - text: 参加者 (0)
+        - paragraph [ref=f2e632]: 参加者がいません
+      - generic [ref=f2e633]:
+        - button "⚙️ 設定" [disabled] [ref=f2e634]:
+          - generic [ref=f2e635]:
+            - generic [ref=f2e636]: ⚙️
+            - text: 設定
+        - paragraph [ref=f2e638]: 接続中...
+    - main [ref=f2e639]:
+      - generic [ref=f2e640]:
+        - heading "📝 字幕" [level=4] [ref=f2e641]
+        - paragraph [ref=f2e642]: 字幕表示はオフです
+      - generic [ref=f2e644]:
+        - generic [ref=f2e645]: 🔇 マイクOFF
+        - generic [ref=f2e646]: 左側の設定パネルでマイクをONにできます

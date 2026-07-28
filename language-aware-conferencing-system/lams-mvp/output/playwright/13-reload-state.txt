@@ -1,0 +1,10 @@
+### Result
+{
+  "url": "http://127.0.0.1:5273/room/6efe6a9c-149a-415a-99cb-4516d3fc6de4",
+  "header": "🎤 会議室\n接続中...\n🎤\n🔊\n📝 記録\n退室",
+  "body": "🎤 会議室\n接続中...\n🎤\n🔊\n📝 記録\n退室\n👥\n参加者 (0)\n\n参加者がいません\n\n⚙️\n設定\n\n接続中...\n\n📝 字幕\n\n字幕表示はオフです\n\n🔇 マイクOFF\n左側の設定パネルでマイクをONにできます"
+}
+### Ran Playwright code
+```js
+await page.evaluate('() => ((() => ({url:location.href, header:(document.querySelector(\'header\')||{}).innerText||\'\', body:(document.body.innerText||\'\').slice(0,250)}))())');
+```

@@ -19,11 +19,24 @@ from app.ai_pipeline.output_manager import (
     DefaultOutputManager,
     DeliveryReport,
     FinalSubtitleCommand,
+    InterruptedEventCommand,
     OutputCommand,
+    PartialSubtitleCommand,
+    QosWarningCommand,
+    QualityEventCommand,
     RecordingTransportAdapter,
     TranslatedAudioCommand,
 )
+from app.ai_pipeline.qos import HybridQoSMonitor, READING_P95_TARGET_MS
+from app.ai_pipeline.qoe import (
+    QoEDecision,
+    QoEReason,
+    QoEScope,
+    QoEState,
+    QoEUiReason,
+)
 from app.ai_pipeline.revision_authority import RevisionAuthority
+from app.webrtc.agent import LiveKitAgent
 from app.webrtc.processor import SegmentProcessor
 
 
@@ -54,6 +67,9 @@ class _RejectingSink:
 
     async def deliver_subtitle(self, _user_id: str, _message: dict) -> None:
         raise AssertionError("字幕が Output Manager を迂回しました")
+
+    async def deliver_event(self, _user_id: str, _message: dict) -> None:
+        raise AssertionError("イベントが Output Manager を迂回しました")
 
 
 @pytest.mark.asyncio
@@ -176,3 +192,208 @@ async def test_mode_a_interim_is_replaced_by_final_through_output_manager() -> N
     ]
     assert subtitle_events[0]["revision"] == 1
     assert subtitle_events[1]["is_final"] is True
+
+
+@pytest.mark.asyncio
+async def test_partial_asr_delivery_uses_output_manager_only() -> None:
+    """partial ASR は Sink を直送せず、言語別の型付き命令へ収束する。"""
+    manager = _RecordingOutputManager()
+    orchestrator = HybridOrchestrator()
+    listeners = [
+        Listener("u1", "en", wants_audio=False, subtitle_enabled=True),
+        Listener("u2", "zh", wants_audio=False, subtitle_enabled=True),
+    ]
+
+    await orchestrator.deliver_partial_subtitle(
+        sink=_RejectingSink(),
+        output_manager=manager,
+        listeners=listeners,
+        room_id="room-1",
+        subtitle_id="utt-1",
+        seq=3,
+        revision=2,
+        generation_id=4,
+        speaker_id="spk",
+        partial_text="hello wor",
+        source_language="en",
+    )
+
+    assert [type(command) for command in manager.commands] == [
+        PartialSubtitleCommand,
+        PartialSubtitleCommand,
+    ]
+    assert {
+        command.target_language
+        for command in manager.commands
+        if isinstance(command, PartialSubtitleCommand)
+    } == {"en", "zh"}
+
+
+@pytest.mark.asyncio
+async def test_qoe_event_delivery_uses_output_manager_only() -> None:
+    """QoE decision は Sink を直送せず、そのまま型付き命令へ渡す。"""
+
+    async def reading(_text: str, _source: str, _target: str) -> str:
+        return "reading"
+
+    decision = QoEDecision(
+        state=QoEState.HEARING_DEGRADED,
+        primary_reason=QoEReason.AI_HEARING_DEGRADED,
+        auxiliary_reasons=(),
+        hearing_available=False,
+        reading_available=True,
+        partial_available=True,
+        changed=True,
+        scope=QoEScope.SERVER,
+        ui_reason=QoEUiReason.DEGRADED,
+    )
+    manager = _RecordingOutputManager()
+    orchestrator = HybridOrchestrator(reading_fn=reading)
+
+    await orchestrator.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=_RejectingSink(),
+        output_manager=manager,
+        qoe_decision=decision,
+        mode="hybrid",
+        room_id="room-1",
+        subtitle_id="utt-1",
+        seq=1,
+        speaker_id="spk",
+    )
+
+    quality = [
+        command
+        for command in manager.commands
+        if isinstance(command, QualityEventCommand)
+    ]
+    assert len(quality) == 1
+    assert quality[0].decision is decision
+
+
+@pytest.mark.asyncio
+async def test_interrupted_event_delivery_uses_output_manager_only() -> None:
+    """hearing 割込みは Sink を直送せず、型付き命令へ渡す。"""
+
+    async def cancelled_hearing(
+        _audio: bytes,
+        _source: str,
+        _target: str,
+        _speaker: str,
+        _original_text: str | None,
+    ) -> HearingOutput:
+        raise asyncio.CancelledError
+
+    async def reading(_text: str, _source: str, _target: str) -> str:
+        return "reading"
+
+    manager = _RecordingOutputManager()
+    orchestrator = HybridOrchestrator(
+        hearing_fn=cancelled_hearing,
+        reading_fn=reading,
+    )
+
+    await orchestrator.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
+        sink=_RejectingSink(),
+        output_manager=manager,
+        mode="a",
+        room_id="room-1",
+        subtitle_id="utt-1",
+        seq=1,
+        speaker_id="spk",
+        generation_id=8,
+    )
+
+    interrupted = [
+        command
+        for command in manager.commands
+        if isinstance(command, InterruptedEventCommand)
+    ]
+    assert len(interrupted) == 1
+    assert interrupted[0].generation_id == 8
+
+
+@pytest.mark.asyncio
+async def test_qos_warning_delivery_uses_output_manager_only() -> None:
+    """§9 qos_warning は Sink を直送せず、評価済み型付き命令へ渡す。"""
+
+    async def hearing(
+        _audio: bytes,
+        _source: str,
+        _target: str,
+        _speaker: str,
+        _original_text: str | None,
+    ) -> HearingOutput:
+        return HearingOutput(audio_data=b"AUDIO", translated_text="hearing")
+
+    async def reading(_text: str, _source: str, _target: str) -> str:
+        return "reading"
+
+    monitor = HybridQoSMonitor()
+    monitor.record_latency("reading", READING_P95_TARGET_MS + 1000.0)
+    monitor.record_glossary(1, 10)
+    manager = _RecordingOutputManager()
+    orchestrator = HybridOrchestrator(
+        hearing_fn=hearing,
+        reading_fn=reading,
+        monitor=monitor,
+    )
+
+    result = await orchestrator.orchestrate(
+        audio_bytes=b"pcm",
+        source_language="ja",
+        original_text="こんにちは",
+        listeners=[Listener("u1", "en", wants_audio=False, subtitle_enabled=True)],
+        sink=_RejectingSink(),
+        output_manager=manager,
+        mode="b",
+        room_id="room-1",
+        subtitle_id="utt-1",
+        seq=1,
+        speaker_id="spk",
+        generation_id=3,
+    )
+
+    warnings = [
+        command
+        for command in manager.commands
+        if isinstance(command, QosWarningCommand)
+    ]
+    assert {command.metric for command in warnings} == {
+        "latency_p95",
+        "glossary_hit_rate",
+    }
+    assert all(command.generation_id == 3 for command in warnings)
+    assert {warning["metric"] for warning in result.qos_warnings} == {
+        "latency_p95",
+        "glossary_hit_rate",
+    }
+
+
+def test_mainline_delivery_has_no_direct_sink_helper_calls() -> None:
+    """partial・QoE・割込み・qos_warning の Sink 直送を静的に再導入できないよう検出する。"""
+    partial_source = inspect.getsource(HybridOrchestrator.deliver_partial_subtitle)
+    orchestrate_source = inspect.getsource(HybridOrchestrator.orchestrate)
+    emit_qos_source = inspect.getsource(HybridOrchestrator._emit_qos_warnings)
+
+    assert "_deliver_subtitle_group(" not in partial_source
+    assert "_deliver_event_group(" not in orchestrate_source
+    assert "_deliver_event_group(" not in emit_qos_source
+    assert "deliver_event(" not in emit_qos_source
+    assert "QosWarningCommand" in emit_qos_source
+
+
+def test_agent_passes_authoritative_qoe_decision_without_flattening() -> None:
+    """Agent は QoE decision 本体を Processor へ渡し、下流で再構築させない。"""
+    source = inspect.getsource(LiveKitAgent._handle_segment)
+    partial_source = inspect.getsource(LiveKitAgent._handle_partial)
+
+    assert "qoe_decision=qoe" in source
+    assert "revision_authority=self._revision_authority" in partial_source

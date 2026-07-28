@@ -23,7 +23,9 @@ from app.ai_pipeline.orchestrator import (
     OutputSink,
 )
 from app.ai_pipeline.output_manager import DefaultOutputManager
+from app.ai_pipeline.qoe import QoEDecision
 from app.ai_pipeline.qos import HybridQoSMonitor
+from app.ai_pipeline.revision_authority import RevisionAuthority, get_revision_authority
 from app.audio.archive import AudioArchive, compute_audio_hash
 from app.audio.pcm import wrap_wav16
 from app.audio.speaker_embedding import SpeakerEmbedder
@@ -188,6 +190,7 @@ class SegmentProcessor:
         sink_factory: SinkFactory,
         revision: int,
         subtitle_id: str = "",
+        revision_authority: RevisionAuthority | None = None,
     ) -> None:
         """発話確定前の暫定字幕（ASR 原文 interim）を配信する（§P2 首字遅延短縮）。
 
@@ -208,7 +211,12 @@ class SegmentProcessor:
         sink = sink_factory(user_language, speaker_id)
         await self._orchestrator.deliver_partial_subtitle(
             sink=sink,
+            output_manager=DefaultOutputManager(
+                adapter=sink,
+                revision_authority=revision_authority or get_revision_authority(),
+            ),
             listeners=listeners,
+            room_id=room_id,
             subtitle_id=subtitle_id,
             seq=0,
             revision=revision,
@@ -268,6 +276,7 @@ class SegmentProcessor:
         qoe_changed: bool = False,
         qoe_reason: str | None = None,
         qoe_ui_reason: str | None = None,
+        qoe_decision: QoEDecision | None = None,
     ) -> OrchestrationResult | None:
         """1 発話セグメントを収束させる（配信は sink、記録は DB へ）。
 
@@ -346,6 +355,7 @@ class SegmentProcessor:
                 qoe_changed=qoe_changed,
                 qoe_reason=qoe_reason,
                 qoe_ui_reason=qoe_ui_reason,
+                qoe_decision=qoe_decision,
                 room_id=room_id,
             )
         finally:

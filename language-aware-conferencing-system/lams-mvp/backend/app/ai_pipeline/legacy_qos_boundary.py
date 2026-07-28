@@ -2,15 +2,14 @@
 旧 QoS controller 系の利用 inventory と production dependency boundary。
 
 目的:
-    削除そのものではなく、旧系の到達可能性と分類を機械可読に残し、
-    品質権威（HybridQoSMonitor + QoE）以外への再導入を検出する。
+    旧系記号の削除完了後も、import／定義の再導入を検出する。
+    品質権威は HybridQoSMonitor + QoE のみ。
 入力:
     backend ルートと検査対象モジュール相対パス。
 出力:
-    LegacyUsage 一覧、品質 composition、削除可否判定。
+    LegacyUsage 一覧、品質 composition、削除可否判定、定義残存一覧。
 注意:
-    単純な全文検索は使わず、ImportFrom の AST のみを対象とする。
-    本モジュールは speculative な削除判断の材料であり、記号削除は行わない。
+    単純な全文検索は使わず、ImportFrom／ClassDef の AST のみを対象とする。
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from pathlib import Path
 from app.ai_pipeline.qoe import QoEStateMachine
 from app.ai_pipeline.qos import HybridQoSMonitor
 
-# 旧 latency controller 系（縮退権威として再利用禁止）
+# 旧 latency controller 系（縮退権威として再利用禁止・削除済み）
 LEGACY_CONTROLLER_SYMBOLS: frozenset[str] = frozenset(
     {
         "QoSController",
@@ -32,7 +31,7 @@ LEGACY_CONTROLLER_SYMBOLS: frozenset[str] = frozenset(
     }
 )
 
-# 旧系の関連型（controller と同居。inventory 対象）
+# 旧系の関連型（controller と同居していた削除済み記号）
 LEGACY_RELATED_SYMBOLS: frozenset[str] = frozenset(
     {
         "QoSMetrics",
@@ -102,39 +101,10 @@ def expected_inventory() -> tuple[LegacyUsage, ...]:
     """
     利用 inventory（分類済み）。
 
-    production 残存は測定用途のみ。公開 API はない。
-    AdaptiveQoSController は定義のみで production import なし。
-    同居の QoSController／QoSMetrics が残る間は即時削除しない。
+    削除完了後は production／test ともに旧記号 import はゼロ。
+    再導入は collect_legacy_symbol_imports／definitions が検出する。
     """
-    return (
-        LegacyUsage(
-            module_relpath="app/ai_pipeline/pipeline.py",
-            symbol="QoSController",
-            category=UsageCategory.PRODUCTION_COMPOSITION,
-            role=UsageRole.MEASUREMENT,
-            deletion_allowed=False,
-            notes=(
-                "AIPipeline の遅延計測ラッパ。should_fallback／degradation_level は "
-                "下流で消費されず、縮退 decision は QoE 権威。移行後に小さな変更で削除可。"
-            ),
-        ),
-        LegacyUsage(
-            module_relpath="app/ai_pipeline/pipeline.py",
-            symbol="QoSMetrics",
-            category=UsageCategory.PRODUCTION_COMPOSITION,
-            role=UsageRole.MEASUREMENT,
-            deletion_allowed=False,
-            notes="ProcessedAudio.metrics 付帯。制御判断には未使用。controller と同時に整理する。",
-        ),
-        LegacyUsage(
-            module_relpath="tests/test_ai_providers.py",
-            symbol="QoSController",
-            category=UsageCategory.TEST_ONLY,
-            role=UsageRole.MEASUREMENT,
-            deletion_allowed=False,
-            notes="AIPipeline 単体テスト用の注入。本番依存ではない。",
-        ),
-    )
+    return ()
 
 
 def inventory_by_key(module_relpath: str, symbol: str) -> LegacyUsage | None:
@@ -149,16 +119,10 @@ def deletion_allowed(symbol: str) -> bool:
     """
     旧記号の削除可否。
 
-    条件: production 到達がゼロ、公開互換不要、同居残存なし。
-    現状は pipeline 残存があるため常に False（本チケットでは削除しない）。
+    削除完了後は登録済み旧記号すべてが True。
+    未知記号は再導入候補として False。
     """
-    del symbol
-    for entry in expected_inventory():
-        if entry.category is UsageCategory.TEST_ONLY:
-            continue
-        if not entry.deletion_allowed:
-            return False
-    return False
+    return symbol in LEGACY_QOS_SYMBOLS
 
 
 def build_production_quality_composition(
@@ -197,6 +161,9 @@ def _iter_python_files(
     app_dir = root / "app"
     if app_dir.is_dir():
         yield from sorted(app_dir.rglob("*.py"))
+    tests_dir = root / "tests"
+    if tests_dir.is_dir():
+        yield from sorted(tests_dir.rglob("*.py"))
 
 
 def _is_production_path(relpath: str) -> bool:
@@ -243,10 +210,11 @@ def collect_legacy_symbol_imports(
             continue
         if production_only and not _is_production_path(relpath):
             continue
-        # 定義モジュール自体の自己参照は inventory 対象外（記号の定義場所）
-        if relpath == "app/ai_pipeline/qos.py":
-            continue
+        # 境界モジュール自身の自己参照は inventory 対象外
         if relpath == "app/ai_pipeline/legacy_qos_boundary.py":
+            continue
+        # 削除済み記号の定義場所だった qos.py は import 対象外（定義は別 API）
+        if relpath == "app/ai_pipeline/qos.py":
             continue
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
@@ -272,3 +240,25 @@ def collect_legacy_symbol_imports(
                         )
                     )
     return sorted(results, key=lambda u: (u.module_relpath, u.symbol))
+
+
+def collect_legacy_symbol_definitions(root: Path) -> list[str]:
+    """
+    qos.py に残る旧記号の ClassDef 名を収集する。
+
+    入力:
+        backend ルート。
+    出力:
+        検出した旧記号名（ソート済み）。無ければ空。
+    注意:
+        削除後は常に空であるべき。再導入防止の定義側 guard。
+    """
+    path = root / "app" / "ai_pipeline" / "qos.py"
+    if not path.is_file():
+        return []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name in LEGACY_QOS_SYMBOLS:
+            found.append(node.name)
+    return sorted(set(found))

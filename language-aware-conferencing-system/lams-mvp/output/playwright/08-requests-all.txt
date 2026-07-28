@@ -1,0 +1,27 @@
+### Result
+52. [POST] http://127.0.0.1:5273/api/auth/register => [200] OK
+54. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+55. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+57. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+58. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+59. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+60. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+61. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+62. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+63. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+64. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+65. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+66. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+67. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+68. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+69. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+70. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+71. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+72. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+73. [GET] http://127.0.0.1:5273/api/rooms => [200] OK
+74. [GET] http://127.0.0.1:5273/api/admin/settings/languages => [200] OK
+75. [POST] http://127.0.0.1:5273/api/rooms => [201] Created
+77. [POST] http://127.0.0.1:5273/api/rooms/6efe6a9c-149a-415a-99cb-4516d3fc6de4/token => [200] OK
+78. [GET] http://127.0.0.1:5273/api/rooms/6efe6a9c-149a-415a-99cb-4516d3fc6de4 => [200] OK
+
+Note: 54 static requests not shown, run with --static option to see them.

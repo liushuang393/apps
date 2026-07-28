@@ -1,11 +1,9 @@
 """
-LAMS QoSコントローラー
-遅延監視と品質劣化対応を担当
+LAMS Hybrid QoS モニター
 
 設計方針:
-- 遅延上限: 1200ms（認知負荷軽減）
-- ジッター上限: 200ms（安定性重視）
-- 超過時は字幕フォールバックで対応
+- 主線別 P95 遅延・用語命中率・数字保持率の非権威な観測
+- 縮退 decision は QoEStateMachine が単一権威（本モジュールは測定／warning のみ）
 """
 
 import math
@@ -13,11 +11,8 @@ import re
 import time
 from collections import Counter, deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from enum import Enum
-
-from app.config import settings
 
 # === Phase 3 ハイブリッド 2 主線の品質ゲート目標（README §9 / 改善.md §15） ===
 # 主線1（音声翻訳/聞く）と主線2（翻訳字幕/読む）で P95 遅延の上限が異なる。
@@ -27,6 +22,10 @@ GLOSSARY_HIT_RATE_TARGET = 0.95  # 用語命中率 ≥ 95%
 NUMBER_RETENTION_TARGET = 0.98  # 数字・日付・金額の保持率 ≥ 98%（改善.md §15）
 _QOS_WINDOW = 200  # P95 算出に用いる直近サンプル数（主線ごと）
 _DEFAULT_P95 = 95.0  # 既定パーセンタイル
+# P95 評価に含める観測の有効期間（秒）。
+# 件数窓のみで評価すると、聞く主線が停止して新規サンプルが途絶えた場合に
+# 古い遅い観測が窓から出て行かず、超過判定が永久に成立し続ける（復帰不能）。
+LATENCY_WINDOW_SECONDS = 60.0
 
 # 主線名 → P95 目標（ms）。orchestrator のフォーク名と一致させる。
 _MAINLINE_TARGETS_MS: dict[str, float] = {
@@ -39,23 +38,32 @@ _MAINLINE_TARGETS_MS: dict[str, float] = {
 _NUMBER_RE = re.compile(r"\d[\d.,:/\-]*\d|\d")
 _NUMERIC_QUANTITY_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _QUANTITY_UNIT_RE = re.compile(
-    r"\s*(million yen|billion yen|thousand yen|万円|億円|パーセント|percent|"
-    r"million|billion|thousand|万|億|%)",
+    r"\s*(million yen|billion yen|thousand yen|万円|万元|億円|億元|亿元|"
+    r"パーセント|percent|million|billion|thousand|万|億|亿|%)",
     re.IGNORECASE,
 )
 _DATE_OR_TIME_SEPARATORS = ("-", ":", "/")
 
+# 金額であることを表す言語非依存の接尾辞。
+# 通貨名（円 / 元 / yen）は言語ごとに異なるため、金額どうしを言語横断で比較できるよう
+# 共通の印に正規化する（例: ja「1,200万円」と zh「1,200万元」を同一トークンにする）。
+_CURRENCY = "cur"
+
 _UNIT_MULTIPLIERS: dict[str, tuple[Decimal, str]] = {
     "万": (Decimal("10000"), ""),
-    "万円": (Decimal("10000"), "yen"),
+    "万円": (Decimal("10000"), _CURRENCY),
+    "万元": (Decimal("10000"), _CURRENCY),
     "億": (Decimal("100000000"), ""),
-    "億円": (Decimal("100000000"), "yen"),
+    "亿": (Decimal("100000000"), ""),
+    "億円": (Decimal("100000000"), _CURRENCY),
+    "億元": (Decimal("100000000"), _CURRENCY),
+    "亿元": (Decimal("100000000"), _CURRENCY),
     "thousand": (Decimal("1000"), ""),
-    "thousand yen": (Decimal("1000"), "yen"),
+    "thousand yen": (Decimal("1000"), _CURRENCY),
     "million": (Decimal("1000000"), ""),
-    "million yen": (Decimal("1000000"), "yen"),
+    "million yen": (Decimal("1000000"), _CURRENCY),
     "billion": (Decimal("1000000000"), ""),
-    "billion yen": (Decimal("1000000000"), "yen"),
+    "billion yen": (Decimal("1000000000"), _CURRENCY),
     "percent": (Decimal("1"), "%"),
     "パーセント": (Decimal("1"), "%"),
     "%": (Decimal("1"), "%"),
@@ -167,6 +175,7 @@ class HybridQoSMonitor:
         percentile_pct: float = _DEFAULT_P95,
         retry_cooldown_s: float = 60.0,
         clock: Callable[[], float] = time.monotonic,
+        latency_window_s: float = LATENCY_WINDOW_SECONDS,
     ) -> None:
         self._targets_ms = dict(
             _MAINLINE_TARGETS_MS if targets_ms is None else targets_ms
@@ -174,7 +183,9 @@ class HybridQoSMonitor:
         self._glossary_target = glossary_target
         self._number_target = number_target
         self._pct = percentile_pct
-        self._latency: dict[str, deque[float]] = {
+        self._latency_window_s = latency_window_s
+        # 主線名 → (観測時刻, 遅延ms) の固定長窓。時刻は有効期間判定に用いる。
+        self._latency: dict[str, deque[tuple[float, float]]] = {
             name: deque(maxlen=window) for name in self._targets_ms
         }
         self._glossary_hits = 0
@@ -188,7 +199,27 @@ class HybridQoSMonitor:
         """主線の 1 サンプル遅延（ms）を記録する（未知主線・負値は無視）。"""
         if mainline not in self._latency or latency_ms < 0:
             return
-        self._latency[mainline].append(float(latency_ms))
+        self._latency[mainline].append((self._clock(), float(latency_ms)))
+
+    def _fresh_samples(self, mainline: str) -> list[float]:
+        """有効期間内の遅延サンプルのみを返す（期限切れは評価から除外）。
+
+        Args:
+            mainline: 主線名（hearing / reading）。
+
+        Returns:
+            有効期間内の遅延（ms）のリスト。
+
+        Notes:
+            聞く主線が停止すると新規サンプルが途絶えるため、件数窓だけでは
+            古い遅い観測が残り続けて復帰できない。時間窓で期限切れを除外する。
+        """
+        deadline = self._clock() - self._latency_window_s
+        return [
+            value
+            for recorded_at, value in self._latency.get(mainline, ())
+            if recorded_at >= deadline
+        ]
 
     def record_glossary(self, hits: int, total: int) -> None:
         """用語の命中数/候補数を累積する（total<=0 は無視）。"""
@@ -209,8 +240,8 @@ class HybridQoSMonitor:
         self._number_total += len(src)
 
     def p95(self, mainline: str) -> float | None:
-        """指定主線の P95 遅延（ms）。サンプルが無ければ None。"""
-        return percentile(list(self._latency.get(mainline, ())), self._pct)
+        """指定主線の P95 遅延（ms）。有効期間内のサンプルが無ければ None。"""
+        return percentile(self._fresh_samples(mainline), self._pct)
 
     def glossary_hit_rate(self) -> float | None:
         """用語命中率（0.0-1.0）。計測無しなら None。"""
@@ -298,208 +329,6 @@ class HybridQoSMonitor:
             reading_p95_ms=self.p95("reading"),
             glossary_hit_rate=self.glossary_hit_rate(),
             number_retention_rate=self.number_retention_rate(),
-            hearing_samples=len(self._latency.get("hearing", ())),
-            reading_samples=len(self._latency.get("reading", ())),
+            hearing_samples=len(self._fresh_samples("hearing")),
+            reading_samples=len(self._fresh_samples("reading")),
         )
-
-
-class DegradationLevel(Enum):
-    """
-    品質劣化レベル
-    NONE: 正常
-    LIGHT: 軽度（遅延注意）
-    MODERATE: 中度（字幕推奨）
-    SEVERE: 重度（音声停止、字幕のみ）
-    """
-
-    NONE = "none"
-    LIGHT = "light"
-    MODERATE = "moderate"
-    SEVERE = "severe"
-
-
-@dataclass
-class QoSMetrics:
-    """QoS測定結果"""
-
-    start_time_ms: float = 0.0
-    end_time_ms: float = 0.0
-    total_latency_ms: float = 0.0
-    jitter_ms: float = 0.0
-    degradation_level: DegradationLevel = DegradationLevel.NONE
-    should_fallback_to_subtitle: bool = False
-
-
-@dataclass
-class QoSState:
-    """QoS内部状態"""
-
-    latency_history: deque[float] = field(default_factory=lambda: deque(maxlen=20))
-    last_latency_ms: float = 0.0
-
-
-class QoSController:
-    """
-    QoS品質管理コントローラー
-
-    主な機能:
-    - 遅延測定
-    - ジッター計算
-    - 品質劣化判定
-    - フォールバック判断
-    """
-
-    def __init__(self) -> None:
-        self.max_latency_ms = settings.max_latency_ms
-        self.max_jitter_ms = settings.max_jitter_ms
-        self._state = QoSState()
-
-    def start_measurement(self) -> QoSMetrics:
-        """測定開始"""
-        return QoSMetrics(start_time_ms=time.time() * 1000)
-
-    def end_measurement(self, metrics: QoSMetrics) -> QoSMetrics:
-        """
-        測定終了・結果計算
-
-        判定基準:
-        - 通常: latency <= max_latency_ms
-        - LIGHT: max_latency_ms < latency <= max_latency_ms * 1.5
-        - MODERATE: max_latency_ms * 1.5 < latency <= max_latency_ms * 2
-        - SEVERE: latency > max_latency_ms * 2
-        """
-        metrics.end_time_ms = time.time() * 1000
-        metrics.total_latency_ms = metrics.end_time_ms - metrics.start_time_ms
-
-        # ジッター計算（前回との差分）
-        if self._state.last_latency_ms > 0:
-            metrics.jitter_ms = abs(
-                metrics.total_latency_ms - self._state.last_latency_ms
-            )
-
-        # 履歴更新
-        self._state.latency_history.append(metrics.total_latency_ms)
-        self._state.last_latency_ms = metrics.total_latency_ms
-
-        # 品質劣化レベル判定
-        if metrics.total_latency_ms > self.max_latency_ms * 2:
-            metrics.degradation_level = DegradationLevel.SEVERE
-            metrics.should_fallback_to_subtitle = True
-        elif metrics.total_latency_ms > self.max_latency_ms * 1.5:
-            metrics.degradation_level = DegradationLevel.MODERATE
-            metrics.should_fallback_to_subtitle = True
-        elif metrics.total_latency_ms > self.max_latency_ms:
-            metrics.degradation_level = DegradationLevel.LIGHT
-        else:
-            metrics.degradation_level = DegradationLevel.NONE
-
-        # ジッター超過時もフォールバック
-        if metrics.jitter_ms > self.max_jitter_ms * 2:
-            metrics.should_fallback_to_subtitle = True
-
-        return metrics
-
-    def get_average_latency(self) -> float:
-        """平均遅延取得"""
-        if not self._state.latency_history:
-            return 0.0
-        return sum(self._state.latency_history) / len(self._state.latency_history)
-
-    def is_stable(self) -> bool:
-        """安定性判定"""
-        if len(self._state.latency_history) < 5:
-            return True
-        avg = self.get_average_latency()
-        return all(
-            abs(lat - avg) < self.max_jitter_ms for lat in self._state.latency_history
-        )
-
-
-class AdaptiveQoSController(QoSController):
-    """
-    ★改善: 適応型QoSコントローラー
-
-    履歴データに基づいて動的に閾値を調整:
-    - 安定時: 厳格な閾値で高品質を維持
-    - 不安定時: 閾値を緩和してフォールバック頻度を抑制
-
-    計算式: adaptive_threshold = avg + 2 * std
-    上限: 設定値の1.5倍
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._adaptive_threshold = settings.max_latency_ms
-
-    def _calculate_std(self) -> float:
-        """標準偏差を計算"""
-        if len(self._state.latency_history) < 2:
-            return 0.0
-        avg = self.get_average_latency()
-        variance = sum((x - avg) ** 2 for x in self._state.latency_history) / len(
-            self._state.latency_history
-        )
-        return variance**0.5
-
-    def _update_adaptive_threshold(self) -> None:
-        """適応型閾値を更新"""
-        # 十分なサンプルが必要
-        if len(self._state.latency_history) < 10:
-            return
-
-        avg = self.get_average_latency()
-        std = self._calculate_std()
-
-        # 適応型閾値 = 平均値 + 2倍標準偏差
-        # 設定値の1.5倍を上限とする
-        new_threshold = min(
-            avg + 2 * std,
-            settings.max_latency_ms * 1.5,
-        )
-        # 設定値を下回らないように
-        new_threshold = max(new_threshold, settings.max_latency_ms * 0.8)
-
-        self._adaptive_threshold = new_threshold
-
-    def end_measurement(self, metrics: QoSMetrics) -> QoSMetrics:
-        """
-        測定終了・結果計算（適応型閾値使用）
-        """
-        metrics.end_time_ms = time.time() * 1000
-        metrics.total_latency_ms = metrics.end_time_ms - metrics.start_time_ms
-
-        # ジッター計算（前回との差分）
-        if self._state.last_latency_ms > 0:
-            metrics.jitter_ms = abs(
-                metrics.total_latency_ms - self._state.last_latency_ms
-            )
-
-        # 履歴更新
-        self._state.latency_history.append(metrics.total_latency_ms)
-        self._state.last_latency_ms = metrics.total_latency_ms
-
-        # ★適応型閾値を更新
-        self._update_adaptive_threshold()
-        threshold = self._adaptive_threshold
-
-        # 品質劣化レベル判定（★適応型閾値を使用）
-        if metrics.total_latency_ms > threshold * 2:
-            metrics.degradation_level = DegradationLevel.SEVERE
-            metrics.should_fallback_to_subtitle = True
-        elif metrics.total_latency_ms > threshold * 1.5:
-            metrics.degradation_level = DegradationLevel.MODERATE
-            metrics.should_fallback_to_subtitle = True
-        elif metrics.total_latency_ms > threshold:
-            metrics.degradation_level = DegradationLevel.LIGHT
-        else:
-            metrics.degradation_level = DegradationLevel.NONE
-
-        # ジッター超過時もフォールバック
-        if metrics.jitter_ms > self.max_jitter_ms * 2:
-            metrics.should_fallback_to_subtitle = True
-
-        return metrics
-
-    def get_adaptive_threshold(self) -> float:
-        """現在の適応型閾値を取得"""
-        return self._adaptive_threshold

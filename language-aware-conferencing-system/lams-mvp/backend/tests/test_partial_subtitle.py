@@ -3,6 +3,7 @@
 import pytest
 
 from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+from app.ai_pipeline.output_manager import DefaultOutputManager
 from app.rooms.manager import ParticipantPreference
 from app.webrtc.processor import SegmentProcessor
 
@@ -143,6 +144,9 @@ async def test_process_partial_delivers_asr_original() -> None:
     assert delivered[0]["partial_text"] == "partial text"
     assert delivered[0]["revision"] == 4
     assert delivered[0]["source_language"] == "ja"
+    assert delivered[0]["room_id"] == "r"
+    assert isinstance(delivered[0]["output_manager"], DefaultOutputManager)
+    assert delivered[0]["output_manager"]._revision_authority is not None
 
 
 @pytest.mark.asyncio

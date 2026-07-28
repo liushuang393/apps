@@ -6,12 +6,15 @@
 
 **Status:** done
 
-- [ ] orchestrator は主線駆動と収束候補の引き渡しまでに縮小され、配信補助が Output Manager へ移っている
-- [ ] 確定発話の読む主線は翻訳音声の成否から独立して配信される
-- [ ] 個別受信者への送信失敗が他受信者や正式記録を巻き戻さない
-- [ ] 暫定字幕が確定字幕で置換され、二重表示が起きない
-- [ ] 別経路からの無秩序なクライアント送信が残っていない（または禁止が検証できる）
-- [ ] 一度に主線アルゴリズム全体を再設計せず、段階移行である
+- [x] orchestrator は主線駆動と収束候補の引き渡しまでに縮小され、配信補助が Output Manager へ移っている
+  - 確定字幕・翻訳音声・Mode A interim・partial ASR・QoE・interrupted・§9 `qos_warning` はすべて Output Manager 経由。
+- [x] 確定発話の読む主線は翻訳音声の成否から独立して配信される
+- [x] 個別受信者への送信失敗が他受信者や正式記録を巻き戻さない
+- [x] 暫定字幕が確定字幕で置換され、二重表示が起きない
+- [x] 別経路からの無秩序なクライアント送信が残っていない（または禁止が検証できる）
+  - partial ASR・QoE・interrupted・`qos_warning` の Sink 直送禁止を architecture test で検出。
+  - `_deliver_event_group` は削除済み。
+- [x] 一度に主線アルゴリズム全体を再設計せず、段階移行である
 
 **Phase:** B  
 **Spec:** issues/01-output-manager-module.md  

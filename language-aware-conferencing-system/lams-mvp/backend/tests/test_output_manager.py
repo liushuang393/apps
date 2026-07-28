@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
+import app.ai_pipeline.output_manager as output_manager_module
 from app.ai_pipeline.events import SCHEMA_VERSION
 from app.ai_pipeline.output_manager import (
     TOPIC_EVENT,
@@ -21,7 +22,10 @@ from app.ai_pipeline.output_manager import (
     DefaultOutputManager,
     FinalSubtitleCommand,
     InterimSubtitleCommand,
+    InterruptedEventCommand,
     ListenerRef,
+    PartialSubtitleCommand,
+    QosWarningCommand,
     QualityEventCommand,
     RecordingTransportAdapter,
     TranslatedAudioCommand,
@@ -409,3 +413,167 @@ async def test_transport_receives_encoded_events_not_raw_command_dicts() -> None
     assert isinstance(raw, (bytes, bytearray))
     # Recording adapter は decode 済み dict も保持するが、生入力は bytes
     assert b'"type":"subtitle"' in raw or b'"type": "subtitle"' in raw
+
+
+def test_output_command_variants_cover_partial_and_interrupted() -> None:
+    """partial ASR と割込みイベントにも専用の型付き命令を公開する。"""
+    assert hasattr(output_manager_module, "PartialSubtitleCommand")
+    assert hasattr(output_manager_module, "InterruptedEventCommand")
+
+
+def test_output_command_variants_cover_qos_warning() -> None:
+    """§9 qos_warning にも専用の型付き命令を公開する。"""
+    assert hasattr(output_manager_module, "QosWarningCommand")
+
+
+@pytest.mark.asyncio
+async def test_partial_asr_uses_canonical_encoder_and_isolates_failure() -> None:
+    """partial ASR は canonical 字幕契約で配信し、個別失敗を隔離する。"""
+    h = _Harness()
+    h.adapter.fail_users.add("u1")
+    listeners = _listeners(
+        ("u1", "en", False, True),
+        ("u2", "en", False, True),
+        ("u3", "en", False, False),
+    )
+
+    report = await h.manager.handle(
+        PartialSubtitleCommand(
+            room_id="room-1",
+            speaker_id="spk",
+            subtitle_id="utt-1",
+            seq=3,
+            original_text="hello wor",
+            source_language="en",
+            target_language="en",
+            listeners=listeners,
+            revision=4,
+            generation_id=2,
+            trace_id="trace-1",
+            model_id="asr-1",
+        )
+    )
+
+    assert [item[0] for item in h.adapter.data] == ["u2"]
+    payload = h.adapter.data[0][2]
+    assert payload["type"] == "subtitle"
+    assert payload["original_text"] == "hello wor"
+    assert payload["translated_text"] is None
+    assert payload["is_partial"] is True
+    assert payload["is_final"] is False
+    assert payload["revision"] == 4
+    assert payload["schema_version"] == SCHEMA_VERSION
+    assert [failure.user_id for failure in report.failures] == ["u1"]
+    assert any(item.user_id == "u3" for item in report.suppressed)
+
+
+@pytest.mark.asyncio
+async def test_interrupted_event_is_encoded_and_failure_isolated() -> None:
+    """割込みイベントは canonical encoder 経由で受信者ごとに配信する。"""
+    h = _Harness()
+    h.adapter.fail_users.add("u1")
+    listeners = _listeners(
+        ("u1", "en", True, True),
+        ("u2", "en", True, True),
+    )
+
+    report = await h.manager.handle(
+        InterruptedEventCommand(
+            room_id="room-1",
+            speaker_id="spk",
+            utterance_id="utt-1",
+            seq=5,
+            generation_id=7,
+            listeners=listeners,
+        )
+    )
+
+    assert [item[0] for item in h.adapter.data] == ["u2"]
+    user_id, topic, payload = h.adapter.data[0]
+    assert (user_id, topic) == ("u2", TOPIC_EVENT)
+    assert payload["type"] == "translation_interrupted"
+    assert payload["mainline"] == "hearing"
+    assert payload["generation_id"] == 7
+    assert payload["schema_version"] == SCHEMA_VERSION
+    assert [failure.user_id for failure in report.failures] == ["u1"]
+
+
+@pytest.mark.asyncio
+async def test_qos_warning_uses_canonical_encoder_without_reevaluate() -> None:
+    """qos_warning は評価済みフィールドを再判定せず canonical 配信する。"""
+    h = _Harness()
+    h.adapter.fail_users.add("u1")
+    listeners = _listeners(
+        ("u1", "en", True, True),
+        ("u2", "en", True, True),
+    )
+
+    report = await h.manager.handle(
+        QosWarningCommand(
+            room_id="room-1",
+            speaker_id="spk",
+            utterance_id="utt-1",
+            seq=3,
+            generation_id=2,
+            listeners=listeners,
+            metric="latency_p95",
+            should_fallback_to_subtitle=True,
+            mainline="hearing",
+            value_ms=1300.0,
+            target_ms=1200.0,
+        )
+    )
+
+    assert [item[0] for item in h.adapter.data] == ["u2"]
+    user_id, topic, payload = h.adapter.data[0]
+    assert (user_id, topic) == ("u2", TOPIC_EVENT)
+    assert payload["type"] == "qos_warning"
+    assert payload["metric"] == "latency_p95"
+    assert payload["mainline"] == "hearing"
+    assert payload["value_ms"] == 1300.0
+    assert payload["target_ms"] == 1200.0
+    assert payload["should_fallback_to_subtitle"] is True
+    assert payload["schema_version"] == SCHEMA_VERSION
+    assert [failure.user_id for failure in report.failures] == ["u1"]
+
+
+@pytest.mark.asyncio
+async def test_partial_asr_preserves_authority_revision_and_rejects_stale() -> None:
+    """partial ASR は authority の最新 revision だけを再採番せず配信する。"""
+    from app.ai_pipeline.revision_authority import (
+        RevisionAuthority,
+        RevisionStreamKey,
+        StreamKind,
+    )
+
+    authority = RevisionAuthority()
+    adapter = RecordingTransportAdapter()
+    manager = DefaultOutputManager(
+        adapter=adapter,
+        revision_authority=authority,
+    )
+    utterance_id = authority.begin("room-1", "spk", utterance_id="utt-1")
+    stream = RevisionStreamKey(kind=StreamKind.PARTIAL_ASR)
+    stale = authority.advance("room-1", "spk", utterance_id, stream)
+    latest = authority.advance("room-1", "spk", utterance_id, stream)
+    common = {
+        "room_id": "room-1",
+        "speaker_id": "spk",
+        "subtitle_id": utterance_id,
+        "seq": 0,
+        "original_text": "hello",
+        "source_language": "en",
+        "target_language": "en",
+        "listeners": _listeners(("u1", "en", False, True)),
+    }
+
+    stale_report = await manager.handle(
+        PartialSubtitleCommand(revision=stale.revision, **common)
+    )
+    latest_report = await manager.handle(
+        PartialSubtitleCommand(revision=latest.revision, **common)
+    )
+
+    assert stale_report.delivered_revisions == ()
+    assert latest_report.delivered_revisions == (latest.revision,)
+    assert adapter.data[0][2]["revision"] == latest.revision

@@ -1,0 +1,4 @@
+### Result
+4. [GET] http://127.0.0.1:8090/openapi.json => [200] OK
+
+Note: 4 static requests not shown, run with --static option to see them.

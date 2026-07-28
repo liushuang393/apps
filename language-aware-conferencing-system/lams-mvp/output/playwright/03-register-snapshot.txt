@@ -1,0 +1,45 @@
+### Page
+- Page URL: http://127.0.0.1:5273/register
+- Page Title: LAMS - 言語感知型会議システム
+### Snapshot
+```yaml
+- generic [ref=f2e3]:
+  - combobox [ref=f2e5] [cursor=pointer]:
+    - option "日本語"
+    - option "English" [selected]
+    - option "中文"
+    - option "Tiếng Việt"
+  - generic [ref=f2e6]:
+    - heading "🌐 LAMS" [level=1] [ref=f2e7]
+    - paragraph [ref=f2e8]: Register
+    - generic [ref=f2e9]:
+      - generic [ref=f2e10]: Email Address
+      - textbox "Email Address" [ref=f2e11]:
+        - /placeholder: your@email.com
+    - generic [ref=f2e12]:
+      - generic [ref=f2e13]: Password
+      - textbox "Password" [ref=f2e14]:
+        - /placeholder: 8 or more characters
+    - generic [ref=f2e15]:
+      - generic [ref=f2e16]: Display Name
+      - textbox "Display Name" [ref=f2e17]:
+        - /placeholder: Name displayed in meetings
+    - generic [ref=f2e18]:
+      - generic [ref=f2e19]: Native Language
+      - combobox "Native Language" [ref=f2e20]:
+        - option "英語"
+        - option "日本語" [selected]
+        - option "中国語"
+        - option "韓国語"
+        - option "ベトナム語"
+        - option "フランス語"
+        - option "ドイツ語"
+        - option "ロシア語"
+        - option "スペイン語"
+        - option "ポルトガル語"
+    - button "Register" [ref=f2e21] [cursor=pointer]
+  - paragraph [ref=f2e22]:
+    - text: Already have an account?
+    - link "Login" [ref=f2e23] [cursor=pointer]:
+      - /url: /login
+```

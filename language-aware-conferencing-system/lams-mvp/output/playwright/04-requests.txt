@@ -1,0 +1,4 @@
+### Result
+52. [POST] http://127.0.0.1:5273/api/auth/register => [200] OK
+
+Note: 52 static requests not shown, run with --static option to see them.

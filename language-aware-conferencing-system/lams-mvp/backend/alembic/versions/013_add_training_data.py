@@ -14,6 +14,10 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 
 from alembic import op
+from app.db.migration_guards import (
+    create_index_if_absent,
+    create_table_if_absent,
+)
 
 revision: str = "013_training_data"
 down_revision: str | None = "012_default_mode_a"
@@ -22,8 +26,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """訓練データ闭环の 5 テーブルを作成する。"""
-    op.create_table(
+    """訓練データ闭环の 5 テーブルを作成する（既存オブジェクトは skip し冪等）。"""
+    create_table_if_absent(
         "asr_correction",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("room_id", sa.String(36), sa.ForeignKey("rooms.id"), nullable=True),
@@ -52,18 +56,18 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index("ix_asr_correction_room_id", "asr_correction", ["room_id"])
-    op.create_index("ix_asr_correction_session_id", "asr_correction", ["session_id"])
-    op.create_index(
+    create_index_if_absent("ix_asr_correction_room_id", "asr_correction", ["room_id"])
+    create_index_if_absent("ix_asr_correction_session_id", "asr_correction", ["session_id"])
+    create_index_if_absent(
         "ix_asr_correction_segment",
         "asr_correction",
         ["transcript_segment_id"],
     )
-    op.create_index("ix_asr_correction_lang", "asr_correction", ["source_language"])
-    op.create_index("ix_asr_correction_split", "asr_correction", ["split"])
-    op.create_index("ix_asr_correction_created", "asr_correction", ["created_at"])
+    create_index_if_absent("ix_asr_correction_lang", "asr_correction", ["source_language"])
+    create_index_if_absent("ix_asr_correction_split", "asr_correction", ["split"])
+    create_index_if_absent("ix_asr_correction_created", "asr_correction", ["created_at"])
 
-    op.create_table(
+    create_table_if_absent(
         "translation_correction",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column(
@@ -87,15 +91,15 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index(
+    create_index_if_absent(
         "ix_tc_segment", "translation_correction", ["translation_segment_id"]
     )
-    op.create_index("ix_tc_src", "translation_correction", ["source_language"])
-    op.create_index("ix_tc_tgt", "translation_correction", ["target_language"])
-    op.create_index("ix_tc_split", "translation_correction", ["split"])
-    op.create_index("ix_tc_created", "translation_correction", ["created_at"])
+    create_index_if_absent("ix_tc_src", "translation_correction", ["source_language"])
+    create_index_if_absent("ix_tc_tgt", "translation_correction", ["target_language"])
+    create_index_if_absent("ix_tc_split", "translation_correction", ["split"])
+    create_index_if_absent("ix_tc_created", "translation_correction", ["created_at"])
 
-    op.create_table(
+    create_table_if_absent(
         "speaker_enrollment",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=False),
@@ -116,16 +120,16 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index("ix_enrollment_user_id", "speaker_enrollment", ["user_id"])
-    op.create_index("ix_enrollment_room_id", "speaker_enrollment", ["room_id"])
-    op.create_index(
+    create_index_if_absent("ix_enrollment_user_id", "speaker_enrollment", ["user_id"])
+    create_index_if_absent("ix_enrollment_room_id", "speaker_enrollment", ["room_id"])
+    create_index_if_absent(
         "ix_enrollment_user_label",
         "speaker_enrollment",
         ["user_id", "speaker_label"],
         unique=True,
     )
 
-    op.create_table(
+    create_table_if_absent(
         "tts_consent",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=False),
@@ -144,10 +148,10 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index("ix_tts_consent_user_id", "tts_consent", ["user_id"])
-    op.create_index("ix_tts_consent_voice_id", "tts_consent", ["voice_id"])
+    create_index_if_absent("ix_tts_consent_user_id", "tts_consent", ["user_id"])
+    create_index_if_absent("ix_tts_consent_voice_id", "tts_consent", ["voice_id"])
 
-    op.create_table(
+    create_table_if_absent(
         "evaluation_sample",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("stage", sa.String(20), nullable=False),
@@ -164,8 +168,8 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index("ix_eval_stage", "evaluation_sample", ["stage"])
-    op.create_index("ix_eval_src", "evaluation_sample", ["source_language"])
+    create_index_if_absent("ix_eval_stage", "evaluation_sample", ["stage"])
+    create_index_if_absent("ix_eval_src", "evaluation_sample", ["source_language"])
 
 
 def downgrade() -> None:

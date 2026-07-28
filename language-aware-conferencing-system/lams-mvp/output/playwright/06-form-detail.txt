@@ -1,0 +1,93 @@
+### Result
+{
+  "html": "📋 新規会議室設定\n会議室名 *\n会議説明\n対応言語 *（参加者が選択可能な翻訳先言語）\n日本語\n英語\n中国語\nベトナム語\nデフォルト音声モード\n原音（オリジナル音声）\n翻訳音声\n参加者による音声モード切替を許可\n許可\n🌐 公開\n🔒 私有\n💡\n公開会議：全メンバーが一覧で確認・入室できます\nキャンセル\n会議室を作成",
+  "inputs": [
+    {
+      "tag": "INPUT",
+      "type": "text",
+      "id": "",
+      "placeholder": "例：定例ミーティング",
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "TEXTAREA",
+      "type": "textarea",
+      "id": "",
+      "placeholder": "例：週次進捗報告と課題共有",
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "id": "",
+      "placeholder": "",
+      "text": "",
+      "value": "on"
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "id": "",
+      "placeholder": "",
+      "text": "",
+      "value": "on"
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "id": "",
+      "placeholder": "",
+      "text": "",
+      "value": "on"
+    },
+    {
+      "tag": "INPUT",
+      "type": "checkbox",
+      "id": "",
+      "placeholder": "",
+      "text": "",
+      "value": "on"
+    },
+    {
+      "tag": "SELECT",
+      "type": "select-one",
+      "id": "",
+      "text": "原音（オリジナル音声）\n翻訳音声",
+      "value": "original"
+    },
+    {
+      "tag": "BUTTON",
+      "type": "button",
+      "id": "allow-mode-switch",
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "type": "button",
+      "id": "is-private",
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "type": "button",
+      "id": "",
+      "text": "キャンセル",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "type": "submit",
+      "id": "",
+      "text": "会議室を作成",
+      "value": ""
+    }
+  ]
+}
+### Ran Playwright code
+```js
+await page.evaluate('() => ((() => { window.scrollTo(0,0); const form=document.querySelector(\'form\'); if(!form) return {err:\'no form\'}; return {html:form.innerText.slice(0,500), inputs:[...form.querySelectorAll(\'input,select,textarea,button\')].map(e=>({tag:e.tagName,type:e.type,id:e.id,placeholder:e.placeholder,text:(e.innerText||\'\').slice(0,30),value:e.value}))}; })())');
+```

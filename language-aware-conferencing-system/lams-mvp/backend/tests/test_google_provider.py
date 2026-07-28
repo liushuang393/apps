@@ -9,7 +9,10 @@ Google プロバイダー（Mode B：Chirp 3 ASR + Cloud Translation）単体テ
 """
 
 import asyncio
+import importlib.util
 from types import SimpleNamespace
+
+import pytest
 
 from app.ai_pipeline.providers.base import TranslationResult
 from app.ai_pipeline.providers.google import (
@@ -17,9 +20,17 @@ from app.ai_pipeline.providers.google import (
     extract_transcript,
     from_bcp47,
     google_runtime_available,
+    speech_lib_available,
     to_bcp47,
 )
 from app.config import settings
+
+# google-cloud-speech 未導入環境では SDK 型（cloud_speech.RecognizeRequest）を
+# 構築できないため、SDK 呼び出し経路のテストは skip する（雲依存の環境要件）。
+requires_speech_sdk = pytest.mark.skipif(
+    not speech_lib_available(),
+    reason="google-cloud-speech 未導入（optional 依存）",
+)
 
 
 def _make_result(transcript: str, language_code: str = "") -> SimpleNamespace:
@@ -78,10 +89,23 @@ def test_runtime_unavailable_without_project(monkeypatch) -> None:
 def test_runtime_available_with_project(monkeypatch) -> None:
     monkeypatch.setattr(settings, "google_project_id", "demo-project")
     # speech lib が導入済の環境では True（未導入環境では False になり得る）
-    import importlib.util
+    assert google_runtime_available() is speech_lib_available()
 
-    has_speech = importlib.util.find_spec("google.cloud.speech") is not None
-    assert google_runtime_available() is has_speech
+
+def test_runtime_unavailable_when_google_namespace_missing(monkeypatch) -> None:
+    """google.cloud 名前空間が無い環境でも例外にせず False を返す。
+
+    google-genai だけを導入した環境（既定構成）では ``google`` パッケージは存在するが
+    ``google.cloud`` が無く、find_spec が ModuleNotFoundError を送出する。ここで例外が
+    漏れると AI_PROVIDER=google 指定時に gpt4o_transcribe への縮退が働かず起動失敗する。
+    """
+    monkeypatch.setattr(settings, "google_project_id", "demo-project")
+
+    def _raise_missing_namespace(_name: str) -> None:
+        raise ModuleNotFoundError("No module named 'google.cloud'")
+
+    monkeypatch.setattr(importlib.util, "find_spec", _raise_missing_namespace)
+    assert google_runtime_available() is False
 
 
 # ============================================================
@@ -97,6 +121,7 @@ class _FakeSpeechClient:
         return SimpleNamespace(results=self._results)
 
 
+@requires_speech_sdk
 def test_transcribe_with_detection_uses_chirp(monkeypatch) -> None:
     monkeypatch.setattr(settings, "google_project_id", "demo-project")
     client = _FakeSpeechClient([_make_result("テスト発話です", "ja-JP")])
@@ -131,6 +156,7 @@ class _FakeOpenAIClient:
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=_create))
 
 
+@requires_speech_sdk
 def test_translate_audio_falls_back_to_openai() -> None:
     # google-cloud-translate 未導入環境では Cloud Translation が ImportError となり
     # OpenAI フォールバックで翻訳されることを検証する。

@@ -13,6 +13,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 
 from alembic import op
+from app.db.migration_guards import add_column_if_absent
 
 revision: str = "015_speaker_label"
 down_revision: str | None = "014_pipeline_event"
@@ -21,12 +22,16 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """transcript_segment / pipeline_event に speaker_label を追加する。"""
-    op.add_column(
+    """transcript_segment / pipeline_event に speaker_label を追加する。
+
+    create_all 先行で pipeline_event 側に列が存在する場合があるため、列単位で
+    存在を確認して追加する（既存は skip し冪等）。
+    """
+    add_column_if_absent(
         "transcript_segment",
         sa.Column("speaker_label", sa.String(100), nullable=True),
     )
-    op.add_column(
+    add_column_if_absent(
         "pipeline_event",
         sa.Column("speaker_label", sa.String(100), nullable=True),
     )

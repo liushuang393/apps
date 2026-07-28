@@ -1,0 +1,41 @@
+### Page
+- Page URL: http://127.0.0.1:5273/room/6efe6a9c-149a-415a-99cb-4516d3fc6de4
+- Page Title: LAMS - 言語感知型会議システム
+### Snapshot
+```yaml
+- generic [ref=f2e329]:
+  - banner [ref=f2e330]:
+    - heading "🎤 会議室" [level=1] [ref=f2e331]
+    - generic [ref=f2e332]:
+      - generic [ref=f2e333]: 接続中...
+      - generic [ref=f2e335]:
+        - generic "マイク選択" [ref=f2e336]:
+          - generic [ref=f2e337]: 🎤
+          - combobox [disabled] [ref=f2e338] [cursor=pointer]
+        - generic "スピーカー選択" [ref=f2e339]:
+          - generic [ref=f2e340]: 🔊
+          - combobox [disabled] [ref=f2e341] [cursor=pointer]
+      - button "📝 記録" [ref=f2e342] [cursor=pointer]
+      - button "退室" [ref=f2e343] [cursor=pointer]
+  - generic [ref=f2e344]:
+    - complementary [ref=f2e345]:
+      - generic [ref=f2e346]:
+        - button "👥 参加者 (0)" [expanded] [ref=f2e347] [cursor=pointer]:
+          - generic [ref=f2e348]:
+            - generic [ref=f2e349]: 👥
+            - text: 参加者 (0)
+        - paragraph [ref=f2e354]: 参加者がいません
+      - generic [ref=f2e355]:
+        - button "⚙️ 設定" [disabled] [ref=f2e356]:
+          - generic [ref=f2e357]:
+            - generic [ref=f2e358]: ⚙️
+            - text: 設定
+        - paragraph [ref=f2e360]: 接続中...
+    - main [ref=f2e361]:
+      - generic [ref=f2e362]:
+        - heading "📝 字幕" [level=4] [ref=f2e363]
+        - paragraph [ref=f2e364]: 字幕表示はオフです
+      - generic [ref=f2e366]:
+        - generic [ref=f2e367]: 🔇 マイクOFF
+        - generic [ref=f2e368]: 左側の設定パネルでマイクをONにできます
+```

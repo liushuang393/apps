@@ -1,0 +1,26 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5273",
+      "localStorage": [
+        {
+          "name": "lams-selected-speaker",
+          "value": "578ca7d1390283943dc23c50e799b99ead089fbccc4f2d59ff027aa42eafb78c"
+        },
+        {
+          "name": "i18nextLng",
+          "value": "ja"
+        },
+        {
+          "name": "lams-auth",
+          "value": "{\"state\":{\"token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNzY4MWY4YjgtZTI0YS00YzMzLTgwMTgtZmQxYWRlN2FjZWI5IiwiZW1haWwiOiJyZWxlYXNlLWEtMjAyNjA3MjgtMTY0M0BleGFtcGxlLmNvbSIsIm5hdGl2ZV9sYW5ndWFnZSI6ImphIiwicm9sZSI6InVzZXIiLCJleHAiOjE3ODUzMTIwNDR9.VICbUAMn-x2DDVQPDlQZy5SU6JGEGmBzj7AWXD97dCQ\",\"user\":{\"id\":\"7681f8b8-e24a-4c33-8018-fd1ade7aceb9\",\"email\":\"release-a-20260728-1643@example.com\",\"displayName\":\"受入ユーザーA\",\"nativeLanguage\":\"ja\",\"role\":\"user\",\"isActive\":true},\"isAuthenticated\":true},\"version\":0}"
+        },
+        {
+          "name": "lams-selected-mic",
+          "value": "2814b75d528a288edb59946ab4218e9ded8ae1d988a764f05b4b1c48149edc94"
+        }
+      ]
+    }
+  ]
+}

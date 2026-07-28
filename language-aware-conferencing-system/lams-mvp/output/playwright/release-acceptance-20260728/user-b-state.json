@@ -1,0 +1,26 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5273",
+      "localStorage": [
+        {
+          "name": "lams-selected-speaker",
+          "value": "c973c6f89c409717f0dd917195912f86b6eb949b8a285218c234f5a65dcffb50"
+        },
+        {
+          "name": "i18nextLng",
+          "value": "en"
+        },
+        {
+          "name": "lams-auth",
+          "value": "{\"state\":{\"token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMWQ0OTBkYzEtNTFmYy00NDM3LWE3OWMtMmM2ZDg3NGQ2MDE3IiwiZW1haWwiOiJyZWxlYXNlLWItMjAyNjA3MjgtMTY0M0BleGFtcGxlLmNvbSIsIm5hdGl2ZV9sYW5ndWFnZSI6ImVuIiwicm9sZSI6InVzZXIiLCJleHAiOjE3ODUzMTIwNDR9.SuKX9XTZqvRAon_rMtrJBLz1oTwbiZ7tEf5xH6FyG9E\",\"user\":{\"id\":\"1d490dc1-51fc-4437-a79c-2c6d874d6017\",\"email\":\"release-b-20260728-1643@example.com\",\"displayName\":\"Acceptance User B\",\"nativeLanguage\":\"en\",\"role\":\"user\",\"isActive\":true},\"isAuthenticated\":true},\"version\":0}"
+        },
+        {
+          "name": "lams-selected-mic",
+          "value": "51616d8ba871ebe788e1a5c89295cbd8e1131ca7ab20f4071008b6dbb8b89da7"
+        }
+      ]
+    }
+  ]
+}

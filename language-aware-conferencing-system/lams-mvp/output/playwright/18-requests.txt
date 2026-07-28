@@ -1,0 +1,5 @@
+### Result
+51. [GET] http://127.0.0.1:5273/api/auth/me => [200] OK
+54. [POST] http://127.0.0.1:5273/api/auth/login => [200] OK
+
+Note: 53 static requests not shown, run with --static option to see them.

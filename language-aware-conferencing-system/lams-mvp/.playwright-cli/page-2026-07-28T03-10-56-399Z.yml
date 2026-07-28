@@ -1,0 +1,53 @@
+- generic [ref=f4e72]:
+  - banner [ref=f4e73]:
+    - generic [ref=f4e74]:
+      - heading "🌐 LAMS" [level=1] [ref=f4e75]
+      - generic [ref=f4e76]: 社内コミュニケーションポータル
+    - generic [ref=f4e77]:
+      - combobox [ref=f4e78] [cursor=pointer]:
+        - option "日本語" [selected]
+        - option "English"
+        - option "中文"
+        - option "Tiếng Việt"
+      - generic "E2E Smoke" [ref=f4e80]
+      - button "ログアウト" [ref=f4e81] [cursor=pointer]
+  - main [ref=f4e82]:
+    - generic [ref=f4e83]:
+      - generic [ref=f4e84]:
+        - heading "💬 コミュニケーション" [level=2] [ref=f4e85]:
+          - generic [ref=f4e86]: 💬
+          - text: コミュニケーション
+        - link "🌐 多言語会議 LAMS リアルタイム翻訳付き音声会議 →" [ref=f4e88] [cursor=pointer]:
+          - /url: /rooms
+          - generic [ref=f4e89]: 🌐
+          - generic [ref=f4e90]:
+            - heading "多言語会議 LAMS" [level=3] [ref=f4e91]:
+              - text: 多言語会議
+              - generic [ref=f4e92]: LAMS
+            - paragraph [ref=f4e93]: リアルタイム翻訳付き音声会議
+          - generic [ref=f4e94]: →
+      - generic [ref=f4e95]:
+        - heading "⚙️ 管理・設定" [level=2] [ref=f4e96]:
+          - generic [ref=f4e97]: ⚙️
+          - text: 管理・設定
+        - generic [ref=f4e98]:
+          - link "👤 プロフィール設定 準備中 表示名・言語設定の変更 →" [ref=f4e99]:
+            - /url: /menu
+            - generic [ref=f4e100]: 👤
+            - generic [ref=f4e101]:
+              - heading "プロフィール設定 準備中" [level=3] [ref=f4e102]:
+                - text: プロフィール設定
+                - generic [ref=f4e103]: 準備中
+              - paragraph [ref=f4e104]: 表示名・言語設定の変更
+            - generic [ref=f4e105]: →
+          - link "📊 利用履歴 準備中 会議参加履歴の確認 →" [ref=f4e106]:
+            - /url: /menu
+            - generic [ref=f4e107]: 📊
+            - generic [ref=f4e108]:
+              - heading "利用履歴 準備中" [level=3] [ref=f4e109]:
+                - text: 利用履歴
+                - generic [ref=f4e110]: 準備中
+              - paragraph [ref=f4e111]: 会議参加履歴の確認
+            - generic [ref=f4e112]: →
+  - contentinfo [ref=f4e113]:
+    - paragraph [ref=f4e114]: © 2024 LAMS - Language-Aware Meeting System

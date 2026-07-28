@@ -8,6 +8,13 @@ SegmentProcessor（Phase 3 C1-5）の単体テスト。
 import pytest
 
 from app.ai_pipeline.orchestrator import OrchestrationResult
+from app.ai_pipeline.qoe import (
+    QoEDecision,
+    QoEReason,
+    QoEScope,
+    QoEState,
+    QoEUiReason,
+)
 from app.rooms.manager import ParticipantPreference
 from app.webrtc import processor as processor_mod
 from app.webrtc.persistence import MeetingConfig, SubtitleSequencer
@@ -145,6 +152,42 @@ async def test_happy_path_drives_orchestrator_and_persists(monkeypatch) -> None:
     assert captured[0]["lis"] == "en"  # 受聴者の目標言語が sink へ渡る
     assert saved[0]["source_language"] == "ja" and saved[0]["text"] == "こんにちは"
     assert originals[0]["original_text"] == "こんにちは"
+
+
+@pytest.mark.asyncio
+async def test_qoe_decision_flows_to_orchestrator_without_recompute(
+    monkeypatch,
+) -> None:
+    """Processor は QoE authority の decision オブジェクトをそのまま渡す。"""
+
+    async def detect(_wav: bytes, _hint: str) -> tuple[str, str]:
+        return ("こんにちは", "ja")
+
+    decision = QoEDecision(
+        state=QoEState.HEARING_DEGRADED,
+        primary_reason=QoEReason.AI_HEARING_DEGRADED,
+        auxiliary_reasons=(),
+        hearing_available=False,
+        reading_available=True,
+        partial_available=True,
+        changed=True,
+        scope=QoEScope.SERVER,
+        ui_reason=QoEUiReason.DEGRADED,
+    )
+    proc, orch, _saved, _originals = _make(detect, monkeypatch)
+
+    await proc.process(
+        room_id="r",
+        speaker_id="spk",
+        pcm16=_PCM,
+        speaker_lang_hint="ja",
+        participants=_participants(),
+        sink_factory=_sink_factory([]),
+        config=MeetingConfig(),
+        qoe_decision=decision,
+    )
+
+    assert orch.calls[0]["qoe_decision"] is decision
 
 
 @pytest.mark.asyncio

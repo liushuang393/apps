@@ -1,0 +1,10 @@
+### Result
+{
+  "url": "http://127.0.0.1:5273/room/6efe6a9c-149a-415a-99cb-4516d3fc6de4",
+  "header": "🎤 会議室\n接続中...\n🎤\n🔊\n📝 記録\n退室",
+  "alert": ""
+}
+### Ran Playwright code
+```js
+await page.evaluate('() => ((() => ({url:location.href, header:(document.querySelector(\'header\')||{}).innerText||\'\', alert:[...document.querySelectorAll(\'[role=alert],.error\')].map(e=>e.innerText).join(\'|\')}))())');
+```

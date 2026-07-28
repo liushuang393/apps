@@ -445,9 +445,6 @@ async def test_process_audio_no_cache():
             return "こんにちは"
 
     pipeline = AIPipeline.__new__(AIPipeline)
-    from app.ai_pipeline.qos import QoSController
-
-    pipeline._qos = QoSController()
     fake = FakeProvider()
     pipeline._provider = fake
 

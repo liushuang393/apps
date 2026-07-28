@@ -52,11 +52,22 @@ def from_bcp47(code: str) -> str:
     return code.split("-")[0].lower()
 
 
-def _speech_lib_available() -> bool:
-    """google-cloud-speech が import 可能かを判定する"""
+def speech_lib_available() -> bool:
+    """google-cloud-speech が import 可能かを判定する（例外を漏らさない）。
+
+    注意:
+        ``find_spec("google.cloud.speech")`` は親名前空間 ``google.cloud`` を import
+        しようとするため、google-genai のみ導入した既定構成（``google`` は在るが
+        ``google.cloud`` が無い）では ModuleNotFoundError を送出する。ここで例外が
+        漏れると factory の縮退判断ができず起動が失敗するため、未導入として扱う。
+    """
     import importlib.util
 
-    return importlib.util.find_spec("google.cloud.speech") is not None
+    try:
+        return importlib.util.find_spec("google.cloud.speech") is not None
+    except (ImportError, ValueError):
+        # ImportError: 親名前空間ごと未導入 / ValueError: spec 未確定な壊れた import。
+        return False
 
 
 def google_runtime_available() -> bool:
@@ -66,7 +77,7 @@ def google_runtime_available() -> bool:
     条件: google-cloud-speech が導入済 かつ 認証情報（GOOGLE_APPLICATION_CREDENTIALS
     もしくは GOOGLE_PROJECT_ID）が存在すること。未整備なら False を返す。
     """
-    if not _speech_lib_available():
+    if not speech_lib_available():
         return False
     return bool(
         settings.google_project_id or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")

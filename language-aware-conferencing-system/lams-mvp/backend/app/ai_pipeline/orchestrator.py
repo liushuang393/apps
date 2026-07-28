@@ -31,11 +31,22 @@ from app.ai_pipeline.output_manager import (
     DefaultOutputManager,
     FinalSubtitleCommand,
     InterimSubtitleCommand,
+    InterruptedEventCommand,
     ListenerRef,
     OutputManager,
+    PartialSubtitleCommand,
+    QosWarningCommand,
+    QualityEventCommand,
     TranslatedAudioCommand,
 )
 from app.ai_pipeline.output_manager.sink_adapter import OutputSinkTransportAdapter
+from app.ai_pipeline.qoe import (
+    QoEDecision,
+    QoEReason,
+    QoEScope,
+    QoEState,
+    QoEUiReason,
+)
 from app.ai_pipeline.qos import HybridQoSMonitor
 from app.ai_pipeline.revision_authority import (
     RevisionAuthority,
@@ -68,13 +79,6 @@ class OutputSink(Protocol):
     ) -> None: ...
 
     async def deliver_subtitle(self, user_id: str, message: dict) -> None: ...
-
-
-@runtime_checkable
-class EventOutputSink(Protocol):
-    """任意イベントの配信に対応する Sink。"""
-
-    async def deliver_event(self, user_id: str, message: dict) -> None: ...
 
 
 @runtime_checkable
@@ -193,7 +197,7 @@ class HybridOrchestrator:
 
     async def _emit_qos_warnings(
         self,
-        sink: OutputSink,
+        output_manager: OutputManager,
         listeners: list[Listener],
         result: OrchestrationResult,
         *,
@@ -203,7 +207,7 @@ class HybridOrchestrator:
         generation_id: int,
         sequence_id: int,
     ) -> None:
-        """§9 目標逸脱を評価し qos_warning を result と sink(任意) に反映する。"""
+        """§9 目標逸脱を評価し qos_warning を result と Output Manager に反映する。"""
         if self._monitor is None:
             return
         warnings: list[dict] = []
@@ -219,8 +223,9 @@ class HybridOrchestrator:
             warnings.append(nw)
         if not warnings:
             return
-        enveloped_warnings = [
-            envelope_event(
+        refs = self._listener_refs(listeners)
+        for warning in warnings:
+            enveloped = envelope_event(
                 warning,
                 room_id=room_id,
                 speaker_id=speaker_id,
@@ -228,11 +233,27 @@ class HybridOrchestrator:
                 generation_id=generation_id,
                 sequence_id=sequence_id,
             )
-            for warning in warnings
-        ]
-        result.qos_warnings.extend(enveloped_warnings)
-        for warning in enveloped_warnings:
-            await self._deliver_event_group(sink, listeners, warning)
+            result.qos_warnings.append(enveloped)
+            # 評価済みフィールドのみを渡し、Output Manager 側では再評価しない
+            await output_manager.handle(
+                QosWarningCommand(
+                    room_id=room_id,
+                    speaker_id=speaker_id,
+                    utterance_id=utterance_id,
+                    seq=sequence_id,
+                    generation_id=generation_id,
+                    listeners=refs,
+                    metric=str(warning["metric"]),
+                    should_fallback_to_subtitle=bool(
+                        warning["should_fallback_to_subtitle"]
+                    ),
+                    mainline=warning.get("mainline"),
+                    value_ms=warning.get("value_ms"),
+                    target_ms=warning.get("target_ms"),
+                    value=warning.get("value"),
+                    target=warning.get("target"),
+                )
+            )
 
     async def _hearing(
         self,
@@ -475,10 +496,13 @@ class HybridOrchestrator:
         self,
         *,
         sink: OutputSink,
+        output_manager: OutputManager | None = None,
         listeners: list[Listener],
+        room_id: str = "",
         subtitle_id: str,
         seq: int,
         revision: int,
+        generation_id: int = 0,
         speaker_id: str,
         partial_text: str,
         source_language: str,
@@ -493,28 +517,28 @@ class HybridOrchestrator:
         """
         if not partial_text:
             return
+        manager = output_manager or DefaultOutputManager(
+            adapter=OutputSinkTransportAdapter(sink),
+        )
         groups: dict[str, list[Listener]] = {}
         for ls in listeners:
             groups.setdefault(ls.target_language, []).append(ls)
         for target_lang, members in groups.items():
-            await self._deliver_subtitle_group(
-                sink,
-                members,
-                self._subtitle_message(
+            await manager.handle(
+                PartialSubtitleCommand(
+                    room_id=room_id,
+                    speaker_id=speaker_id,
                     subtitle_id=subtitle_id,
                     seq=seq,
-                    speaker_id=speaker_id,
                     original_text=partial_text,
                     source_language=source_language,
-                    target_lang=target_lang,
-                    subtitle_text="",
-                    mainline="partial",
-                    s2s_provider=None,
-                    is_partial=True,
+                    target_language=target_lang,
+                    listeners=self._listener_refs(members),
                     revision=revision,
+                    generation_id=generation_id,
                     trace_id=trace_id,
                     model_id=model_id,
-                ),
+                )
             )
 
     async def _deliver_subtitle_group(
@@ -542,18 +566,6 @@ class HybridOrchestrator:
         ]
         if deliveries:
             await asyncio.gather(*deliveries, return_exceptions=True)
-
-    @staticmethod
-    async def _deliver_event_group(
-        sink: OutputSink, members: list[Listener], message: dict
-    ) -> None:
-        """イベント対応 Sink の受信者へ同じイベントを配信する。"""
-        if not isinstance(sink, EventOutputSink):
-            return
-        await asyncio.gather(
-            *(sink.deliver_event(member.user_id, message) for member in members),
-            return_exceptions=True,
-        )
 
     async def _deliver_audio_group(
         self,
@@ -583,6 +595,36 @@ class HybridOrchestrator:
         if qoe_state == "queue_overload":
             return "overload_degraded"
         return "qoe_degraded"
+
+    @staticmethod
+    def _legacy_qoe_decision(
+        *,
+        hearing_available: bool,
+        qoe_state: str,
+        qoe_changed: bool,
+        qoe_reason: str | None,
+        qoe_ui_reason: str | None,
+    ) -> QoEDecision:
+        """旧 scalar 引数を再判定せず型付き QoE decision へ復元する。"""
+        state = QoEState(qoe_state)
+        primary_reason = QoEReason(qoe_reason) if qoe_reason else None
+        if qoe_ui_reason:
+            ui_reason = QoEUiReason(qoe_ui_reason)
+        elif state is QoEState.HEALTHY:
+            ui_reason = QoEUiReason.RECOVERED if qoe_changed else QoEUiReason.HEALTHY
+        else:
+            ui_reason = QoEUiReason.DEGRADED
+        return QoEDecision(
+            state=state,
+            primary_reason=primary_reason,
+            auxiliary_reasons=(),
+            hearing_available=hearing_available,
+            reading_available=True,
+            partial_available=True,
+            changed=qoe_changed,
+            scope=QoEScope.SERVER,
+            ui_reason=ui_reason,
+        )
 
     @staticmethod
     def _listener_refs(members: list[Listener]) -> tuple[ListenerRef, ...]:
@@ -656,6 +698,7 @@ class HybridOrchestrator:
         qoe_changed: bool = False,
         qoe_reason: str | None = None,
         qoe_ui_reason: str | None = None,
+        qoe_decision: QoEDecision | None = None,
         room_id: str = "",
         generation_id: int | None = None,
         output_manager: OutputManager | None = None,
@@ -677,22 +720,31 @@ class HybridOrchestrator:
         for ls in listeners:
             groups.setdefault(ls.target_language, []).append(ls)
 
+        decision_input = qoe_decision or self._legacy_qoe_decision(
+            hearing_available=hearing_available,
+            qoe_state=qoe_state,
+            qoe_changed=qoe_changed,
+            qoe_reason=qoe_reason,
+            qoe_ui_reason=qoe_ui_reason,
+        )
         # QoE decision の可否フラグのみを消費（monitor は測定・warning 専用）
-        s2s_available = hearing_available
+        s2s_available = decision_input.hearing_available
 
-        if not hearing_available or (qoe_changed and qoe_state == "healthy"):
-            recovered = qoe_state == "healthy"
+        if not decision_input.hearing_available or (
+            decision_input.changed and decision_input.state is QoEState.HEALTHY
+        ):
+            recovered = decision_input.state is QoEState.HEALTHY
             payload: dict = {
-                "type": self._qoe_event_type(qoe_state),
-                "metric": qoe_state,
+                "type": self._qoe_event_type(decision_input.state.value),
+                "metric": decision_input.state.value,
                 "mainline": "hearing",
                 # 旧クライアント向け fallback フラグは維持（加算的に理由コードを付与）
                 "should_fallback_to_subtitle": not recovered,
             }
-            if qoe_reason:
-                payload["reason_code"] = qoe_reason
-            if qoe_ui_reason:
-                payload["ui_reason"] = qoe_ui_reason
+            if decision_input.primary_reason:
+                payload["reason_code"] = decision_input.primary_reason.value
+            if decision_input.ui_reason:
+                payload["ui_reason"] = decision_input.ui_reason.value
             warning = envelope_event(
                 payload,
                 room_id=room_id,
@@ -703,7 +755,17 @@ class HybridOrchestrator:
             )
             if not recovered:
                 result.qos_warnings.append(warning)
-            await self._deliver_event_group(sink, listeners, warning)
+            await manager.handle(
+                QualityEventCommand(
+                    room_id=room_id,
+                    speaker_id=speaker_id,
+                    utterance_id=subtitle_id,
+                    seq=seq,
+                    generation_id=generation_id or 0,
+                    listeners=self._listener_refs(listeners),
+                    decision=decision_input,
+                )
+            )
 
         # barge-in: 世代発行は Runtime Port 側。呼出側は generation_id を任意で渡せる。
         active_generation = generation_id
@@ -823,18 +885,16 @@ class HybridOrchestrator:
                     logger.info(
                         "[Hybrid] hearing キャンセル(barge-in): lang=%s", target_lang
                     )
-                    interrupted = envelope_event(
-                        {
-                            "type": "translation_interrupted",
-                            "mainline": "hearing",
-                        },
-                        room_id=room_id,
-                        speaker_id=speaker_id,
-                        utterance_id=subtitle_id,
-                        generation_id=hearing_generation or 0,
-                        sequence_id=seq,
+                    await manager.handle(
+                        InterruptedEventCommand(
+                            room_id=room_id,
+                            speaker_id=speaker_id,
+                            utterance_id=subtitle_id,
+                            seq=seq,
+                            generation_id=hearing_generation or 0,
+                            listeners=self._listener_refs(members),
+                        )
                     )
-                    await self._deliver_event_group(sink, members, interrupted)
                 except Exception as e:  # noqa: BLE001
                     logger.warning(
                         "[Hybrid] hearing 主線エラー(%s): %s", target_lang, e
@@ -952,7 +1012,7 @@ class HybridOrchestrator:
         await asyncio.gather(*(run_group(t, m) for t, m in groups.items()))
         # §9: 全主線駆動後に QoS 目標逸脱を評価し qos_warning を反映（注入時のみ）。
         await self._emit_qos_warnings(
-            sink,
+            manager,
             listeners,
             result,
             room_id=room_id,

@@ -64,6 +64,20 @@ def test_number_retention_normalizes_money_units() -> None:
     )
 
 
+def test_number_retention_normalizes_chinese_money_units() -> None:
+    """中国語の万元・亿元を同一金額として扱う（ja→zh で誤検知しない）"""
+    assert (
+        number_retention(
+            "予算は 1,200 万円、納期は 2026-06-24 です",
+            "预算 1,200 万元，交期为 2026-06-24",
+        )
+        == 1.0
+    )
+    assert number_retention("売上は 12 億円です", "销售额为 12 亿元") == 1.0
+    # 金額の改変は従来どおり検知する（保持率が目標未満になる）。
+    assert number_retention("予算は 1,200 万円です", "预算 1,300 万元") == 0.0
+
+
 def test_monitor_number_retention_accumulates_and_evaluates() -> None:
     """数字保持を累積し、目標未達で warning を返す"""
     mon = HybridQoSMonitor()

@@ -4,11 +4,12 @@ LAMS AI処理パイプライン
 
 設計方針:
 - 並列処理で遅延最小化
-- QoSで品質監視
+- 処理遅延は非権威の測定のみ（縮退 decision は QoE 単一権威）
 """
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 from app.ai_pipeline.ab_runtime import (
@@ -18,9 +19,39 @@ from app.ai_pipeline.ab_runtime import (
     set_ab_context,
 )
 from app.ai_pipeline.providers import get_ai_provider
-from app.ai_pipeline.qos import QoSController, QoSMetrics
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PipelineLatencyMetrics:
+    """
+    非権威の処理遅延測定結果。
+
+    目的:
+        AIPipeline 1 回分の経過時間を付帯する観測用データ。
+    注意:
+        degradation／fallback 判定フィールドは持たない。
+        縮退 decision は QoEStateMachine が単一権威。
+    """
+
+    start_time_ms: float = 0.0
+    end_time_ms: float = 0.0
+    total_latency_ms: float = 0.0
+
+
+def _start_latency_measurement() -> PipelineLatencyMetrics:
+    """処理遅延の測定を開始する。"""
+    return PipelineLatencyMetrics(start_time_ms=time.time() * 1000)
+
+
+def _end_latency_measurement(
+    metrics: PipelineLatencyMetrics,
+) -> PipelineLatencyMetrics:
+    """処理遅延の測定を終了し経過時間を確定する。"""
+    metrics.end_time_ms = time.time() * 1000
+    metrics.total_latency_ms = metrics.end_time_ms - metrics.start_time_ms
+    return metrics
 
 
 @dataclass
@@ -33,7 +64,7 @@ class ProcessedAudio:
     original_text: str
     translated_text: str
     audio_data: bytes | None
-    metrics: QoSMetrics
+    metrics: PipelineLatencyMetrics
 
 
 class AIPipeline:
@@ -44,11 +75,10 @@ class AIPipeline:
     - 音声認識（ASR）
     - テキスト翻訳
     - 音声合成（TTS）※オプション
-    - QoS監視
+    - 非権威の処理遅延測定（縮退は QoE）
     """
 
     def __init__(self) -> None:
-        self._qos = QoSController()
         self._provider = get_ai_provider()
 
     async def detect_language(
@@ -89,7 +119,7 @@ class AIPipeline:
         Returns:
             処理済み音声データ
         """
-        metrics = self._qos.start_measurement()
+        metrics = _start_latency_measurement()
 
         # A/B 実験の配信単位を発話文脈として設定する（CompositeAIProvider が発話ごとに
         # 参照）。上流（processor）が room_id/session_id を設定済みなら保持し、user_id を
@@ -109,7 +139,7 @@ class AIPipeline:
                 result = original_text or await self._provider.transcribe_audio(
                     audio_data, source_language
                 )
-                metrics = self._qos.end_measurement(metrics)
+                metrics = _end_latency_measurement(metrics)
                 return ProcessedAudio(
                     speaker_id=speaker_id,
                     source_language=source_language,
@@ -130,7 +160,7 @@ class AIPipeline:
                     target_language,
                     original_text=original_text,
                 )
-                metrics = self._qos.end_measurement(metrics)
+                metrics = _end_latency_measurement(metrics)
                 return ProcessedAudio(
                     speaker_id=speaker_id,
                     source_language=source_language,
@@ -142,7 +172,7 @@ class AIPipeline:
                 )
             except Exception as e:
                 logger.error(f"AI処理エラー: {e}")
-                metrics = self._qos.end_measurement(metrics)
+                metrics = _end_latency_measurement(metrics)
                 # 失敗 = 空文字列（センチネル禁止）。orchestrator の縮退判定が依存する。
                 return ProcessedAudio(
                     speaker_id=speaker_id,

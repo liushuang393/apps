@@ -1,0 +1,7 @@
+### Result
+Total messages: 9 (Errors: 1, Warnings: 0)
+Returning 1 messages for level "error"
+
+[ERROR] [LiveKit] 会議室接続エラー: ConnectionError: could not establish pc connection
+    at _ConnectionError.internal (http://127.0.0.1:5273/node_modules/.vite/deps/livekit-client.js?v=5b07c347:10479:12)
+    at http://127.0.0.1:5273/node_modules/.vite/deps/livekit-client.js?v=5b07c347:16724:36 @ http://127.0.0.1:5273/src/hooks/useLiveKit.ts:404

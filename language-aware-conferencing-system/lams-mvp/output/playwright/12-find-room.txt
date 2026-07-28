@@ -1,0 +1,17 @@
+### Result
+Found 2 matches for "Release Smoke":
+
+- generic [ref=f2e371]:
+  - banner [ref=f2e372]:
+    ...
+    - generic [ref=f2e376]:
+      ...
+      - button "ログアウト" [ref=f2e378] [cursor=pointer]
+  - button "+ 新規会議室作成" [ref=f2e379] [cursor=pointer]
+  - generic [ref=f2e380]:
+    - button "Release Smoke Roomに参加" [ref=f2e381] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f2e383]: 🌐 公開
+      - heading "Release Smoke Room" [level=3] [ref=f2e384]
+      - paragraph [ref=f2e385]: 明日リリース向けスモーク
+      - generic [ref=f2e386]:
+        - generic [ref=f2e387]: 👥 0

@@ -1,0 +1,181 @@
+### Result
+[
+  {
+    "tag": "BUTTON",
+    "id": "",
+    "type": "submit",
+    "text": "← 戻る",
+    "name": ""
+  },
+  {
+    "tag": "BUTTON",
+    "id": "",
+    "type": "submit",
+    "text": "ログアウト",
+    "name": ""
+  },
+  {
+    "tag": "BUTTON",
+    "id": "",
+    "type": "submit",
+    "text": "キャンセル",
+    "name": ""
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "📋 新規会議室設定"
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "会議室名 *"
+  },
+  {
+    "tag": "INPUT",
+    "id": "",
+    "type": "text",
+    "text": "例：定例ミーティング",
+    "name": ""
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "会議説明"
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "対応言語 *（参加者が選択可能な翻訳先言語）"
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "日本語"
+  },
+  {
+    "tag": "INPUT",
+    "id": "",
+    "type": "checkbox",
+    "text": "",
+    "name": ""
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "英語"
+  },
+  {
+    "tag": "INPUT",
+    "id": "",
+    "type": "checkbox",
+    "text": "",
+    "name": ""
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "中国語"
+  },
+  {
+    "tag": "INPUT",
+    "id": "",
+    "type": "checkbox",
+    "text": "",
+    "name": ""
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "ベトナム語"
+  },
+  {
+    "tag": "INPUT",
+    "id": "",
+    "type": "checkbox",
+    "text": "",
+    "name": ""
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "デフォルト音声モード"
+  },
+  {
+    "tag": "LABEL",
+    "id": "",
+    "text": "参加者による音声モード切替を許可"
+  },
+  {
+    "tag": "BUTTON",
+    "id": "allow-mode-switch",
+    "type": "button",
+    "text": "",
+    "name": ""
+  },
+  {
+    "tag": "BUTTON",
+    "id": "is-private",
+    "type": "button",
+    "text": "",
+    "name": ""
+  },
+  {
+    "tag": "BUTTON",
+    "id": "",
+    "type": "button",
+    "text": "キャンセル",
+    "name": ""
+  },
+  {
+    "tag": "BUTTON",
+    "id": "",
+    "type": "submit",
+    "text": "会議室を作成",
+    "name": ""
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "翻訳テスト-a64f73f1"
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "翻訳テスト-4d1d2fcd"
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "翻訳テスト-d00b329d"
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "翻訳テスト-c04d3410"
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "翻訳テスト-0f5d8743"
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "翻訳テスト-46d0c283"
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "翻訳テスト-b51b9243"
+  },
+  {
+    "tag": "H3",
+    "id": "",
+    "text": "翻訳テスト-209aa1ae"
+  }
+]
+### Ran Playwright code
+```js
+await page.evaluate('() => ((() => { const els=[...document.querySelectorAll(\'input,button,label,h2,h3\')].slice(0,40); return els.map(e=>({tag:e.tagName,id:e.id,type:e.type,text:(e.innerText||e.placeholder||\'\').slice(0,40),name:e.name})).slice(0,30); })())');
+```

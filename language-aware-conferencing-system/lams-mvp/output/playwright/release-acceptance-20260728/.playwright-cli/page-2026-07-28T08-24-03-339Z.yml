@@ -1,0 +1,265 @@
+- generic [ref=e77]:
+  - banner [ref=e78]:
+    - generic [ref=e79]:
+      - button "← 戻る" [ref=e80] [cursor=pointer]
+      - heading "🌐 LAMS 会議室" [level=1] [ref=e81]
+    - generic [ref=e82]:
+      - generic "受入ユーザーA" [ref=e83]
+      - button "ログアウト" [ref=e84] [cursor=pointer]
+  - button "+ キャンセル" [active] [ref=e323] [cursor=pointer]
+  - generic [ref=e324]:
+    - heading "📋 新規会議室設定" [level=3] [ref=e325]
+    - generic [ref=e326]:
+      - generic [ref=e327]: 会議室名 *
+      - textbox "例：定例ミーティング" [ref=e328]
+    - generic [ref=e329]:
+      - generic [ref=e330]: 会議説明
+      - textbox "例：週次進捗報告と課題共有" [ref=e331]
+    - generic [ref=e332]:
+      - generic [ref=e333]: 対応言語 *（参加者が選択可能な翻訳先言語）
+      - generic [ref=e334]:
+        - generic [ref=e335] [cursor=pointer]:
+          - checkbox "日本語" [checked] [ref=e336]
+          - text: 日本語
+        - generic [ref=e337] [cursor=pointer]:
+          - checkbox "英語" [checked] [ref=e338]
+          - text: 英語
+        - generic [ref=e339] [cursor=pointer]:
+          - checkbox "中国語" [checked] [ref=e340]
+          - text: 中国語
+        - generic [ref=e341] [cursor=pointer]:
+          - checkbox "ベトナム語" [checked] [ref=e342]
+          - text: ベトナム語
+    - generic [ref=e344]:
+      - generic [ref=e345]: デフォルト音声モード
+      - combobox [ref=e346]:
+        - option "原音（オリジナル音声）" [selected]
+        - option "翻訳音声"
+    - generic [ref=e347]:
+      - generic [ref=e348]: 参加者による音声モード切替を許可
+      - button "参加者による音声モード切替を許可" [pressed] [ref=e349] [cursor=pointer]
+      - generic [ref=e350]: 許可
+    - generic [ref=e351]:
+      - generic [ref=e352]: 🌐 公開
+      - button "会議の公開設定を切り替え" [ref=e353] [cursor=pointer]
+      - generic [ref=e354]: 🔒 私有
+    - generic [ref=e355]:
+      - generic [ref=e356]: 💡
+      - generic [ref=e357]: 公開会議：全メンバーが一覧で確認・入室できます
+    - generic [ref=e358]:
+      - button "キャンセル" [ref=e359] [cursor=pointer]
+      - button "会議室を作成" [disabled] [ref=e360]
+  - generic [ref=e86]:
+    - button "repro-livekitに参加" [ref=e87] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e89]: 🌐 公開
+      - heading "repro-livekit" [level=3] [ref=e90]
+      - paragraph [ref=e91]: 会議概要なし
+      - generic [ref=e92]:
+        - generic [ref=e93]: 👥 1
+        - generic [ref=e94]:
+          - generic [ref=e95]: 日本語
+          - generic [ref=e96]: 英語
+    - button "Release Smoke Roomに参加" [ref=e97] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e99]: 🌐 公開
+      - heading "Release Smoke Room" [level=3] [ref=e100]
+      - paragraph [ref=e101]: 明日リリース向けスモーク
+      - generic [ref=e102]:
+        - generic [ref=e103]: 👥 0
+        - generic [ref=e104]:
+          - generic [ref=e105]: 日本語
+          - generic [ref=e106]: 英語
+          - generic [ref=e107]: 中国語
+          - generic [ref=e108]: "+1"
+    - button "翻訳テスト-a64f73f1に参加" [ref=e109] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e111]: 🌐 公開
+      - heading "翻訳テスト-a64f73f1" [level=3] [ref=e112]
+      - paragraph [ref=e113]: 会議概要なし
+      - generic [ref=e114]:
+        - generic [ref=e115]: 👥 0
+        - generic [ref=e116]:
+          - generic [ref=e117]: 日本語
+          - generic [ref=e118]: 英語
+    - button "翻訳テスト-4d1d2fcdに参加" [ref=e119] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e121]: 🌐 公開
+      - heading "翻訳テスト-4d1d2fcd" [level=3] [ref=e122]
+      - paragraph [ref=e123]: 会議概要なし
+      - generic [ref=e124]:
+        - generic [ref=e125]: 👥 0
+        - generic [ref=e126]:
+          - generic [ref=e127]: 日本語
+          - generic [ref=e128]: 英語
+    - button "翻訳テスト-d00b329dに参加" [ref=e129] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e131]: 🌐 公開
+      - heading "翻訳テスト-d00b329d" [level=3] [ref=e132]
+      - paragraph [ref=e133]: 会議概要なし
+      - generic [ref=e134]:
+        - generic [ref=e135]: 👥 0
+        - generic [ref=e136]:
+          - generic [ref=e137]: 日本語
+          - generic [ref=e138]: 英語
+    - button "翻訳テスト-c04d3410に参加" [ref=e139] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e141]: 🌐 公開
+      - heading "翻訳テスト-c04d3410" [level=3] [ref=e142]
+      - paragraph [ref=e143]: 会議概要なし
+      - generic [ref=e144]:
+        - generic [ref=e145]: 👥 0
+        - generic [ref=e146]:
+          - generic [ref=e147]: 日本語
+          - generic [ref=e148]: 英語
+    - button "翻訳テスト-0f5d8743に参加" [ref=e149] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e151]: 🌐 公開
+      - heading "翻訳テスト-0f5d8743" [level=3] [ref=e152]
+      - paragraph [ref=e153]: 会議概要なし
+      - generic [ref=e154]:
+        - generic [ref=e155]: 👥 0
+        - generic [ref=e156]:
+          - generic [ref=e157]: 日本語
+          - generic [ref=e158]: 英語
+    - button "翻訳テスト-46d0c283に参加" [ref=e159] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e161]: 🌐 公開
+      - heading "翻訳テスト-46d0c283" [level=3] [ref=e162]
+      - paragraph [ref=e163]: 会議概要なし
+      - generic [ref=e164]:
+        - generic [ref=e165]: 👥 0
+        - generic [ref=e166]:
+          - generic [ref=e167]: 日本語
+          - generic [ref=e168]: 英語
+    - button "翻訳テスト-b51b9243に参加" [ref=e169] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e171]: 🌐 公開
+      - heading "翻訳テスト-b51b9243" [level=3] [ref=e172]
+      - paragraph [ref=e173]: 会議概要なし
+      - generic [ref=e174]:
+        - generic [ref=e175]: 👥 0
+        - generic [ref=e176]:
+          - generic [ref=e177]: 日本語
+          - generic [ref=e178]: 英語
+    - button "翻訳テスト-209aa1aeに参加" [ref=e179] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e181]: 🌐 公開
+      - heading "翻訳テスト-209aa1ae" [level=3] [ref=e182]
+      - paragraph [ref=e183]: 会議概要なし
+      - generic [ref=e184]:
+        - generic [ref=e185]: 👥 0
+        - generic [ref=e186]:
+          - generic [ref=e187]: 日本語
+          - generic [ref=e188]: 英語
+    - button "翻訳テスト-57ea2bb7に参加" [ref=e189] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e191]: 🌐 公開
+      - heading "翻訳テスト-57ea2bb7" [level=3] [ref=e192]
+      - paragraph [ref=e193]: 会議概要なし
+      - generic [ref=e194]:
+        - generic [ref=e195]: 👥 0
+        - generic [ref=e196]:
+          - generic [ref=e197]: 日本語
+          - generic [ref=e198]: 英語
+    - button "翻訳テスト-15b2986cに参加" [ref=e199] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e201]: 🌐 公開
+      - heading "翻訳テスト-15b2986c" [level=3] [ref=e202]
+      - paragraph [ref=e203]: 会議概要なし
+      - generic [ref=e204]:
+        - generic [ref=e205]: 👥 0
+        - generic [ref=e206]:
+          - generic [ref=e207]: 日本語
+          - generic [ref=e208]: 英語
+    - button "翻訳テスト-f59d0a9eに参加" [ref=e209] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e211]: 🌐 公開
+      - heading "翻訳テスト-f59d0a9e" [level=3] [ref=e212]
+      - paragraph [ref=e213]: 会議概要なし
+      - generic [ref=e214]:
+        - generic [ref=e215]: 👥 0
+        - generic [ref=e216]:
+          - generic [ref=e217]: 日本語
+          - generic [ref=e218]: 英語
+    - button "翻訳テスト-378044eeに参加" [ref=e219] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e221]: 🌐 公開
+      - heading "翻訳テスト-378044ee" [level=3] [ref=e222]
+      - paragraph [ref=e223]: 会議概要なし
+      - generic [ref=e224]:
+        - generic [ref=e225]: 👥 0
+        - generic [ref=e226]:
+          - generic [ref=e227]: 日本語
+          - generic [ref=e228]: 英語
+    - button "翻訳テスト-a20b2a06に参加" [ref=e229] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e231]: 🌐 公開
+      - heading "翻訳テスト-a20b2a06" [level=3] [ref=e232]
+      - paragraph [ref=e233]: 会議概要なし
+      - generic [ref=e234]:
+        - generic [ref=e235]: 👥 0
+        - generic [ref=e236]:
+          - generic [ref=e237]: 日本語
+          - generic [ref=e238]: 英語
+    - button "翻訳テスト-a4c9e4fbに参加" [ref=e239] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e241]: 🌐 公開
+      - heading "翻訳テスト-a4c9e4fb" [level=3] [ref=e242]
+      - paragraph [ref=e243]: 会議概要なし
+      - generic [ref=e244]:
+        - generic [ref=e245]: 👥 0
+        - generic [ref=e246]:
+          - generic [ref=e247]: 日本語
+          - generic [ref=e248]: 英語
+    - button "翻訳テスト-6b83cc3eに参加" [ref=e249] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e251]: 🌐 公開
+      - heading "翻訳テスト-6b83cc3e" [level=3] [ref=e252]
+      - paragraph [ref=e253]: 会議概要なし
+      - generic [ref=e254]:
+        - generic [ref=e255]: 👥 0
+        - generic [ref=e256]:
+          - generic [ref=e257]: 日本語
+          - generic [ref=e258]: 英語
+    - button "翻訳テストに参加" [ref=e259] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e261]: 🌐 公開
+      - heading "翻訳テスト" [level=3] [ref=e262]
+      - paragraph [ref=e263]: 会議概要なし
+      - generic [ref=e264]:
+        - generic [ref=e265]: 👥 0
+        - generic [ref=e266]:
+          - generic [ref=e267]: 日本語
+          - generic [ref=e268]: 英語
+    - button "Docker Test Roomに参加" [ref=e269] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e271]: 🌐 公開
+      - heading "Docker Test Room" [level=3] [ref=e272]
+      - paragraph [ref=e273]: 会議概要なし
+      - generic [ref=e274]:
+        - generic [ref=e275]: 👥 0
+        - generic [ref=e276]:
+          - generic [ref=e277]: 日本語
+          - generic [ref=e278]: 英語
+          - generic [ref=e279]: 中国語
+          - generic [ref=e280]: "+1"
+    - button "mode2テスト室に参加" [ref=e281] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e283]: 🌐 公開
+      - heading "mode2テスト室" [level=3] [ref=e284]
+      - paragraph [ref=e285]: 会議概要なし
+      - generic [ref=e286]:
+        - generic [ref=e287]: 👥 0
+        - generic [ref=e288]:
+          - generic [ref=e289]: 日本語
+          - generic [ref=e290]: 英語
+    - button "P0テスト室に参加" [ref=e291] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e293]: 🌐 公開
+      - heading "P0テスト室" [level=3] [ref=e294]
+      - paragraph [ref=e295]: 会議概要なし
+      - generic [ref=e296]:
+        - generic [ref=e297]: 👥 0
+        - generic [ref=e298]:
+          - generic [ref=e299]: 日本語
+          - generic [ref=e300]: 英語
+    - button "研究部技術検討会議に参加" [ref=e301] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e303]: 🌐 公開
+      - heading "研究部技術検討会議" [level=3] [ref=e304]
+      - paragraph [ref=e305]: 技術検討：e2eテスト、バグをAIで改修を検討中です。
+      - generic [ref=e306]:
+        - generic [ref=e307]: 👥 0
+        - generic [ref=e308]:
+          - generic [ref=e309]: 日本語
+          - generic [ref=e310]: 中国語
+    - button "E2E検証会議に参加" [ref=e311] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=e313]: 🌐 公開
+      - heading "E2E検証会議" [level=3] [ref=e314]
+      - paragraph [ref=e315]: 会議概要なし
+      - generic [ref=e316]:
+        - generic [ref=e317]: 👥 0
+        - generic [ref=e318]:
+          - generic [ref=e319]: 日本語
+          - generic [ref=e320]: 英語
+          - generic [ref=e321]: 中国語
+          - generic [ref=e322]: "+1"

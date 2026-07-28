@@ -1,0 +1,73 @@
+- generic [ref=f1e454]:
+  - banner [ref=f1e455]:
+    - heading "🎤 Release Acceptance 20260728" [level=1] [ref=f1e456]
+    - generic [ref=f1e457]:
+      - generic [ref=f1e458]: 接続中
+      - generic [ref=f1e460]:
+        - generic "マイク選択" [ref=f1e461]:
+          - generic [ref=f1e462]: 🎤
+          - combobox [ref=f1e463] [cursor=pointer]:
+            - option "Fake Default Audio I…"
+            - option "Fake Audio Input 1" [selected]
+            - option "Fake Audio Input 2"
+        - generic "スピーカー選択" [ref=f1e464]:
+          - generic [ref=f1e465]: 🔊
+          - combobox [ref=f1e466] [cursor=pointer]:
+            - option "Fake Default Audio O…"
+            - option "Fake Audio Output 1" [selected]
+            - option "Fake Audio Output 2"
+      - button "📝 記録" [ref=f1e467] [cursor=pointer]
+      - button "退室" [ref=f1e468] [cursor=pointer]
+  - generic [ref=f1e469]:
+    - complementary [ref=f1e470]:
+      - generic [ref=f1e471]:
+        - button "👥 参加者 (3)" [expanded] [ref=f1e472] [cursor=pointer]:
+          - generic [ref=f1e473]:
+            - generic [ref=f1e474]: 👥
+            - text: 参加者 (3)
+        - list [ref=f1e479]:
+          - listitem [ref=f1e480]:
+            - generic [ref=f1e481]: Acceptance User B（EN） (自分)
+          - listitem [ref=f1e482]:
+            - generic [ref=f1e483]: 受入ユーザーA（JP）
+          - listitem [ref=f1e484]:
+            - generic [ref=f1e485]: 验收用户C（CN）
+      - generic [ref=f1e486]:
+        - button "⚙️ 設定" [expanded] [ref=f1e487] [cursor=pointer]:
+          - generic [ref=f1e488]:
+            - generic [ref=f1e489]: ⚙️
+            - text: 設定
+        - generic [ref=f1e493]:
+          - generic [ref=f1e495]:
+            - generic [ref=f1e496]: マイク状態
+            - button "🔇 OFF" [ref=f1e498] [cursor=pointer]
+          - generic [ref=f1e500]:
+            - generic [ref=f1e501]: 音声モード
+            - generic [ref=f1e502]:
+              - generic [ref=f1e503] [cursor=pointer]:
+                - radio "原音" [checked] [ref=f1e504]
+                - generic [ref=f1e505]: 原音
+              - generic [ref=f1e506] [cursor=pointer]:
+                - radio "翻訳音声" [ref=f1e507]
+                - generic [ref=f1e508]: 翻訳音声
+          - generic [ref=f1e510] [cursor=pointer]:
+            - checkbox "📝 字幕を表示" [checked] [ref=f1e511]
+            - generic [ref=f1e512]: 📝 字幕を表示
+          - generic [ref=f1e513]:
+            - generic [ref=f1e514]: 翻訳先言語
+            - combobox [disabled] [ref=f1e515]:
+              - option "日本語（JP）"
+              - option "英語（EN）" [selected]
+              - option "中国語（CN）"
+              - option "ベトナム語（VN）"
+            - paragraph [ref=f1e516]: ※ 翻訳モード選択時に設定可能
+          - generic [ref=f1e517]:
+            - paragraph [ref=f1e518]: 🎧 音声：原音
+            - paragraph [ref=f1e519]: 👁 字幕：原文
+    - main [ref=f1e520]:
+      - generic [ref=f1e521]:
+        - heading "📝 字幕・会議記録" [level=4] [ref=f1e522]
+        - paragraph [ref=f1e523]: 発言を待っています...
+      - generic [ref=f1e525]:
+        - generic [ref=f1e526]: 🔇 マイクOFF
+        - generic [ref=f1e527]: 左側の設定パネルでマイクをONにできます

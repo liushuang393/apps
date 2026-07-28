@@ -1,0 +1,31 @@
+### Page
+- Page URL: http://127.0.0.1:5273/login
+- Page Title: LAMS - 言語感知型会議システム
+### Snapshot
+```yaml
+- generic [ref=f4e55]:
+  - combobox [ref=f4e57] [cursor=pointer]:
+    - option "日本語" [selected]
+    - option "English"
+    - option "中文"
+    - option "Tiếng Việt"
+  - generic [ref=f4e58]:
+    - heading "🌐 LAMS" [level=1] [ref=f4e59]
+    - paragraph [ref=f4e60]: 言語対応会議システム
+    - generic [ref=f4e61]:
+      - generic [ref=f4e62]: メールアドレス
+      - textbox "メールアドレス" [ref=f4e63]:
+        - /placeholder: your@email.com
+    - generic [ref=f4e64]:
+      - generic [ref=f4e65]: パスワード
+      - textbox "パスワード" [ref=f4e66]:
+        - /placeholder: ••••••••
+    - button "ログイン" [ref=f4e67] [cursor=pointer]
+    - paragraph [ref=f4e68]:
+      - link "パスワードをお忘れですか？" [ref=f4e69] [cursor=pointer]:
+        - /url: /forgot-password
+  - paragraph [ref=f4e70]:
+    - text: アカウントがない場合は
+    - link "新規登録" [ref=f4e71] [cursor=pointer]:
+      - /url: /register
+```

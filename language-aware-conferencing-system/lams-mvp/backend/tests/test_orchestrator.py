@@ -359,7 +359,7 @@ async def test_partial_success_does_not_emit_placeholder() -> None:
 
 @pytest.mark.asyncio
 async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
-    """§9: 目標逸脱時に qos_warning が result と deliver_event へ反映される。"""
+    """§9: 目標逸脱時に qos_warning が result と OM→Sink へ反映される。"""
 
     async def hearing(
         _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None

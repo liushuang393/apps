@@ -1,0 +1,53 @@
+- generic [ref=e25]:
+  - banner [ref=e26]:
+    - generic [ref=e27]:
+      - heading "🌐 LAMS" [level=1] [ref=e28]
+      - generic [ref=e29]: 社内コミュニケーションポータル
+    - generic [ref=e30]:
+      - combobox [ref=e31] [cursor=pointer]:
+        - option "日本語" [selected]
+        - option "English"
+        - option "中文"
+        - option "Tiếng Việt"
+      - generic "受入ユーザーA" [ref=e33]
+      - button "ログアウト" [ref=e68] [cursor=pointer]
+  - main [ref=e35]:
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - heading "💬 コミュニケーション" [level=2] [ref=e69]:
+          - generic [ref=e39]: 💬
+          - text: コミュニケーション
+        - link "🌐 多言語会議 LAMS リアルタイム翻訳付き音声会議 →" [ref=e70] [cursor=pointer]:
+          - /url: /rooms
+          - generic [ref=e42]: 🌐
+          - generic [ref=e43]:
+            - heading "多言語会議 LAMS" [level=3] [ref=e71]:
+              - text: 多言語会議
+              - generic [ref=e45]: LAMS
+            - paragraph [ref=e46]: リアルタイム翻訳付き音声会議
+          - generic [ref=e47]: →
+      - generic [ref=e48]:
+        - heading "⚙️ 管理・設定" [level=2] [ref=e72]:
+          - generic [ref=e50]: ⚙️
+          - text: 管理・設定
+        - generic [ref=e51]:
+          - link "👤 プロフィール設定 準備中 表示名・言語設定の変更 →" [ref=e73]:
+            - /url: /menu
+            - generic [ref=e53]: 👤
+            - generic [ref=e54]:
+              - heading "プロフィール設定 準備中" [level=3] [ref=e74]:
+                - text: プロフィール設定
+                - generic [ref=e56]: 準備中
+              - paragraph [ref=e57]: 表示名・言語設定の変更
+            - generic [ref=e58]: →
+          - link "📊 利用履歴 準備中 会議参加履歴の確認 →" [ref=e75]:
+            - /url: /menu
+            - generic [ref=e60]: 📊
+            - generic [ref=e61]:
+              - heading "利用履歴 準備中" [level=3] [ref=e76]:
+                - text: 利用履歴
+                - generic [ref=e63]: 準備中
+              - paragraph [ref=e64]: 会議参加履歴の確認
+            - generic [ref=e65]: →
+  - contentinfo [ref=e66]:
+    - paragraph [ref=e67]: © 2024 LAMS - Language-Aware Meeting System

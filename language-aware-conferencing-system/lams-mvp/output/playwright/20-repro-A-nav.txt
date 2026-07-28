@@ -1,0 +1,15 @@
+### Result
+{
+  "path": "/room/b9cf3503-3943-48bf-90e4-f65bbab2de27",
+  "auth": true,
+  "body": "🎤 会議室\n接続中...\n🎤\n🔊\n📝 記録\n退室\n👥\n参加者 (0)\n\n参加者がいません\n\n⚙️\n設定\n\n接続中...\n\n📝 字幕\n\n字幕表示はオフです\n\n🔇 マイクOFF\n左側の設定パネルでマイクをONにできます"
+}
+### Ran Playwright code
+```js
+await page.evaluate('() => ((() => ({path:location.pathname, auth:!!localStorage.getItem(\'lams-auth\'), body:document.body.innerText.slice(0,200)}))())');
+```
+### Page
+- Page URL: http://127.0.0.1:5273/room/b9cf3503-3943-48bf-90e4-f65bbab2de27
+- Page Title: LAMS - 言語感知型会議システム
+### Events
+- New console entries: .playwright-cli/console-2026-07-28T03-37-36-062Z.log#L3-L7

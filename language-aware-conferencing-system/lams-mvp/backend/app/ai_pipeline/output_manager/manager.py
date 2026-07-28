@@ -26,8 +26,11 @@ from app.ai_pipeline.output_manager.adapter import (
 from app.ai_pipeline.output_manager.commands import (
     FinalSubtitleCommand,
     InterimSubtitleCommand,
+    InterruptedEventCommand,
     ListenerRef,
     OutputCommand,
+    PartialSubtitleCommand,
+    QosWarningCommand,
     QualityEventCommand,
     TranslatedAudioCommand,
 )
@@ -119,10 +122,16 @@ class DefaultOutputManager:
             return await self._handle_final_subtitle(command)
         if isinstance(command, InterimSubtitleCommand):
             return await self._handle_interim(command)
+        if isinstance(command, PartialSubtitleCommand):
+            return await self._handle_partial(command)
         if isinstance(command, TranslatedAudioCommand):
             return await self._handle_audio(command)
         if isinstance(command, QualityEventCommand):
             return await self._handle_quality(command)
+        if isinstance(command, InterruptedEventCommand):
+            return await self._handle_interrupted(command)
+        if isinstance(command, QosWarningCommand):
+            return await self._handle_qos_warning(command)
         raise TypeError(f"未対応の出力命令です: {type(command)!r}")
 
     async def _handle_final_subtitle(
@@ -183,6 +192,65 @@ class DefaultOutputManager:
             require_subtitle=True,
         )
         report.delivered_revisions = (revision,)
+        return report
+
+    async def _handle_partial(self, command: PartialSubtitleCommand) -> DeliveryReport:
+        """partial ASR 原文を authority 発行 revision のまま配信する。"""
+        report = DeliveryReport()
+        if not command.original_text:
+            return report
+        if self._revision_authority is not None:
+            token = RevisionToken(
+                room_id=command.room_id,
+                speaker_id=command.speaker_id,
+                utterance_id=command.subtitle_id,
+                stream_key=RevisionStreamKey(kind=StreamKind.PARTIAL_ASR),
+                revision=command.revision,
+            )
+            if not self._revision_authority.accept(token):
+                report.suppressed.append(
+                    Suppression(
+                        reason="stale_or_finalized_revision",
+                        channel="partial",
+                    )
+                )
+                return report
+        event = envelope_event(
+            {
+                "type": "subtitle",
+                "id": command.subtitle_id,
+                "seq": command.seq,
+                "speaker_id": command.speaker_id,
+                "speaker_label": None,
+                "original_text": command.original_text,
+                "source_language": command.source_language,
+                "translated_text": None,
+                "target_language": command.target_language,
+                "is_translated": False,
+                "is_partial": True,
+                "is_final": False,
+                "degraded": False,
+                "mainline": "partial",
+                "provider": None,
+                "trace_id": command.trace_id,
+                "model_id": command.model_id,
+            },
+            room_id=command.room_id,
+            speaker_id=command.speaker_id,
+            utterance_id=command.subtitle_id,
+            generation_id=command.generation_id,
+            sequence_id=command.seq,
+            revision=command.revision,
+        )
+        await self._fanout_data(
+            listeners=command.listeners,
+            topic=TOPIC_SUBTITLE,
+            event=event,
+            channel="partial",
+            report=report,
+            require_subtitle=True,
+        )
+        report.delivered_revisions = (command.revision,)
         return report
 
     def _finalize_hearing_stream(self, command: FinalSubtitleCommand) -> None:
@@ -322,6 +390,68 @@ class DefaultOutputManager:
         if decision.ui_reason is not None:
             payload["ui_reason"] = decision.ui_reason.value
 
+        event = envelope_event(
+            payload,
+            room_id=command.room_id,
+            speaker_id=command.speaker_id,
+            utterance_id=command.utterance_id,
+            generation_id=command.generation_id,
+            sequence_id=command.seq,
+        )
+        await self._fanout_data(
+            listeners=command.listeners,
+            topic=TOPIC_EVENT,
+            event=event,
+            channel="event",
+            report=report,
+            require_subtitle=False,
+        )
+        return report
+
+    async def _handle_interrupted(
+        self, command: InterruptedEventCommand
+    ) -> DeliveryReport:
+        """聞く主線の割込みを canonical イベントとして配信する。"""
+        report = DeliveryReport()
+        event = envelope_event(
+            {
+                "type": "translation_interrupted",
+                "mainline": "hearing",
+            },
+            room_id=command.room_id,
+            speaker_id=command.speaker_id,
+            utterance_id=command.utterance_id,
+            generation_id=command.generation_id,
+            sequence_id=command.seq,
+        )
+        await self._fanout_data(
+            listeners=command.listeners,
+            topic=TOPIC_EVENT,
+            event=event,
+            channel="event",
+            report=report,
+            require_subtitle=False,
+        )
+        return report
+
+    async def _handle_qos_warning(self, command: QosWarningCommand) -> DeliveryReport:
+        """評価済み qos_warning を再判定せず canonical イベントとして配信する。"""
+        report = DeliveryReport()
+        payload: dict[str, object] = {
+            "type": "qos_warning",
+            "metric": command.metric,
+            "should_fallback_to_subtitle": command.should_fallback_to_subtitle,
+        }
+        if command.mainline is not None:
+            payload["mainline"] = command.mainline
+        if command.value_ms is not None:
+            payload["value_ms"] = command.value_ms
+        if command.target_ms is not None:
+            payload["target_ms"] = command.target_ms
+        if command.value is not None:
+            payload["value"] = command.value
+        if command.target is not None:
+            payload["target"] = command.target
         event = envelope_event(
             payload,
             room_id=command.room_id,

@@ -1,0 +1,234 @@
+- generic [ref=f1e201]:
+  - banner [ref=f1e202]:
+    - generic [ref=f1e203]:
+      - button "← 戻る" [ref=f1e204] [cursor=pointer]
+      - heading "🌐 LAMS 会議室" [level=1] [ref=f1e205]
+    - generic [ref=f1e206]:
+      - generic "受入ユーザーA" [ref=f1e207]
+      - button "ログアウト" [ref=f1e208] [cursor=pointer]
+  - button "+ 新規会議室作成" [ref=f1e209] [cursor=pointer]
+  - generic [ref=f1e210]:
+    - button "Release Acceptance 20260728に参加" [ref=f1e211] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e213]: 🌐 公開
+      - heading "Release Acceptance 20260728" [level=3] [ref=f1e214]
+      - paragraph [ref=f1e215]: 3ユーザー実ブラウザ受入
+      - generic [ref=f1e216]:
+        - generic [ref=f1e217]: 👥 2
+        - generic [ref=f1e218]:
+          - generic [ref=f1e219]: 日本語
+          - generic [ref=f1e220]: 英語
+          - generic [ref=f1e221]: 中国語
+          - generic [ref=f1e222]: "+1"
+    - button "repro-livekitに参加" [ref=f1e223] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e225]: 🌐 公開
+      - heading "repro-livekit" [level=3] [ref=f1e226]
+      - paragraph [ref=f1e227]: 会議概要なし
+      - generic [ref=f1e228]:
+        - generic [ref=f1e229]: 👥 1
+        - generic [ref=f1e230]:
+          - generic [ref=f1e231]: 日本語
+          - generic [ref=f1e232]: 英語
+    - button "Release Smoke Roomに参加" [ref=f1e233] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e235]: 🌐 公開
+      - heading "Release Smoke Room" [level=3] [ref=f1e236]
+      - paragraph [ref=f1e237]: 明日リリース向けスモーク
+      - generic [ref=f1e238]:
+        - generic [ref=f1e239]: 👥 0
+        - generic [ref=f1e240]:
+          - generic [ref=f1e241]: 日本語
+          - generic [ref=f1e242]: 英語
+          - generic [ref=f1e243]: 中国語
+          - generic [ref=f1e244]: "+1"
+    - button "翻訳テスト-a64f73f1に参加" [ref=f1e245] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e247]: 🌐 公開
+      - heading "翻訳テスト-a64f73f1" [level=3] [ref=f1e248]
+      - paragraph [ref=f1e249]: 会議概要なし
+      - generic [ref=f1e250]:
+        - generic [ref=f1e251]: 👥 0
+        - generic [ref=f1e252]:
+          - generic [ref=f1e253]: 日本語
+          - generic [ref=f1e254]: 英語
+    - button "翻訳テスト-4d1d2fcdに参加" [ref=f1e255] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e257]: 🌐 公開
+      - heading "翻訳テスト-4d1d2fcd" [level=3] [ref=f1e258]
+      - paragraph [ref=f1e259]: 会議概要なし
+      - generic [ref=f1e260]:
+        - generic [ref=f1e261]: 👥 0
+        - generic [ref=f1e262]:
+          - generic [ref=f1e263]: 日本語
+          - generic [ref=f1e264]: 英語
+    - button "翻訳テスト-d00b329dに参加" [ref=f1e265] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e267]: 🌐 公開
+      - heading "翻訳テスト-d00b329d" [level=3] [ref=f1e268]
+      - paragraph [ref=f1e269]: 会議概要なし
+      - generic [ref=f1e270]:
+        - generic [ref=f1e271]: 👥 0
+        - generic [ref=f1e272]:
+          - generic [ref=f1e273]: 日本語
+          - generic [ref=f1e274]: 英語
+    - button "翻訳テスト-c04d3410に参加" [ref=f1e275] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e277]: 🌐 公開
+      - heading "翻訳テスト-c04d3410" [level=3] [ref=f1e278]
+      - paragraph [ref=f1e279]: 会議概要なし
+      - generic [ref=f1e280]:
+        - generic [ref=f1e281]: 👥 0
+        - generic [ref=f1e282]:
+          - generic [ref=f1e283]: 日本語
+          - generic [ref=f1e284]: 英語
+    - button "翻訳テスト-0f5d8743に参加" [ref=f1e285] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e287]: 🌐 公開
+      - heading "翻訳テスト-0f5d8743" [level=3] [ref=f1e288]
+      - paragraph [ref=f1e289]: 会議概要なし
+      - generic [ref=f1e290]:
+        - generic [ref=f1e291]: 👥 0
+        - generic [ref=f1e292]:
+          - generic [ref=f1e293]: 日本語
+          - generic [ref=f1e294]: 英語
+    - button "翻訳テスト-46d0c283に参加" [ref=f1e295] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e297]: 🌐 公開
+      - heading "翻訳テスト-46d0c283" [level=3] [ref=f1e298]
+      - paragraph [ref=f1e299]: 会議概要なし
+      - generic [ref=f1e300]:
+        - generic [ref=f1e301]: 👥 0
+        - generic [ref=f1e302]:
+          - generic [ref=f1e303]: 日本語
+          - generic [ref=f1e304]: 英語
+    - button "翻訳テスト-b51b9243に参加" [ref=f1e305] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e307]: 🌐 公開
+      - heading "翻訳テスト-b51b9243" [level=3] [ref=f1e308]
+      - paragraph [ref=f1e309]: 会議概要なし
+      - generic [ref=f1e310]:
+        - generic [ref=f1e311]: 👥 0
+        - generic [ref=f1e312]:
+          - generic [ref=f1e313]: 日本語
+          - generic [ref=f1e314]: 英語
+    - button "翻訳テスト-209aa1aeに参加" [ref=f1e315] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e317]: 🌐 公開
+      - heading "翻訳テスト-209aa1ae" [level=3] [ref=f1e318]
+      - paragraph [ref=f1e319]: 会議概要なし
+      - generic [ref=f1e320]:
+        - generic [ref=f1e321]: 👥 0
+        - generic [ref=f1e322]:
+          - generic [ref=f1e323]: 日本語
+          - generic [ref=f1e324]: 英語
+    - button "翻訳テスト-57ea2bb7に参加" [ref=f1e325] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e327]: 🌐 公開
+      - heading "翻訳テスト-57ea2bb7" [level=3] [ref=f1e328]
+      - paragraph [ref=f1e329]: 会議概要なし
+      - generic [ref=f1e330]:
+        - generic [ref=f1e331]: 👥 0
+        - generic [ref=f1e332]:
+          - generic [ref=f1e333]: 日本語
+          - generic [ref=f1e334]: 英語
+    - button "翻訳テスト-15b2986cに参加" [ref=f1e335] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e337]: 🌐 公開
+      - heading "翻訳テスト-15b2986c" [level=3] [ref=f1e338]
+      - paragraph [ref=f1e339]: 会議概要なし
+      - generic [ref=f1e340]:
+        - generic [ref=f1e341]: 👥 0
+        - generic [ref=f1e342]:
+          - generic [ref=f1e343]: 日本語
+          - generic [ref=f1e344]: 英語
+    - button "翻訳テスト-f59d0a9eに参加" [ref=f1e345] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e347]: 🌐 公開
+      - heading "翻訳テスト-f59d0a9e" [level=3] [ref=f1e348]
+      - paragraph [ref=f1e349]: 会議概要なし
+      - generic [ref=f1e350]:
+        - generic [ref=f1e351]: 👥 0
+        - generic [ref=f1e352]:
+          - generic [ref=f1e353]: 日本語
+          - generic [ref=f1e354]: 英語
+    - button "翻訳テスト-378044eeに参加" [ref=f1e355] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e357]: 🌐 公開
+      - heading "翻訳テスト-378044ee" [level=3] [ref=f1e358]
+      - paragraph [ref=f1e359]: 会議概要なし
+      - generic [ref=f1e360]:
+        - generic [ref=f1e361]: 👥 0
+        - generic [ref=f1e362]:
+          - generic [ref=f1e363]: 日本語
+          - generic [ref=f1e364]: 英語
+    - button "翻訳テスト-a20b2a06に参加" [ref=f1e365] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e367]: 🌐 公開
+      - heading "翻訳テスト-a20b2a06" [level=3] [ref=f1e368]
+      - paragraph [ref=f1e369]: 会議概要なし
+      - generic [ref=f1e370]:
+        - generic [ref=f1e371]: 👥 0
+        - generic [ref=f1e372]:
+          - generic [ref=f1e373]: 日本語
+          - generic [ref=f1e374]: 英語
+    - button "翻訳テスト-a4c9e4fbに参加" [ref=f1e375] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e377]: 🌐 公開
+      - heading "翻訳テスト-a4c9e4fb" [level=3] [ref=f1e378]
+      - paragraph [ref=f1e379]: 会議概要なし
+      - generic [ref=f1e380]:
+        - generic [ref=f1e381]: 👥 0
+        - generic [ref=f1e382]:
+          - generic [ref=f1e383]: 日本語
+          - generic [ref=f1e384]: 英語
+    - button "翻訳テスト-6b83cc3eに参加" [ref=f1e385] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e387]: 🌐 公開
+      - heading "翻訳テスト-6b83cc3e" [level=3] [ref=f1e388]
+      - paragraph [ref=f1e389]: 会議概要なし
+      - generic [ref=f1e390]:
+        - generic [ref=f1e391]: 👥 0
+        - generic [ref=f1e392]:
+          - generic [ref=f1e393]: 日本語
+          - generic [ref=f1e394]: 英語
+    - button "翻訳テストに参加" [ref=f1e395] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e397]: 🌐 公開
+      - heading "翻訳テスト" [level=3] [ref=f1e398]
+      - paragraph [ref=f1e399]: 会議概要なし
+      - generic [ref=f1e400]:
+        - generic [ref=f1e401]: 👥 0
+        - generic [ref=f1e402]:
+          - generic [ref=f1e403]: 日本語
+          - generic [ref=f1e404]: 英語
+    - button "Docker Test Roomに参加" [ref=f1e405] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e407]: 🌐 公開
+      - heading "Docker Test Room" [level=3] [ref=f1e408]
+      - paragraph [ref=f1e409]: 会議概要なし
+      - generic [ref=f1e410]:
+        - generic [ref=f1e411]: 👥 0
+        - generic [ref=f1e412]:
+          - generic [ref=f1e413]: 日本語
+          - generic [ref=f1e414]: 英語
+          - generic [ref=f1e415]: 中国語
+          - generic [ref=f1e416]: "+1"
+    - button "mode2テスト室に参加" [ref=f1e417] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e419]: 🌐 公開
+      - heading "mode2テスト室" [level=3] [ref=f1e420]
+      - paragraph [ref=f1e421]: 会議概要なし
+      - generic [ref=f1e422]:
+        - generic [ref=f1e423]: 👥 0
+        - generic [ref=f1e424]:
+          - generic [ref=f1e425]: 日本語
+          - generic [ref=f1e426]: 英語
+    - button "P0テスト室に参加" [ref=f1e427] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e429]: 🌐 公開
+      - heading "P0テスト室" [level=3] [ref=f1e430]
+      - paragraph [ref=f1e431]: 会議概要なし
+      - generic [ref=f1e432]:
+        - generic [ref=f1e433]: 👥 0
+        - generic [ref=f1e434]:
+          - generic [ref=f1e435]: 日本語
+          - generic [ref=f1e436]: 英語
+    - button "研究部技術検討会議に参加" [ref=f1e437] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e439]: 🌐 公開
+      - heading "研究部技術検討会議" [level=3] [ref=f1e440]
+      - paragraph [ref=f1e441]: 技術検討：e2eテスト、バグをAIで改修を検討中です。
+      - generic [ref=f1e442]:
+        - generic [ref=f1e443]: 👥 0
+        - generic [ref=f1e444]:
+          - generic [ref=f1e445]: 日本語
+          - generic [ref=f1e446]: 中国語
+    - button "E2E検証会議に参加" [ref=f1e447] [cursor=pointer]:
+      - generic "公開会議：全メンバー参加可能" [ref=f1e449]: 🌐 公開
+      - heading "E2E検証会議" [level=3] [ref=f1e450]
+      - paragraph [ref=f1e451]: 会議概要なし
+      - generic [ref=f1e452]:
+        - generic [ref=f1e453]: 👥 0
+        - generic [ref=f1e454]:
+          - generic [ref=f1e455]: 日本語
+          - generic [ref=f1e456]: 英語
+          - generic [ref=f1e457]: 中国語
+          - generic [ref=f1e458]: "+1"

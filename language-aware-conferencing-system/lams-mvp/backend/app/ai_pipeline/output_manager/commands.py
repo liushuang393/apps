@@ -71,6 +71,24 @@ class InterimSubtitleCommand:
 
 
 @dataclass(frozen=True)
+class PartialSubtitleCommand:
+    """確定前の partial ASR 原文を revision 付きで配信する命令。"""
+
+    room_id: str
+    speaker_id: str
+    subtitle_id: str
+    seq: int
+    original_text: str
+    source_language: str
+    target_language: str
+    listeners: tuple[ListenerRef, ...]
+    revision: int
+    generation_id: int = 0
+    trace_id: str | None = None
+    model_id: str | None = None
+
+
+@dataclass(frozen=True)
 class TranslatedAudioCommand:
     """翻訳音声（聞く主線）の配信命令。"""
 
@@ -95,10 +113,47 @@ class QualityEventCommand:
     decision: QoEDecision
 
 
+@dataclass(frozen=True)
+class InterruptedEventCommand:
+    """聞く主線の割込みを canonical イベントとして配信する命令。"""
+
+    room_id: str
+    speaker_id: str
+    utterance_id: str
+    seq: int
+    generation_id: int
+    listeners: tuple[ListenerRef, ...]
+
+
+@dataclass(frozen=True)
+class QosWarningCommand:
+    """§9 目標逸脱の評価済み qos_warning を配信する命令。
+
+    monitor 側で評価済みのフィールドのみを受け取り、Output Manager は再評価しない。
+    """
+
+    room_id: str
+    speaker_id: str
+    utterance_id: str
+    seq: int
+    generation_id: int
+    listeners: tuple[ListenerRef, ...]
+    metric: str
+    should_fallback_to_subtitle: bool
+    mainline: str | None = None
+    value_ms: float | None = None
+    target_ms: float | None = None
+    value: float | None = None
+    target: float | None = None
+
+
 OutputCommand = (
     FinalSubtitleCommand
     | InterimSubtitleCommand
+    | PartialSubtitleCommand
     | TranslatedAudioCommand
     | QualityEventCommand
+    | InterruptedEventCommand
+    | QosWarningCommand
 )
 """Output Manager 公開面が受理する出力命令の和型。"""

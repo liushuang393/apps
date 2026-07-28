@@ -13,6 +13,10 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 
 from alembic import op
+from app.db.migration_guards import (
+    create_index_if_absent,
+    create_table_if_absent,
+)
 
 revision: str = "016_experiment_metric"
 down_revision: str | None = "015_speaker_label"
@@ -21,8 +25,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """experiment_metric テーブルと索引を作成する。"""
-    op.create_table(
+    """experiment_metric テーブルと索引を作成する（既存オブジェクトは skip し冪等）。"""
+    create_table_if_absent(
         "experiment_metric",
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column("experiment_key", sa.String(length=100), nullable=False),
@@ -43,17 +47,17 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["session_id"], ["meeting_sessions.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
+    create_index_if_absent(
         "ix_experiment_metric_experiment_key",
         "experiment_metric",
         ["experiment_key"],
     )
-    op.create_index(
+    create_index_if_absent(
         "ix_experiment_metric_created_at",
         "experiment_metric",
         ["created_at"],
     )
-    op.create_index(
+    create_index_if_absent(
         "ix_experiment_metric_key_variant",
         "experiment_metric",
         ["experiment_key", "variant"],

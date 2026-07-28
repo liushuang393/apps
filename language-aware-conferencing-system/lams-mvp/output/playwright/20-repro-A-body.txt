@@ -1,0 +1,6 @@
+### Result
+"🎤 会議室\n未接続\n🎤\n🔊\n📝 記録\n退室\n会議室への接続に失敗しました。ネットワーク状態を確認してください。\n👥\n参加者 (0)\n\n参加者がいません\n\n⚙️\n設定\n\n接続中...\n\n📝 字幕\n\n字幕表示はオフです\n\n🔇 マイクOFF\n左側の設定パネルでマイクをONにできます"
+### Ran Playwright code
+```js
+await page.evaluate('() => ((() => document.body.innerText.slice(0,500))())');
+```

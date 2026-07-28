@@ -301,15 +301,15 @@ class LiveKitAgent:
             # QoE 権威へ渡す overload 事実のみ更新する（縮退判定はここでは行わない）。
             self._speaker_overloaded[speaker_id] = overloaded
 
-        def on_final_accepted() -> None:
-            # producer 側で即時に旧 hearing 世代を無効化する。
-            self._processor.interrupt_speaker(self._room_id, speaker_id)
-
+        # 確定発話の受理時点では聞く主線を無効化しない。受理は「queue へ積んだ」
+        # 合図であり、直前発話の聞く主線（ASR+MT+TTS で数秒）はまだ生成中である。
+        # ここで世代を無効化すると、まだ誰も聞いていない翻訳音声が毎発話破棄され、
+        # 連続発話では翻訳音声が一切届かなくなる。配信済み／配信中音声に対する
+        # barge-in は publisher の GenerationGate がフレーム単位で担う。
         pipeline = IngressPipeline.create_default(
             on_final=on_final,
             on_partial=on_partial,
             on_overload=on_overload,
-            on_final_accepted=on_final_accepted,
             sample_rate=_AI_SAMPLE_RATE,
         )
         self._pipelines[speaker_id] = pipeline
@@ -420,6 +420,7 @@ class LiveKitAgent:
             sink_factory=self._make_sink_factory(publisher),
             revision=token.revision,
             subtitle_id=token.utterance_id,
+            revision_authority=self._revision_authority,
         )
 
     async def _handle_segment(self, speaker_id: str, pcm16: bytes) -> None:
@@ -448,6 +449,7 @@ class LiveKitAgent:
             qoe_changed=qoe.changed,
             qoe_reason=qoe.primary_reason.value if qoe.primary_reason else None,
             qoe_ui_reason=qoe.ui_reason.value,
+            qoe_decision=qoe,
         )
         # 発話処理後の Runtime 観測を次発話の QoE input へ反映する
         self.report_provider_recovering(
