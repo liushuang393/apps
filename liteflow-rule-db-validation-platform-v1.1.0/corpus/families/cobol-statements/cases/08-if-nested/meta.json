@@ -1,0 +1,15 @@
+{
+  "title": "入れ子IF",
+  "purpose": "2階層の入れ子。状態を持たない行単位方式でも正しい入れ子を生成できることを示す。",
+  "covers": [
+    "IF",
+    "ELSE",
+    "END-IF",
+    "MOVE"
+  ],
+  "knownGaps": [
+    "ブロック構造の検証をしていないため、不均衡なCOBOLは明快なメッセージではなくコンパイルエラーになる"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

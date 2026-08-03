@@ -1,0 +1,47 @@
+/* ルール管理画面の最小スタイル。Thymeleaf は入れていない（既定のテンプレート探索パス
+   classpath:/templates/ が変換ルールJSONの置き場と衝突するため）。素の静的HTML＋fetch。 */
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Yu Gothic UI", "Hiragino Sans", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+header {
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 20px; background: #1f2933; color: #fff;
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+header nav { display: flex; gap: 12px; margin-left: auto; }
+header a { color: #cfe3ff; text-decoration: none; }
+header a:hover { text-decoration: underline; }
+main { padding: 20px; max-width: 1200px; }
+h2 { font-size: 15px; margin: 24px 0 8px; border-bottom: 2px solid #1f2933; padding-bottom: 4px; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+th, td { border: 1px solid #c8ced6; padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: #eef2f6; font-weight: 600; }
+tr:hover td { background: #f7fafc; }
+code, pre { font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+pre { background: #f5f7fa; border: 1px solid #c8ced6; padding: 10px; overflow-x: auto; }
+button {
+  font: inherit; padding: 4px 12px; cursor: pointer;
+  border: 1px solid #1f2933; background: #fff; border-radius: 3px;
+}
+button.primary { background: #1f2933; color: #fff; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+input, select, textarea { font: inherit; padding: 4px 6px; border: 1px solid #9aa5b1; border-radius: 3px; }
+textarea { width: 100%; min-height: 90px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.note { color: #52606d; font-size: 13px; }
+.warn { background: #fff4e5; border: 1px solid #f0b429; padding: 10px; border-radius: 3px; }
+.diff-add { color: #0b6b3a; }
+.diff-del { color: #a61b1b; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; color: #fff; }
+.badge.PENDING { background: #f0b429; }
+.badge.APPLIED { background: #0b6b3a; }
+.badge.APPROVED { background: #2b6cb0; }
+.badge.REJECTED { background: #a61b1b; }
+.login { max-width: 340px; margin: 80px auto; }
+.login label { display: block; margin-bottom: 10px; }
+.login input { width: 100%; }

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "takes the THEN branch",
+    "given":  { "WS-AMOUNT": 5000, "WS-VIP-FLAG": 9 },
+    "expect": { "WS-VIP-FLAG": 1 }
+  },
+  {
+    "name": "takes the ELSE branch",
+    "given":  { "WS-AMOUNT": 10, "WS-VIP-FLAG": 9 },
+    "expect": { "WS-VIP-FLAG": 0 }
+  },
+  {
+    "name": "boundary value is not greater than",
+    "given":  { "WS-AMOUNT": 1000, "WS-VIP-FLAG": 9 },
+    "expect": { "WS-VIP-FLAG": 0 }
+  }
+]

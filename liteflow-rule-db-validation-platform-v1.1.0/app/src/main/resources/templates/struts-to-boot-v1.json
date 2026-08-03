@@ -1,0 +1,440 @@
+{
+  "profile": "struts-to-boot-v1",
+  "version": 1,
+  "owner": "migration-team",
+  "targetStyle": "Struts 1.3.10（Action / ActionForm / struts-config.xml / JSP）から Spring Boot 4.1（@Controller / フォームBean / Thymeleaf テンプレート）へ。1つの成果物が複数の入力ファイルから組み立てられるため、facts でファイル横断の変数を集め、artifacts で骨組みを与え、各ルールが emitTo と section で振り分ける。",
+  "notes": "判定はゴールデン差分＋実コンパイル。生成物を実行して値を突き合わせることはできない（Webコントローラに共通の入口が無い）ので、COBOL側の振る舞いテストより証拠としては弱い。生成物が「我々が書いた正解と一致する」ことしか示さない。JSP の純HTML行は template を空にした『認識して捨てる』ルールで処理し、未カバー率を薄めずに済ませている。",
+  "maps": {},
+  "facts": [
+    {
+      "id": "action-class",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^public\\s+class\\s+(?<name>\\w+)Action\\s+extends\\s+Action\\s*\\{$",
+      "set": {
+        "base": "${name}",
+        "lower": "${name}",
+        "actionClass": "${name}Action"
+      }
+    },
+    {
+      "id": "action-path",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<action\\s+path=\"(?<path>[^\"]+)\".*$",
+      "set": {
+        "path": "${path}"
+      }
+    },
+    {
+      "id": "form-bean",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<form-bean\\s+name=\"(?<bean>[^\"]+)\"\\s+type=\"(?<type>[^\"]+)\"\\s*/>$",
+      "set": {
+        "formBean": "${bean}"
+      }
+    },
+    {
+      "id": "success-forward",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<forward\\s+name=\"success\"\\s+path=\"/(?<view>[^.\"]+)\\.jsp\"\\s*/>$",
+      "set": {
+        "successView": "${view}"
+      }
+    },
+    {
+      "id": "failure-forward",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<forward\\s+name=\"failure\"\\s+path=\"/(?<view>[^.\"]+)\\.jsp\"\\s*/>$",
+      "set": {
+        "failureView": "${view}"
+      }
+    },
+    {
+      "id": "page-title",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<title>(?<title>[^<]*)</title>$",
+      "set": {
+        "title": "${title}"
+      }
+    },
+    {
+      "id": "action-input",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<action\\s+.*input=\"/(?<view>[^.\"]+)\\.jsp\".*$",
+      "set": {
+        "inputView": "${view}"
+      },
+      "notes": "GET 表示時に返すビュー。failure forward が無い action でも input は必ずあるので、こちらを使う。"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "${base}Controller.java",
+      "kind": "java",
+      "className": "generated.${base}Controller",
+      "sections": [
+        "fields",
+        "handlers"
+      ],
+      "preamble": [
+        "package generated;",
+        "",
+        "import org.springframework.stereotype.Controller;",
+        "import org.springframework.ui.Model;",
+        "import org.springframework.web.bind.annotation.GetMapping;",
+        "import org.springframework.web.bind.annotation.ModelAttribute;",
+        "import org.springframework.web.bind.annotation.PostMapping;",
+        "import org.springframework.web.bind.annotation.RequestMapping;",
+        "",
+        "@Controller",
+        "@RequestMapping(\"${path}\")",
+        "public class ${base}Controller {",
+        "",
+        "    @GetMapping",
+        "    public String show(@ModelAttribute(\"form\") ${base}Form form) {",
+        "        return \"${inputView}\";",
+        "    }"
+      ],
+      "epilogue": [
+        "}"
+      ],
+      "notes": "package宣言・import群・クラス宣言・閉じ括弧は「どの入力行でもない」ため、行ルールでは表現できない。ここに置く。"
+    },
+    {
+      "name": "${base}Form.java",
+      "kind": "java",
+      "className": "generated.${base}Form",
+      "sections": [
+        "fields",
+        "accessors"
+      ],
+      "preamble": [
+        "package generated;",
+        "",
+        "public class ${base}Form {"
+      ],
+      "epilogue": [
+        "}"
+      ]
+    },
+    {
+      "name": "${base}.html",
+      "kind": "text",
+      "sections": [
+        "head",
+        "body"
+      ],
+      "preamble": [
+        "<!DOCTYPE html>",
+        "<html xmlns:th=\"http://www.thymeleaf.org\">",
+        "<head>",
+        "<meta charset=\"UTF-8\"/>",
+        "<title>${title}</title>",
+        "</head>",
+        "<body>"
+      ],
+      "epilogue": [
+        "</body>",
+        "</html>"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "jsp-directive",
+      "statement": "JSPディレクティブ",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<%@.*%>$",
+      "template": "",
+      "notes": "認識して捨てる。Spring Boot 側に対応物が無い。未カバーにはしないが byRule に出るので握り潰しではない。"
+    },
+    {
+      "id": "jsp-shell",
+      "statement": "JSPの外枠",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^</?(?:html|head|body|title)>.*$",
+      "template": "",
+      "notes": "外枠は artifacts の preamble / epilogue が出す。"
+    },
+    {
+      "id": "jsp-heading",
+      "statement": "見出し",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<h1>(?<text>[^<]*)</h1>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "<h1>${text}</h1>"
+    },
+    {
+      "id": "jsp-html-form-open",
+      "statement": "html:form",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<html:form\\s+action=\"(?<action>[^\"]+)\"\\s*>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "<form th:action=\"@{${action}}\" th:object=\"$\\{form}\" method=\"post\">",
+      "notes": "Thymeleaf も ${...} を使うので $\\{ でエスケープしている。"
+    },
+    {
+      "id": "jsp-html-form-close",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^</html:form>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "</form>"
+    },
+    {
+      "id": "jsp-html-text",
+      "statement": "html:text",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<html:text\\s+property=\"(?<prop>[^\"]+)\"\\s*/>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "<input type=\"text\" th:field=\"*{${prop}}\"/>"
+    },
+    {
+      "id": "jsp-html-password",
+      "statement": "html:password",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<html:password\\s+property=\"(?<prop>[^\"]+)\"\\s*/>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "<input type=\"password\" th:field=\"*{${prop}}\"/>"
+    },
+    {
+      "id": "jsp-html-submit",
+      "statement": "html:submit",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<html:submit\\s+value=\"(?<label>[^\"]*)\"\\s*/>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "<button type=\"submit\">${label}</button>"
+    },
+    {
+      "id": "jsp-logic-iterate-open",
+      "statement": "logic:iterate",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<logic:iterate\\s+id=\"(?<item>[^\"]+)\"\\s+name=\"(?<coll>[^\"]+)\"\\s*>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "<div th:each=\"${item} : $\\{${coll}}\">"
+    },
+    {
+      "id": "jsp-logic-iterate-close",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^</logic:iterate>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "</div>"
+    },
+    {
+      "id": "jsp-html-link",
+      "statement": "html:link",
+      "appliesToFile": ".*\\.jsp$",
+      "pattern": "^<html:link\\s+page=\"(?<page>[^\"]+)\">(?<label>[^<]*)</html:link>$",
+      "emitTo": "${base}.html",
+      "section": "body",
+      "template": "<a th:href=\"@{${page}}\">${label}</a>"
+    },
+    {
+      "id": "config-xml-decl",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<\\?xml.*\\?>$",
+      "template": ""
+    },
+    {
+      "id": "config-shell",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^</?(?:struts-config|form-beans|action-mappings)>$",
+      "template": ""
+    },
+    {
+      "id": "config-form-bean",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<form-bean\\s+name=\"[^\"]+\"\\s+type=\"[^\"]+\"\\s*/>$",
+      "template": "",
+      "notes": "URLパスとフォーム名は facts が拾う。ここは行を認識済みにするだけ。"
+    },
+    {
+      "id": "config-action-open",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<action\\s+path=\"[^\"]+\".*>$",
+      "template": ""
+    },
+    {
+      "id": "config-action-close",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^</action>$",
+      "template": ""
+    },
+    {
+      "id": "config-forward",
+      "appliesToFile": ".*struts-config\\.xml$",
+      "pattern": "^<forward\\s+name=\"[^\"]+\"\\s+path=\"[^\"]+\"\\s*/>$",
+      "template": ""
+    },
+    {
+      "id": "java-package",
+      "appliesToFile": ".*\\.java$",
+      "pattern": "^package\\s+[\\w.]+;$",
+      "template": "",
+      "notes": "生成側の package は artifacts の preamble が出す。"
+    },
+    {
+      "id": "java-import",
+      "appliesToFile": ".*\\.java$",
+      "pattern": "^import\\s+[\\w.]+;$",
+      "template": "",
+      "notes": "Struts / Servlet の import は Spring 側に対応物が無い。生成側の import は preamble が出す。"
+    },
+    {
+      "id": "java-class-decl",
+      "appliesToFile": ".*\\.java$",
+      "pattern": "^public\\s+class\\s+\\w+\\s+extends\\s+(?:Action|ActionForm)\\s*\\{$",
+      "template": "",
+      "opens": "class",
+      "notes": "クラス宣言は preamble が出す。ここで枠を積むのは、後から来る } がクラスの閉じ括弧かメソッドの閉じ括弧かを見分けるため。"
+    },
+    {
+      "id": "form-field",
+      "statement": "ActionForm のフィールド",
+      "appliesToFile": ".*Form\\.java$",
+      "pattern": "^private\\s+(?<type>[A-Za-z0-9_<>\\[\\]]+)\\s+(?<name>\\w+)\\s*;$",
+      "emitTo": "${base}Form.java",
+      "section": "fields",
+      "template": "${_indent}private ${type} ${name};"
+    },
+    {
+      "id": "form-getter",
+      "statement": "getter",
+      "appliesToFile": ".*Form\\.java$",
+      "pattern": "^public\\s+(?<type>[A-Za-z0-9_<>\\[\\]]+)\\s+get(?<name>\\w+)\\(\\)\\s*\\{$",
+      "emitTo": "${base}Form.java",
+      "section": "accessors",
+      "opens": "method",
+      "template": "\n${_indent}public ${type} get${name}() {"
+    },
+    {
+      "id": "form-setter",
+      "statement": "setter",
+      "appliesToFile": ".*Form\\.java$",
+      "pattern": "^public\\s+void\\s+set(?<name>\\w+)\\((?<type>[A-Za-z0-9_<>\\[\\]]+)\\s+(?<arg>\\w+)\\)\\s*\\{$",
+      "emitTo": "${base}Form.java",
+      "section": "accessors",
+      "opens": "method",
+      "template": "\n${_indent}public void set${name}(${type} ${arg}) {"
+    },
+    {
+      "id": "form-body-return",
+      "appliesToFile": ".*Form\\.java$",
+      "pattern": "^return\\s+(?<expr>[^;]+);$",
+      "requires": "method",
+      "emitTo": "${base}Form.java",
+      "section": "accessors",
+      "template": "${_indent}return ${expr};"
+    },
+    {
+      "id": "form-body-assign",
+      "appliesToFile": ".*Form\\.java$",
+      "pattern": "^this\\.(?<field>\\w+)\\s*=\\s*(?<expr>[^;]+);$",
+      "requires": "method",
+      "emitTo": "${base}Form.java",
+      "section": "accessors",
+      "template": "${_indent}this.${field} = ${expr};"
+    },
+    {
+      "id": "form-method-close",
+      "appliesToFile": ".*Form\\.java$",
+      "pattern": "^\\}$",
+      "closes": "method",
+      "emitTo": "${base}Form.java",
+      "section": "accessors",
+      "template": "${_indent}}"
+    },
+    {
+      "id": "action-execute",
+      "statement": "execute メソッド",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^public\\s+ActionForward\\s+execute\\(ActionMapping\\s+\\w+,\\s*ActionForm\\s+\\w+,$",
+      "emitTo": "${base}Controller.java",
+      "section": "handlers",
+      "opens": "method",
+      "template": "\n${_indent}@PostMapping\n${_indent}public String submit(@ModelAttribute(\"form\") ${base}Form form, Model model) {"
+    },
+    {
+      "id": "action-execute-args",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^HttpServletRequest\\s+\\w+,\\s*HttpServletResponse\\s+\\w+\\)\\s*throws\\s+Exception\\s*\\{$",
+      "template": "",
+      "requires": "method",
+      "notes": "execute の2行目。1行目のルールが Spring 側の署名を丸ごと出しているので捨てる。"
+    },
+    {
+      "id": "action-form-cast",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^\\w+\\s+\\w+\\s*=\\s*\\(\\w+\\)\\s*form;$",
+      "template": "",
+      "requires": "method",
+      "notes": "Spring は型付きでバインドするのでキャストが要らない。認識して捨てる。"
+    },
+    {
+      "id": "action-null-check",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^if\\s*\\(\\w+\\.get(?<prop>\\w+)\\(\\)\\s*==\\s*null\\)\\s*\\{$",
+      "emitTo": "${base}Controller.java",
+      "section": "handlers",
+      "opens": "block",
+      "template": "${_indent}if (form.get${prop}() == null) {"
+    },
+    {
+      "id": "action-forward-success",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^return\\s+mapping\\.findForward\\(\"success\"\\);$",
+      "emitTo": "${base}Controller.java",
+      "section": "handlers",
+      "template": "${_indent}return \"${successView}\";",
+      "notes": "forward 名からビュー名への対応は facts（successView）が持つ。"
+    },
+    {
+      "id": "action-forward-failure",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^return\\s+mapping\\.findForward\\(\"failure\"\\);$",
+      "emitTo": "${base}Controller.java",
+      "section": "handlers",
+      "template": "${_indent}return \"${failureView}\";"
+    },
+    {
+      "id": "action-set-attribute",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^request\\.setAttribute\\(\"(?<key>\\w+)\",\\s*\\w+\\.get(?<prop>\\w+)\\(\\)\\);$",
+      "emitTo": "${base}Controller.java",
+      "section": "handlers",
+      "template": "${_indent}model.addAttribute(\"${key}\", form.get${prop}());"
+    },
+    {
+      "id": "action-block-close",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^\\}$",
+      "closes": "block",
+      "emitTo": "${base}Controller.java",
+      "section": "handlers",
+      "template": "${_indent}}"
+    },
+    {
+      "id": "action-method-close",
+      "appliesToFile": ".*Action\\.java$",
+      "pattern": "^\\}$",
+      "closes": "method",
+      "emitTo": "${base}Controller.java",
+      "section": "handlers",
+      "template": "${_indent}}"
+    },
+    {
+      "id": "java-class-close",
+      "appliesToFile": ".*\\.java$",
+      "pattern": "^\\}$",
+      "closes": "class",
+      "template": "",
+      "notes": "クラスの閉じ括弧は artifacts の epilogue が出す。枠スタックのおかげでメソッドの } と区別できる。"
+    }
+  ]
+}

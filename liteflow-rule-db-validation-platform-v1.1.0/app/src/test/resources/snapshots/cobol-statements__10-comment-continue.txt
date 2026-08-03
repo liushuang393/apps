@@ -1,0 +1,9 @@
+# case: cobol-statements/10-comment-continue
+# profile: compilable-v1
+# coverage: total=5 recognised=5 unrecognised=0
+# rule: comment x3
+# rule: continue x1
+# rule: move x1
+--- generated ---
+;
+vars.put("WS-DONE", 1);

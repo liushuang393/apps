@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Spring Boot 4.1 の依存jarを集めるためだけの pom。イメージの /app/boot41-libs へ配置し、
+  Struts→Spring Boot ファミリの生成Javaを javac するときのクラスパスにする。
+
+  この pom はアプリのビルドには一切関与しない。
+  本検証基盤そのものは Spring Boot 4.0.6 で動いており、
+  4.1 を app/pom.xml へ足すと依存解決レイヤが無駄に壊れるので絶対に足さないこと。
+
+  corpus/families/struts-springboot/apps/target-springboot41/pom.xml と
+  同じ依存を並べてある。片方を変えたらもう片方も合わせること。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.0</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>jp.co.softroad.lab</groupId>
+  <artifactId>boot41-classpath</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <name>Spring Boot 4.1 classpath for generated code</name>
+
+  <properties>
+    <java.version>17</java.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-thymeleaf</artifactId>
+    </dependency>
+  </dependencies>
+</project>

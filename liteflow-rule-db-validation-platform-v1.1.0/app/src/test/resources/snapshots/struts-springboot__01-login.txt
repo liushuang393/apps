@@ -1,0 +1,107 @@
+# case: struts-springboot/01-login
+# profile: struts-to-boot-v1
+# coverage: total=64 recognised=64 unrecognised=0
+# rule: action-block-close x1
+# rule: action-execute x1
+# rule: action-execute-args x1
+# rule: action-form-cast x1
+# rule: action-forward-failure x1
+# rule: action-forward-success x1
+# rule: action-method-close x1
+# rule: action-null-check x1
+# rule: action-set-attribute x1
+# rule: config-action-close x1
+# rule: config-action-open x1
+# rule: config-form-bean x1
+# rule: config-forward x2
+# rule: config-shell x6
+# rule: config-xml-decl x1
+# rule: form-body-assign x2
+# rule: form-body-return x2
+# rule: form-field x2
+# rule: form-getter x2
+# rule: form-method-close x4
+# rule: form-setter x2
+# rule: java-class-close x2
+# rule: java-class-decl x2
+# rule: java-import x8
+# rule: java-package x2
+# rule: jsp-directive x2
+# rule: jsp-heading x1
+# rule: jsp-html-form-close x1
+# rule: jsp-html-form-open x1
+# rule: jsp-html-password x1
+# rule: jsp-html-submit x1
+# rule: jsp-html-text x1
+# rule: jsp-shell x7
+# file: LoginAction.java total=19 recognised=19 unrecognised=0
+# file: LoginForm.java total=18 recognised=18 unrecognised=0
+# file: login.jsp total=15 recognised=15 unrecognised=0
+# file: struts-config.xml total=12 recognised=12 unrecognised=0
+--- artifact: Login.html ---
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8"/>
+<title>ログイン</title>
+</head>
+<body>
+<h1>ログイン</h1>
+<form th:action="@{/login}" th:object="${form}" method="post">
+<input type="text" th:field="*{userId}"/>
+<input type="password" th:field="*{password}"/>
+<button type="submit">ログイン</button>
+</form>
+</body>
+</html>
+--- artifact: LoginController.java ---
+package generated;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+@Controller
+@RequestMapping("/login")
+public class LoginController {
+
+    @GetMapping
+    public String show(@ModelAttribute("form") LoginForm form) {
+        return "login";
+    }
+
+    @PostMapping
+    public String submit(@ModelAttribute("form") LoginForm form, Model model) {
+        if (form.getUserId() == null) {
+            return "login";
+        }
+        model.addAttribute("userId", form.getUserId());
+        return "menu";
+    }
+}
+--- artifact: LoginForm.java ---
+package generated;
+
+public class LoginForm {
+    private String userId;
+    private String password;
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<struts-config>
+  <form-beans>
+    <form-bean name="loginForm" type="jp.co.softroad.legacy.form.LoginForm"/>
+    <form-bean name="searchForm" type="jp.co.softroad.legacy.form.SearchForm"/>
+    <form-bean name="detailForm" type="jp.co.softroad.legacy.form.DetailForm"/>
+  </form-beans>
+  <action-mappings>
+    <action-mappings>
+        <action path="/login" type="jp.co.softroad.legacy.action.LoginAction" name="loginForm" scope="request" input="/login.jsp">
+          <forward name="success" path="/menu.jsp"/>
+          <forward name="failure" path="/login.jsp"/>
+        </action>
+    <action-mappings>
+        <action path="/search" type="jp.co.softroad.legacy.action.SearchAction" name="searchForm" scope="request" input="/search.jsp">
+          <forward name="success" path="/search.jsp"/>
+        </action>
+    <action-mappings>
+        <action path="/detail" type="jp.co.softroad.legacy.action.DetailAction" name="detailForm" scope="request" input="/detail.jsp">
+          <forward name="success" path="/detail.jsp"/>
+        </action>
+  </action-mappings>
+</struts-config>

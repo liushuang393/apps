@@ -1,0 +1,8 @@
+[
+  {
+    "name": "literal and variable output in order",
+    "given":  { "WS-RECORD-COUNT": 128 },
+    "expect": {},
+    "expectDisplay": ["BATCH START", "128"]
+  }
+]

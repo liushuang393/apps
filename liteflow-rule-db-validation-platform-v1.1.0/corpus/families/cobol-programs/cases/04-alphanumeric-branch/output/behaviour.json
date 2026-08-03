@@ -1,0 +1,14 @@
+[
+  {
+    "name": "VIP は無料",
+    "given": { "WS-STATUS": "VIP" },
+    "expect": { "WS-FEE": 0 },
+    "expectDisplay": ["0.0"]
+  },
+  {
+    "name": "VIP 以外は基本料に手数料が乗る",
+    "given": { "WS-STATUS": "GEN" },
+    "expect": { "WS-FEE": 550 },
+    "expectDisplay": ["550.0"]
+  }
+]

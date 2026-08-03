@@ -1,0 +1,16 @@
+{
+  "title": "PERFORM THRU の範囲、行内 PERFORM VARYING / TIMES、範囲内 GO TO",
+  "purpose": "PERFORM の範囲と GO TO の相互作用だけを切り出して確かめる。範囲内の出口段落へ飛ぶ形（実COBOLで最も多い）が正しく PERFORM から戻ること、PERFORM 範囲外の段落が実行されないことを見る。",
+  "covers": [
+    "PERFORM <段落> THRU <段落>", "PERFORM VARYING ... END-PERFORM",
+    "PERFORM <n> TIMES ... END-PERFORM", "範囲内 GO TO", "EXIT", "GO TO"
+  ],
+  "knownGaps": [
+    "実行中の PERFORM 範囲の外へ飛ぶ GO TO は標準では未定義動作。本実装は「目標を含む外側の範囲まで解いていく」挙動にしている",
+    "PERFORM ... WITH TEST AFTER は未対応（既定の TEST BEFORE のみ）"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS",
+  "templateProfile": "cobol-programs-v1",
+  "entryProgram": "LOOPPGM"
+}

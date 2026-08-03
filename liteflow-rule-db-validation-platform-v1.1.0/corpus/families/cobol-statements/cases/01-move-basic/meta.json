@@ -1,0 +1,15 @@
+{
+  "title": "MOVE（変数とリテラル）",
+  "purpose": "基本形。最も出現頻度の高いCOBOL文が、コンパイルでき正しく動くコードを生成すること。",
+  "covers": [
+    "comment",
+    "MOVE"
+  ],
+  "knownGaps": [
+    "参照修飾付きMOVE",
+    "MOVE CORRESPONDING",
+    "空白を含む引用符付きリテラル"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

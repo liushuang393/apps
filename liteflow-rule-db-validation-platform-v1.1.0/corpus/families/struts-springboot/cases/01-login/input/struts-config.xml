@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<struts-config>
+  <form-beans>
+    <form-bean name="loginForm" type="jp.co.softroad.legacy.form.LoginForm"/>
+  </form-beans>
+  <action-mappings>
+    <action path="/login" type="jp.co.softroad.legacy.action.LoginAction" name="loginForm" scope="request" input="/login.jsp">
+      <forward name="success" path="/menu.jsp"/>
+      <forward name="failure" path="/login.jsp"/>
+    </action>
+  </action-mappings>
+</struts-config>

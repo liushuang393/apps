@@ -1,0 +1,17 @@
+[
+  {
+    "name": "inner THEN",
+    "given":  { "WS-AMOUNT": 500, "WS-REGION": 1, "WS-RATE": 0 },
+    "expect": { "WS-RATE": 10 }
+  },
+  {
+    "name": "inner ELSE",
+    "given":  { "WS-AMOUNT": 500, "WS-REGION": 2, "WS-RATE": 0 },
+    "expect": { "WS-RATE": 20 }
+  },
+  {
+    "name": "outer ELSE",
+    "given":  { "WS-AMOUNT": 5, "WS-REGION": 1, "WS-RATE": 99 },
+    "expect": { "WS-RATE": 0 }
+  }
+]

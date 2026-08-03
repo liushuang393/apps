@@ -1,0 +1,7 @@
+[
+  {
+    "name": "single-operand COMPUTE and negative literal",
+    "given":  { "WS-SOURCE": 77, "WS-TARGET": 0, "WS-CONST": 0 },
+    "expect": { "WS-TARGET": 77, "WS-CONST": -15 }
+  }
+]

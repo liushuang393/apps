@@ -1,0 +1,8 @@
+# case: cobol-statements/03-arith-multiply-divide
+# profile: compilable-v1
+# coverage: total=2 recognised=2 unrecognised=0
+# rule: divide x1
+# rule: multiply x1
+--- generated ---
+vars.put("WS-AMOUNT", num(vars.get("WS-AMOUNT")) * num(vars.get("WS-QTY")));
+vars.put("WS-AMOUNT", num(vars.get("WS-AMOUNT")) / num(2));

@@ -1,0 +1,9 @@
+{
+  "family": "struts-springboot",
+  "title": "Struts 1.3.10 → Spring Boot 4.1 画面変換（ログイン／検索一覧）",
+  "purpose": "旧Web資産の刷新。Action / ActionForm / struts-config.xml / JSP という4種類の入力から、@Controller / フォームBean / Thymeleaf テンプレートという3種類の成果物を組み立てられるかを確かめる。判定は「事前に用意した正解との差分」と「生成Javaが Spring Boot 4.1 の依存に対して実際にコンパイルできること」の2本立て。",
+  "templateProfile": "struts-to-boot-v1",
+  "chainEl": "THEN(validate,analyze,transform,compile,goldenDiff,qualityGate,report)",
+  "inputMode": "multi",
+  "grading": "golden"
+}

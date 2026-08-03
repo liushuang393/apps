@@ -1,0 +1,8 @@
+[
+  {
+    "name": "comments and CONTINUE do not affect data",
+    "given":  { "WS-DONE": 0 },
+    "expect": { "WS-DONE": 1 },
+    "expectDisplay": []
+  }
+]

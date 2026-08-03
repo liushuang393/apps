@@ -1,0 +1,56 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["liteflow", "rule-db", "validation"],
+  "time": {"from": "now-15m", "to": "now"},
+  "title": "LiteFlow Rule-DB 検証",
+  "uid": "liteflow-rule-db-validation",
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Chain QPS",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "sum by (chain, instance) (rate(liteflow_chain_executions_seconds_count[1m]))", "legendFormat": "{{instance}} / {{chain}}", "refId": "A"}]
+    },
+    {
+      "id": 2,
+      "title": "Chain 平均実行時間",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "sum by (chain, instance) (rate(liteflow_chain_executions_seconds_sum[1m])) / sum by (chain, instance) (rate(liteflow_chain_executions_seconds_count[1m]))", "legendFormat": "{{instance}} / {{chain}}", "refId": "A"}]
+    },
+    {
+      "id": 3,
+      "title": "Chain エラー率",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "sum by (chain, instance) (rate(liteflow_chain_executions_seconds_count{status=\"failed\"}[5m])) / sum by (chain, instance) (rate(liteflow_chain_executions_seconds_count[5m]))", "legendFormat": "{{instance}} / {{chain}}", "refId": "A"}]
+    },
+    {
+      "id": 4,
+      "title": "Node 平均実行時間",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "sum by (node, instance) (rate(liteflow_node_executions_seconds_sum[1m])) / sum by (node, instance) (rate(liteflow_node_executions_seconds_count[1m]))", "legendFormat": "{{instance}} / {{node}}", "refId": "A"}]
+    },
+    {
+      "id": 5,
+      "title": "Slot 使用数",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "targets": [
+        {"expr": "liteflow_slot_occupied", "legendFormat": "occupied / {{instance}}", "refId": "A"},
+        {"expr": "liteflow_slot_size", "legendFormat": "capacity / {{instance}}", "refId": "B"}
+      ]
+    }
+  ]
+}

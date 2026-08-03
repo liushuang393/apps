@@ -1,0 +1,7 @@
+[
+  {
+    "name": "two chained COMPUTE statements",
+    "given":  { "WS-GROSS": 1000, "WS-TAX": 80, "WS-NET": 0, "WS-DOUBLE": 0 },
+    "expect": { "WS-NET": 920, "WS-DOUBLE": 1840 }
+  }
+]

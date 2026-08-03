@@ -1,0 +1,14 @@
+{
+  "title": "【負例】SORT / STRING / INSPECT / SEARCH は未対応 → 未カバー率で落ちる",
+  "purpose": "ルールライブラリの穴が未カバー率として表に出て、品質ゲートが実際に拒否することを確かめる。cobol-programs-v1 にこれらのルールを足したら、このケースは PASS に変わってしまうので、そのときは別の未対応構文で負例を作り直すこと。",
+  "covers": ["MOVE", "STOP RUN"],
+  "knownGaps": [
+    "SORT / MERGE は未対応。ファイル入出力そのものを扱っていない",
+    "STRING / UNSTRING / INSPECT は未対応。文字列操作の意味論を持っていない",
+    "SEARCH / SEARCH ALL は未対応。OCCURS 表を扱っていない"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "FAIL",
+  "templateProfile": "cobol-programs-v1",
+  "entryProgram": "SORTPGM"
+}

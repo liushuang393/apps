@@ -1,0 +1,12 @@
+reports/*
+!reports/.gitkeep
+app/target/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+
+# サンプルプロジェクトのビルド成果物と、生成コードの javac に使う依存jar。
+# どちらも scripts\samples-build.cmd が作り直せるので追跡しない。
+corpus/families/struts-springboot/apps/*/target/
+corpus/families/struts-springboot/apps/target-springboot41/lib/

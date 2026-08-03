@@ -1,0 +1,7 @@
+# case: cobol-statements/09-display
+# profile: compilable-v1
+# coverage: total=2 recognised=2 unrecognised=0
+# rule: display x2
+--- generated ---
+out.add(String.valueOf("BATCH START"));
+out.add(String.valueOf(vars.get("WS-RECORD-COUNT")));

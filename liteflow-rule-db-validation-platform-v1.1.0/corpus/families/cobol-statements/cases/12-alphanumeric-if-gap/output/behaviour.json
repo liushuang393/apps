@@ -1,0 +1,7 @@
+[
+  {
+    "name": "alphanumeric equality should set the flag (it does not - rule gap)",
+    "given":  { "WS-NAME": "XYZ", "WS-MATCH": 9 },
+    "expect": { "WS-MATCH": 1 }
+  }
+]

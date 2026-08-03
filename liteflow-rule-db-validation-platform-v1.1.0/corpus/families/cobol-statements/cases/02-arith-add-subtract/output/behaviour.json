@@ -1,0 +1,12 @@
+[
+  {
+    "name": "accumulates then subtracts",
+    "given":  { "WS-RECORD-COUNT": 7, "WS-LINE-AMOUNT": 250, "WS-TOTAL": 1000, "WS-DISCOUNT": 100 },
+    "expect": { "WS-RECORD-COUNT": 8, "WS-TOTAL": 1150 }
+  },
+  {
+    "name": "handles negative amount",
+    "given":  { "WS-RECORD-COUNT": 0, "WS-LINE-AMOUNT": -50, "WS-TOTAL": 200, "WS-DISCOUNT": 0 },
+    "expect": { "WS-RECORD-COUNT": 1, "WS-TOTAL": 150 }
+  }
+]

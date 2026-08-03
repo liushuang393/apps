@@ -1,0 +1,13 @@
+{
+  "title": "COMPUTE（単項）",
+  "purpose": "同じ動詞のフォールバックルール。負のリテラルが演算子と誤解されないことも確認する。",
+  "covers": [
+    "COMPUTE-copy"
+  ],
+  "knownGaps": [
+    "単項プラス",
+    "二項式内の符号付きオペランド"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

@@ -1,0 +1,10 @@
+# case: cobol-statements/02-arith-add-subtract
+# profile: compilable-v1
+# coverage: total=4 recognised=4 unrecognised=0
+# rule: add x2
+# rule: comment x1
+# rule: subtract x1
+--- generated ---
+vars.put("WS-RECORD-COUNT", num(vars.get("WS-RECORD-COUNT")) + num(1));
+vars.put("WS-TOTAL", num(vars.get("WS-TOTAL")) + num(vars.get("WS-LINE-AMOUNT")));
+vars.put("WS-TOTAL", num(vars.get("WS-TOTAL")) - num(vars.get("WS-DISCOUNT")));

@@ -1,0 +1,19 @@
+{
+  "packageName": "liteflow-rule-db-validation-platform",
+  "packageVersion": "1.1.0",
+  "createdDate": "2026-08-01",
+  "liteflowVersion": "2.16.1",
+  "liteflowSourceCommit": "039d5cff0ca71d358db51413c10ed3177d74eb89",
+  "springBootVersion": "4.0.6",
+  "javaVersion": "17",
+  "runtimeImages": {
+    "mariadb": "mariadb:11.4.12",
+    "prometheus": "prom/prometheus:v3.13.1",
+    "grafana": "grafana/grafana:13.1.1",
+    "validator": "python:3.13-slim"
+  },
+  "packagingRuntimeValidation": {
+    "dockerE2E": "NOT_RUN_NO_DOCKER",
+    "hostPreflight": "reports/preflight-report.md"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "family": "cobol-statements",
+  "title": "COBOL 文単位変換（単一ファイル）",
+  "purpose": "1行1文のCOBOL断片をルール表で変換し、生成コードが実際にコンパイルでき実際に正しく動くことを確かめる。ルール表エンジンそのものの回帰。",
+  "templateProfile": "compilable-v1",
+  "chainEl": "THEN(validate,analyze,transform,compile,test,qualityGate,report)",
+  "inputMode": "single",
+  "grading": "behaviour",
+  "frozen": true,
+  "frozenReason": "負例 11-uncovered-statements と TransformPipelineTest がこの family の未対応範囲そのものをゲートに使っている。新しいCOBOL構文は cobol-programs へ足すこと。"
+}

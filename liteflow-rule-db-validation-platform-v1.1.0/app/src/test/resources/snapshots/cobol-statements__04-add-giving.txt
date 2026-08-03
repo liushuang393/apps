@@ -1,0 +1,6 @@
+# case: cobol-statements/04-add-giving
+# profile: compilable-v1
+# coverage: total=1 recognised=1 unrecognised=0
+# rule: add-giving x1
+--- generated ---
+vars.put("WS-GROSS", num(vars.get("WS-BASE")) + num(vars.get("WS-BONUS")));

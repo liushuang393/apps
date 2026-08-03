@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>履歴と差分 — LiteFlow ルール管理</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<header>
+  <h1>LiteFlow ルール管理</h1>
+  <nav>
+    <a href="index.html" data-page="rules">ルール一覧</a>
+    <a href="approvals.html" data-page="approvals">承認待ち</a>
+    <a href="audit.html" data-page="audit">監査ログ</a>
+  </nav>
+</header>
+<main>
+  <div id="error"></div>
+  <h2 id="title">履歴と差分</h2>
+  <p class="note" id="current"></p>
+
+  <h2>履歴（発行のたびに記録した発行後の本文）</h2>
+  <table>
+    <thead><tr><th>版</th><th>実行者</th><th>理由</th><th>記録時刻</th><th>本文</th><th>ロールバック</th></tr></thead>
+    <tbody id="revisions"><tr><td colspan="6">読み込み中…</td></tr></tbody>
+  </table>
+
+  <h2>差分</h2>
+  <div class="row">
+    <label>旧 <select id="from"></select></label>
+    <label>新 <select id="to"></select></label>
+    <button id="show-diff" class="primary">差分を表示</button>
+  </div>
+  <pre id="diff">2つの版を選んでください。</pre>
+
+  <h2>ロールバックについて</h2>
+  <p class="warn">
+    LiteFlow に「版を戻す」原語はありません。ロールバックは
+    <strong>指定した版の本文を、現行版に対して前向きに再発行する</strong>操作です。
+    v3 の状態で v2 へ戻すと <strong>v4</strong> になります。履歴は消えません。
+  </p>
+</main>
+<script src="app.js"></script>
+<script>
+const type = query("type") || "CHAIN";
+const id = query("id");
+document.getElementById("title").textContent = `${type} / ${id}`;
+
+function option(v) { return `<option value="${esc(v)}">${esc(v)}</option>`; }
+
+async function loadCurrent() {
+  const rule = await Api.get(`/api/rules/${encodeURIComponent(type)}/${encodeURIComponent(id)}`);
+  document.getElementById("current").innerHTML =
+    `現行版: <strong>${esc(rule.version)}</strong> / 有効: ${rule.enabled} / 最終更新: ${esc(rule.modifiedAt)}`;
+}
+
+async function loadRevisions() {
+  const data = await Api.get(`/api/rules/${encodeURIComponent(type)}/${encodeURIComponent(id)}/revisions`);
+  const from = document.getElementById("from");
+  const to = document.getElementById("to");
+  from.innerHTML = "";
+  to.innerHTML = "";
+  const rows = data.revisions.map((r) => {
+    from.insertAdjacentHTML("beforeend", option(r.version));
+    to.insertAdjacentHTML("beforeend", option(r.version));
+    return `<tr>
+      <td>${esc(r.version)}</td>
+      <td>${esc(r.actor)}</td>
+      <td>${esc(r.comment)}</td>
+      <td>${esc(r.createdAt)}</td>
+      <td><code>${esc((r.body || "").slice(0, 70))}${(r.body || "").length > 70 ? "…" : ""}</code></td>
+      <td><button data-version="${esc(r.version)}" class="rollback">この版へ戻す</button></td>
+    </tr>`;
+  });
+  document.getElementById("revisions").innerHTML =
+    rows.join("") || '<tr><td colspan="6">履歴がまだありません。本基盤の API 経由で発行すると記録されます。</td></tr>';
+  if (data.revisions.length >= 2) {
+    from.value = data.revisions[data.revisions.length - 2].version;
+    to.value = data.revisions[data.revisions.length - 1].version;
+  }
+  document.querySelectorAll("button.rollback").forEach((btn) => {
+    btn.addEventListener("click", () => rollback(Number(btn.dataset.version)));
+  });
+}
+
+async function showDiff() {
+  const from = document.getElementById("from").value;
+  const to = document.getElementById("to").value;
+  const diff = await Api.get(
+    `/api/rules/${encodeURIComponent(type)}/${encodeURIComponent(id)}/diff?from=${from}&to=${to}`);
+  const body = diff.lines.map((line) => {
+    const cls = line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-del" : "";
+    return `<span class="${cls}">${esc(line)}</span>`;
+  }).join("\n");
+  const notes = diff.notes.length ? `<strong>${esc(diff.notes.join(" / "))}</strong>\n\n` : "";
+  document.getElementById("diff").innerHTML =
+    `${notes}変更行数: ${diff.changedLines}\n\n${body}`;
+}
+
+async function rollback(version) {
+  if (!confirm(`版 ${version} の本文を再発行します。新しい版として前向きに進みます。よろしいですか？`)) {
+    return;
+  }
+  try {
+    const result = await Api.post(
+      `/api/rules/${encodeURIComponent(type)}/${encodeURIComponent(id)}/rollback`,
+      { toVersion: version, comment: `画面からロールバック（版 ${version}）` });
+    alert(`版 ${result.restoredFromVersion} の本文を版 ${result.newVersion} として再発行しました。`);
+    location.reload();
+  } catch (err) { showError(err); }
+}
+
+renderNav("rules");
+document.getElementById("show-diff").addEventListener("click", () => showDiff().catch(showError));
+(async () => {
+  try { await loadCurrent(); await loadRevisions(); } catch (err) { showError(err); }
+})();
+</script>
+</body>
+</html>

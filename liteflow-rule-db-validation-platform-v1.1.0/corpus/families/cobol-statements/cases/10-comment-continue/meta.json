@@ -1,0 +1,14 @@
+{
+  "title": "コメントとCONTINUE",
+  "purpose": "認識はするが出力が空、というものを未カバーではなくカバー済みとして数えること。",
+  "covers": [
+    "comment",
+    "CONTINUE",
+    "MOVE"
+  ],
+  "knownGaps": [
+    "7桁目の標識領域をモデル化していない。先頭の非空白文字でコメントを判定している"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

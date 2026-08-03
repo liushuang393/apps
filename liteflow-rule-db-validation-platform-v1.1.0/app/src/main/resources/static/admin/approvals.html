@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>承認 — LiteFlow ルール管理</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<header>
+  <h1>LiteFlow ルール管理</h1>
+  <nav>
+    <a href="index.html" data-page="rules">ルール一覧</a>
+    <a href="approvals.html" data-page="approvals">承認待ち</a>
+    <a href="audit.html" data-page="audit">監査ログ</a>
+  </nav>
+</header>
+<main>
+  <div id="error"></div>
+
+  <h2>変更を申請する</h2>
+  <p class="note">
+    申請は LiteFlow へは<strong>まだ発行されません</strong>。承認された瞬間に
+    <code>RulePublisher</code> 経由で発行され、状態が <code>APPLIED</code> になります。
+    承認したのに発行に失敗した場合は <code>APPROVED</code> で止まるので、
+    「承認済みだが未反映」が見分けられます。
+  </p>
+  <div class="row">
+    <label>種別
+      <select id="targetType"><option>CHAIN</option><option>SCRIPT</option></select>
+    </label>
+    <label>ID <input id="targetId" size="28" placeholder="chainId または nodeId"/></label>
+    <label>理由 <input id="comment" size="30" placeholder="なぜ変えるのか"/></label>
+  </div>
+  <textarea id="body" placeholder="chain なら EL（例: THEN(validate,transform,report)）、script なら本文"></textarea>
+  <div class="row"><button id="submit" class="primary">申請する</button></div>
+
+  <h2>申請一覧</h2>
+  <div class="row">
+    <label>状態
+      <select id="statusFilter">
+        <option value="">すべて</option>
+        <option value="PENDING">PENDING</option>
+        <option value="APPLIED">APPLIED</option>
+        <option value="APPROVED">APPROVED</option>
+        <option value="REJECTED">REJECTED</option>
+      </select>
+    </label>
+    <button id="reload">再読み込み</button>
+  </div>
+  <table>
+    <thead><tr>
+      <th>#</th><th>状態</th><th>対象</th><th>本文</th><th>申請者</th><th>理由</th>
+      <th>判断者</th><th>反映版</th><th>操作</th>
+    </tr></thead>
+    <tbody id="approvals"><tr><td colspan="9">読み込み中…</td></tr></tbody>
+  </table>
+</main>
+<script src="app.js"></script>
+<script>
+renderNav("approvals");
+
+async function load() {
+  const status = document.getElementById("statusFilter").value;
+  const data = await Api.get("/api/rules/approvals" + (status ? "?status=" + status : ""));
+  const rows = data.approvals.map((a) => `<tr>
+    <td>${esc(a.id)}</td>
+    <td><span class="badge ${esc(a.status)}">${esc(a.status)}</span></td>
+    <td>${esc(a.targetType)} / <code>${esc(a.targetId)}</code></td>
+    <td><code>${esc((a.body || "").slice(0, 60))}${(a.body || "").length > 60 ? "…" : ""}</code></td>
+    <td>${esc(a.requestedBy)}</td>
+    <td>${esc(a.comment)}</td>
+    <td>${esc(a.decidedBy)}</td>
+    <td>${esc(a.appliedVersion)}</td>
+    <td>${a.status === "PENDING"
+        ? `<button class="primary approve" data-id="${a.id}">承認</button>
+           <button class="reject" data-id="${a.id}">却下</button>`
+        : ""}</td>
+  </tr>`);
+  document.getElementById("approvals").innerHTML =
+    rows.join("") || '<tr><td colspan="9">申請はありません。</td></tr>';
+  document.querySelectorAll("button.approve").forEach((b) =>
+    b.addEventListener("click", () => decide(b.dataset.id, "approve")));
+  document.querySelectorAll("button.reject").forEach((b) =>
+    b.addEventListener("click", () => decide(b.dataset.id, "reject")));
+}
+
+async function decide(id, action) {
+  const note = prompt(action === "approve" ? "承認メモ" : "却下理由", "");
+  if (note === null) { return; }
+  try {
+    await Api.post(`/api/rules/approvals/${id}/${action}`, { note });
+    await load();
+  } catch (err) { showError(err); }
+}
+
+document.getElementById("submit").addEventListener("click", async () => {
+  try {
+    await Api.post("/api/rules/approvals", {
+      targetType: document.getElementById("targetType").value,
+      targetId: document.getElementById("targetId").value,
+      body: document.getElementById("body").value,
+      comment: document.getElementById("comment").value,
+    });
+    document.getElementById("body").value = "";
+    await load();
+  } catch (err) { showError(err); }
+});
+document.getElementById("reload").addEventListener("click", () => load().catch(showError));
+document.getElementById("statusFilter").addEventListener("change", () => load().catch(showError));
+load().catch(showError);
+</script>
+</body>
+</html>

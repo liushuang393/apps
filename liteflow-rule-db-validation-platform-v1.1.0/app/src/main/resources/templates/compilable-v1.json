@@ -1,0 +1,131 @@
+{
+  "profile": "compilable-v1",
+  "version": 1,
+  "owner": "migration-team",
+  "targetStyle": "Map載体方式: 文は Map<String,Object> vars を操作するため、COBOLデータ項目を宣言せずに生成コードがコンパイル・実行できる",
+  "notes": "【凍結】このプロファイルは変更しないこと。負例 corpus/families/cobol-statements/cases/11-uncovered-statements と TransformPipelineTest.qualityGateRejectsUncoveredStatements（unrecognisedLines==2）が本プロファイルの未対応範囲そのものをゲートとして使っているため、PERFORM や EVALUATE のルールを足すと両方のゲートが同時に退行する。新しいCOBOL構文は cobol-programs-v1 など別プロファイルへ追加すること。 / ルールの順序が重要。最初にマッチしたパターンが勝つ。正規表現の名前付きグループがテンプレート変数になる。グループ g に対し ${g} は原文、${g}Java は識別子として安全な形、${g}Expr は値を返すJava式、${g}Mapped は maps.g で変換した値、${g}List は空白区切りトークンをJava文字列リテラルのカンマ区切りにしたもの。",
+  "maps": {
+    "op": {
+      "=": "==",
+      "EQUAL": "==",
+      "EQUALS": "==",
+      "NOT=": "!=",
+      "<>": "!=",
+      ">": ">",
+      "<": "<",
+      ">=": ">=",
+      "<=": "<=",
+      "GREATER": ">",
+      "LESS": "<"
+    },
+    "arith": {
+      "+": "+",
+      "-": "-",
+      "*": "*",
+      "/": "/"
+    }
+  },
+  "rules": [
+    {
+      "id": "comment",
+      "statement": "コメント",
+      "appliesTo": "7桁目相当で * または / から始まる行",
+      "pattern": "^[*/].*$",
+      "template": "",
+      "notes": "認識するが意図的に何も出力しない。"
+    },
+    {
+      "id": "move",
+      "statement": "MOVE",
+      "appliesTo": "MOVE <source> TO <target>",
+      "pattern": "^MOVE\\s+(?<source>\\S+)\\s+TO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", ${sourceExpr});"
+    },
+    {
+      "id": "add",
+      "statement": "ADD",
+      "appliesTo": "ADD <source> TO <target>",
+      "pattern": "^ADD\\s+(?<source>\\S+)\\s+TO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(vars.get(\"${target}\")) + num(${sourceExpr}));"
+    },
+    {
+      "id": "add-giving",
+      "statement": "ADD",
+      "appliesTo": "ADD <a> TO <b> GIVING <target>",
+      "pattern": "^ADD\\s+(?<left>\\S+)\\s+TO\\s+(?<right>\\S+)\\s+GIVING\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(${leftExpr}) + num(${rightExpr}));"
+    },
+    {
+      "id": "subtract",
+      "statement": "SUBTRACT",
+      "appliesTo": "SUBTRACT <source> FROM <target>",
+      "pattern": "^SUBTRACT\\s+(?<source>\\S+)\\s+FROM\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(vars.get(\"${target}\")) - num(${sourceExpr}));"
+    },
+    {
+      "id": "multiply",
+      "statement": "MULTIPLY",
+      "appliesTo": "MULTIPLY <source> BY <target>",
+      "pattern": "^MULTIPLY\\s+(?<source>\\S+)\\s+BY\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(vars.get(\"${target}\")) * num(${sourceExpr}));"
+    },
+    {
+      "id": "divide",
+      "statement": "DIVIDE",
+      "appliesTo": "DIVIDE <source> INTO <target>",
+      "pattern": "^DIVIDE\\s+(?<source>\\S+)\\s+INTO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(vars.get(\"${target}\")) / num(${sourceExpr}));"
+    },
+    {
+      "id": "compute-binary",
+      "statement": "COMPUTE",
+      "appliesTo": "COMPUTE <target> = <a> <op> <b>",
+      "pattern": "^COMPUTE\\s+(?<target>[A-Za-z0-9_-]+)\\s*=\\s*(?<left>\\S+)\\s+(?<arith>[-+*/])\\s+(?<right>\\S+?)\\s*\\.?\\s*$",
+      "template": "vars.put(\"${target}\", num(${leftExpr}) ${arithMapped} num(${rightExpr}));",
+      "notes": "演算子の両側の空白は必須。COBOLの要件と一致する。これが無いと 'COMPUTE A = WS-SOURCE' がデータ名のハイフンのせいで WS 引く SOURCE と読まれる。"
+    },
+    {
+      "id": "compute-copy",
+      "statement": "COMPUTE",
+      "appliesTo": "COMPUTE <target> = <a>",
+      "pattern": "^COMPUTE\\s+(?<target>[A-Za-z0-9_-]+)\\s*=\\s*(?<source>\\S+?)\\s*\\.?\\s*$",
+      "template": "vars.put(\"${target}\", num(${sourceExpr}));"
+    },
+    {
+      "id": "if-compare",
+      "statement": "IF",
+      "appliesTo": "IF <a> <op> <b> [THEN]",
+      "pattern": "^IF\\s+(?<left>\\S+)\\s*(?<op>NOT\\s*=|<>|>=|<=|=|>|<)\\s*(?<right>\\S+?)\\s*(?:THEN)?\\s*\\.?\\s*$",
+      "template": "if (num(${leftExpr}) ${opMapped} num(${rightExpr})) {",
+      "notes": "数値比較のみ。英数字比較は未対応であり、コーパスの未カバー報告を参照のこと。"
+    },
+    {
+      "id": "else",
+      "statement": "ELSE",
+      "appliesTo": "ELSE",
+      "pattern": "^ELSE\\s*$",
+      "template": "} else {"
+    },
+    {
+      "id": "end-if",
+      "statement": "END-IF",
+      "appliesTo": "END-IF",
+      "pattern": "^END-IF\\s*\\.?$",
+      "template": "}"
+    },
+    {
+      "id": "display",
+      "statement": "DISPLAY",
+      "appliesTo": "DISPLAY <value>",
+      "pattern": "^DISPLAY\\s+(?<value>.+?)\\s*\\.?$",
+      "template": "out.add(String.valueOf(${valueExpr}));"
+    },
+    {
+      "id": "continue",
+      "statement": "CONTINUE",
+      "appliesTo": "CONTINUE",
+      "pattern": "^CONTINUE\\s*\\.?$",
+      "template": ";"
+    }
+  ]
+}

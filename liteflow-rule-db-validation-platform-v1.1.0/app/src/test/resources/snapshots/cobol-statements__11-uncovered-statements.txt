@@ -1,0 +1,14 @@
+# case: cobol-statements/11-uncovered-statements
+# profile: compilable-v1
+# coverage: total=5 recognised=1 unrecognised=4
+# rule: move x1
+# unrecognised: PERFORM VALIDATE-CUSTOMER.
+# unrecognised: EVALUATE WS-STATUS
+# unrecognised: WHEN 1 MOVE 'OK' TO WS-MSG
+# unrecognised: END-EVALUATE.
+--- generated ---
+vars.put("WS-FLAG", 1);
+/* missing template: unknown */
+/* missing template: unknown */
+/* missing template: unknown */
+/* missing template: unknown */

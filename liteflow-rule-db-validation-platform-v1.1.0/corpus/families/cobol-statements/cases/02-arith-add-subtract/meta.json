@@ -1,0 +1,17 @@
+{
+  "title": "ADD / SUBTRACT",
+  "purpose": "バッチCOBOLで2番目に多い算術累算。",
+  "covers": [
+    "comment",
+    "ADD",
+    "SUBTRACT"
+  ],
+  "knownGaps": [
+    "ON SIZE ERROR",
+    "ROUNDED",
+    "複数対象（ADD X TO A B C）",
+    "小数はdoubleでありCOMP-3ではない"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

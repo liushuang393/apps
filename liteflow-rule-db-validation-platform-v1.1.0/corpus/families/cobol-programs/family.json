@@ -1,0 +1,9 @@
+{
+  "family": "cobol-programs",
+  "title": "COBOL プログラム変換（複数ファイル・分岐・ループ・GO TO・CALL）",
+  "purpose": "1本の主プログラムが2本の従プログラムを CALL する構成で、分岐（IF / EVALUATE）・ループ（PERFORM UNTIL / VARYING / TIMES）・GO TO・段落構造・LINKAGE を、ルール表だけでJavaへ落とせるかを確かめる。判定は生成コードを実際に javac して実際に実行し、期待値と突き合わせる。",
+  "templateProfile": "cobol-programs-v1",
+  "chainEl": "THEN(validate,analyze,transform,compile,test,qualityGate,report)",
+  "inputMode": "multi",
+  "grading": "behaviour"
+}

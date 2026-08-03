@@ -1,0 +1,52 @@
+[
+  {
+    "name": "3件を集計して課税し、上位ランクのラベルを従プログラムから得る",
+    "given": { "WS-COUNT": 3, "WS-UNIT": 400, "WS-RATE": 8 },
+    "expect": {
+      "WS-SUBTOTAL": 1200,
+      "WS-TAX": 96,
+      "WS-TOTAL": 1296,
+      "WS-RANK": 3,
+      "WS-LABEL": "GOLD",
+      "WS-INDEX": 4
+    },
+    "expectDisplay": ["GOLD"]
+  },
+  {
+    "name": "件数0のとき IF の中の GO TO で集計以降を飛ばし、EMPTY を表示する",
+    "given": { "WS-COUNT": 0, "WS-UNIT": 400, "WS-RATE": 8 },
+    "expect": {
+      "WS-SUBTOTAL": 0,
+      "WS-TAX": 0,
+      "WS-TOTAL": 0,
+      "WS-RANK": 0,
+      "WS-LABEL": "EMPTY"
+    },
+    "expectDisplay": ["EMPTY"]
+  },
+  {
+    "name": "合計が閾値以下なら EVALUATE の OTHER 側の ELSE を通り SILVER になる",
+    "given": { "WS-COUNT": 1, "WS-UNIT": 100, "WS-RATE": 10 },
+    "expect": {
+      "WS-SUBTOTAL": 100,
+      "WS-TAX": 10,
+      "WS-TOTAL": 110,
+      "WS-RANK": 1,
+      "WS-LABEL": "SILVER",
+      "WS-INDEX": 2
+    },
+    "expectDisplay": ["SILVER"]
+  },
+  {
+    "name": "従プログラムの WORKING-STORAGE が呼び出し元の同名項目を壊さない",
+    "given": { "WS-COUNT": 2, "WS-UNIT": 50, "WS-RATE": 0 },
+    "expect": {
+      "WS-SUBTOTAL": 100,
+      "WS-TAX": 0,
+      "WS-TOTAL": 100,
+      "WS-INDEX": 3,
+      "WS-LABEL": "SILVER"
+    },
+    "expectDisplay": ["SILVER"]
+  }
+]

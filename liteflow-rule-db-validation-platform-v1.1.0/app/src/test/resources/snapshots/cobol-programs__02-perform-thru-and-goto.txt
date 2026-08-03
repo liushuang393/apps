@@ -1,0 +1,38 @@
+# case: cobol-programs/02-perform-thru-and-goto
+# profile: cobol-programs-v1
+# coverage: total=17 recognised=17 unrecognised=0
+# rule: add x4
+# rule: display x1
+# rule: end-if x1
+# rule: exit-paragraph x1
+# rule: go-to x2
+# rule: if-compare x1
+# rule: move-numeric x1
+# rule: perform-inline-close x2
+# rule: perform-inline-times x1
+# rule: perform-thru x1
+# rule: perform-varying x1
+# rule: stop-run x1
+--- artifact: LOOPPGM#FINISH-PARA ---
+out.add(String.valueOf(vars.get("WS-SUM")));
+stopRun();
+--- artifact: LOOPPGM#MAIN-PARA ---
+perform(vars, out, "STEP-A", "STEP-EXIT");
+for (vars.put("WS-I", num(1)); !(num(vars.get("WS-I")) > num(4)); vars.put("WS-I", num(vars.get("WS-I")) + num(1))) {
+vars.put("WS-SUM", num(vars.get("WS-SUM")) + num(vars.get("WS-I")));
+}
+for (long _t0 = (long) num(3); _t0 > 0; _t0--) {
+vars.put("WS-SUM", num(vars.get("WS-SUM")) + num(100));
+}
+return "FINISH-PARA";
+--- artifact: LOOPPGM#STEP-A ---
+vars.put("WS-SUM", num(vars.get("WS-SUM")) + num(10));
+if (num(vars.get("WS-BAIL")) == num(1)) {
+return "STEP-EXIT";
+}
+--- artifact: LOOPPGM#STEP-B ---
+vars.put("WS-SUM", num(vars.get("WS-SUM")) + num(20));
+--- artifact: LOOPPGM#STEP-EXIT ---
+;
+--- artifact: LOOPPGM#UNREACHED-PARA ---
+vars.put("WS-SKIPPED", num(1));

@@ -1,0 +1,119 @@
+name: liteflow-rule-db-validation
+
+services:
+  mariadb:
+    image: mariadb:11.4.12
+    environment:
+      MARIADB_DATABASE: liteflow_rules
+      MARIADB_USER: liteflow
+      MARIADB_PASSWORD: liteflow_password
+      MARIADB_ROOT_PASSWORD: root_password
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+    # 他のサービスと同じ再起動ポリシー。これが無いと MariaDB だけが落ちたまま残り、
+    # restart: unless-stopped の Executor が延々と再起動を繰り返すことになる。
+    restart: unless-stopped
+
+  executor-a:
+    image: liteflow-rule-db-validation-app:1.0.0
+    build:
+      context: ./app
+    environment:
+      INSTANCE_ID: executor-a
+      SERVER_PORT: 8080
+      SPRING_APPLICATION_NAME: liteflow-validation-platform
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/liteflow_rules
+      SPRING_DATASOURCE_USERNAME: liteflow
+      SPRING_DATASOURCE_PASSWORD: liteflow_password
+      SPRING_DATASOURCE_DRIVER: org.mariadb.jdbc.Driver
+      RULE_DB_POLL_SECONDS: 1
+      RULE_DB_RECONCILE_SECONDS: 10
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./reports:/work/reports
+    restart: unless-stopped
+
+  executor-b:
+    image: liteflow-rule-db-validation-app:1.0.0
+    environment:
+      INSTANCE_ID: executor-b
+      SERVER_PORT: 8080
+      SPRING_APPLICATION_NAME: liteflow-validation-platform
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/liteflow_rules
+      SPRING_DATASOURCE_USERNAME: liteflow
+      SPRING_DATASOURCE_PASSWORD: liteflow_password
+      SPRING_DATASOURCE_DRIVER: org.mariadb.jdbc.Driver
+      RULE_DB_POLL_SECONDS: 1
+      RULE_DB_RECONCILE_SECONDS: 10
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./reports:/work/reports
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.13.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - executor-a
+      - executor-b
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.1.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  validator:
+    image: python:3.13-slim
+    working_dir: /validator
+    volumes:
+      - ./validator:/validator:ro
+      - ./reports:/reports
+    depends_on:
+      - executor-a
+      - executor-b
+      - prometheus
+      - grafana
+    entrypoint: ["python", "/validator/validate.py"]
+
+volumes:
+  mariadb-data:
+  prometheus-data:
+  grafana-data:

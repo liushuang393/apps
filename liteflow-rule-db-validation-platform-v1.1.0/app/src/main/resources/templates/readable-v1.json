@@ -1,0 +1,104 @@
+{
+  "profile": "readable-v1",
+  "version": 1,
+  "owner": "migration-team",
+  "targetStyle": "人が読むJavaフィールド形式: this.FIELD = ... を出力する。COBOLデータ項目を宣言しないため単体ではコンパイルできない。レビューと差分確認に使い、コンパイル/テストのゲートには使わないこと。",
+  "notes": "ルールIDは compilable-v1 と揃えてあるため、プロファイル間でカバレッジ数値を比較できる。",
+  "maps": {
+    "op": {
+      "=": "==",
+      "NOT=": "!=",
+      "<>": "!=",
+      ">": ">",
+      "<": "<",
+      ">=": ">=",
+      "<=": "<="
+    },
+    "arith": {
+      "+": "+",
+      "-": "-",
+      "*": "*",
+      "/": "/"
+    }
+  },
+  "rules": [
+    {
+      "id": "comment",
+      "statement": "comment",
+      "pattern": "^[*/].*$",
+      "template": ""
+    },
+    {
+      "id": "move",
+      "statement": "MOVE",
+      "pattern": "^MOVE\\s+(?<source>\\S+)\\s+TO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "this.${targetJava} = ${sourceJava};   // MOVE"
+    },
+    {
+      "id": "add",
+      "statement": "ADD",
+      "pattern": "^ADD\\s+(?<source>\\S+)\\s+TO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "this.${targetJava} += ${sourceJava};   // ADD"
+    },
+    {
+      "id": "subtract",
+      "statement": "SUBTRACT",
+      "pattern": "^SUBTRACT\\s+(?<source>\\S+)\\s+FROM\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "this.${targetJava} -= ${sourceJava};   // SUBTRACT"
+    },
+    {
+      "id": "multiply",
+      "statement": "MULTIPLY",
+      "pattern": "^MULTIPLY\\s+(?<source>\\S+)\\s+BY\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "this.${targetJava} *= ${sourceJava};   // MULTIPLY"
+    },
+    {
+      "id": "divide",
+      "statement": "DIVIDE",
+      "pattern": "^DIVIDE\\s+(?<source>\\S+)\\s+INTO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "this.${targetJava} /= ${sourceJava};   // DIVIDE"
+    },
+    {
+      "id": "compute-binary",
+      "statement": "COMPUTE",
+      "pattern": "^COMPUTE\\s+(?<target>[A-Za-z0-9_-]+)\\s*=\\s*(?<left>\\S+)\\s+(?<arith>[-+*/])\\s+(?<right>\\S+?)\\s*\\.?\\s*$",
+      "template": "this.${targetJava} = ${leftJava} ${arithMapped} ${rightJava};   // COMPUTE"
+    },
+    {
+      "id": "compute-copy",
+      "statement": "COMPUTE",
+      "pattern": "^COMPUTE\\s+(?<target>[A-Za-z0-9_-]+)\\s*=\\s*(?<source>\\S+?)\\s*\\.?\\s*$",
+      "template": "this.${targetJava} = ${sourceJava};   // COMPUTE"
+    },
+    {
+      "id": "if-compare",
+      "statement": "IF",
+      "pattern": "^IF\\s+(?<left>\\S+)\\s*(?<op>NOT\\s*=|<>|>=|<=|=|>|<)\\s*(?<right>\\S+?)\\s*(?:THEN)?\\s*\\.?\\s*$",
+      "template": "if (${leftJava} ${opMapped} ${rightJava}) {"
+    },
+    {
+      "id": "else",
+      "statement": "ELSE",
+      "pattern": "^ELSE\\s*$",
+      "template": "} else {"
+    },
+    {
+      "id": "end-if",
+      "statement": "END-IF",
+      "pattern": "^END-IF\\s*\\.?$",
+      "template": "}"
+    },
+    {
+      "id": "display",
+      "statement": "DISPLAY",
+      "pattern": "^DISPLAY\\s+(?<value>.+?)\\s*\\.?$",
+      "template": "log.info(\"{}\", ${valueJava});   // DISPLAY"
+    },
+    {
+      "id": "continue",
+      "statement": "CONTINUE",
+      "pattern": "^CONTINUE\\s*\\.?$",
+      "template": ";"
+    }
+  ]
+}

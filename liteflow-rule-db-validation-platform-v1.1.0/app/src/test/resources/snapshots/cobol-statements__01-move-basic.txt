@@ -1,0 +1,8 @@
+# case: cobol-statements/01-move-basic
+# profile: compilable-v1
+# coverage: total=3 recognised=3 unrecognised=0
+# rule: comment x1
+# rule: move x2
+--- generated ---
+vars.put("WS-OUT-ID", vars.get("WS-CUSTOMER-ID"));
+vars.put("WS-COUNTER", 42);

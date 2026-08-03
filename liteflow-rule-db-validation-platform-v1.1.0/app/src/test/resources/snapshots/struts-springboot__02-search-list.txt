@@ -1,0 +1,116 @@
+# case: struts-springboot/02-search-list
+# profile: struts-to-boot-v1
+# coverage: total=72 recognised=72 unrecognised=0
+# rule: action-execute x1
+# rule: action-execute-args x1
+# rule: action-form-cast x1
+# rule: action-forward-success x1
+# rule: action-method-close x1
+# rule: action-set-attribute x2
+# rule: config-action-close x1
+# rule: config-action-open x1
+# rule: config-form-bean x1
+# rule: config-forward x1
+# rule: config-shell x6
+# rule: config-xml-decl x1
+# rule: form-body-assign x3
+# rule: form-body-return x3
+# rule: form-field x3
+# rule: form-getter x3
+# rule: form-method-close x6
+# rule: form-setter x3
+# rule: java-class-close x2
+# rule: java-class-decl x2
+# rule: java-import x8
+# rule: java-package x2
+# rule: jsp-directive x3
+# rule: jsp-heading x1
+# rule: jsp-html-form-close x1
+# rule: jsp-html-form-open x1
+# rule: jsp-html-link x1
+# rule: jsp-html-submit x1
+# rule: jsp-html-text x2
+# rule: jsp-logic-iterate-close x1
+# rule: jsp-logic-iterate-open x1
+# rule: jsp-shell x7
+# file: SearchAction.java total=17 recognised=17 unrecognised=0
+# file: SearchForm.java total=25 recognised=25 unrecognised=0
+# file: search.jsp total=19 recognised=19 unrecognised=0
+# file: struts-config.xml total=11 recognised=11 unrecognised=0
+--- artifact: Search.html ---
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8"/>
+<title>検索一覧</title>
+</head>
+<body>
+<h1>検索一覧</h1>
+<form th:action="@{/search}" th:object="${form}" method="post">
+<input type="text" th:field="*{keyword}"/>
+<input type="text" th:field="*{status}"/>
+<button type="submit">検索</button>
+</form>
+<div th:each="row : ${rows}">
+<a th:href="@{/detail}">明細</a>
+</div>
+</body>
+</html>
+--- artifact: SearchController.java ---
+package generated;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+@Controller
+@RequestMapping("/search")
+public class SearchController {
+
+    @GetMapping
+    public String show(@ModelAttribute("form") SearchForm form) {
+        return "search";
+    }
+
+    @PostMapping
+    public String submit(@ModelAttribute("form") SearchForm form, Model model) {
+        model.addAttribute("keyword", form.getKeyword());
+        model.addAttribute("rows", form.getRows());
+        return "search";
+    }
+}
+--- artifact: SearchForm.java ---
+package generated;
+
+public class SearchForm {
+    private String keyword;
+    private String status;
+    private String rows;
+
+    public String getKeyword() {
+        return keyword;
+    }
+
+    public void setKeyword(String keyword) {
+        this.keyword = keyword;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getRows() {
+        return rows;
+    }
+
+    public void setRows(String rows) {
+        this.rows = rows;
+    }
+}

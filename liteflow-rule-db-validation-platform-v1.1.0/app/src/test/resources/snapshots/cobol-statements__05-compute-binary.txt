@@ -1,0 +1,7 @@
+# case: cobol-statements/05-compute-binary
+# profile: compilable-v1
+# coverage: total=2 recognised=2 unrecognised=0
+# rule: compute-binary x2
+--- generated ---
+vars.put("WS-NET", num(vars.get("WS-GROSS")) - num(vars.get("WS-TAX")));
+vars.put("WS-DOUBLE", num(vars.get("WS-NET")) * num(2));

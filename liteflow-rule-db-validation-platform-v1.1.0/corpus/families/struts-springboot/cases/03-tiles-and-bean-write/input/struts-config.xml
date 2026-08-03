@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<struts-config>
+  <form-beans>
+    <form-bean name="detailForm" type="jp.co.softroad.legacy.form.DetailForm"/>
+  </form-beans>
+  <action-mappings>
+    <action path="/detail" type="jp.co.softroad.legacy.action.DetailAction" name="detailForm" scope="request" input="/detail.jsp">
+      <forward name="success" path="/detail.jsp"/>
+    </action>
+  </action-mappings>
+</struts-config>

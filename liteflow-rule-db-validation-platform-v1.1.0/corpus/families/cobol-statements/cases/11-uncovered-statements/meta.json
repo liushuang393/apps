@@ -1,0 +1,14 @@
+{
+  "title": "負例: ルールライブラリが対応していない文形式",
+  "purpose": "PERFORM と EVALUATE は実COBOLで頻出だが未対応である。ゲートは部分的なコードを黙って出さず、これを拒否しなければならない。このケースが通るようになったらカバレッジゲートが機能していない。",
+  "covers": [
+    "MOVE"
+  ],
+  "knownGaps": [
+    "PERFORM（段落呼び出し）",
+    "PERFORM VARYING/UNTIL",
+    "EVALUATE / WHEN / END-EVALUATE"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "FAIL"
+}

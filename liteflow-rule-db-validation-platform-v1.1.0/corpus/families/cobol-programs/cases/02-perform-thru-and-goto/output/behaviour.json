@@ -1,0 +1,14 @@
+[
+  {
+    "name": "GO TO で範囲内の出口へ飛ぶと STEP-B を飛ばして PERFORM から戻る",
+    "given": { "WS-BAIL": 1 },
+    "expect": { "WS-SUM": 320, "WS-I": 5, "WS-SKIPPED": 0 },
+    "expectDisplay": ["320.0"]
+  },
+  {
+    "name": "飛ばない場合は STEP-A と STEP-B の両方が走る",
+    "given": { "WS-BAIL": 0 },
+    "expect": { "WS-SUM": 340, "WS-I": 5, "WS-SKIPPED": 0 },
+    "expectDisplay": ["340.0"]
+  }
+]

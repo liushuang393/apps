@@ -1,0 +1,14 @@
+{
+  "title": "DISPLAY",
+  "purpose": "データ項目だけでなく副作用出力も捕捉して検査する。",
+  "covers": [
+    "DISPLAY"
+  ],
+  "knownGaps": [
+    "最初のトークン以降に空白を含む場合は扱えるが、複数オペランドのDISPLAYは未対応",
+    "UPON CONSOLE",
+    "WITH NO ADVANCING"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

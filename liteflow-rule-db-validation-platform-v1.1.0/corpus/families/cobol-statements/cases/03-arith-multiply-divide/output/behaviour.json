@@ -1,0 +1,12 @@
+[
+  {
+    "name": "multiplies then halves",
+    "given":  { "WS-QTY": 3, "WS-AMOUNT": 100 },
+    "expect": { "WS-AMOUNT": 150 }
+  },
+  {
+    "name": "fractional result is preserved",
+    "given":  { "WS-QTY": 1, "WS-AMOUNT": 5 },
+    "expect": { "WS-AMOUNT": 2.5 }
+  }
+]

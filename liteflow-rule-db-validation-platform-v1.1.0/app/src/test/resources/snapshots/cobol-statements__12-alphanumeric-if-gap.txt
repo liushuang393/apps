@@ -1,0 +1,15 @@
+# case: cobol-statements/12-alphanumeric-if-gap
+# profile: compilable-v1
+# coverage: total=9 recognised=9 unrecognised=0
+# rule: comment x3
+# rule: else x1
+# rule: end-if x1
+# rule: if-compare x1
+# rule: move x3
+--- generated ---
+vars.put("WS-NAME", "ABC");
+if (num(vars.get("WS-NAME")) == num("ABC")) {
+vars.put("WS-MATCH", 1);
+} else {
+vars.put("WS-MATCH", 0);
+}

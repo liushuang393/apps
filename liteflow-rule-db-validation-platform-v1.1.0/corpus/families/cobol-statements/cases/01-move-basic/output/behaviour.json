@@ -1,0 +1,12 @@
+[
+  {
+    "name": "copies source variable and numeric literal",
+    "given":  { "WS-CUSTOMER-ID": 1001, "WS-OUT-ID": 0, "WS-COUNTER": 0 },
+    "expect": { "WS-OUT-ID": 1001, "WS-COUNTER": 42 }
+  },
+  {
+    "name": "source value of zero still copies",
+    "given":  { "WS-CUSTOMER-ID": 0, "WS-OUT-ID": 999, "WS-COUNTER": 0 },
+    "expect": { "WS-OUT-ID": 0, "WS-COUNTER": 42 }
+  }
+]

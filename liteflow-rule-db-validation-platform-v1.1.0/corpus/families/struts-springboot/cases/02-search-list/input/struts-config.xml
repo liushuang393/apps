@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<struts-config>
+  <form-beans>
+    <form-bean name="searchForm" type="jp.co.softroad.legacy.form.SearchForm"/>
+  </form-beans>
+  <action-mappings>
+    <action path="/search" type="jp.co.softroad.legacy.action.SearchAction" name="searchForm" scope="request" input="/search.jsp">
+      <forward name="success" path="/search.jsp"/>
+    </action>
+  </action-mappings>
+</struts-config>

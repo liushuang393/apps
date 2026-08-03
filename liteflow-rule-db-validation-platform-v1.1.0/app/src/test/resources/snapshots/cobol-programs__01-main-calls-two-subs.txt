@@ -1,0 +1,70 @@
+# case: cobol-programs/01-main-calls-two-subs
+# profile: cobol-programs-v1
+# coverage: total=40 recognised=40 unrecognised=0
+# rule: add x2
+# rule: call-using x2
+# rule: compute-binary x2
+# rule: display x1
+# rule: divide x1
+# rule: else x1
+# rule: end-if x2
+# rule: evaluate-close x2
+# rule: evaluate-open x2
+# rule: evaluate-when x3
+# rule: evaluate-when-other x2
+# rule: go-to x2
+# rule: goback x2
+# rule: if-compare x2
+# rule: move x5
+# rule: move-numeric x6
+# rule: perform-para x1
+# rule: perform-until x1
+# rule: stop-run x1
+--- artifact: MAINPGM#ACCUM-PARA ---
+vars.put("WS-SUBTOTAL", num(vars.get("WS-SUBTOTAL")) + num(vars.get("WS-UNIT")));
+vars.put("WS-INDEX", num(vars.get("WS-INDEX")) + num(1));
+--- artifact: MAINPGM#MAIN-PARA ---
+vars.put("WS-SUBTOTAL", num(0));
+vars.put("WS-INDEX", num(1));
+while (!(num(vars.get("WS-INDEX")) > num(vars.get("WS-COUNT")))) { perform(vars, out, "ACCUM-PARA", "ACCUM-PARA"); }
+if (num(vars.get("WS-SUBTOTAL")) == num(0)) {
+vars.put("WS-LABEL", "EMPTY");
+return "REPORT-PARA";
+}
+generated.SUBTAX.call(vars, out, "WS-SUBTOTAL", "WS-RATE", "WS-TAX");
+vars.put("WS-TOTAL", num(vars.get("WS-SUBTOTAL")) + num(vars.get("WS-TAX")));
+perform(vars, out, "RANK-PARA", "RANK-PARA");
+generated.SUBLABEL.call(vars, out, "WS-RANK", "WS-LABEL");
+return "REPORT-PARA";
+--- artifact: MAINPGM#RANK-PARA ---
+{ double _e0 = num(vars.get("WS-TOTAL")); if (false) {
+} else if (_e0 == num(0)) {
+vars.put("WS-RANK", num(0));
+} else {
+if (num(vars.get("WS-TOTAL")) > num(1000)) {
+vars.put("WS-RANK", num(3));
+} else {
+vars.put("WS-RANK", num(1));
+}
+} }
+--- artifact: MAINPGM#REPORT-PARA ---
+out.add(String.valueOf(vars.get("WS-LABEL")));
+stopRun();
+--- artifact: MAINPGM#SKIPPED-PARA ---
+vars.put("WS-LABEL", "NEVER");
+--- artifact: SUBLABEL#LABEL-PARA ---
+{ double _e0 = num(vars.get("LK-RANK")); if (false) {
+} else if (_e0 == num(3)) {
+vars.put("LK-TEXT", "GOLD");
+} else if (_e0 == num(1)) {
+vars.put("LK-TEXT", "SILVER");
+} else {
+vars.put("LK-TEXT", "NONE");
+} }
+goback();
+--- artifact: SUBTAX#TAX-NEVER-PARA ---
+vars.put("LK-TAX", num(999999));
+--- artifact: SUBTAX#TAX-PARA ---
+vars.put("LK-TAX", num(vars.get("LK-AMOUNT")) * num(vars.get("LK-RATE")));
+vars.put("LK-TAX", num(vars.get("LK-TAX")) / num(100));
+goback();

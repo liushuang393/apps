@@ -1,0 +1,380 @@
+{
+  "profile": "cobol-programs-v1",
+  "version": 1,
+  "owner": "migration-team",
+  "targetStyle": "段落ディスパッチ方式: 1プログラム = 1Javaクラス。段落はラベル配列とディスパッチャで表現し、GO TO は飛び先ラベルの return、PERFORM は perform(from,until) の呼び出しになる。データ項目は Map<String,Object> vars で保持する。",
+  "notes": "compilable-v1 の後継ではなく別物。compilable-v1 は凍結されており、あちらの未対応範囲が品質ゲートの試験体になっている。こちらは複数ファイル・分岐・ループ・GO TO・CALL を扱う。生成ハーネスの形は GeneratedProgramCompiler.buildProgramSource() にある。テンプレートは throw を直接書いてはいけない（後続の return null が到達不能になり javac エラーになる）。STOP RUN / GOBACK は stopRun() / goback() ヘルパを呼ぶこと。",
+  "maps": {
+    "op": {
+      "=": "==",
+      "EQUAL": "==",
+      "EQUALS": "==",
+      "NOT=": "!=",
+      "<>": "!=",
+      ">": ">",
+      "<": "<",
+      ">=": ">=",
+      "<=": "<=",
+      "GREATER": ">",
+      "LESS": "<"
+    },
+    "arith": {
+      "+": "+",
+      "-": "-",
+      "*": "*",
+      "/": "/"
+    }
+  },
+  "structure": [
+    {
+      "id": "comment-line",
+      "kind": "ignore",
+      "pattern": "^[*/].*$",
+      "notes": "注記行。構造にも生成にも寄与しない。"
+    },
+    {
+      "id": "program-id",
+      "kind": "program",
+      "pattern": "^PROGRAM-ID\\.\\s+(?<name>[A-Za-z0-9-]+)\\s*\\.?$"
+    },
+    {
+      "id": "identification-division",
+      "kind": "section",
+      "to": "identification",
+      "pattern": "^IDENTIFICATION\\s+DIVISION\\s*\\.$"
+    },
+    {
+      "id": "environment-division",
+      "kind": "section",
+      "to": "environment",
+      "pattern": "^ENVIRONMENT\\s+DIVISION\\s*\\.$"
+    },
+    {
+      "id": "data-division",
+      "kind": "section",
+      "to": "data",
+      "pattern": "^DATA\\s+DIVISION\\s*\\.$"
+    },
+    {
+      "id": "working-storage-section",
+      "kind": "section",
+      "to": "working-storage",
+      "pattern": "^WORKING-STORAGE\\s+SECTION\\s*\\.$"
+    },
+    {
+      "id": "linkage-section",
+      "kind": "section",
+      "to": "linkage",
+      "pattern": "^LINKAGE\\s+SECTION\\s*\\.$"
+    },
+    {
+      "id": "procedure-division-using",
+      "kind": "using",
+      "pattern": "^PROCEDURE\\s+DIVISION\\s+USING\\s+(?<args>[A-Za-z0-9\\-,\\s]+?)\\s*\\.$",
+      "notes": "USING の並びが CALL の実引数と位置で対応する。LINKAGE の宣言順より優先する。"
+    },
+    {
+      "id": "procedure-division",
+      "kind": "section",
+      "to": "procedure",
+      "pattern": "^PROCEDURE\\s+DIVISION\\s*\\.$"
+    },
+    {
+      "id": "ws-item-value",
+      "kind": "dataItem",
+      "inSection": "working-storage",
+      "pattern": "^\\d\\d\\s+(?<name>[A-Za-z0-9-]+)\\s+PIC\\s+\\S+\\s+VALUE\\s+(?<value>'[^']*'|\"[^\"]*\"|[A-Za-z0-9+.-]+)\\s*\\.$",
+      "defaultValue": "0d"
+    },
+    {
+      "id": "ws-item",
+      "kind": "dataItem",
+      "inSection": "working-storage",
+      "pattern": "^\\d\\d\\s+(?<name>[A-Za-z0-9-]+)\\s+PIC\\s+\\S+\\s*\\.$",
+      "defaultValue": "0d"
+    },
+    {
+      "id": "lk-item",
+      "kind": "linkageItem",
+      "inSection": "linkage",
+      "pattern": "^\\d\\d\\s+(?<name>[A-Za-z0-9-]+)\\s+PIC\\s+\\S+\\s*\\.$"
+    },
+    {
+      "id": "single-word-statements",
+      "kind": "statement",
+      "inSection": "procedure",
+      "pattern": "^(?:GOBACK|CONTINUE|EXIT|END-IF|END-EVALUATE|END-PERFORM)\\s*\\.$",
+      "notes": "段落見出しの正規表現より前に置くこと。GOBACK. や CONTINUE. は「英字で始まりピリオドで終わる1語」なので、放っておくと段落名として拾われてしまう。COBOL本来の区別は記述領域（Area A か Area B か）だが、桁位置は前処理のトリムで失われている。"
+    },
+    {
+      "id": "paragraph-header",
+      "kind": "paragraph",
+      "inSection": "procedure",
+      "pattern": "^(?<name>[A-Za-z][A-Za-z0-9-]*)\\s*\\.$",
+      "notes": "PROCEDURE DIVISION に限定していることが重要。限定を外すと DATA DIVISION の行まで拾う。構造規則の中で最後に置くこと。"
+    }
+  ],
+  "rules": [
+    {
+      "id": "comment",
+      "statement": "コメント",
+      "appliesTo": "* または / から始まる行",
+      "pattern": "^[*/].*$",
+      "template": "",
+      "notes": "認識するが意図的に何も出力しない。"
+    },
+    {
+      "id": "evaluate-open",
+      "statement": "EVALUATE",
+      "appliesTo": "EVALUATE <被検査値>",
+      "pattern": "^EVALUATE\\s+(?<subject>[A-Za-z0-9_'\"-]+)\\s*$",
+      "template": "{ double _e${_depth} = num(${subjectExpr}); if (false) {",
+      "opens": "evaluate",
+      "binds": { "_subject": "_e${_depth}" },
+      "notes": "switch には落とせない。Javaは double で switch できず、WHEN にフォールスルーも無く、EVALUATE TRUE に対応物も無い。if(false) を種にした else-if 連鎖にする。JLS 14.21 は if の条件値を到達可能性判定に使わないので、この種はコンパイルできる。"
+    },
+    {
+      "id": "evaluate-when-other",
+      "statement": "WHEN OTHER",
+      "pattern": "^WHEN\\s+OTHER\\s*$",
+      "requires": "evaluate",
+      "template": "} else {"
+    },
+    {
+      "id": "evaluate-when-inline",
+      "statement": "WHEN",
+      "appliesTo": "WHEN <値> <文>（同一行に文が続く形）",
+      "pattern": "^WHEN\\s+(?<value>[A-Za-z0-9_'\".-]+)\\s+(?<rest>[A-Z].*)$",
+      "requires": "evaluate",
+      "template": "} else if (${_subject} == num(${valueExpr})) {",
+      "continueWith": "rest",
+      "notes": "同一行に文が続く形。rest をもう一度ルール表へ通す。"
+    },
+    {
+      "id": "evaluate-when",
+      "statement": "WHEN",
+      "pattern": "^WHEN\\s+(?<value>[A-Za-z0-9_'\".-]+)\\s*$",
+      "requires": "evaluate",
+      "template": "} else if (${_subject} == num(${valueExpr})) {"
+    },
+    {
+      "id": "evaluate-close",
+      "statement": "END-EVALUATE",
+      "pattern": "^END-EVALUATE\\s*\\.?$",
+      "closes": "evaluate",
+      "template": "} }"
+    },
+    {
+      "id": "perform-varying",
+      "statement": "PERFORM VARYING",
+      "appliesTo": "PERFORM VARYING <i> FROM <a> BY <b> UNTIL <x> <op> <y>",
+      "pattern": "^PERFORM\\s+VARYING\\s+(?<var>[A-Za-z0-9-]+)\\s+FROM\\s+(?<from>\\S+)\\s+BY\\s+(?<by>\\S+)\\s+UNTIL\\s+(?<left>\\S+)\\s*(?<op>NOT\\s*=|<>|>=|<=|=|>|<)\\s*(?<right>\\S+?)\\s*$",
+      "template": "for (vars.put(\"${var}\", num(${fromExpr})); !(num(${leftExpr}) ${opMapped} num(${rightExpr})); vars.put(\"${var}\", num(vars.get(\"${var}\")) + num(${byExpr}))) {",
+      "opens": "perform-inline",
+      "notes": "vars.put(...) は StatementExpression なので for の初期化・更新に置ける。"
+    },
+    {
+      "id": "perform-inline-until",
+      "statement": "PERFORM UNTIL",
+      "appliesTo": "PERFORM UNTIL <x> <op> <y>（END-PERFORM で閉じる行内ループ）",
+      "pattern": "^PERFORM\\s+UNTIL\\s+(?<left>\\S+)\\s*(?<op>NOT\\s*=|<>|>=|<=|=|>|<)\\s*(?<right>\\S+?)\\s*$",
+      "template": "while (!(num(${leftExpr}) ${opMapped} num(${rightExpr}))) {",
+      "opens": "perform-inline",
+      "notes": "COBOLの既定は WITH TEST BEFORE。「until 真」は「while 偽」なのでこの形で正しい。"
+    },
+    {
+      "id": "perform-inline-times",
+      "statement": "PERFORM TIMES",
+      "pattern": "^PERFORM\\s+(?<count>\\S+)\\s+TIMES\\s*$",
+      "template": "for (long _t${_depth} = (long) num(${countExpr}); _t${_depth} > 0; _t${_depth}--) {",
+      "opens": "perform-inline"
+    },
+    {
+      "id": "perform-inline-close",
+      "statement": "END-PERFORM",
+      "pattern": "^END-PERFORM\\s*\\.?$",
+      "closes": "perform-inline",
+      "template": "}"
+    },
+    {
+      "id": "perform-thru-until",
+      "statement": "PERFORM THRU UNTIL",
+      "pattern": "^PERFORM\\s+(?<para>[A-Za-z][A-Za-z0-9-]*)\\s+THRU\\s+(?<until>[A-Za-z][A-Za-z0-9-]*)\\s+UNTIL\\s+(?<left>\\S+)\\s*(?<op>NOT\\s*=|<>|>=|<=|=|>|<)\\s*(?<right>\\S+?)\\s*\\.?$",
+      "template": "while (!(num(${leftExpr}) ${opMapped} num(${rightExpr}))) { perform(vars, out, \"${para}\", \"${until}\"); }"
+    },
+    {
+      "id": "perform-until",
+      "statement": "PERFORM UNTIL",
+      "appliesTo": "PERFORM <段落> UNTIL <x> <op> <y>（段落を回す out-of-line 形式）",
+      "pattern": "^PERFORM\\s+(?<para>[A-Za-z][A-Za-z0-9-]*)\\s+UNTIL\\s+(?<left>\\S+)\\s*(?<op>NOT\\s*=|<>|>=|<=|=|>|<)\\s*(?<right>\\S+?)\\s*\\.?$",
+      "template": "while (!(num(${leftExpr}) ${opMapped} num(${rightExpr}))) { perform(vars, out, \"${para}\", \"${para}\"); }"
+    },
+    {
+      "id": "perform-times",
+      "statement": "PERFORM TIMES",
+      "pattern": "^PERFORM\\s+(?<para>[A-Za-z][A-Za-z0-9-]*)\\s+(?<count>\\S+)\\s+TIMES\\s*\\.?$",
+      "template": "for (long _t = (long) num(${countExpr}); _t > 0; _t--) { perform(vars, out, \"${para}\", \"${para}\"); }"
+    },
+    {
+      "id": "perform-thru",
+      "statement": "PERFORM THRU",
+      "pattern": "^PERFORM\\s+(?<para>[A-Za-z][A-Za-z0-9-]*)\\s+THRU\\s+(?<until>[A-Za-z][A-Za-z0-9-]*)\\s*\\.?$",
+      "template": "perform(vars, out, \"${para}\", \"${until}\");"
+    },
+    {
+      "id": "perform-para",
+      "statement": "PERFORM",
+      "pattern": "^PERFORM\\s+(?<para>[A-Za-z][A-Za-z0-9-]*)\\s*\\.?$",
+      "template": "perform(vars, out, \"${para}\", \"${para}\");"
+    },
+    {
+      "id": "go-to",
+      "statement": "GO TO",
+      "pattern": "^GO\\s+TO\\s+(?<para>[A-Za-z][A-Za-z0-9-]*)\\s*\\.?$",
+      "template": "return \"${para}\";",
+      "notes": "段落メソッドが飛び先ラベルを返し、perform() が範囲内か判定する。範囲外なら例外で外側へ解いていく。"
+    },
+    {
+      "id": "call-using",
+      "statement": "CALL USING",
+      "appliesTo": "CALL '<プログラム>' USING <項目> ...（引数の数は可変）",
+      "pattern": "^CALL\\s+['\"](?<prog>[A-Za-z0-9_-]+)['\"]\\s+USING\\s+(?<args>[A-Za-z0-9\\s-]+?)\\s*\\.?$",
+      "template": "generated.${progJava}.call(vars, out, ${argsList});",
+      "notes": "${argsList} が可変長オペランドをJava文字列リテラルのカンマ区切りへ展開する。これが無いと CALL だけJavaにハードコードすることになる。呼び先は LINKAGE を位置で束縛し、復帰時に呼び出し元へ書き戻す（BY REFERENCE の模倣）。"
+    },
+    {
+      "id": "call-noargs",
+      "statement": "CALL",
+      "pattern": "^CALL\\s+['\"](?<prog>[A-Za-z0-9_-]+)['\"]\\s*\\.?$",
+      "template": "generated.${progJava}.call(vars, out);"
+    },
+    {
+      "id": "stop-run",
+      "statement": "STOP RUN",
+      "pattern": "^STOP\\s+RUN\\s*\\.?$",
+      "template": "stopRun();",
+      "notes": "throw を直接書かないこと。段落メソッド末尾の return null が到達不能になる。"
+    },
+    {
+      "id": "goback",
+      "statement": "GOBACK",
+      "pattern": "^GOBACK\\s*\\.?$",
+      "template": "goback();",
+      "notes": "GOBACK は呼び出し元へ戻るだけ。STOP RUN と同じ信号にしてはいけない（副プログラムの GOBACK が主プログラムを止めてしまう）。"
+    },
+    {
+      "id": "exit-paragraph",
+      "statement": "EXIT",
+      "pattern": "^EXIT\\s*\\.?$",
+      "template": ";",
+      "notes": "段落の空の出口。EXIT PROGRAM は別物で未対応。"
+    },
+    {
+      "id": "move-numeric",
+      "statement": "MOVE",
+      "appliesTo": "MOVE <数値リテラル> TO <項目>",
+      "pattern": "^MOVE\\s+(?<source>[+-]?\\d+(?:\\.\\d+)?)\\s+TO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(${sourceExpr}));",
+      "notes": "num() を通して double で揃える。素の整数リテラルを入れると、同じ項目でも MOVE 直後は \"0\"、ADD 後は \"550.0\" と DISPLAY の出力形式が変わってしまう。数値の格納形式は1つに統一すること。"
+    },
+    {
+      "id": "move",
+      "statement": "MOVE",
+      "pattern": "^MOVE\\s+(?<source>\\S+)\\s+TO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", ${sourceExpr});"
+    },
+    {
+      "id": "add-giving",
+      "statement": "ADD",
+      "pattern": "^ADD\\s+(?<left>\\S+)\\s+TO\\s+(?<right>\\S+)\\s+GIVING\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(${leftExpr}) + num(${rightExpr}));"
+    },
+    {
+      "id": "add",
+      "statement": "ADD",
+      "pattern": "^ADD\\s+(?<source>\\S+)\\s+TO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(vars.get(\"${target}\")) + num(${sourceExpr}));"
+    },
+    {
+      "id": "subtract",
+      "statement": "SUBTRACT",
+      "pattern": "^SUBTRACT\\s+(?<source>\\S+)\\s+FROM\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(vars.get(\"${target}\")) - num(${sourceExpr}));"
+    },
+    {
+      "id": "multiply",
+      "statement": "MULTIPLY",
+      "pattern": "^MULTIPLY\\s+(?<source>\\S+)\\s+BY\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(vars.get(\"${target}\")) * num(${sourceExpr}));"
+    },
+    {
+      "id": "divide",
+      "statement": "DIVIDE",
+      "pattern": "^DIVIDE\\s+(?<source>\\S+)\\s+INTO\\s+(?<target>[A-Za-z0-9_-]+)\\s*\\.?$",
+      "template": "vars.put(\"${target}\", num(vars.get(\"${target}\")) / num(${sourceExpr}));"
+    },
+    {
+      "id": "compute-binary",
+      "statement": "COMPUTE",
+      "pattern": "^COMPUTE\\s+(?<target>[A-Za-z0-9_-]+)\\s*=\\s*(?<left>\\S+)\\s+(?<arith>[-+*/])\\s+(?<right>\\S+?)\\s*\\.?\\s*$",
+      "template": "vars.put(\"${target}\", num(${leftExpr}) ${arithMapped} num(${rightExpr}));",
+      "notes": "演算子の両側の空白は必須。COBOLの要件と一致する。これが無いと 'COMPUTE A = WS-SOURCE' がデータ名のハイフンのせいで WS 引く SOURCE と読まれる。"
+    },
+    {
+      "id": "compute-copy",
+      "statement": "COMPUTE",
+      "pattern": "^COMPUTE\\s+(?<target>[A-Za-z0-9_-]+)\\s*=\\s*(?<source>\\S+?)\\s*\\.?\\s*$",
+      "template": "vars.put(\"${target}\", num(${sourceExpr}));"
+    },
+    {
+      "id": "if-not-equal-alnum",
+      "statement": "IF",
+      "appliesTo": "IF <項目> NOT = <引用符付きリテラル>（英数字比較）",
+      "pattern": "^IF\\s+(?<left>[A-Za-z0-9_-]+)\\s*(?:NOT\\s*=|<>)\\s*(?<right>'[^']*'|\"[^\"]*\")\\s*(?:THEN)?\\s*$",
+      "template": "if (!String.valueOf(${leftExpr}).equals(${rightExpr})) {",
+      "opens": "if",
+      "notes": "数値比較より前に置くこと。compilable-v1 ではここが穴で、コンパイルは通るのに実行時に NumberFormatException になっていた。"
+    },
+    {
+      "id": "if-equal-alnum",
+      "statement": "IF",
+      "appliesTo": "IF <項目> = <引用符付きリテラル>（英数字比較）",
+      "pattern": "^IF\\s+(?<left>[A-Za-z0-9_-]+)\\s*=\\s*(?<right>'[^']*'|\"[^\"]*\")\\s*(?:THEN)?\\s*$",
+      "template": "if (String.valueOf(${leftExpr}).equals(${rightExpr})) {",
+      "opens": "if"
+    },
+    {
+      "id": "if-compare",
+      "statement": "IF",
+      "pattern": "^IF\\s+(?<left>\\S+)\\s*(?<op>NOT\\s*=|<>|>=|<=|=|>|<)\\s*(?<right>\\S+?)\\s*(?:THEN)?\\s*$",
+      "template": "if (num(${leftExpr}) ${opMapped} num(${rightExpr})) {",
+      "opens": "if"
+    },
+    {
+      "id": "else",
+      "statement": "ELSE",
+      "pattern": "^ELSE\\s*$",
+      "requires": "if",
+      "template": "} else {"
+    },
+    {
+      "id": "end-if",
+      "statement": "END-IF",
+      "pattern": "^END-IF\\s*\\.?$",
+      "closes": "if",
+      "template": "}"
+    },
+    {
+      "id": "display",
+      "statement": "DISPLAY",
+      "pattern": "^DISPLAY\\s+(?<value>.+?)\\s*\\.?$",
+      "template": "out.add(String.valueOf(${valueExpr}));"
+    },
+    {
+      "id": "continue",
+      "statement": "CONTINUE",
+      "pattern": "^CONTINUE\\s*\\.?$",
+      "template": ";"
+    }
+  ]
+}

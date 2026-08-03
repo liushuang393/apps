@@ -1,0 +1,15 @@
+{
+  "title": "MULTIPLY / DIVIDE",
+  "purpose": "Map載体がCOBOLと乖離する箇所を示す。結果はIEEE doubleであり定点十進ではない。",
+  "covers": [
+    "MULTIPLY",
+    "DIVIDE"
+  ],
+  "knownGaps": [
+    "GIVING / REMAINDER 句",
+    "ゼロ除算の扱い",
+    "COMP-3の定点切り捨て意味論"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

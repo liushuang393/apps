@@ -1,0 +1,19 @@
+{
+  "title": "IF / ELSE / END-IF",
+  "purpose": "行単位のルールがJavaの波括弧を出力する。均衡が取れ、両分岐が動くことをコーパスで示す。",
+  "covers": [
+    "comment",
+    "IF",
+    "ELSE",
+    "END-IF",
+    "MOVE"
+  ],
+  "knownGaps": [
+    "END-IF の無いIF（句点終端）",
+    "AND/OR条件",
+    "レベル88条件名",
+    "NOT"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

@@ -1,0 +1,7 @@
+[
+  {
+    "name": "writes the sum to a third item and leaves operands untouched",
+    "given":  { "WS-BASE": 300, "WS-BONUS": 45, "WS-GROSS": 0 },
+    "expect": { "WS-GROSS": 345, "WS-BASE": 300, "WS-BONUS": 45 }
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "title": "【負例】Tiles / bean:write / ActionErrors / セッションは未対応 → 未カバー率で落ちる",
+  "purpose": "ルールライブラリの穴が未カバー率として表に出て、品質ゲートが実際に拒否することを確かめる。実際のStruts資産にはこの種の構文が大量にあり、『ログイン1画面が通ったから全部いける』という誤読を防ぐための負例である。struts-to-boot-v1 にこれらのルールを足したら、このケースは PASS に変わってしまうので、そのときは別の未対応構文で負例を作り直すこと。",
+  "covers": ["Action の外形", "ActionForm の外形"],
+  "knownGaps": [
+    "Tiles（tiles:insert / tiles:put）は未対応。レイアウト合成の概念が Thymeleaf の th:fragment と1対1でない",
+    "bean:write / bean:message は未対応。i18n リソースバンドルを持っていない",
+    "html:errors と ActionErrors / ActionMessage は未対応。Spring の BindingResult へ写すには検証定義そのものの移行が要る",
+    "HttpSession の直接操作は未対応"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "FAIL",
+  "templateProfile": "struts-to-boot-v1"
+}

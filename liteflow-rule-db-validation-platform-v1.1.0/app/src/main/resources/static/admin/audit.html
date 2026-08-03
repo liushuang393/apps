@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>監査ログ — LiteFlow ルール管理</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<header>
+  <h1>LiteFlow ルール管理</h1>
+  <nav>
+    <a href="index.html" data-page="rules">ルール一覧</a>
+    <a href="approvals.html" data-page="approvals">承認待ち</a>
+    <a href="audit.html" data-page="audit">監査ログ</a>
+  </nav>
+</header>
+<main>
+  <div id="error"></div>
+  <h2>監査ログ</h2>
+  <p class="note">
+    本基盤の API を通した操作だけが残ります。
+    <strong>DBを直接書き換えた変更はここに出ません</strong>（LiteFlow 側にも痕跡は
+    <code>lf_change_log</code> の採番しか残りません）。
+  </p>
+  <table>
+    <thead><tr><th>#</th><th>時刻</th><th>実行者</th><th>操作</th><th>対象</th><th>版</th><th>詳細</th></tr></thead>
+    <tbody id="audit"><tr><td colspan="7">読み込み中…</td></tr></tbody>
+  </table>
+</main>
+<script src="app.js"></script>
+<script>
+renderNav("audit");
+(async () => {
+  try {
+    const data = await Api.get("/api/rules/audit?limit=200");
+    const rows = data.entries.map((e) => `<tr>
+      <td>${esc(e.id)}</td><td>${esc(e.createdAt)}</td><td>${esc(e.actor)}</td>
+      <td>${esc(e.action)}</td>
+      <td>${esc(e.targetType)} / <code>${esc(e.targetId)}</code></td>
+      <td>${esc(e.version)}</td><td>${esc(e.detail)}</td>
+    </tr>`);
+    document.getElementById("audit").innerHTML =
+      rows.join("") || '<tr><td colspan="7">記録はまだありません。</td></tr>';
+  } catch (err) { showError(err); }
+})();
+</script>
+</body>
+</html>

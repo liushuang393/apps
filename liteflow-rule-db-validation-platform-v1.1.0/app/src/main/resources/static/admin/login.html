@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ルール管理 — ログイン</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<header><h1>LiteFlow ルール管理</h1></header>
+<main>
+  <form class="login" method="post" action="/admin/login">
+    <h2>ログイン</h2>
+    <p class="warn">
+      <strong>PoC用の初期パスワードです。本番利用は禁止。</strong><br/>
+      <code>admin / admin123</code>（参照・変更・承認すべて）<br/>
+      <code>approver / approver123</code>（参照・承認）<br/>
+      <code>viewer / viewer123</code>（参照のみ）
+    </p>
+    <label>ユーザー名 <input type="text" name="username" autocomplete="username" required autofocus/></label>
+    <label>パスワード <input type="password" name="password" autocomplete="current-password" required/></label>
+    <input type="hidden" name="_csrf" value=""/>
+    <button class="primary" type="submit">ログイン</button>
+  </form>
+  <script>
+    // CSRFトークンは XSRF-TOKEN cookie で渡ってくる（SecurityConfig 参照）。
+    // ここで hidden へ移さないと POST /admin/login は認証の前に 403 になる。
+    // Thymeleaf は入れていない（templates/ が変換ルールJSONの置き場と衝突するため）。
+    const csrf = document.cookie.split("; ")
+      .find((entry) => entry.startsWith("XSRF-TOKEN="));
+    if (csrf) {
+      document.querySelector('input[name="_csrf"]').value =
+        decodeURIComponent(csrf.substring("XSRF-TOKEN=".length));
+    } else {
+      document.querySelector(".login").insertAdjacentHTML("afterbegin",
+        '<p class="warn">CSRFトークンを受け取れませんでした。cookie が無効になっていないか確認してください。</p>');
+    }
+    if (location.search.indexOf("error") >= 0) {
+      document.querySelector(".login").insertAdjacentHTML("afterbegin",
+        '<p class="warn">ユーザー名またはパスワードが違います。</p>');
+    }
+  </script>
+</main>
+</body>
+</html>

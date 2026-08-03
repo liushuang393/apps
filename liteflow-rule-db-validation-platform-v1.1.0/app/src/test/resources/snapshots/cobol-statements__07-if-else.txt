@@ -1,0 +1,14 @@
+# case: cobol-statements/07-if-else
+# profile: compilable-v1
+# coverage: total=6 recognised=6 unrecognised=0
+# rule: comment x1
+# rule: else x1
+# rule: end-if x1
+# rule: if-compare x1
+# rule: move x2
+--- generated ---
+if (num(vars.get("WS-AMOUNT")) > num(1000)) {
+vars.put("WS-VIP-FLAG", 1);
+} else {
+vars.put("WS-VIP-FLAG", 0);
+}

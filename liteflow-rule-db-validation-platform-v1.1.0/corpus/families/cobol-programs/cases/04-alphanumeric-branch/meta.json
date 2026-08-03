@@ -1,0 +1,13 @@
+{
+  "title": "英数字比較の分岐。compilable-v1 の穴を新プロファイルで塞いだことの確認",
+  "purpose": "cobol-statements ファミリの負例 12-alphanumeric-if-gap と同じ題材。あちらは「コンパイルは通るのに実行時に NumberFormatException で壊れる」ことを示す負例だった。cobol-programs-v1 では専用ルール（if-equal-alnum / if-not-equal-alnum）を数値比較より前に置いて塞いである。ルールを1件足すだけで穴が閉じることの実証でもある。",
+  "covers": ["IF <項目> = <リテラル>", "IF <項目> NOT = <リテラル>", "ELSE", "END-IF", "ADD", "DISPLAY"],
+  "knownGaps": [
+    "英数字比較は完全一致のみ。COBOL の後続空白詰め（PIC X(4) の 'VIP ' と 'VIP' が等しい）は模擬していない",
+    "大小比較（>, <）は数値のみ。文字列の照合順序は未対応"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS",
+  "templateProfile": "cobol-programs-v1",
+  "entryProgram": "GRADEPGM"
+}

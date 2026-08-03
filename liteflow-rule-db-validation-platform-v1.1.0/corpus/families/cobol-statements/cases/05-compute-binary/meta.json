@@ -1,0 +1,15 @@
+{
+  "title": "COMPUTE（二項式）",
+  "purpose": "プロファイルの maps.arith 表による演算子変換。",
+  "covers": [
+    "COMPUTE-binary"
+  ],
+  "knownGaps": [
+    "3項以上の式",
+    "括弧",
+    "** 冪乗",
+    "ROUNDED"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

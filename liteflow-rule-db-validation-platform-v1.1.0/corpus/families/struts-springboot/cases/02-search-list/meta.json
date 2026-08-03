@@ -1,0 +1,16 @@
+{
+  "title": "検索一覧画面。繰り返し（logic:iterate）とリンクを含む",
+  "purpose": "ログイン画面より項目が多く、繰り返し表示とリンクを含む画面で、同じルール表がそのまま効くことを確かめる。ルールを1件も足さずに2画面目が通るかどうかが、ルール表方式の再利用性の目安になる。",
+  "covers": [
+    "logic:iterate → th:each", "html:link → th:href",
+    "複数フィールドの ActionForm", "forward が1件だけの action"
+  ],
+  "knownGaps": [
+    "th:each の対象は Model の属性名をそのまま使っている。型情報は持っていない",
+    "ページング、ソート、検索条件の保持は未対応",
+    "一覧の列定義（logic:iterate の中の bean:write）は本ケースに含めていない"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS",
+  "templateProfile": "struts-to-boot-v1"
+}

@@ -1,0 +1,17 @@
+# case: cobol-statements/08-if-nested
+# profile: compilable-v1
+# coverage: total=9 recognised=9 unrecognised=0
+# rule: else x2
+# rule: end-if x2
+# rule: if-compare x2
+# rule: move x3
+--- generated ---
+if (num(vars.get("WS-AMOUNT")) > num(100)) {
+if (num(vars.get("WS-REGION")) == num(1)) {
+vars.put("WS-RATE", 10);
+} else {
+vars.put("WS-RATE", 20);
+}
+} else {
+vars.put("WS-RATE", 0);
+}

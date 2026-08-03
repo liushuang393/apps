@@ -1,0 +1,22 @@
+{
+  "title": "主1本＋従2本。分岐・ループ・GO TO・CALL を1ケースに集約",
+  "purpose": "旧システム刷新で最初にぶつかる形（1本の主プログラムが複数の従プログラムを CALL し、段落と GO TO で流れを作る）を、ルール表だけでJavaへ落とせるかを確かめる。生成物を実際に javac し、実際に実行して4通りの入力で期待値と突き合わせる。",
+  "covers": [
+    "PROGRAM-ID", "WORKING-STORAGE VALUE", "LINKAGE SECTION",
+    "PROCEDURE DIVISION USING", "段落", "MOVE", "ADD", "COMPUTE", "DIVIDE",
+    "IF/ELSE/END-IF", "EVALUATE/WHEN/WHEN OTHER/END-EVALUATE",
+    "PERFORM <段落>", "PERFORM <段落> UNTIL", "GO TO", "CALL USING",
+    "GOBACK", "STOP RUN", "DISPLAY"
+  ],
+  "knownGaps": [
+    "数値はすべて double。PIC 9(7) の桁あふれや COMP-3 の定点十進は模擬していない",
+    "CALL は copy-in/copy-out で BY REFERENCE を模擬している。2つの実引数が同じ項目を指す場合や、呼び先が呼び元を再び CALL する場合は等価にならない",
+    "PERFORM の再帰は Java の再帰になる。実COBOLでは未定義動作であり、本実装の方が寛容",
+    "EVALUATE の被検査値は数値のみ。EVALUATE TRUE と文字列比較は未対応",
+    "GO TO は同一プログラム内のみ。ALTER と GO TO DEPENDING ON は未対応"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS",
+  "templateProfile": "cobol-programs-v1",
+  "entryProgram": "MAINPGM"
+}

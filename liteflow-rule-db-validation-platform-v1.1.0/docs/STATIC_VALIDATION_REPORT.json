@@ -1,0 +1,243 @@
+{
+  "startedAt": "2026-08-01T12:51:27.847699+00:00",
+  "completedAt": "2026-08-01T12:51:33.235548+00:00",
+  "overallStatus": "WARN",
+  "environment": {
+    "python": "3.13.5 (main, May  5 2026, 21:05:52) [GCC 14.2.0]",
+    "platform": "linux",
+    "cwd": "/mnt/data/liteflow-rule-db-validation-platform-v1.1.0"
+  },
+  "checks": [
+    {
+      "id": "PF-01",
+      "name": "Required files",
+      "status": "PASS",
+      "evidence": {
+        "missing": [],
+        "requiredCount": 21
+      }
+    },
+    {
+      "id": "PF-02",
+      "name": "Python syntax",
+      "status": "PASS",
+      "evidence": {
+        "exitCode": 0,
+        "output": ""
+      }
+    },
+    {
+      "id": "PF-03",
+      "name": "Validator unit tests",
+      "status": "PASS",
+      "evidence": {
+        "exitCode": 0,
+        "output": "test_build_evidence_and_junit (test_validate.ValidatorReportTest.test_build_evidence_and_junit) ... ok\ntest_dashboard_uid_matches_packaged_dashboard (test_validate.ValidatorReportTest.test_dashboard_uid_matches_packaged_dashboard) ... ok\ntest_render_and_summary (test_validate.ValidatorReportTest.test_render_and_summary) ... ok\ntest_required_failure (test_validate.ValidatorReportTest.test_required_failure) ... ok\ntest_unexpected_failure_can_be_written (test_validate.ValidatorReportTest.test_unexpected_failure_can_be_written) ... ok\n\n----------------------------------------------------------------------\nRan 5 tests in 0.003s\n\nOK"
+      }
+    },
+    {
+      "id": "PF-04",
+      "name": "Bash syntax",
+      "status": "PASS",
+      "evidence": {
+        "files": [
+          "install.sh",
+          "preflight.sh",
+          "run-all.sh",
+          "stop.sh",
+          "validate.sh"
+        ],
+        "failures": {}
+      }
+    },
+    {
+      "id": "PF-05",
+      "name": "Maven POM parse and pinned versions",
+      "status": "PASS",
+      "evidence": {
+        "springBootParent": "4.0.6",
+        "liteflow": "2.16.1",
+        "java": "17"
+      }
+    },
+    {
+      "id": "PF-06",
+      "name": "Grafana dashboard JSON and validator UID",
+      "status": "PASS",
+      "evidence": {
+        "dashboardUid": "liteflow-rule-db-validation",
+        "validatorUid": "liteflow-rule-db-validation",
+        "panelCount": 5
+      }
+    },
+    {
+      "id": "PF-07A",
+      "name": "YAML parse",
+      "status": "PASS",
+      "evidence": {
+        "files": [
+          "docker-compose.yml",
+          "monitoring/prometheus.yml",
+          "monitoring/grafana/provisioning/dashboards/default.yml",
+          "monitoring/grafana/provisioning/datasources/prometheus.yml"
+        ],
+        "errors": {}
+      }
+    },
+    {
+      "id": "PF-07",
+      "name": "Compose service structure",
+      "status": "PASS",
+      "evidence": {
+        "missingServices": [],
+        "images": {
+          "mariadb": "mariadb:11.4.12",
+          "executor-a": "liteflow-rule-db-validation-app:1.0.0",
+          "executor-b": "liteflow-rule-db-validation-app:1.0.0",
+          "prometheus": "prom/prometheus:v3.13.1",
+          "grafana": "grafana/grafana:13.1.1",
+          "validator": "python:3.13-slim"
+        }
+      }
+    },
+    {
+      "id": "PF-08",
+      "name": "Docker Compose config",
+      "status": "SKIP",
+      "evidence": {
+        "reason": "docker not found"
+      }
+    },
+    {
+      "id": "PF-09",
+      "name": "Java syntax/internal type compile with API stubs",
+      "status": "PASS",
+      "evidence": {
+        "exitCode": 0,
+        "output": "STATIC_JAVA_COMPILE_PASS classes=59 sources=56"
+      }
+    },
+    {
+      "id": "PF-10",
+      "name": "Docker build reproducibility guards",
+      "status": "PASS",
+      "evidence": {
+        "sourceCommit": "039d5cff0ca71d358db51413c10ed3177d74eb89",
+        "missingTokens": []
+      }
+    },
+    {
+      "id": "PF-11",
+      "name": "Failure evidence and keep-window behavior",
+      "status": "PASS",
+      "evidence": {
+        "missingValidatorGuards": [],
+        "runAllCmdHasPause": true
+      }
+    },
+    {
+      "id": "PF-12",
+      "name": "Package metadata consistency",
+      "status": "PASS",
+      "evidence": {
+        "packageName": "liteflow-rule-db-validation-platform",
+        "packageVersion": "1.1.0",
+        "createdDate": "2026-08-01",
+        "liteflowVersion": "2.16.1",
+        "liteflowSourceCommit": "039d5cff0ca71d358db51413c10ed3177d74eb89",
+        "springBootVersion": "4.0.6",
+        "javaVersion": "17",
+        "runtimeImages": {
+          "mariadb": "mariadb:11.4.12",
+          "prometheus": "prom/prometheus:v3.13.1",
+          "grafana": "grafana/grafana:13.1.1",
+          "validator": "python:3.13-slim"
+        },
+        "packagingRuntimeValidation": {
+          "dockerE2E": "NOT_RUN_NO_DOCKER",
+          "hostPreflight": "reports/preflight-report.md"
+        }
+      }
+    },
+    {
+      "id": "PF-13",
+      "name": "Windows CMD structural checks",
+      "status": "PASS",
+      "evidence": {
+        "files": [
+          "install.cmd",
+          "validate.cmd",
+          "run-all.cmd",
+          "preflight.cmd"
+        ],
+        "failures": {}
+      }
+    },
+    {
+      "id": "PF-14",
+      "name": "PowerShell structural checks",
+      "status": "PASS",
+      "evidence": {
+        "files": {
+          "install.ps1": {
+            "errorActionStop": true,
+            "balancedBraces": true,
+            "balancedParentheses": true
+          },
+          "validate.ps1": {
+            "errorActionStop": true,
+            "balancedBraces": true,
+            "balancedParentheses": true
+          },
+          "run-all.ps1": {
+            "errorActionStop": true,
+            "balancedBraces": true,
+            "balancedParentheses": true
+          },
+          "preflight.ps1": {
+            "errorActionStop": true,
+            "balancedBraces": true,
+            "balancedParentheses": true
+          },
+          "stop.ps1": {
+            "errorActionStop": true,
+            "balancedBraces": true,
+            "balancedParentheses": true
+          }
+        },
+        "failed": [],
+        "note": "Structural scan only; PowerShell runtime was not available in the packaging environment."
+      }
+    },
+    {
+      "id": "PF-15",
+      "name": "Shell failure evidence path",
+      "status": "PASS",
+      "evidence": {
+        "evidenceFile": "reports/failure-path-test.txt",
+        "content": "INSTALL_FAILURE_PATH_PASS rc=1\nRUN_ALL_FAILURE_PATH_PASS rc=1\nThe failures were expected because Docker is unavailable in the packaging environment."
+      }
+    },
+    {
+      "id": "PF-16",
+      "name": "Source inventory",
+      "status": "PASS",
+      "evidence": {
+        "fileCount": 61,
+        "javaCount": 23,
+        "sha256": {
+          "app/Dockerfile": "31e30f44390f998e46d2c7b0f79e5f284fa954a39d4c3f0e633634e5675d5fac",
+          "app/pom.xml": "27fca1433e8306ed4316038862afd3c4b9c7d32e8ccbc7aa7a323df628040d5e",
+          "docker-compose.yml": "3c1047dab6009753a7d0727d78a793ca9f5af50842ffb93fd9e91dc37ae4b998",
+          "validator/validate.py": "07de295d39900f9fa97f3ea90c577690eea19f80498801ae93bf7622248b5987"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "PASS": 16,
+    "FAIL": 0,
+    "WARN": 0,
+    "SKIP": 1
+  }
+}

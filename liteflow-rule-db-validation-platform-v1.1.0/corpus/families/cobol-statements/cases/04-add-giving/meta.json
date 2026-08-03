@@ -1,0 +1,12 @@
+{
+  "title": "ADD ... GIVING",
+  "purpose": "同じ動詞に対する2つ目のルール。ルール順序でより限定的な形が先に解決されることを示す。",
+  "covers": [
+    "ADD-GIVING"
+  ],
+  "knownGaps": [
+    "SUBTRACT/MULTIPLY/DIVIDE の GIVING は未対応"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS"
+}

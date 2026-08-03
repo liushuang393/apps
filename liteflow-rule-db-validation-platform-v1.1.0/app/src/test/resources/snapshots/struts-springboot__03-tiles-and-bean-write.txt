@@ -1,0 +1,88 @@
+# case: struts-springboot/03-tiles-and-bean-write
+# profile: struts-to-boot-v1
+# coverage: total=54 recognised=43 unrecognised=11
+# rule: action-execute x1
+# rule: action-execute-args x1
+# rule: action-form-cast x1
+# rule: action-forward-success x1
+# rule: action-method-close x1
+# rule: config-action-close x1
+# rule: config-action-open x1
+# rule: config-form-bean x1
+# rule: config-forward x1
+# rule: config-shell x6
+# rule: config-xml-decl x1
+# rule: form-body-assign x1
+# rule: form-body-return x1
+# rule: form-field x1
+# rule: form-getter x1
+# rule: form-method-close x2
+# rule: form-setter x1
+# rule: java-class-close x2
+# rule: java-class-decl x2
+# rule: java-import x10
+# rule: java-package x2
+# rule: jsp-directive x4
+# unrecognised: ActionErrors errors = new ActionErrors();
+# unrecognised: errors.add("id", new ActionMessage("error.detail.notfound"));
+# unrecognised: saveErrors(request, errors);
+# unrecognised: request.getSession().setAttribute("detail", detailForm.getId());
+# unrecognised: <tiles:insert definition="site.layout" flush="true">
+# unrecognised: <tiles:put name="title" value="明細" />
+# unrecognised: <tiles:put name="body" value="/detail-body.jsp" />
+# unrecognised: </tiles:insert>
+# unrecognised: <bean:write name="detailForm" property="id" filter="true"/>
+# unrecognised: <bean:message key="label.detail.id"/>
+# unrecognised: <html:errors/>
+# file: DetailAction.java total=21 recognised=17 unrecognised=4
+# file: DetailForm.java total=11 recognised=11 unrecognised=0
+# file: detail.jsp total=11 recognised=4 unrecognised=7
+# file: struts-config.xml total=11 recognised=11 unrecognised=0
+--- artifact: Detail.html ---
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8"/>
+<title>${title}</title>
+</head>
+<body>
+</body>
+</html>
+--- artifact: DetailController.java ---
+package generated;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+@Controller
+@RequestMapping("/detail")
+public class DetailController {
+
+    @GetMapping
+    public String show(@ModelAttribute("form") DetailForm form) {
+        return "detail";
+    }
+
+    @PostMapping
+    public String submit(@ModelAttribute("form") DetailForm form, Model model) {
+        return "detail";
+    }
+}
+--- artifact: DetailForm.java ---
+package generated;
+
+public class DetailForm {
+    private String id;
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+}

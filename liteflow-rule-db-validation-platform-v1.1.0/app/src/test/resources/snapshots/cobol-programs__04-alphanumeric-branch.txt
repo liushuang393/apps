@@ -1,0 +1,22 @@
+# case: cobol-programs/04-alphanumeric-branch
+# profile: cobol-programs-v1
+# coverage: total=10 recognised=10 unrecognised=0
+# rule: add x1
+# rule: display x1
+# rule: else x1
+# rule: end-if x2
+# rule: if-equal-alnum x1
+# rule: if-not-equal-alnum x1
+# rule: move-numeric x2
+# rule: stop-run x1
+--- artifact: GRADEPGM#MAIN-PARA ---
+if (String.valueOf(vars.get("WS-STATUS")).equals("VIP")) {
+vars.put("WS-FEE", num(0));
+} else {
+vars.put("WS-FEE", num(500));
+}
+if (!String.valueOf(vars.get("WS-STATUS")).equals("VIP")) {
+vars.put("WS-FEE", num(vars.get("WS-FEE")) + num(50));
+}
+out.add(String.valueOf(vars.get("WS-FEE")));
+stopRun();

@@ -1,0 +1,16 @@
+# case: cobol-programs/03-unsupported-statements
+# profile: cobol-programs-v1
+# coverage: total=6 recognised=2 unrecognised=4
+# rule: move-numeric x1
+# rule: stop-run x1
+# unrecognised: SORT SORT-FILE ON ASCENDING KEY SORT-KEY
+# unrecognised: STRING WS-FIRST DELIMITED BY SPACE INTO WS-NAME
+# unrecognised: INSPECT WS-NAME TALLYING WS-COUNT FOR ALL 'A'
+# unrecognised: SEARCH ALL WS-TABLE AT END MOVE 0 TO WS-COUNT
+--- artifact: SORTPGM#MAIN-PARA ---
+vars.put("WS-COUNT", num(0));
+/* missing template: unknown */
+/* missing template: unknown */
+/* missing template: unknown */
+/* missing template: unknown */
+stopRun();

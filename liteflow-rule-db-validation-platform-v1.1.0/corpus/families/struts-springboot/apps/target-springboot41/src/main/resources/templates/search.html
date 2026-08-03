@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8"/>
+<title>検索一覧</title>
+</head>
+<body>
+<h1>検索一覧</h1>
+<form th:action="@{/search}" th:object="${form}" method="post">
+<input type="text" th:field="*{keyword}"/>
+<input type="text" th:field="*{status}"/>
+<button type="submit">検索</button>
+</form>
+<div th:each="row : ${rows}">
+<a th:href="@{/detail}">明細</a>
+</div>
+</body>
+</html>

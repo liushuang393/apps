@@ -1,0 +1,19 @@
+{
+  "title": "ログイン画面。Action + ActionForm + struts-config + JSP → Controller + Form + Thymeleaf",
+  "purpose": "1つの成果物（LoginController.java）が3つの入力ファイルから組み立てられることを確かめる。クラス名は LoginAction.java から、URLパスと遷移先ビュー名は struts-config.xml から、画面項目は login.jsp から来る。行単位のルールだけでは表現できないので、facts（ファイル横断変数）と artifacts（成果物の骨組み）を使っている。",
+  "covers": [
+    "Action#execute → @PostMapping", "ActionForm → フォームBean",
+    "struts-config の action path → @RequestMapping",
+    "forward → ビュー名の return", "html:form / html:text / html:password / html:submit → Thymeleaf",
+    "request.setAttribute → Model#addAttribute"
+  ],
+  "knownGaps": [
+    "生成物は「我々が事前に書いた正解と一致する」ことしか示さない。業務的な正しさも意味等価性も示さない",
+    "認証・セッション・バリデーション（validate() / ActionErrors）は未対応",
+    "DynaActionForm、Tiles、カスタムタグ、i18n リソースバンドルは未対応",
+    "生成コントローラは実際に起動して確かめていない。起動確認は samples-build.cmd が用意する目標プロジェクト側で行う（そちらは人手で書いたもの）"
+  ],
+  "maxUncoveredRate": 0.0,
+  "expectQualityGate": "PASS",
+  "templateProfile": "struts-to-boot-v1"
+}

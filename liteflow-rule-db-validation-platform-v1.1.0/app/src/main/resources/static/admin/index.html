@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ルール一覧 — LiteFlow ルール管理</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<header>
+  <h1>LiteFlow ルール管理</h1>
+  <nav>
+    <a href="index.html" data-page="rules">ルール一覧</a>
+    <a href="approvals.html" data-page="approvals">承認待ち</a>
+    <a href="audit.html" data-page="audit">監査ログ</a>
+    <a href="#" id="logout">ログアウト</a>
+  </nav>
+</header>
+<main>
+  <div id="error"></div>
+  <h2>いま有効なルール</h2>
+  <p class="note">
+    LiteFlow の <code>lf_chain</code> / <code>lf_script</code> の現行版です。
+    履歴・差分・ロールバックは、本基盤が別途 <code>rm_rule_revision</code> に記録した
+    <strong>発行後の本文</strong>から組み立てています（LiteFlow 自体は履歴を持ちません）。
+  </p>
+  <table>
+    <thead><tr>
+      <th>種別</th><th>ID</th><th>現行版</th><th>本文</th><th>最終更新</th><th></th>
+    </tr></thead>
+    <tbody id="rules"><tr><td colspan="6">読み込み中…</td></tr></tbody>
+  </table>
+</main>
+<script src="app.js"></script>
+<script>
+renderNav("rules");
+document.getElementById("logout").addEventListener("click", async (e) => {
+  e.preventDefault();
+  // /admin/logout は CSRF の対象（除外しているのは /api/** だけ）。
+  // トークンを送らないと 403 になり、しかも下で無条件に遷移するため
+  // 「画面上はログアウトしたのにセッションは生きている」状態になる。
+  const response = await fetch("/admin/logout", {
+    method: "POST",
+    headers: { "X-XSRF-TOKEN": csrfToken() },
+    redirect: "manual",
+  });
+  if (response.status === 403) {
+    alert("ログアウトに失敗しました（CSRFトークンを取得できません）。画面を再読み込みしてください。");
+    return;
+  }
+  location.href = "login.html";
+});
+(async () => {
+  try {
+    const data = await Api.get("/api/rules");
+    const rows = data.rules.map((r) => `<tr>
+      <td>${esc(r.targetType)}</td>
+      <td><code>${esc(r.targetId)}</code></td>
+      <td>${esc(r.version)}</td>
+      <td><code>${esc((r.body || "").slice(0, 90))}${(r.body || "").length > 90 ? "…" : ""}</code></td>
+      <td>${esc(r.modifiedAt)}</td>
+      <td><a href="detail.html?type=${encodeURIComponent(r.targetType)}&id=${encodeURIComponent(r.targetId)}">履歴・差分</a></td>
+    </tr>`);
+    document.getElementById("rules").innerHTML =
+      rows.join("") || '<tr><td colspan="6">ルールがまだありません。</td></tr>';
+  } catch (err) { showError(err); }
+})();
+</script>
+</body>
+</html>
