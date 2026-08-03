@@ -620,7 +620,13 @@ def main() -> int:
         stub_root = root / "stubs"
         out = root / "classes"
         for relative, content in STUBS.items():
-            target = stub_root / relative
+            # STUBS のキーは `/` と `\` が混在している。POSIX では `\` は区切りではないので、
+            # そのまま Path に渡すと `org\springframework\...Foo.java` という
+            # 1個のファイル名になり、javac が
+            # 「class Foo is public, should be declared in a file named Foo.java」で必ず落ちる。
+            # つまり PF-09 が Linux/macOS で 100% 失敗していた。
+            # 区切りをここで正規化しておけば、キーの書き方に関係なく正しい階層に置かれる。
+            target = stub_root.joinpath(*relative.replace("\\", "/").split("/"))
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content.strip() + "\n", encoding="utf-8")
         sources = [str(p) for p in stub_root.rglob("*.java")]

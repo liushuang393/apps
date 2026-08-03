@@ -19,21 +19,38 @@ try {
     } else {
         Write-Warning "Python 3 が見つかりません。ホスト事前確認はスキップします（Dockerビルドとテストは実行されます）。"
     }
+    # 呼び先が exit 1 で終わっても、呼び出し側では例外にならず $LASTEXITCODE に入るだけである。
+    # 明示的に見ないと、install が失敗したまま validate へ進み、
+    # さらにその失敗が後続スクリプトのせいに見えてしまう。
+    $global:LASTEXITCODE = 0
     & (Join-Path $PSScriptRoot "install.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        throw "install が失敗しました（exit $LASTEXITCODE）。reports\install-failure.txt を確認してください。"
+    }
+    $global:LASTEXITCODE = 0
     & (Join-Path $PSScriptRoot "validate.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        throw "validate が失敗しました（exit $LASTEXITCODE）。reports\validation-report.md を確認してください。"
+    }
 
     # 正式判定（validate）の後に、変換とルール管理の検証も続けて回す。
     # ここで落ちても validate の結果は既にファイルに残っているので、
     # 個別に失敗を記録して先へ進み、最後に summary で全体を見せる。
+    # 引数はハッシュテーブルでスプラットする。@() は「配列部分式」であって splat ではないため、
+    # 空配列を渡すと**空配列そのものが第1引数**として束縛され、$BaseUrl が空になって
+    # 3本とも即座に「無効なURI」で失敗する（local-corpus.ps1 が同じ罠を回避している）。
     $optional = @(
-        @{ name = "corpus-run"; script = "corpus-run.ps1"; args = @() },
-        @{ name = "demo-transform"; script = "demo-transform.ps1"; args = @() },
-        @{ name = "rule-admin-demo"; script = "rule-admin-demo.ps1"; args = @() }
+        @{ name = "corpus-run"; script = "corpus-run.ps1"; params = @{} },
+        @{ name = "demo-transform"; script = "demo-transform.ps1"; params = @{} },
+        @{ name = "rule-admin-demo"; script = "rule-admin-demo.ps1"; params = @{} }
     )
     $optionalFailures = @()
     foreach ($item in $optional) {
         try {
-            & (Join-Path $PSScriptRoot $item.script) @($item.args)
+            # 直前のスクリプトの終了コードが残らないよう毎回リセットする。
+            $global:LASTEXITCODE = 0
+            $splat = $item.params
+            & (Join-Path $PSScriptRoot $item.script) @splat
             if ($LASTEXITCODE -ne 0) { $optionalFailures += $item.name }
         } catch {
             Write-Warning "$($item.name) が失敗しました: $($_.Exception.Message)"

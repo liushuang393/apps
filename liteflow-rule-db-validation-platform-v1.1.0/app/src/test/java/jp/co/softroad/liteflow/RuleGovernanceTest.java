@@ -3,6 +3,7 @@ package jp.co.softroad.liteflow;
 import com.yomahub.liteflow.publisher.PublishChainRequest;
 import com.yomahub.liteflow.publisher.RulePublisher;
 import com.yomahub.liteflow.publisher.RulePublisherFactory;
+import com.yomahub.liteflow.publisher.exception.VersionConflictException;
 import com.yomahub.liteflow.repository.sql.SqlPublisherConfig;
 import jp.co.softroad.liteflow.governance.ApprovalRequest;
 import jp.co.softroad.liteflow.governance.RuleGovernanceService;
@@ -175,7 +176,90 @@ class RuleGovernanceTest {
         assertEquals("REJECTED", rejected.status());
     }
 
-    // ---- 3. 同時申請の採番 -------------------------------------------------------
+    // ---- 3. 申請から承認までの間に入った変更 ---------------------------------------
+
+    @Test
+    void anApprovalDoesNotSilentlyRollBackAChangeMadeAfterItWasFiled() {
+        String chainId = newChainId();
+        governance.publishChain(chainCommand(chainId, "THEN(validate,report)", 0L), "admin", "v1");
+        // v1 に対する申請。expectedVersion は渡さない（画面と同じ経路）。
+        ApprovalRequest request = governance.request("CHAIN", chainId,
+                "THEN(validate,transform,report)", null, null, "admin", "v1 のつもりの申請");
+
+        // 承認される前に、別の変更が入る。
+        governance.publishChain(chainCommand(chainId, "THEN(validate,analyze,report)", 1L),
+                "admin", "割り込みの修正");
+
+        // ここで申請を通すと v1 相当の本文で v3 を作ってしまう。それを拒む。
+        assertThrows(VersionConflictException.class,
+                () -> governance.approve(request.id(), "approver", "承認"));
+
+        assertEquals("THEN(validate,analyze,report)",
+                governance.findRule("CHAIN", chainId).orElseThrow().body(),
+                "割り込みの修正が巻き戻されている");
+    }
+
+    @Test
+    void anApprovalStuckAfterAFailedPublishCanBeRetried() {
+        String chainId = newChainId();
+        governance.publishChain(chainCommand(chainId, "THEN(validate,report)", 0L), "admin", "v1");
+        ApprovalRequest request = governance.request("CHAIN", chainId,
+                "THEN(validate,transform,report)", null, null, "admin", null);
+        governance.publishChain(chainCommand(chainId, "THEN(validate,analyze,report)", 1L),
+                "admin", "割り込み");
+
+        // 1回目の承認は楽観ロックで失敗し、APPROVED（承認済みだが未反映）で残る。
+        assertThrows(VersionConflictException.class,
+                () -> governance.approve(request.id(), "approver", "1回目"));
+        ApprovalRequest stuck = governance.approvals("APPROVED").stream()
+                .filter(entry -> entry.id() == request.id()).findFirst().orElseThrow();
+        assertEquals("APPROVED", stuck.status());
+
+        // その状態から却下できること（＝永久に詰まらない）。
+        assertEquals("REJECTED", governance.reject(request.id(), "approver", "取り下げ").status());
+    }
+
+    @Test
+    void onlyOneOfTwoSimultaneousApproversDecidesTheRequest() throws Exception {
+        String chainId = newChainId();
+        governance.publishChain(chainCommand(chainId, "THEN(validate,report)", 0L), "admin", null);
+        ApprovalRequest request = governance.request("CHAIN", chainId,
+                "THEN(validate,transform,report)", null, null, "admin", null);
+
+        int threads = 4;
+        CyclicBarrier startTogether = new CyclicBarrier(threads);
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            List<Callable<String>> jobs = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                String approver = "approver" + i;
+                jobs.add(() -> {
+                    startTogether.await();
+                    try {
+                        return governance.approve(request.id(), approver, "同時承認").status();
+                    } catch (RuntimeException e) {
+                        return "REJECTED_BY_GUARD";
+                    }
+                });
+            }
+            List<String> outcomes = new ArrayList<>();
+            for (Future<String> future : pool.invokeAll(jobs)) {
+                outcomes.add(future.get());
+            }
+
+            assertEquals(1, outcomes.stream().filter("APPLIED"::equals).count(),
+                    () -> "APPLIED を返した承認が1件でない: " + outcomes);
+            // 最終状態が APPLIED のまま（APPROVED で上書きされていない）こと。
+            assertEquals("APPLIED", governance.approvals(null).stream()
+                    .filter(entry -> entry.id() == request.id())
+                    .findFirst().orElseThrow().status(),
+                    "反映済みなのに未反映として表示される状態になっている");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    // ---- 4. 同時申請の採番 -------------------------------------------------------
 
     @Test
     void concurrentRequestsEachGetTheirOwnId() throws Exception {

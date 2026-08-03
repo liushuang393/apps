@@ -19,7 +19,9 @@ on_error() {
 }
 trap on_error ERR
 if command -v python3 >/dev/null 2>&1; then
-  ./preflight.sh
+  # cd したのは $ROOT_DIR であってスクリプトの場所ではない。
+  # ./preflight.sh では見つからず、set -Eeuo pipefail の下で最初の手順で死ぬ。
+  "$ROOT_DIR/scripts/preflight.sh"
 else
   echo "[WARN] python3 not found; host preflight skipped. Docker build/JUnit will still run."
 fi

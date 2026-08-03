@@ -72,8 +72,8 @@ async function load() {
     <td>${esc(a.comment)}</td>
     <td>${esc(a.decidedBy)}</td>
     <td>${esc(a.appliedVersion)}</td>
-    <td>${a.status === "PENDING"
-        ? `<button class="primary approve" data-id="${a.id}">承認</button>
+    <td>${a.status === "PENDING" || a.status === "APPROVED"
+        ? `<button class="primary approve" data-id="${a.id}">${a.status === "APPROVED" ? "再適用" : "承認"}</button>
            <button class="reject" data-id="${a.id}">却下</button>`
         : ""}</td>
   </tr>`);

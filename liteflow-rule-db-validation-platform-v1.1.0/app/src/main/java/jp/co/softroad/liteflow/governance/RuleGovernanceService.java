@@ -38,6 +38,13 @@ public class RuleGovernanceService {
     public static final String SCRIPT = "SCRIPT";
     /** 統制層の外で発行された版を後追いで記録したときの記録者名。人ではないと分かる形にする。 */
     public static final String PRE_IMAGE_ACTOR = "(pre-image)";
+    /**
+     * まだ承認／却下を受け付ける状態。
+     *
+     * <p>{@code APPROVED} を含めているのは、発行に失敗して「承認済みだが未反映」で
+     * 止まった申請を再試行できるようにするため。
+     */
+    private static final List<String> DECIDABLE_STATUSES = List.of("PENDING", "APPROVED");
 
     private final RuleAdminService ruleAdminService;
     private final RuleGovernanceRepository repository;
@@ -290,8 +297,12 @@ public class RuleGovernanceService {
     }
 
     public ApprovalRequest reject(long id, String actor, String note) {
-        ApprovalRequest request = requirePending(id);
-        repository.decideApproval(id, "REJECTED", actor, note, null);
+        ApprovalRequest request = requireDecidable(id);
+        if (repository.decideApprovalIfCurrentStatusIn(id, "REJECTED", actor, note, null,
+                DECIDABLE_STATUSES) == 0) {
+            throw new IllegalArgumentException("申請 " + id
+                    + " は既に他の利用者が決着させています。一覧を読み直してください");
+        }
         repository.audit(actor, "REJECT", request.targetType(), request.targetId(), null,
                 "approval #" + id + " rejected");
         return repository.findApproval(id).orElseThrow();
@@ -312,10 +323,21 @@ public class RuleGovernanceService {
         }
     }
 
-    private ApprovalRequest requirePending(long id) {
+    /**
+     * まだ決着させられる状態か。
+     *
+     * <p>{@code PENDING} に加えて {@code APPROVED} も許す。{@code APPROVED} は
+     * 「承認は下りたが発行に失敗して反映されていない」状態であり、そこから再試行できなければ
+     * <b>その申請は永久に詰まる</b>（承認も却下も受け付けられなくなる）。
+     *
+     * <p>ここでの判定は表示と早期の弾き出しのためだけのものである。<b>競合の解決は
+     * {@link RuleGovernanceRepository#decideApprovalIfCurrentStatusIn} の条件付き UPDATE が行う。</b>
+     * ここだけで守ろうとすると check-then-act になる。
+     */
+    private ApprovalRequest requireDecidable(long id) {
         ApprovalRequest request = repository.findApproval(id)
                 .orElseThrow(() -> new IllegalArgumentException("unknown approval: " + id));
-        if (!"PENDING".equals(request.status())) {
+        if (!DECIDABLE_STATUSES.contains(request.status())) {
             throw new IllegalArgumentException(
                     "approval " + id + " is already " + request.status());
         }

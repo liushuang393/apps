@@ -165,14 +165,28 @@ if ($SkipRun) {
         if (-not $ready) { throw "目標アプリが起動しませんでした。reports\samples-app.err.log を確認してください。" }
 
         foreach ($path in @("/login", "/search")) {
-            $res = Invoke-WebRequest -Uri "http://localhost:$Port$path" -UseBasicParsing -TimeoutSec 10
+            # $ErrorActionPreference = "Stop" のもとでは 2xx 以外は例外になる。
+            # 例外のまま抜けると 200 以外が $screens に入らず、下の判定が
+            # 「常に空 ＝ 常に PASS」になってしまう（到達しないアサーションだった）。
+            # ここで状態コードを取り出して必ず記録する。
+            $screenStatus = -1
+            $screenBytes = 0
+            $screenHasForm = $false
+            try {
+                $res = Invoke-WebRequest -Uri "http://localhost:$Port$path" -UseBasicParsing -TimeoutSec 10
+                $screenStatus = [int]$res.StatusCode
+                $screenBytes = $res.Content.Length
+                $screenHasForm = $res.Content.Contains("<form")
+            } catch {
+                if ($_.Exception.Response) { $screenStatus = [int]$_.Exception.Response.StatusCode }
+            }
             $screens += [ordered]@{
                 path = $path
-                status = [int]$res.StatusCode
-                bytes = $res.Content.Length
-                containsForm = $res.Content.Contains("<form")
+                status = $screenStatus
+                bytes = $screenBytes
+                containsForm = $screenHasForm
             }
-            Write-Host ("    {0} -> HTTP {1} ({2} bytes)" -f $path, [int]$res.StatusCode, $res.Content.Length)
+            Write-Host ("    {0} -> HTTP {1} ({2} bytes)" -f $path, $screenStatus, $screenBytes)
         }
     } finally {
         if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
@@ -180,7 +194,19 @@ if ($SkipRun) {
 }
 
 $failedScreens = @($screens | Where-Object { $_.status -ne 200 })
-$status = if ($failedScreens.Count -eq 0) { "PASS" } else { "FAIL" }
+# -SkipRun のときは画面を1つも見ていない。「見ていない」を PASS と呼ばないこと。
+# scope も画面を配信したと書いてはいけないので、下で文言を切り替える。
+$ExpectedScreens = @("/login", "/search")
+$checkedPaths = @($screens | ForEach-Object { $_.path })
+$missingScreens = if ($SkipRun) { @() } else { @($ExpectedScreens | Where-Object { $checkedPaths -notcontains $_ }) }
+$status = if ($failedScreens.Count -eq 0 -and $missingScreens.Count -eq 0) { "PASS" } else { "FAIL" }
+# scope に「画面を配信した」と書けるのは、実際に見たときだけ。
+$ScreenScopeText = if ($SkipRun) {
+    "The target application was NOT started (-SkipRun), so this run does NOT show that it serves " +
+    "the login and search screens. "
+} else {
+    "It also shows that the target application actually serves the login and search screens. "
+}
 $report = [ordered]@{
     status = $status
     ranAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -202,9 +228,11 @@ $report = [ordered]@{
         classpathDir = $LibDir
     }
     screens = $screens
+    screensChecked = (-not $SkipRun)
+    missingScreens = $missingScreens
     scope = ("Proves that both the Struts 1.3.10 source project and the Spring Boot 4.1 target project " +
-             "are real, buildable projects, and that the target application actually serves the login " +
-             "and search screens. The screens served here come from the HAND-WRITTEN target project, " +
+             "are real, buildable projects. " + $ScreenScopeText +
+             "Any screens served here come from the HAND-WRITTEN target project, " +
              "NOT from generated code. What the generator achieved is recorded separately in " +
              "reports/corpus-report.md: golden-diff match plus real javac against the Boot 4.1 classpath.")
 }

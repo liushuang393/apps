@@ -96,12 +96,12 @@ MOVE / ADD / ADD-GIVING / SUBTRACT / MULTIPLY / DIVIDE / COMPUTE（二項）/ CO
 
 ```bat
 scripts\preflight.cmd       → reports\preflight-report.md    19/19 PASS
-scripts\local-verify.cmd    → reports\local-verify.json      tests=78 failures=0
+scripts\local-verify.cmd    → reports\local-verify.json      tests=81 failures=0
 scripts\install.cmd         → reports\build-evidence.json    status=PASS
 scripts\validate.cmd        → reports\validation-report.md   総合判定 PASS 42/0/0/0  ★正式判定
 scripts\corpus-run.cmd      → reports\corpus-report.md       19/19 期待どおり（3ファミリ）
 scripts\samples-build.cmd   → reports\samples-build.json     Struts/Boot 実ビルド＋画面HTTP200
-scripts\rule-admin-demo.cmd → reports\rule-admin-demo.json   断言 15/15
+scripts\rule-admin-demo.cmd → reports\rule-admin-demo.json   断言 21/21
 scripts\summary.cmd         → reports\summary.md             全レポートを1枚に
 powershell -File scripts\demo-transform.ps1  → reports\transform-demo.json  status=PASS
 powershell -File scripts\stop.ps1
@@ -278,6 +278,42 @@ docs/        本レポートを含む技術文書
 | B25 | **`APPROVER` だけを持つ利用者が `ADMIN` 無しで任意の本文を発行できた。** 申請は認証済みなら誰でも出せ、承認は `APPROVER` が通せ、承認は即発行する。申請者と承認者を比べる処理が無かったため「自分で申請して自分で承認」が通り、`POST /api/rules/**` の `hasRole("ADMIN")` が実質無効だった | RM-07 は admin が申請し approver が承認する**正しい順序しか試していなかった**。誤った順序を試す検査が無かった | ✅ 修正済: `SeparationOfDutiesException`（403）。却下は自分の申請にも許す（取り下げ）。RM-09 と `RuleGovernanceTest` で守る |
 | B26 | **統制層の外で発行された版へロールバックできなかった。** pre-image を取得しておきながら監査の動詞を選ぶためだけに使い、履歴には post-image しか記録していなかった。LiteFlow は上書き保存なので、その版の本文は**発行の瞬間に永久に失われていた** | HTTP 経由の発行はすべて統制層を通るため、**この状況を validator から作れない**。JUnit だけが `RulePublisher` を直接使う | ✅ 修正済: 発行の直前に pre-image を記録（同じ版は二重に積まない）。`RuleGovernanceTest` で守る。42項目側は RM-10 で「二重記録しない」ことだけを見る — 作れない状況を検証したふりはしない |
 | B27 | **同時申請で申請IDが入れ替わった。** INSERT の後に `SELECT MAX(id)` を別文で撃っており、`src/main` にトランザクションが1つも無い。申請者は他人の申請のidと本文を受け取り、承認者はそれを承認して**意図しない変更を反映**しうる | 検証が常に逐次で、同時実行を試していなかった | ✅ 修正済: JDBC の生成キーで採番。8スレッド同時申請のテストを追加（**修正前は 8件中5〜6件が同じidを受け取ることを実測**） |
+
+### 4.7 レビュー指摘の残りと自分の後始末（B28〜B34）
+
+| # | 欠陥 | 対応 |
+|---|---|---|
+| B28 | **承認が「申請後に入った別の変更」を黙って巻き戻していた。** `approve()` は `expectedVersion` 省略時にロック値を<b>承認時に読み直していた</b>。申請 #7 が v3 に対するものでも、間に v4 が入ると承認時に v4 を読んで compare-and-set が成功し、v3 相当の本文が v5 として通る。承認者には競合が一切見えない | ✅ 修正済: 期待版を<b>申請した時点</b>で確定して保存する。間に変更が入っていれば発行が楽観ロックで失敗し 409 になる。**修正前に赤くなることを実測**（例外が投げられず割り込みの修正が消える） |
+| B29 | **承認が check-then-act だった。** `requirePending` → `decideApproval` の間に保護が無く、`decideApproval` の WHERE に状態条件も無い。2人が同時に承認すると、片方が `APPLIED` と書いた直後にもう片方が `APPROVED` で上書きし、<b>反映済みなのに「未反映」と表示される</b>。さらに発行が失敗すると `APPROVED` で固定され、`requirePending` が再試行を拒み、画面もボタンを出さないため<b>その申請は永久に詰む</b> | ✅ 修正済: 状態遷移を条件付き UPDATE（`decideApprovalIfCurrentStatusIn`）にし、0行なら「先に決着済み」として弾く。`APPROVED` からの再試行を許容範囲に含め、画面にも「再適用」ボタンを出す。二重発行そのものは LiteFlow の楽観ロックが弾く。**この競合テストはタイミング依存で、旧実装でも赤くならなかった** — 不変条件の番人ではあるが再現の証拠ではない |
+| B30 | **`run-all.ps1` が常に失敗していた。** `& script @($item.args)` の `@()` は<b>配列部分式であって splat ではない</b>ため、空配列そのものが第1引数として束縛され `$BaseUrl` が空になる。3本とも即座に無効なURIで失敗し、健全なスタックでも「corpus-run, demo-transform, rule-admin-demo failed」で終わっていた。あわせて `install.ps1` / `validate.ps1` の終了コードを見ておらず、Docker 停止時に install の失敗を無視して validate へ進み、その失敗が後続3本のせいに見えていた | ✅ 修正済: ハッシュテーブルの splat（`@splat`）へ変更。install / validate の直後に `$LASTEXITCODE` を検査。ループ内で毎回リセット |
+| B31 | **`run-all.sh` が POSIX で最初の手順から死んでいた。** `cd "$ROOT_DIR"` した後に `./preflight.sh` を呼んでいたが、スクリプトは `scripts/` にある。`set -Eeuo pipefail` なので即 exit 1 | ✅ 修正済: `"$ROOT_DIR/scripts/preflight.sh"` |
+| B32 | **PF-09 が Linux/macOS で 100% 失敗していた。** `static_compile.py` の `STUBS` キー20件が Windows の `\` 区切り。POSIX では区切りではないので `org\springframework\...Foo.java` という<b>1個のファイル名</b>になり、javac が「public class は Foo.java という名前のファイルに宣言すべき」で落ちる。`preflight.sh` → `run-all.sh` まで連鎖する | ✅ 修正済: キーを書き換えるのではなく<b>使う場所で区切りを正規化</b>した（`relative.replace("\\", "/")`）。以後どちらの書き方でも正しい階層に置かれる |
+| B33 | **`samples-build.ps1` のアサーションが到達しなかった。** `$ErrorActionPreference = "Stop"` のもとで `Invoke-WebRequest` は2xx以外で例外になるため、200以外が `$screens` に入ることは無く、`$failedScreens` は常に空 ＝ `status` は常に PASS、末尾の `exit 1` は不到達。さらに `-SkipRun` では画面を1つも見ていないのに PASS を出し、`scope` は「目標アプリが実際にログイン／検索画面を配信する」と主張していた（**偽の scope 主張**でリポジトリの規約違反） | ✅ 修正済: 状態コードを例外から取り出して必ず記録する。`-SkipRun` でない場合は2画面を実際に見たことを PASS の条件にし、`scope` の文言を実行状況で切り替え、`screensChecked` を出力に足した |
+| B34 | **自分の作った安全網に穴があった。** スナップショットが `generatedLines` / `artifacts` / 集計 `coverage` しか記録せず、`RuleEngine.Result` の残り2つ（`findings` と `coverageByFile`）が対象外だった。とくに `findings` は「ブロックが閉じ切っていない」の検出であり、<b>生成コードがコンパイルできてしまう場合こそ効く信号</b>である | ✅ 修正済: 両方をスナップショットへ追加。19件の生成コード部分は<b>バイト一致のまま</b>で、新たに12行の `# file:` / `# finding:` が記録された |
+
+### 4.8 入口が固まっていた（B35）— 通しで回さないと出なかった欠陥
+
+| # | 欠陥 | 対応 |
+|---|---|---|
+| B35 | **`corpus-run.cmd` と `run-all.cmd` が Windows PowerShell 5.1 で丸ごと固まっていた。** `Get-Content` が返す文字列は PSObject に包まれ、`PSPath` / `PSParentPath` / `PSChildName` / `PSDrive` / `PSProvider` というプロバイダ用メタプロパティを持つ。`PSProvider` 自身も own プロパティを持つため、**5.1 の `ConvertTo-Json` がこれを再帰的に展開して返ってこなくなる**（実測: 1ケース分の body で10分以上応答なし）。PowerShell 7 では起きないので、**pwsh で確認している限り一切再現しない**。`.cmd` は `powershell`（5.1）を呼ぶため、利用者が最初に叩く2つの入口が両方死んでいた | ✅ 修正済: body に載せる前に `[string[]]` / `[string]` へキャストして値だけを残す（3か所）。予防として `ConvertFrom-Json` 由来の PSCustomObject も素の型へ落とす。修正後、5.1 で `corpus-run` 19/19（未カバー率 6.07%）・`run-all` 完走 |
+
+**B35 の教訓が3つある。**
+
+1. **原因の推定を2回外した。** 最初は「`-Depth 20` が深すぎる」（→ 12 に下げても固まった）、
+   次は「`ConvertFrom-Json` の PSCustomObject」（→ 素の型にしても固まった）。
+   どちらも**単体では再現するのに実スクリプトでは説明できない**という矛盾を残したまま先へ進もうとしていた。
+   矛盾を残した仮説は間違っている。`Set-PSDebug -Trace 1` で停止行を特定してからが本当の調査だった
+2. **入口を通しで回さないと出ない欠陥がある。** 個別スクリプトはすべて緑で、
+   42項目も 19/19 も緑だった。`run-all` を通したときだけ出た
+3. **実行系の版差を検証していなかった。** pwsh 7 でしか回していなかったため、
+   利用者が使う 5.1 の経路が壊れていることに最後まで気づかなかった。
+   同じ理由で `rule-admin-demo.ps1` の着地URI判定も版依存で壊れていた（`ResponseUri` は 5.1 のみ、
+   PowerShell 7 は `RequestMessage.RequestUri`）— こちらも修正して両版で PASS を確認した
+
+**B28〜B34 の共通点。** B24〜B27 と同じ「検査が作らない状況」に加えて、
+**検査そのものが機能していなかった**類が3件（B30・B32・B33）ある。
+B33 は「常に PASS を返すアサーション」で、これは無いより悪い — 緑を見て安心してしまう。
+新しい判定を足すときは<b>意図的に赤くしてみる</b>こと。
 
 **B24〜B27 の共通点。** どれも**検査の書き方が作らない状況**にあった —
 別の認証方式（フォーム）、誤った操作順序（自己承認）、統制層の外からの発行、同時実行。

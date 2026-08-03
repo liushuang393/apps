@@ -63,7 +63,7 @@ mvn -f app/pom.xml -B -ntp test -Dtest=TransformPipelineTest#qualityGateRejectsU
 python tools/static_compile.py
 ```
 
-テストは11クラス78件。Docker は不要。
+テストは11クラス81件。Docker は不要。
 
 **起動が要るものと要らないものを混ぜないこと。** 起動が要らない5クラスがこの構成の作業ループである。
 
@@ -313,10 +313,16 @@ curl localhost:8081/api/templates/cobol-programs-v1/diagnostics  # 1本
 - **承認フローはロール分離だけでは権限の境界にならない**。`admin` は APPROVER も持つので、「申請者本人は承認できない」判定（`SeparationOfDutiesException`）が必須。これが無いと APPROVER だけの利用者が ADMIN 無しで任意の本文を発行できる（B25）
 - **発行の直前に pre-image を記録する**（`RuleGovernanceService#recordPreImage`）。消すと統制層の外で発行された版へ二度と戻せない。**統制層の外からの発行は実際に起きる**（JUnit・`RulePublisher` の直接利用）。ただし同じ版を二重に積まないこと
 - **`rm_approval` の採番は JDBC の生成キーで受け取る**。`SELECT MAX(id)` に戻すと、`src/main` にトランザクションが無いため同時申請でidが入れ替わり、**承認者が別人の変更を反映する**（B27。修正前は8件同時で5〜6件が同じidを受け取った）
+- **期待版は申請した時点で確定する**（`request()` が `expectedVersion` を必ず埋める）。承認時に読み直すと、**申請から承認までの間に入った別の変更を黙って巻き戻す**（B28）
+- **承認・却下の状態遷移は条件付き UPDATE で行う**（`decideApprovalIfCurrentStatusIn`）。`requirePending` のような事前確認だけで守ろうとすると check-then-act になり、**反映済みなのに「未反映」と表示される**（B29）。`APPROVED`（承認済みだが未反映）からの再試行は許すこと — 塞ぐとその申請は永久に詰む
+- **PowerShell の `@()` は splat ではない**（配列部分式）。`& script @($args)` は空配列を第1引数として渡し、`$BaseUrl` が空になる。**ハッシュテーブルで `@splat` する**（B30）
+- **`static_compile.py` の `STUBS` キーは使う場所で区切りを正規化してある**。`\` 区切りのキーを POSIX でそのまま `Path` に渡すと1個の平坦なファイル名になり、**PF-09 が Linux/macOS で必ず落ちる**（B32）
+- **「常に PASS を返す判定」を書かない**。`$ErrorActionPreference = "Stop"` のもとで `Invoke-WebRequest` は2xx以外で例外になるので、`$_.status -ne 200` は永久に偽になる。状態コードは例外から取り出して記録する（B33）。**見ていないものを PASS と呼ばない** — `-SkipRun` のときは `scope` の文言も変える
 - **Thymeleaf を入れてはいけない**。既定のテンプレート探索パス `classpath:/templates/` が**変換ルールJSONの置き場と衝突する**。管理画面は `static/admin/` の素のHTML+JS
 - **javac の in-process クラスパスにワイルドカードは使えない**。`dir/*` を展開するのは java/javac のランチャであって `StandardJavaFileManager` ではない。ディレクトリを渡されたら jar を1つずつ並べる（`CompileNode.extraClasspath()`）
 - **`Path.of("*")` は Windows で例外**。ワイルドカードを組み立てるときは文字列連結で
 - **Spring Boot 4.1 を `app/pom.xml` に足してはいけない**。本体は 4.0.6 で動いている。4.1 は「変換先の題材」であり、`app/boot41-classpath.pom.xml` で依存jarだけを集めて javac のクラスパスにしている
+- **Grafana に人がログインしてパスワードを変えると `OBS-DASHBOARD` が落ちる**。validator は `admin`/`admin` で問い合わせる。`GF_SECURITY_ADMIN_PASSWORD` は**初期値にしか効かず**、変更後の値は `grafana-data` ボリュームに残るので環境変数を戻しても直らない。復旧は Grafana のボリュームだけ作り直す（`docker compose rm -sf grafana` → `docker volume rm liteflow-rule-db-validation_grafana-data` → `docker compose up -d grafana`）。**デモでログインするときはパスワード変更を Skip すること**
 - **Prometheus を見る検査は必ずリトライで待つ**。`scrape_interval` は5秒で、Prometheus は対象ごとに取得タイミングをずらす。実行直後に1回だけ問い合わせると「片方のExecutorしか出ていない」という取得タイミング依存の偽FAILになる（`OBS-PROM` / `OBS-PROM-DATA` は30秒のデッドラインで待つ）
 - **ポート占有チェックは自プロジェクトのコンテナを除外する**。`_common.ps1` の `Assert-PortsFree` は `docker compose ps --format json` の `Publishers[].PublishedPort` で自分の公開ポートを判定する。**保持プロセス名で判定してはいけない** — Docker Desktop のバックエンド次第で `com.docker.backend` だったり `wslrelay` だったりするため、スタックを起動したまま `validate.cmd` を再実行できなくなる
 
@@ -349,6 +355,16 @@ curl localhost:8081/api/templates/cobol-programs-v1/diagnostics  # 1本
   の3本がこれで壊れていた（B21）
 - **`java -version`（ハイフン1本）は stderr へ書く。** 版数を読むなら JDK 9 以降の
   `java --version`（stdout）を使う
+- **`Get-Content` の出力を `ConvertTo-Json` に渡す前に `[string[]]` へキャストする。**
+  返ってくる文字列は PSObject に包まれ `PSPath` / `PSProvider` 等のメタプロパティを持ち、
+  `PSProvider` 自身も own プロパティを持つため、**Windows PowerShell 5.1 の `ConvertTo-Json` が
+  再帰展開して返ってこなくなる**（実測10分以上）。深さを下げても直らない。
+  PowerShell 7 では起きないので **pwsh だけで確認していると気づけない**。
+  `.cmd` は `powershell`（5.1）を呼ぶので、これで `corpus-run.cmd` と `run-all.cmd` が
+  丸ごと固まっていた（B35）
+- **スクリプトを直したら Windows PowerShell 5.1 でも回す。** `.cmd` の実体は 5.1 である。
+  `Invoke-WebRequest` の戻り型も版で違う（5.1 は `BaseResponse.ResponseUri`、
+  7 は `BaseResponse.RequestMessage.RequestUri`）ので、片方だけ見る判定を書かない
 - `docker --version` / `docker compose version` は daemon 停止中でも成功する。**到達性の判定は `docker info`**（`Assert-DockerReady`）
 
 **`.sh`**
@@ -429,7 +445,7 @@ Rule-DB への公開はすべて `expectedVersion` による楽観ロック。�
 | 変更したもの | 回すもの |
 |---|---|
 | ルール表（まず最速の確認） | `mvn -f app/pom.xml test -Dtest='RuleEngine*Test,ProfileDiagnosticsTest,RuleUsageTest'`（**1秒未満**。Docker も Spring も要らない） |
-| Java・ルール表・スクリプト | `scripts\local-verify.cmd`（約30秒。78テスト） |
+| Java・ルール表・スクリプト | `scripts\local-verify.cmd`（約30秒。81テスト） |
 | ルール表 | 追加で `scripts\corpus-run.cmd`（**負例4件の退行を必ず確認**） |
 | 生成骨格（`GeneratedProgramCompiler`） | `mvn -f app/pom.xml test -Dtest=GeneratedProgramHarnessTest`（ルール表を通さない土台） |
 | ルール適用の規則（`RuleEngine`） | `mvn -f app/pom.xml test -Dtest=RuleEngineTest` → 続けて `CorpusSnapshotTest`（**スナップショットのバイト一致**） |

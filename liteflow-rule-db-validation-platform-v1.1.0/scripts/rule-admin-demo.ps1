@@ -213,12 +213,27 @@ Write-Host "[7c] 管理画面のフォームログインとログアウト"
 #   ・リダイレクトは追わせる（最終URIで着地点を判定する）
 #   ・4xx は例外から状態コードを取り出す
 # という書き方に統一してある。
+# リダイレクトを追った先の最終URIを取り出す。
+# **PowerShell の版で型が違う。** 5.1 は HttpWebResponse なので ResponseUri を持つが、
+# 7 は HttpResponseMessage で ResponseUri が無く、RequestMessage.RequestUri を見る。
+# 片方だけを見ると「動いているのに着地URIが空 ＝ FAIL」という偽の失敗になる
+# （.cmd 経由は 5.1、pwsh から直接呼ぶと 7 になるため、入口によって結果が変わっていた）。
+function Get-FinalUri($Response) {
+    $base = $Response.BaseResponse
+    if ($null -eq $base) { return "" }
+    $names = @($base.PSObject.Properties.Name)
+    if ($names -contains "ResponseUri") { return "$($base.ResponseUri)" }
+    if ($names -contains "RequestMessage" -and $null -ne $base.RequestMessage) {
+        return "$($base.RequestMessage.RequestUri)"
+    }
+    return ""
+}
+
 function Invoke-Browser([string]$Method, [string]$Url, $Body, $Headers, $Session) {
     try {
         $response = Invoke-WebRequest -Uri $Url -Method $Method -WebSession $Session `
             -Body $Body -Headers $Headers -UseBasicParsing -TimeoutSec 20
-        return [ordered]@{ status = [int]$response.StatusCode
-            uri = "$($response.BaseResponse.ResponseUri)" }
+        return [ordered]@{ status = [int]$response.StatusCode; uri = (Get-FinalUri $response) }
     } catch {
         $webResponse = $_.Exception.Response
         $code = if ($webResponse) { [int]$webResponse.StatusCode } else { -1 }
