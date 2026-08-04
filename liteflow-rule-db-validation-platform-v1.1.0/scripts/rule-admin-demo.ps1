@@ -216,17 +216,12 @@ Write-Host "[7c] 管理画面のフォームログインとログアウト"
 # リダイレクトを追った先の最終URIを取り出す。
 # **PowerShell の版で型が違う。** 5.1 は HttpWebResponse なので ResponseUri を持つが、
 # 7 は HttpResponseMessage で ResponseUri が無く、RequestMessage.RequestUri を見る。
-# 片方だけを見ると「動いているのに着地URIが空 ＝ FAIL」という偽の失敗になる
-# （.cmd 経由は 5.1、pwsh から直接呼ぶと 7 になるため、入口によって結果が変わっていた）。
+# 片方だけを見ると「動いているのに着地URIが空 ＝ FAIL」という偽の失敗になる。
+# .cmd 経由は 5.1、pwsh から直接呼ぶと 7 なので、入口によって結果が変わっていた。
 function Get-FinalUri($Response) {
     $base = $Response.BaseResponse
-    if ($null -eq $base) { return "" }
-    $names = @($base.PSObject.Properties.Name)
-    if ($names -contains "ResponseUri") { return "$($base.ResponseUri)" }
-    if ($names -contains "RequestMessage" -and $null -ne $base.RequestMessage) {
-        return "$($base.RequestMessage.RequestUri)"
-    }
-    return ""
+    if ($base.ResponseUri) { return "$($base.ResponseUri)" }
+    return "$($base.RequestMessage.RequestUri)"
 }
 
 function Invoke-Browser([string]$Method, [string]$Url, $Body, $Headers, $Session) {

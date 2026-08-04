@@ -324,15 +324,8 @@ public class RuleGovernanceService {
     }
 
     /**
-     * まだ決着させられる状態か。
-     *
-     * <p>{@code PENDING} に加えて {@code APPROVED} も許す。{@code APPROVED} は
-     * 「承認は下りたが発行に失敗して反映されていない」状態であり、そこから再試行できなければ
-     * <b>その申請は永久に詰まる</b>（承認も却下も受け付けられなくなる）。
-     *
-     * <p>ここでの判定は表示と早期の弾き出しのためだけのものである。<b>競合の解決は
-     * {@link RuleGovernanceRepository#decideApprovalIfCurrentStatusIn} の条件付き UPDATE が行う。</b>
-     * ここだけで守ろうとすると check-then-act になる。
+     * まだ決着させられる状態か。{@code APPROVED}（承認済みだが未反映）も許す — 塞ぐと再試行できず
+     * その申請が永久に詰まる。<b>競合の解決は条件付き UPDATE 側</b>で、ここは早期の弾き出しだけ。
      */
     private ApprovalRequest requireDecidable(long id) {
         ApprovalRequest request = repository.findApproval(id)

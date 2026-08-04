@@ -35,60 +35,14 @@ if ($User) {
     $AuthHeader = @{ Authorization = "Basic " + [Convert]::ToBase64String($pair) }
 }
 
-# ---- Windows PowerShell 5.1 の ConvertTo-Json について（変えるときは必ず読むこと） ----
-#
-# **`Get-Content` の出力をそのまま body に載せてはいけない。**
-# `Get-Content` が返す文字列は PSObject に包まれ、`PSPath` / `PSParentPath` / `PSChildName` /
-# `PSDrive` / `PSProvider` というプロバイダ用のメタプロパティが付いている。
-# `PSProvider` はさらに own プロパティを持つため、5.1 の ConvertTo-Json はこれを再帰的に展開し、
-# **返ってこなくなる**（実測: corpus 1ケース分の body で10分以上応答なし）。
-# PowerShell 7 では起きないので、**pwsh では再現せず 5.1 だけで固まる**。
-# `.cmd` は `powershell`（5.1）を呼ぶため、corpus-run.cmd と run-all.cmd が丸ごと固まっていた。
-#
-# 対策は値だけを残すこと — `[string[]]` / `[string]` へキャストする（下の3か所）。
-# 深さを下げるだけでは直らない（-Depth 12 でも固まることを実測した）。
-#
-# 実データの入れ子は body 側で5段程度（body → expectations[] → entry → given → 値）、
-# レポート側でも7段程度なので、12 で十分な余裕がある。
-$JsonDepth = 12
-
 function Invoke-Api([string]$Method, [string]$Path, $Body) {
-    $json = if ($null -eq $Body) { $null } else { $Body | ConvertTo-Json -Depth $JsonDepth -Compress }
+    $json = if ($null -eq $Body) { $null } else { $Body | ConvertTo-Json -Depth 20 -Compress }
     return Invoke-RestMethod -Method $Method -Uri "$BaseUrl$Path" -Headers $AuthHeader `
         -ContentType "application/json; charset=utf-8" -Body $json -TimeoutSec 120
 }
 
 function Read-TextFile([string]$Path) {
     return (Get-Content -Path $Path -Raw -Encoding UTF8)
-}
-
-# ConvertFrom-Json が返す PSCustomObject を、素のハッシュテーブル／配列／スカラーへ落とす。
-#
-# 上の `Get-Content` と同じ種類の予防措置である。PSObject に包まれた値を
-# 5.1 の ConvertTo-Json へ渡すと余計なメタプロパティまで辿られるため、
-# body に載せる前に素の型だけにしておく。
-# （5.1 には `ConvertFrom-Json -AsHashtable` が無いため自前で変換する）
-function ConvertTo-PlainMap($Object) {
-    $map = [ordered]@{}
-    foreach ($property in $Object.PSObject.Properties) {
-        $value = $property.Value
-        if ($value -is [System.Management.Automation.PSCustomObject]) {
-            $map[$property.Name] = ConvertTo-PlainMap $value
-        } elseif ($value -is [object[]]) {
-            $items = @()
-            foreach ($item in $value) {
-                if ($item -is [System.Management.Automation.PSCustomObject]) {
-                    $items += , (ConvertTo-PlainMap $item)
-                } else {
-                    $items += $item
-                }
-            }
-            $map[$property.Name] = $items
-        } else {
-            $map[$property.Name] = $value
-        }
-    }
-    return $map
 }
 
 # PowerShell の @($null) は要素数1の配列になる。応答に無いフィールドを 0 件として
@@ -191,9 +145,11 @@ foreach ($fdir in $familyDirs) {
         $expectations = @()
         $behaviourPath = Join-Path $outputDir "behaviour.json"
         if (Test-Path $behaviourPath) {
-            $parsed = Read-TextFile $behaviourPath | ConvertFrom-Json
-            # PSCustomObject のまま body に載せると 5.1 の ConvertTo-Json が止まる。
-            if ($null -ne $parsed) { $expectations = @($parsed | ForEach-Object { ConvertTo-PlainMap $_ }) }
+            # [string] へのキャストが必須。ConvertFrom-Json を通さず Get-Content の戻り値を
+            # そのまま body に載せると、PSPath / PSProvider などのプロバイダ用メタプロパティを
+            # 5.1 の ConvertTo-Json が再帰展開して返ってこなくなる。CLAUDE.md の B35 を参照。
+            $parsed = [string](Read-TextFile $behaviourPath) | ConvertFrom-Json
+            if ($null -ne $parsed) { $expectations = @($parsed) }
         }
         $golden = [ordered]@{}
         if (Test-Path $outputDir) {
@@ -212,9 +168,7 @@ foreach ($fdir in $familyDirs) {
         if ($inputMode -eq "single") {
             # 単一ファイル方式は従来どおり sourceLines だけを送る。既存12ケースの
             # 生成コードを1バイトも変えないため、ここは分岐させたままにしておくこと。
-            # [string[]] へのキャストが必須。Get-Content が返す文字列には PSPath / PSProvider
-            # などのプロバイダ用メタプロパティが付いており、5.1 の ConvertTo-Json はそれを
-            # 再帰的に展開して停止する。値だけを残すこと。
+            # [string[]] へのキャストは上と同じ理由で必須。
             $body["sourceLines"] = [string[]]@(Get-Content -Path $inputFiles[0].FullName -Encoding UTF8 | Where-Object { $_.Trim().Length -gt 0 })
         } else {
             $files = [ordered]@{}
@@ -370,7 +324,7 @@ $report = [ordered]@{
              "language and the generated Java.")
     cases = $results
 }
-$report | ConvertTo-Json -Depth $JsonDepth | Set-Content -Encoding UTF8 $ReportJson
+$report | ConvertTo-Json -Depth 20 | Set-Content -Encoding UTF8 $ReportJson
 
 $md = @()
 $md += "# Transformation corpus report"
