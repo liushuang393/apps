@@ -46,7 +46,8 @@ $global:LASTEXITCODE = 0
 # 成否は $LASTEXITCODE で判定するので、ネイティブ呼び出しの間だけ Continue に戻す。
 $PreviousErrorAction = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& mvn -f (Join-Path $Root "app\pom.xml") -B -ntp clean verify 2>&1 | Tee-Object -FilePath $LogFile
+& mvn -f (Join-Path $Root "app\pom.xml") -B -ntp clean verify 2>&1 |
+    ForEach-Object { "$_" } | Tee-Object -FilePath $LogFile
 $BuildExit = $LASTEXITCODE
 $ErrorActionPreference = $PreviousErrorAction
 

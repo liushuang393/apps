@@ -30,7 +30,9 @@ function Invoke-Logged([scriptblock]$Command) {
     $PreviousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & $Command 2>&1 | Tee-Object -FilePath $LogFile -Append
+        # install.ps1 と同じ。ForEach-Object で文字列へ落とさないと、成功しているのに
+        # 赤字の NativeCommandError が表示され「失敗した」と読まれる。
+        & $Command 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $LogFile -Append
     } finally {
         $ErrorActionPreference = $PreviousErrorAction
     }
@@ -46,7 +48,8 @@ function Invoke-Validator([string]$Phase) {
     $PreviousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & docker compose run --rm validator --phase $Phase 2>&1 | Tee-Object -FilePath $LogFile -Append
+        & docker compose run --rm validator --phase $Phase 2>&1 | ForEach-Object { "$_" } |
+            Tee-Object -FilePath $LogFile -Append
     } finally {
         $ErrorActionPreference = $PreviousErrorAction
     }

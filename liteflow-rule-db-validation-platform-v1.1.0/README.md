@@ -13,6 +13,9 @@ LiteFlow v2.16.1 の Rule-DB を使い、**ルールをDBに置いて設定変�
 | ② 変換ロジック層 | テンプレート／DBスクリプト／外部ルールファイルを変えると**生成されるコードが変わる**（再デプロイなし） | [手順E](#手順e-変換デモ設定を変えると生成コードが変わる) [手順G](#手順g-ルールを再ビルドなしで追加する) |
 | ③ 生成コードの品質 | 生成したJavaが**本当にコンパイルでき、本当に正しく動く** | [手順F](#手順f-コーパス回帰生成--コンパイル--振る舞いテスト) |
 
+**人に来歴を説明するとき**は [1-B. 全体像（図）](#1-b-全体像図-人に説明するときはここだけ見せる) の4枚の図だけ見せてください。
+構成・ルール変更の流れ・ノード7種の入出力・判定の強さの違いが図と表になっています。
+
 **COBOL→Javaの実資産に対する変換精度は、本基盤では検証していません。** 詳細は [`docs/COBOL_EXTENSION_BOUNDARY.md`](docs/COBOL_EXTENSION_BOUNDARY.md) と [`docs/STRUCTURE_REPORT.md`](docs/STRUCTURE_REPORT.md) を参照してください。
 
 ---
@@ -102,6 +105,167 @@ LiteFlow v2.16.1 の Rule-DB を使い、**ルールをDBに置いて設定変�
 │ theus                                │                                 │                                                  │
 └──────────────────────────────────────┴─────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────┘
 
+
+## 1-B. 全体像（図）— 人に説明するときはここだけ見せる
+
+### 1-B-1. 何がどこにあるか（Docker一式）
+
+`docker-compose.yml` の実物と一致している。**Executor が2台あるのが要点**で、
+「Rule-DB に入れた変更が両方に届く」ことがシナリオ#1の主張そのもの。
+
+```mermaid
+flowchart LR
+  User["利用者<br/>ブラウザ / scripts/*.ps1"]
+
+  subgraph Exec["Executor（同じイメージを2台）"]
+    A["Executor A<br/>:8081"]
+    B["Executor B<br/>:8082"]
+  end
+
+  DB[("MariaDB :3307<br/><b>Rule-DB</b><br/>lf_* = LiteFlow製<br/>rm_* = 自前")]
+  P["Prometheus :9090<br/>5秒間隔で取得"]
+  G["Grafana :3000<br/>ダッシュボード5枚"]
+  V["validator<br/>validate.py<br/>42項目"]
+  R[/"reports/<br/>判定はここにしか出ない"/]
+
+  User -->|"POST /api/rules/**<br/>ルールを変える（要認証）"| A
+  User -->|"POST /api/flows/{chain}/execute<br/>変換を実行（認証なし）"| A
+  User -->|"/admin/ 管理画面"| A
+
+  A <-->|"発行 / poll 1秒 / reconcile 10秒"| DB
+  B <-->|"poll 1秒 / reconcile 10秒"| DB
+
+  P -->|"/actuator/prometheus"| A
+  P -->|"/actuator/prometheus"| B
+  G -->|"PromQL"| P
+  V -->|"HTTP"| A
+  V -->|"HTTP"| B
+  V --> R
+```
+
+**製品と自前の境界**（ここを混ぜて説明すると相手が必ず混乱する）:
+
+| | LiteFlow / 公式OSS が提供 | 自前 |
+|---|---|---|
+| Rule-DB | `lf_chain` / `lf_script` / `lf_change_log` / `lf_change_lock` と poll・reconcile 同期 | `rm_rule_revision` / `rm_approval` / `rm_audit`（履歴・承認・監査） |
+| 画面 | Grafana / Prometheus 本体 | `static/admin/` の管理画面、Grafana ダッシュボード定義、Prometheus scrape 設定 |
+| 実行 | `FlowExecutor`（EL の解釈とノード呼び出し） | ノード7種と、その中身である `RuleEngine` / `SourceAnalyzer` / `GeneratedProgramCompiler` |
+| メトリクス | Micrometer | `LiteflowMetricsConfig`（上流不具合の回避で自前に再登録） |
+
+### 1-B-2. ルールを変える流れ（統制層 → Rule-DB → 2台へ同期）
+
+**LiteFlow は履歴を持たない**（`lf_chain` は発行のたびに本文を上書きする）。
+だから発行の直前に pre-image を `rm_rule_revision` へ積む。**これを飛ばすと前の版は永久に失われる。**
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Req as 申請者（admin）
+  participant Apr as 承認者（approver）
+  participant Gov as RuleGovernanceService<br/>【自前】
+  participant Pub as RulePublisher<br/>【LiteFlow製】
+  participant DB as Rule-DB
+  participant B as Executor B
+
+  Req->>Gov: POST /api/rules/approvals<br/>本文 + expectedVersion
+  Note over Gov: 期待版は<b>申請した時点で確定</b><br/>承認時に読み直すと別の変更を巻き戻す
+  Gov->>DB: INSERT rm_approval（PENDING）<br/>idはJDBC生成キーで受け取る
+  Req--x Gov: 自分では承認できない
+  Note over Gov: SeparationOfDutiesException<br/>職務分離。admin は APPROVER も持つため必須
+  Apr->>Gov: POST /api/rules/approvals/{id}/approve
+  Gov->>DB: 条件付きUPDATE（PENDING→APPROVED）
+  Gov->>DB: INSERT rm_rule_revision（<b>pre-image</b>）
+  Gov->>Pub: publishChain(el, expectedVersion)
+  Pub->>DB: lf_change_lock で直列化<br/>UPDATE lf_chain + INSERT lf_change_log
+  DB-->>Pub: version+1 / sequence
+  Note over Pub,DB: 版が違えば VersionConflictException → HTTP 409<br/>握り潰さないこと（LOCK-01 が検査）
+  Gov->>DB: INSERT rm_audit
+  B->>DB: poll（1秒ごとに lf_change_log の seq を見る）
+  DB-->>B: 新しい el_data
+  Note over B: 再デプロイなしで実行順が変わる
+```
+
+ロールバックは**「戻す」のではなく「古い本文を前向きに再発行する」**。v3 から v2 に戻すと v4 になる。
+LiteFlow に版を戻す原語が無いため。
+
+### 1-B-3. 変換チェーンの流れ（ノード7種の中身）
+
+`POST /api/flows/{chainId}/execute` の1回が下図。**EL（実行順）は Rule-DB から来る**ので、
+ノードの順番も差し替えもコードには無い。
+
+```mermaid
+flowchart TD
+  IN["<b>入力</b> ExecutionRequest<br/>sourceLines または sourceFiles<br/>templateProfile / expectations<br/>goldenArtifacts / maxUncoveredRate"]
+  EL[("Rule-DB の lf_chain<br/>THEN(validate,analyze,transform,<br/>compile,test,qualityGate,report)")]
+  CTX["MigrationContext<br/>全ノードが状態を運ぶ器"]
+
+  IN --> CTX
+  EL -->|"FlowExecutor が EL を解釈"| V
+
+  V["<b>validate</b><br/>trace に印を付けるだけ"]
+  AN["<b>analyze</b><br/>SourceAnalyzer.analyse()<br/>structure/facts で区画・段落に切る"]
+  TR["<b>transform</b><br/>RuleEngine.apply()<br/>正規表現＋テンプレートで1行ずつ"]
+  CO["<b>compile</b><br/>javac を実際に起動<br/>一時ディレクトリへ .class"]
+  TE["<b>test</b><br/>URLClassLoader で読み<br/><b>実際に実行</b>して期待値照合"]
+  GD["<b>goldenDiff</b><br/>正解テキストと差分<br/>（Struts系のみ）"]
+  QG{"<b>qualityGate</b><br/>コンパイル失敗／振る舞い不一致<br/>／未カバー率超過"}
+  RP["<b>report</b><br/>trace に印を付けるだけ"]
+
+  V --> AN --> TR --> CO --> TE --> QG
+  CO -.->|"Struts系はこちら"| GD -.-> QG
+  QG -->|"findings 0件"| RP
+  QG -->|"1件以上"| FAIL["<b>例外を投げてチェーンを失敗させる</b><br/>負例4件はここで落ちるのが正しい"]
+  RP --> OUT[/"ExecutionResult<br/>→ reports/*.json"/]
+
+  JSON[("ルール表 JSON<br/>templates/*.json<br/>＋ TRANSFORM_TEMPLATEDIR")]
+  JSON -->|"TemplateLibrary"| AN
+  JSON -->|"TemplateLibrary"| TR
+
+  CTX -.- V
+  CTX -.- QG
+```
+
+**ノード別の入力・DB・実行**。ノードは薄い adapter で、意味は右列の純粋なクラスにある
+（だから Spring も LiteFlow も起動せずに 0.1 秒で試せる）。
+
+| ノード | 入力（context のどこから） | 出力（どこへ） | DB | 外部プロセス | 意味を持つクラス |
+|---|---|---|---|---|---|
+| `validate` | – | `trace` | – | – | なし（印だけ） |
+| `analyze` | `templateProfile` / `sourceLines` / `sourceFiles` | `programs` / `facts` | – | – | `SourceAnalyzer` |
+| `transform` | 上記＋`templates` / `facts` / `programs` | `generatedLines` / `generatedArtifacts` / `coverage` / `findings` | – | – | **`RuleEngine`** |
+| `compile` | `generatedLines` / `generatedArtifacts` | `compileOutcome` / `entryClassName` / `workDir` | – | **javac**（in-process） | `GeneratedProgramCompiler` |
+| `test` | `compileOutcome` / `expectations` | `testResults` | – | **生成コードの実行**（別ClassLoader） | – |
+| `goldenDiff` | `goldenArtifacts` / `generatedArtifacts` | `goldenResults` | – | – | `GoldenComparison` |
+| `qualityGate` | `compileOutcome` / `testResults` / `goldenResults` / `coverage` / `maxUncoveredRate` | `qualityGate` = PASS / FAIL / SKIPPED_NO_CODE | – | – | なし（判定のみ） |
+| `report` | – | `trace` | – | – | なし（印だけ） |
+
+**変換対象が無いときは transform / compile / test / qualityGate は何もしない。**
+判定は `hasSource()` と `hasGeneratedOutput()` を使う。手順D（42項目）の
+オーケストレーション専用チェーンはソースを渡さないので、ここに副作用を持たせると
+`PERF-01` / `CONC-01` / `SYNC-*` が一斉に落ちる。
+
+**`validate` と `report` は印を付けるだけ**である。名前から検査や帳票生成を想像されるが、
+実体は `trace` への追記だけ。**説明のときにここを盛らないこと。**
+
+### 1-B-4. 判定の強さは領域で違う
+
+```mermaid
+flowchart LR
+  subgraph C["COBOL 系（cobol-statements / cobol-programs）"]
+    C1["生成"] --> C2["javac でコンパイル"] --> C3["<b>実際に実行</b>"] --> C4["期待値と照合"]
+    C4 --> CJ["言えること:<br/><b>生成物が正しく動く</b>"]
+  end
+  subgraph S["Struts 系（struts-springboot）"]
+    S1["生成"] --> S2["正解テキストと差分"] --> S3["javac でコンパイル"]
+    S3 --> SJ["言えること:<br/><b>正解と一致し、コンパイルは通る</b><br/>動くかは検証していない"]
+  end
+```
+
+Struts 側は Web コントローラに共通の実行入口が無いため、実行して値を突き合わせる手が使えない。
+`samples-build` が起動して見せる画面は**人手で書いた目標プロジェクト**であり、生成物ではない。
+**レポートや説明でこの区別を曖昧にしないこと。**
+
+---
 
 ## 2. ディレクトリ構成
 

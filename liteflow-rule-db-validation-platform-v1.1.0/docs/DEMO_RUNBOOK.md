@@ -17,9 +17,9 @@ curl.exe -s http://localhost:8082/actuator/health
 
 | 見せる画面 | URL | ログイン |
 |---|---|---|
-| ルール管理 | http://localhost:8081/admin/ | `admin` / `admin123` |
-| Grafana | http://localhost:3000 | `admin` / `admin` — **パスワード変更は必ず Skip** |
-| Prometheus | http://localhost:9090 | 認証なし |
+| ルール管理 自作| http://localhost:8081/admin/ | `admin` / `admin123` | ルールを変える画面（履歴・承認・ロールバック）
+| Grafana  公式OSS| http://localhost:3000 | `admin` / `admin` — **パスワード変更は必ず Skip** | 変えた結果の実行状況を見るダッシュボード
+| Prometheus 公式OSS | http://localhost:9090 | 認証なし | その3000にデータを供給しているメトリクス収集基盤。
 
 > ⚠ **Grafana でパスワードを変えないこと。** 変えると `validate.cmd` の `OBS-DASHBOARD` が
 > 401 で落ち、環境変数を戻しても直りません（値が `grafana-data` ボリュームに残るため）。

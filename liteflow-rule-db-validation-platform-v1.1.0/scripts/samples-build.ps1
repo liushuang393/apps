@@ -54,7 +54,9 @@ function Invoke-Logged([string]$Label, [scriptblock]$Command) {
     $PreviousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & $Command 2>&1 | Tee-Object -FilePath $LogFile -Append | Out-Null
+        # 他のスクリプトと同じく文字列へ落としてから記録する。ErrorRecord のままだと
+        # ログに整形済みの赤字ブロックが混ざり、後から読めなくなる。
+        & $Command 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $LogFile -Append | Out-Null
     } finally {
         $ErrorActionPreference = $PreviousErrorAction
     }

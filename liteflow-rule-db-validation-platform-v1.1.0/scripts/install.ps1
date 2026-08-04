@@ -37,7 +37,10 @@ function Invoke-Logged([scriptblock]$Command) {
     $PreviousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & $Command 2>&1 | Tee-Object -FilePath $LogFile -Append
+        # ForEach-Object で文字列へ落とすこと。2>&1 が作るのは ErrorRecord なので、
+        # そのまま画面へ流すと成功しているのに赤字の NativeCommandError として表示され、
+        # 「ビルドが失敗した」と読まれる（Continue なので実際は止まっていない）。
+        & $Command 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $LogFile -Append
     } finally {
         $ErrorActionPreference = $PreviousErrorAction
     }
