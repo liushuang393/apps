@@ -555,13 +555,11 @@ copy app\src\main\resources\templates\compilable-v1.json D:\my-templates\
 $env:TRANSFORM_TEMPLATEDIR = "D:\my-templates"
 java -jar app\target\liteflow-rule-db-validation-app.jar
 ```
-Docker で使う場合は `docker-compose.yml` の executor に以下を追加します。
-```yaml
-    environment:
-      TRANSFORM_TEMPLATEDIR: /templates
-    volumes:
-      - D:/my-templates:/templates:ro
-```
+Docker では**すでに配線済み**です。リポジトリ直下の `rules/` が両 Executor の
+`/work/rules`（読み取り専用）に載っており、`TRANSFORM_TEMPLATEDIR` もそこを指しています。
+JSON を `rules/` に置いて `docker compose restart executor-a executor-b` で反映されます
+（**イメージの再ビルドは不要、再起動は必要** — 読み込みは起動時の1回だけ）。
+別の場所を使いたいときだけ `docker-compose.yml` の該当2行を書き換えてください。
 
 ### G-3. 反映の確認
 ```bash

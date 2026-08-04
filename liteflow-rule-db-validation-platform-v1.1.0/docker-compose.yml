@@ -39,6 +39,8 @@ services:
       SPRING_DATASOURCE_DRIVER: org.mariadb.jdbc.Driver
       RULE_DB_POLL_SECONDS: 1
       RULE_DB_RECONCILE_SECONDS: 10
+      # 外部ルール表の置き場（README 手順G）。空でも起動に影響しない。
+      TRANSFORM_TEMPLATEDIR: /work/rules
     depends_on:
       mariadb:
         condition: service_healthy
@@ -46,6 +48,7 @@ services:
       - "8081:8080"
     volumes:
       - ./reports:/work/reports
+      - ./rules:/work/rules:ro
     restart: unless-stopped
 
   executor-b:
@@ -60,6 +63,8 @@ services:
       SPRING_DATASOURCE_DRIVER: org.mariadb.jdbc.Driver
       RULE_DB_POLL_SECONDS: 1
       RULE_DB_RECONCILE_SECONDS: 10
+      # executor-a と同じ外部ルール表を読む。片方だけにすると2インスタンスで生成物が食い違う。
+      TRANSFORM_TEMPLATEDIR: /work/rules
     depends_on:
       mariadb:
         condition: service_healthy
@@ -67,6 +72,7 @@ services:
       - "8082:8080"
     volumes:
       - ./reports:/work/reports
+      - ./rules:/work/rules:ro
     restart: unless-stopped
 
   prometheus:

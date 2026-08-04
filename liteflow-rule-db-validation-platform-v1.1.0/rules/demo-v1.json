@@ -1,0 +1,31 @@
+{
+  "profile": "demo-v1",
+  "version": 1,
+  "owner": "demo",
+  "description": "演示用。ここに1件足して Executor を再起動すると、jarを作り直さずに変換できる構文が増える",
+  "maps": {
+    "op": {
+      "=": "==",
+      ">": ">",
+      "<": "<"
+    }
+  },
+  "rules": [
+    {
+      "id": "move-literal",
+      "statement": "MOVE",
+      "appliesTo": "MOVE <値> TO <変数>",
+      "pattern": "^MOVE\\s+(?<from>'[^']*'|\"[^\"]*\"|[A-Za-z0-9_.-]+)\\s+TO\\s+(?<to>[A-Za-z0-9_-]+)\\s*\\.?\\s*$",
+      "template": "${_indent}vars.put(\"${to}\", ${fromExpr});",
+      "notes": "演示の出発点。ここは最初から動く"
+    },
+    {
+      "id": "display",
+      "statement": "DISPLAY",
+      "appliesTo": "DISPLAY <値>",
+      "pattern": "^DISPLAY\\s+(?<what>'[^']*'|\"[^\"]*\"|[A-Za-z0-9_-]+)\\s*\\.?\\s*$",
+      "template": "${_indent}out.add(String.valueOf(${whatExpr}));",
+      "notes": "演示の出発点。ここは最初から動く"
+    }
+  ]
+}
