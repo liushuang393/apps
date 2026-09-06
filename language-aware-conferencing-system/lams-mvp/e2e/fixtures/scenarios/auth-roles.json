@@ -1,0 +1,14 @@
+{
+  "roles": [
+    {"id": "role-admin", "name": "admin", "display_name": "管理者", "is_system": true, "priority": 100},
+    {"id": "role-editor", "name": "editor", "display_name": "編集者", "is_system": true, "priority": 50},
+    {"id": "role-viewer", "name": "viewer", "display_name": "閲覧者", "is_system": true, "priority": 10},
+    {"id": "role-guest", "name": "guest", "display_name": "ゲスト", "is_system": true, "priority": 1}
+  ],
+  "user_account": [
+    {"id": "u-admin", "email": "admin@example.test", "password_hash": "e2e-stub-hash", "role_id": "role-admin"},
+    {"id": "u-editor", "email": "editor@example.test", "password_hash": "e2e-stub-hash", "role_id": "role-editor"},
+    {"id": "u-viewer", "email": "viewer@example.test", "password_hash": "e2e-stub-hash", "role_id": "role-viewer"},
+    {"id": "u-guest", "email": "guest@example.test", "password_hash": "e2e-stub-hash", "role_id": "role-guest"}
+  ]
+}

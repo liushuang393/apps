@@ -138,8 +138,14 @@ class Settings(BaseSettings):
     #            起動エラーにせず gpt4o_transcribe へ自動フォールバックする。
     #   gemini_live = Gemini Live API による S2S 翻訳（音声直接翻訳）。GEMINI_API_KEY
     #            未設定時は起動エラーにせず gpt4o_transcribe へ自動フォールバックする。
+    # mock は E2E Aレーン用（外部 API 不要）。本番品質検証では使わない。
     ai_provider: Literal[
-        "gpt4o_transcribe", "gpt_realtime", "deepgram", "google", "gemini_live"
+        "gpt4o_transcribe",
+        "gpt_realtime",
+        "deepgram",
+        "google",
+        "gemini_live",
+        "mock",
     ] = "gpt4o_transcribe"
 
     # -------------------------------------------

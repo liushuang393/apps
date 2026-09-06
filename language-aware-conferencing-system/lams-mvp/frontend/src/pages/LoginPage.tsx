@@ -52,16 +52,22 @@ export function LoginPage() {
         </select>
       </div>
 
-      <form onSubmit={handleSubmit}>
+      {/* E2E: login-form / login-email / login-password / login-submit / login-error */}
+      <form onSubmit={handleSubmit} data-testid="login-form">
         <h1>🌐 {t('app.title')}</h1>
         <p className="subtitle">{t('app.subtitle')}</p>
 
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error" data-testid="login-error">
+            {error}
+          </div>
+        )}
 
         <div className="form-group">
           <label htmlFor="login-email">{t('auth.email')}</label>
           <input
             id="login-email"
+            data-testid="login-email"
             type="email"
             placeholder="your@email.com"
             value={email}
@@ -74,6 +80,7 @@ export function LoginPage() {
           <label htmlFor="login-password">{t('auth.password')}</label>
           <input
             id="login-password"
+            data-testid="login-password"
             type="password"
             placeholder="••••••••"
             value={password}
@@ -82,7 +89,7 @@ export function LoginPage() {
           />
         </div>
 
-        <button type="submit" disabled={loading}>
+        <button type="submit" disabled={loading} data-testid="login-submit">
           {loading ? t('auth.loggingIn') : t('auth.loginButton')}
         </button>
 

@@ -1,0 +1,14 @@
+# LAMS testing-kit プロジェクトプロファイル
+# schema_version 1: 静的解析 / staleness スキャンの除外設定
+schema_version: 1
+project_name: lams
+staleness_exclude_dirs:
+  - .venv-testing-kit
+  - backend/.venv
+  - node_modules
+  - output
+  - .trellis
+  - e2e/playwright-report
+  - e2e/test-results
+  - e2e/.snapshots
+  - e2e/.auth

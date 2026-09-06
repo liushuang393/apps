@@ -189,7 +189,7 @@ export function RoomListPage() {
   // hydration待ちまたはloading中
   if (!hasHydrated || loading) {
     return (
-      <div className="room-list-page">
+      <div className="room-list-page" data-testid="room-list-page">
         <div className="empty-state">
           <p>読み込み中...</p>
         </div>
@@ -198,7 +198,8 @@ export function RoomListPage() {
   }
 
   return (
-    <div className="room-list-page">
+    <div className="room-list-page" data-testid="room-list-page">
+      {/* E2E: room-list-page / room-create-open / room-create-form / room-create-submit / room-card */}
       <header>
         <div className="header-left">
           <button className="back-btn" onClick={() => navigate('/menu')} title="メニューに戻る">
@@ -214,12 +215,19 @@ export function RoomListPage() {
 
       {error && <div className="error">{error}</div>}
 
-      <button onClick={() => setShowCreate(!showCreate)}>
+      <button
+        onClick={() => setShowCreate(!showCreate)}
+        data-testid="room-create-open"
+      >
         {showCreate ? 'キャンセル' : '新規会議室作成'}
       </button>
 
       {showCreate && (
-        <form onSubmit={handleCreate} className="create-form">
+        <form
+          onSubmit={handleCreate}
+          className="create-form"
+          data-testid="room-create-form"
+        >
           <h3>📋 新規会議室設定</h3>
 
           {/* 基本情報 */}
@@ -339,7 +347,11 @@ export function RoomListPage() {
             <button type="button" className="btn-secondary" onClick={handleCancel}>
               キャンセル
             </button>
-            <button type="submit" disabled={creating || !formState.name.trim()}>
+            <button
+              type="submit"
+              disabled={creating || !formState.name.trim()}
+              data-testid="room-create-submit"
+            >
               {creating ? '作成中...' : '会議室を作成'}
             </button>
           </div>
@@ -359,6 +371,7 @@ export function RoomListPage() {
             <article
               key={room.id}
               className={`room-card ${room.isPrivate ? 'room-card--private' : ''}`}
+              data-testid={`room-card-${room.id}`}
               style={{ backgroundColor: getCardColor(room.id) }}
               onClick={() => navigate(`/room/${room.id}`)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/room/${room.id}`); }}

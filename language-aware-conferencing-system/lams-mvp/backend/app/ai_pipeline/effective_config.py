@@ -31,12 +31,14 @@ logger = logging.getLogger(__name__)
 
 CONFIG_KEY = "ai_pipeline"
 
+# mock は E2E Aレーン専用（外部 API 不要の決定論プロバイダー）
 AI_PROVIDER_OPTIONS: tuple[str, ...] = (
     "gpt4o_transcribe",
     "gpt_realtime",
     "deepgram",
     "google",
     "gemini_live",
+    "mock",
 )
 ASR_PROVIDER_OPTIONS: tuple[str, ...] = (
     "auto",

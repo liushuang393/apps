@@ -124,7 +124,8 @@ export function MenuPage() {
   })).filter((category) => category.items.length > 0);
 
   return (
-    <div className="menu-page">
+    <div className="menu-page" data-testid="menu-page">
+      {/* E2E: menu-page / menu-item-rooms / menu-logout */}
       {/* ヘッダー */}
       <header className="menu-header">
         <div className="header-left">
@@ -147,7 +148,11 @@ export function MenuPage() {
           <div className="user-info">
             <span className="user-name" title={user?.displayName}>{user?.displayName || '?'}</span>
           </div>
-          <button className="btn-logout" onClick={handleLogout}>
+          <button
+            className="btn-logout"
+            onClick={handleLogout}
+            data-testid="menu-logout"
+          >
             {t('common.logout')}
           </button>
         </div>
@@ -168,6 +173,7 @@ export function MenuPage() {
                     key={item.path}
                     to={isComingSoon(item) ? '#' : item.path}
                     className={`menu-item ${isComingSoon(item) ? 'disabled' : ''}`}
+                    data-testid={item.path === '/rooms' ? 'menu-item-rooms' : undefined}
                     onClick={(e) => {
                       if (isComingSoon(item)) {
                         e.preventDefault();

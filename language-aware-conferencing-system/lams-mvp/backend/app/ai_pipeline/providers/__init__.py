@@ -93,6 +93,21 @@ def _build_ai_provider() -> AIProvider:
     provider = pipeline.ai_provider
     _S2S_PRESETS = ("gpt_realtime", "gemini_live")
 
+    # E2E Aレーン: 環境変数または ai_provider=mock で外部 API 無しの決定論 Mock を返す。
+    from app.ai_pipeline.providers.mock_provider import (
+        MockAIProvider,
+        e2e_mock_ai_enabled,
+    )
+
+    if e2e_mock_ai_enabled() or provider == "mock":
+        logger.info(
+            "[AI Provider] MockAIProvider を使用 "
+            "(LAMS_E2E_MOCK_AI=%s, ai_provider=%s)",
+            "1" if e2e_mock_ai_enabled() else "0",
+            provider,
+        )
+        return MockAIProvider()
+
     if composite_enabled():
         if provider in _S2S_PRESETS:
             logger.warning(
@@ -186,10 +201,12 @@ def _build_ai_provider() -> AIProvider:
 
 
 # effective_config と同一の許可集合（循環 import 回避のためローカル定義）
+# mock は E2E Aレーン用（本番品質検証では使わない）
 AI_PROVIDER_OPTIONS_SAFE = (
     "gpt4o_transcribe",
     "gpt_realtime",
     "deepgram",
     "google",
     "gemini_live",
+    "mock",
 )

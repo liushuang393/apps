@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "configured": true,
+  "data_identity": {
+    "kind": "file",
+    "environment": "e2e",
+    "expected_name": "lams-shared-no-wipe.marker",
+    "path": "e2e/.runtime/lams-shared-no-wipe.marker"
+  },
+  "commands": {
+    "source_inventory": {
+      "argv": [
+        "{kit_python}",
+        "e2e/scripts/extract.py"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 60,
+      "side_effects": [
+        "read_source",
+        "evidence"
+      ]
+    },
+    "build": {
+      "argv": [
+        "{kit_python}",
+        "-c",
+        "print('[lams/build] existing-server: build skipped')"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 30,
+      "side_effects": [
+        "evidence"
+      ]
+    },
+    "server_start": {
+      "argv": [
+        "docker",
+        "compose",
+        "up",
+        "-d",
+        "--build"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 600,
+      "side_effects": [
+        "process"
+      ]
+    },
+    "auth_setup": {
+      "argv": [
+        "{kit_python}",
+        "e2e/scripts/auth_setup.py"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 30,
+      "side_effects": [
+        "evidence"
+      ]
+    },
+    "data_identity": {
+      "argv": [
+        "{kit_python}",
+        "e2e/scripts/safe_noop_data.py",
+        "identity"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 30,
+      "side_effects": [
+        "evidence"
+      ]
+    },
+    "data_reset": {
+      "argv": [
+        "{kit_python}",
+        "e2e/scripts/safe_noop_data.py",
+        "reset"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 30,
+      "side_effects": [
+        "evidence"
+      ]
+    },
+    "data_snapshot": {
+      "argv": [
+        "{kit_python}",
+        "e2e/scripts/safe_noop_data.py",
+        "snapshot"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 30,
+      "side_effects": [
+        "evidence"
+      ]
+    },
+    "data_restore": {
+      "argv": [
+        "{kit_python}",
+        "e2e/scripts/safe_noop_data.py",
+        "restore"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 30,
+      "side_effects": [
+        "evidence"
+      ]
+    },
+    "playwright_run": {
+      "argv": [
+        "npx",
+        "--no-install",
+        "playwright",
+        "test",
+        "--config",
+        "e2e/playwright.config.ts",
+        "--project=smoke"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 300,
+      "side_effects": [
+        "evidence"
+      ]
+    }
+  }
+}

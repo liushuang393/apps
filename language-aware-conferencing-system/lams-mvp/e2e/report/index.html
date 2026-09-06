@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>testing-kit Quality Report</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body data-view="tech">
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="logo-block">
+        <div class="logo-3d">
+          <span class="cube">
+            <span class="face front">E</span>
+            <span class="face back">E</span>
+            <span class="face top"></span>
+            <span class="face bottom"></span>
+            <span class="face left"></span>
+            <span class="face right"></span>
+          </span>
+        </div>
+        <div class="title-block">
+          <h1 class="title">testing-kit <span class="title-suffix">Quality Report</span></h1>
+          <p class="lead">テスト品質・失敗傾向・リリースリスクを一目で確認</p>
+          <p class="lead-en">Automated test quality dashboard for coverage, flakiness, failures, and release readiness.</p>
+          <p class="subtitle">
+            <span class="status-pill" id="status-pill">—</span>
+            <span class="sep">·</span>
+            <span id="generated-at">—</span>
+          </p>
+        </div>
+        <div class="view-toggle" role="group" aria-label="Report Style">
+          <span class="view-toggle-label">Report Style</span>
+          <div class="segmented">
+            <button id="view-tech" class="seg-btn active" data-tooltip="技術指標重視（adapter, testid, drift など）">
+              <span class="seg-icon">🔧</span><span>Technical</span>
+            </button>
+            <button id="view-business" class="seg-btn" data-tooltip="業務影響重視（P1 保護率, 業務リスク）">
+              <span class="seg-icon">💼</span><span>Business</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-label">対象 app</div>
+          <div class="kpi-value" id="kpi-total">—</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-label">合格</div>
+          <div class="kpi-value" id="kpi-pass">—</div>
+        </div>
+        <div class="kpi-card warn">
+          <div class="kpi-label">不合格</div>
+          <div class="kpi-value" id="kpi-fail">—</div>
+        </div>
+        <div class="kpi-card highlight">
+          <div class="kpi-label">合格率</div>
+          <div class="kpi-value"><span id="kpi-rate">—</span>%</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <details class="glossary">
+        <summary>📖 用語ガイド（はじめて見る人はここから）</summary>
+        <ul style="line-height:1.9;margin:.6rem 0 0 1rem">
+          <li><strong>合格 / 不合格</strong> — 「画面を自動解析できた」「テストの目印が壊れていない」「P1 を定義している場合は 1 件以上自動テスト化されている」の 3 条件を全部満たすと合格（P1 未定義の app は 3 条件目を免除）。</li>
+          <li><strong>P1</strong> — 最重要の業務シナリオ。失敗すると売上・法令・データの正しさに直撃するもの。</li>
+          <li><strong>P1 保護率</strong> — 最重要シナリオのうち、自動テストで守られている割合。</li>
+          <li><strong>blocked</strong> — 仕様の確認待ちで止まっているテスト。放置すると守られていない業務が残る。</li>
+          <li><strong>testid</strong> — テストが画面の部品（ボタン等）を見つけるための目印。<strong>drift</strong> はその目印のズレ＝テストが壊れている数（0 が正常）。</li>
+          <li><strong>占位（プレースホルダ）</strong> — 画面が開くことしか確認していない形だけのテスト。数字は増えるが業務は守られない。</li>
+          <li><strong>screens</strong> — ツールが自動解析できた画面の数。frontend を持たない API 専用 app は 0 でも、API route が検出できていれば解析成功扱い。</li>
+          <li>詳しい読み方: <a href="./kit-docs/13-AI-BUSINESS-FLOW.md">業務カバレッジの意味づけ (13)</a> ・ <a href="./kit-docs/README.md">このレポートの仕組み・更新方法 (README §5-2)</a> ・ <a href="./kit-docs/INDEX.md">ドキュメント一覧</a></li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="panel">
+      <details class="panel-fold">
+        <summary class="panel-title">📊 Round 1 / Round 2 比較</summary>
+        <p class="panel-desc">同じ診断を 2 回実行して同じ結果になるかの確認（テスト自体の安定性チェック）。完全一致なら OK。</p>
+        <div id="round-comparison" class="diff-grid"><div class="loading">読み込み中…</div></div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">🎯 品質達成判定（app 別）</h2>
+      <p class="panel-desc">Technical は開発者向けの技術指標、Business は「業務がどれだけ守られているか」の見方。列名にマウスを乗せると説明が出ます。testing-kit 同梱の demo app（kit 自体の動作確認用）は集計から除外しています。</p>
+      <p class="panel-desc" style="color:#e0b341">⚠ 注意: この表の「P1 保護率」などはテスト一覧表（test-matrix.csv）を数えただけの値です。業務フローをきちんと洗い出していないアプリでは、形だけのテスト（占位）でも数字が高く出ることがあります。数字の正しい読み方は <a href="./kit-docs/13-AI-BUSINESS-FLOW.md" style="color:#e0b341;text-decoration:underline">13-AI-BUSINESS-FLOW.md</a> を参照。</p>
+      <div class="table-wrap">
+        <table id="verdict-table">
+          <thead><tr><th>app</th></tr></thead>
+          <tbody><tr><td class="loading">読み込み中…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">🧭 業務カバレッジ（AI 判定）</h2>
+      <p class="panel-desc">上の表が「テストの数」なのに対し、ここは AI が business-flow 正本と spec の assert を突き合わせて下した「業務がどこまで守られているか」の判定（real / 占位 / 未洗い出し、現実妥当性）。判定が無い app は業務フロー洗い出し工程（/af-e2e-flow）が未実施です。</p>
+      <div id="judgment-table" class="table-wrap"><div class="loading">読み込み中…</div></div>
+    </section>
+
+    <section class="panel" id="history-section" style="display:none">
+      <details class="panel-fold">
+        <summary class="panel-title">📈 履歴・時系列推移</summary>
+        <p class="panel-desc">直近 20 回の合格率推移（縦軸 = pass_rate %）。</p>
+        <div id="history-chart" class="history-chart"></div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <details class="panel-fold">
+        <summary class="panel-title">🚨 不合格 app の原因と調査入口</summary>
+        <p class="panel-desc">不合格になったアプリごとに、原因と関連ファイルへのリンク（クリックで開けます。リンクはこのプレビューサーバ経由のときに有効）。</p>
+        <div id="failure-details" class="fail-list"><div class="loading">読み込み中…</div></div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <details class="panel-fold">
+        <summary class="panel-title">🔍 改善したほうがよい点（自動検出）</summary>
+        <p class="panel-desc">診断ツールが見つけた注意点と改善提案。Business 表示ではセキュリティ・業務影響のあるものだけに絞ります。</p>
+        <div id="hidden-bugs" class="bug-list"><div class="loading">読み込み中…</div></div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <details class="panel-fold">
+        <summary class="panel-title">📈 adapter 別 app 分布</summary>
+        <div id="adapter-chart" class="bar-chart"><div class="loading">読み込み中…</div></div>
+      </details>
+    </section>
+  </main>
+
+  <div class="action-bar" id="action-bar">
+    <button id="btn-export-html" class="action-btn export">
+      <span class="action-icon">📄</span><span>HTML 保存</span>
+    </button>
+    <button id="btn-export-pdf" class="action-btn export">
+      <span class="action-icon">🖨️</span><span>PDF 保存</span>
+    </button>
+    <button id="btn-shutdown" class="action-btn danger">
+      <span class="action-icon">🛑</span><span>停止・閉じる</span>
+    </button>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <footer class="footer">
+    <p>testing-kit · 業務シナリオ駆動 E2E テスト基盤 · data: <a href="./data.json">data.json</a> · <a href="./kit-docs/README.md">このレポートの仕組み・更新方法</a></p>
+  </footer>
+
+  <script src="./report.js"></script>
+</body>
+</html>

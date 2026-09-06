@@ -1,0 +1,43 @@
+# 業務フロー定義（機械可読版） — <ID>.flow.yaml
+#
+# 目的: business-flow の Markdown（人間可読）と併存する機械可読フォーマット。
+#   トレーサビリティ（REQ→画面/API/DB→TC→matrix）とカバレッジ集計の入力になる。
+#   検証: conda run -n agentflow python testing-kit/scripts/validate_business_flow.py --input <this-file>
+#
+# 必須キー: business_flow / scenario / domain / test_cases / precondition / steps / expected / coverage_tags
+# 任意キー: req_id / screens / apis / db_tables / risk
+
+business_flow: "<業務フロー名 例: 受注登録>"
+scenario: "<シナリオ名 例: 新規顧客の通常受注>"
+domain: "<ドメイン 例: DEMO>"          # test-matrix.csv の domain と一致させる
+req_id: <REQ-DEMO-001 など。無ければ行ごと削除>
+
+test_cases:                          # 紐づくテストケース ID（{DOMAIN}-{NNN}）
+  - <DEMO-001>
+
+precondition:
+  - "<前提 1 例: 顧客が存在する>"
+
+steps:
+  - "<手順 1 例: 顧客選択>"
+
+expected:
+  - "<期待結果 1 例: 受注番号が発行される>"
+
+coverage_tags:                       # 業務観点タグ（正常/異常/境界/権限/税計算 等）
+  - "<タグ 1 例: 正常系>"
+
+screens:                             # 任意: 関連画面 ID/パス
+  - <SCREEN-ORDER-001 もしくは "/orders">
+
+apis:                                # 任意: 関連 API
+  - <API-ORDER-CREATE もしくは "POST /api/orders">
+
+db_tables:                           # 任意: 関連 DB テーブル
+  - <T_ORDER>
+
+risk:                                # 任意: リスクベーステスト属性（review §4.1）
+  importance: <high|mid|low>         # 業務重要度
+  impact: <high|mid|low>             # 障害影響度
+  change_freq: <high|mid|low>        # 変更頻度
+  past_defects: 0                    # 過去障害数（整数 >= 0）

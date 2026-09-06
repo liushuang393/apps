@@ -143,7 +143,8 @@ function SubtitleDisplayInner() {
   // 字幕無効の場合は最小表示
   if (!myPreference?.subtitleEnabled) {
     return (
-      <div className="subtitle-display" style={{ opacity: 0.5 }}>
+      <div className="subtitle-display" style={{ opacity: 0.5 }} data-testid="subtitle-display">
+        {/* E2E: subtitle-display（オフ時） */}
         <h4>📝 字幕</h4>
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
           字幕表示はオフです
@@ -153,7 +154,8 @@ function SubtitleDisplayInner() {
   }
 
   return (
-    <div className="subtitle-display" ref={scrollRef}>
+    <div className="subtitle-display" ref={scrollRef} data-testid="subtitle-display">
+      {/* E2E: subtitle-display / subtitle-item */}
       <h4>📝 字幕・会議記録</h4>
       {displaySubtitles.length === 0 &&
       interimSubtitles.size === 0 &&
@@ -180,6 +182,7 @@ function SubtitleDisplayInner() {
               <div
                 key={subtitleKey}
                 className={`subtitle-item ${isMyMessage ? 'my-message' : ''} ${isDegraded ? 'degraded' : ''}`}
+                data-testid="subtitle-item"
                 // 使用モデルID を可観測用にツールチップ表示（A/B・回放の手掛かり）。
                 title={sub.modelId ? `model: ${sub.modelId}` : undefined}
               >

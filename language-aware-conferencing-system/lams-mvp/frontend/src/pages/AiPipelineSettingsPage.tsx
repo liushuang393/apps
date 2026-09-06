@@ -170,7 +170,10 @@ export function AiPipelineSettingsPage() {
 
   if (isLoading || !form || !settings) {
     return (
-      <div className="language-settings-page ai-pipeline-settings-page">
+      <div
+        className="language-settings-page ai-pipeline-settings-page"
+        data-testid="ai-pipeline-page"
+      >
         <div className="loading">{t('common.loading')}</div>
       </div>
     );
@@ -182,7 +185,11 @@ export function AiPipelineSettingsPage() {
     form.aiProvider === 'gpt_realtime' || form.aiProvider === 'gemini_live';
 
   return (
-    <div className="language-settings-page ai-pipeline-settings-page">
+    <div
+      className="language-settings-page ai-pipeline-settings-page"
+      data-testid="ai-pipeline-page"
+    >
+      {/* E2E: ai-pipeline-page / ai-pipeline-save（mock は E2E Aレーン用） */}
       <header className="page-header">
         <button type="button" className="btn-back" onClick={() => navigate('/admin')}>
           ← {t('common.back')}
@@ -295,7 +302,7 @@ export function AiPipelineSettingsPage() {
                 >
                   {options.aiProvider.map((v) => (
                     <option key={v} value={v}>
-                      {v}
+                      {v === 'mock' ? 'mock（E2E Aレーン専用）' : v}
                     </option>
                   ))}
                 </select>
@@ -365,6 +372,7 @@ export function AiPipelineSettingsPage() {
           <button
             type="button"
             className="btn-primary"
+            data-testid="ai-pipeline-save"
             onClick={() => void handleSave()}
             disabled={isSaving}
           >

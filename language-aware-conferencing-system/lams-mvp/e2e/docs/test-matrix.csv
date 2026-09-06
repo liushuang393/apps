@@ -1,0 +1,9 @@
+id,domain,scenario,type,priority,status,test_file,owner,last_run,notes
+AUTH-001,AUTH,登録後メニュー表示,smoke,P1,automated,e2e/smoke/AUTH-001.spec.ts,e2e,,JWT localStorage; no bypass
+AUTH-002,AUTH,未認証 /rooms → /login,smoke,P1,automated,e2e/smoke/AUTH-002.spec.ts,e2e,,PrivateRoute
+ROOM-001,ROOM,会議室作成と一覧+API二次観測,smoke,P1,automated,e2e/smoke/ROOM-001.spec.ts,e2e,,self seed
+HEALTH-001,QOS,GET /health ok,smoke,P1,automated,e2e/smoke/HEALTH-001.spec.ts,e2e,,backend /health
+SAMPLE-001,AUTH,frontend / 疎通,smoke,P2,automated,e2e/smoke/SAMPLE-001.spec.ts,e2e,,existing-server
+ADMIN-001,ADMIN,非admin PUT ai-pipeline 403,regression,P1,automated,e2e/regression/ADMIN-001.spec.ts,e2e,,admin GET optional via env
+PREF-001,PREFERENCE,room preference/connection UI,regression,P2,automated,e2e/regression/PREF-001.spec.ts,e2e,,soft-skip if LiveKit down
+SUBTITLE-001,SUBTITLE,decodeLiveEvent契約+room shell,regression,P2,automated,e2e/regression/SUBTITLE-001.spec.ts,e2e,,full subtitle needs LiveKit+AI

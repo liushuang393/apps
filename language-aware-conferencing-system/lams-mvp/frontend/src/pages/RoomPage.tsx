@@ -147,7 +147,7 @@ export function RoomPage() {
 
   if (!roomId) {
     return (
-      <div className="room-page">
+      <div className="room-page" data-testid="room-page">
         <div className="empty-state">
           <p>会議室IDが指定されていません</p>
         </div>
@@ -156,11 +156,12 @@ export function RoomPage() {
   }
 
   return (
-    <div className="room-page">
+    <div className="room-page" data-testid="room-page">
+      {/* E2E: room-page / connection-status / leave-btn（preference-panel / subtitle-display は子） */}
       <header>
         <h1>🎤 {roomName || '会議室'}</h1>
         <div className="header-right">
-          <div className="connection-status">
+          <div className="connection-status" data-testid="connection-status">
             {connectionStatus === 'connected' && (
               <span className="connected">接続中</span>
             )}
@@ -212,7 +213,13 @@ export function RoomPage() {
           >
             📝 記録
           </button>
-          <button className="leave-btn" onClick={handleLeave}>退室</button>
+          <button
+            className="leave-btn"
+            onClick={handleLeave}
+            data-testid="leave-btn"
+          >
+            退室
+          </button>
         </div>
       </header>
 

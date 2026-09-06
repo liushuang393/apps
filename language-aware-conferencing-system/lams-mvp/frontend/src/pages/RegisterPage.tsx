@@ -61,7 +61,8 @@ export function RegisterPage() {
         </select>
       </div>
 
-      <form onSubmit={handleSubmit}>
+      {/* E2E: register-form / register-submit */}
+      <form onSubmit={handleSubmit} data-testid="register-form">
         <h1>🌐 {t('app.title')}</h1>
         <p className="subtitle">{t('auth.register')}</p>
 
@@ -121,7 +122,7 @@ export function RegisterPage() {
           </select>
         </div>
 
-        <button type="submit" disabled={loading}>
+        <button type="submit" disabled={loading} data-testid="register-submit">
           {loading ? t('auth.registering') : t('auth.registerButton')}
         </button>
       </form>

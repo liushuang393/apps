@@ -79,7 +79,8 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
   // myPreferenceがない場合はローディング表示
   if (!myPreference) {
     return (
-      <div className="preference-panel collapsible-panel expanded">
+      <div className="preference-panel collapsible-panel expanded" data-testid="preference-panel">
+        {/* E2E: preference-panel（接続中） */}
         <button className="panel-header" disabled>
           <span className="panel-title">
             <span className="panel-icon">⚙️</span>
@@ -103,7 +104,11 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
   const targetLangDisplay = LANGUAGE_NAMES[myPreference.targetLanguage] ?? myPreference.targetLanguage;
 
   return (
-    <div className={`preference-panel collapsible-panel ${isExpanded ? 'expanded' : 'collapsed'}`}>
+    <div
+      className={`preference-panel collapsible-panel ${isExpanded ? 'expanded' : 'collapsed'}`}
+      data-testid="preference-panel"
+    >
+      {/* E2E: preference-panel / audio-mode-original / audio-mode-translated / target-language */}
       <button
         className="panel-header"
         onClick={toggleExpanded}
@@ -146,6 +151,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
                 type="radio"
                 name="audioMode"
                 value="original"
+                data-testid="audio-mode-original"
                 checked={myPreference.audioMode === 'original'}
                 onChange={() => handleAudioModeChange('original')}
                 disabled={!canSwitchMode}
@@ -157,6 +163,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
                 type="radio"
                 name="audioMode"
                 value="translated"
+                data-testid="audio-mode-translated"
                 checked={isTranslatedMode}
                 onChange={() => handleAudioModeChange('translated')}
                 disabled={!canSwitchMode}
@@ -186,6 +193,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
           <label className="setting-label">翻訳先言語</label>
           <select
             value={myPreference.targetLanguage}
+            data-testid="target-language"
             onChange={(e) =>
               handleLanguageChange(e.target.value as SupportedLanguage)
             }
