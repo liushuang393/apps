@@ -1,0 +1,7 @@
+# sr-managed v5.2.0
+interface:
+  display_name: "sr-bug"
+  short_description: "Repair a non-trivial bug with Trellis: gated diagnosis, regre..."
+  default_prompt: "Use $sr-bug for this workflow."
+policy:
+  allow_implicit_invocation: false

@@ -15,6 +15,7 @@ from app.meetings.routes import (
     MeetingCreate,
     ModeUpdate,
     VoiceTranslationUpdate,
+    get_active_meeting,
     start_meeting,
     update_meeting_mode,
     update_voice_translation,
@@ -123,6 +124,65 @@ async def test_update_mode_changes_active_session() -> None:
     )
     assert res.mode == MeetingMode.A.value
     assert res.enable_openai_s2s is False
+
+
+@pytest.mark.asyncio
+async def test_update_mode_allows_moderator() -> None:
+    """モデレーターは作成者でなくても会議主線を切替できる。"""
+    session = MeetingSession(id="s1", room_id="room1", mode="hybrid", is_active=True)
+    db = _FakeSession([session, _room()])
+    res = await update_meeting_mode(
+        "s1",
+        ModeUpdate(mode=MeetingMode.B.value),
+        user=_user("mod1", role=UserRole.MODERATOR),
+        db=db,
+    )
+    assert res.mode == MeetingMode.B.value
+
+
+@pytest.mark.asyncio
+async def test_update_mode_denies_regular_participant() -> None:
+    """一般参加者による会議主線切替は 403。"""
+    session = MeetingSession(id="s1", room_id="room1", mode="hybrid", is_active=True)
+    db = _FakeSession([session, _room()])
+    with pytest.raises(HTTPException) as ei:
+        await update_meeting_mode(
+            "s1",
+            ModeUpdate(mode=MeetingMode.A.value),
+            user=_user("participant"),
+            db=db,
+        )
+    assert ei.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_active_meeting_returns_session_without_side_effects() -> None:
+    """GET active は既存セッションを返し、新規作成しない。"""
+    session = MeetingSession(id="s1", room_id="room1", mode="a", is_active=True)
+    room = _room(default_mode=MeetingMode.A.value)
+    db = _FakeSession([room, session])
+    res = await get_active_meeting("room1", user=_user("owner"), db=db)
+    assert res is not None
+    assert res.id == "s1"
+    assert res.mode == MeetingMode.A.value
+    assert db.added == []
+
+
+@pytest.mark.asyncio
+async def test_get_active_meeting_returns_none_when_absent() -> None:
+    """アクティブセッションが無ければ None（404 ではなく空）。"""
+    db = _FakeSession([_room(), None])
+    res = await get_active_meeting("room1", user=_user("owner"), db=db)
+    assert res is None
+
+
+@pytest.mark.asyncio
+async def test_get_active_meeting_denies_non_owner_non_moderator() -> None:
+    """作成者でもモデレーターでもないユーザーは GET も 403。"""
+    db = _FakeSession([_room()])
+    with pytest.raises(HTTPException) as ei:
+        await get_active_meeting("room1", user=_user("intruder"), db=db)
+    assert ei.value.status_code == 403
 
 
 @pytest.mark.asyncio

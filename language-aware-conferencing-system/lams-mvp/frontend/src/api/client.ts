@@ -2,7 +2,16 @@
  * APIクライアント
  */
 import { useAuthStore } from '../store/authStore';
-import type { Room, User, SupportedLanguage, AudioMode } from '../types';
+import type { Room, User, SupportedLanguage, AudioMode, MeetingMode, MeetingSessionInfo } from '../types';
+import {
+  mapPipelineSettings,
+  toPipelineSettingsPutBody,
+  type PipelineSettingsApiResponse,
+  type PipelineSettingsFields,
+  type PipelineSettingsResponse,
+} from './pipelineSettings';
+
+export type { PipelineSettingsFields, PipelineSettingsResponse } from './pipelineSettings';
 
 // APIベースURL
 // 常に相対パス /api を使用し、Vite proxy経由でバックエンドにアクセス
@@ -22,6 +31,9 @@ interface RoomApiResponse {
   is_private: boolean;
   is_active: boolean;
   participant_count: number;
+  default_mode?: string;
+  enable_openai_s2s?: boolean;
+  language_routes?: Record<string, unknown>;
 }
 
 /** snake_case → camelCase 変換 */
@@ -37,6 +49,8 @@ function convertRoom(r: RoomApiResponse): Room {
     isPrivate: r.is_private,
     isActive: r.is_active,
     participantCount: r.participant_count,
+    defaultMode: (r.default_mode as MeetingMode) || 'hybrid',
+    enableOpenaiS2s: r.enable_openai_s2s ?? true,
   };
 }
 
@@ -274,6 +288,8 @@ export const roomApi = {
     defaultAudioMode?: string;
     allowModeSwitch?: boolean;
     isPrivate?: boolean;
+    defaultMode?: MeetingMode;
+    enableOpenaiS2s?: boolean;
   }): Promise<Room> => {
     const res = await apiFetch<RoomApiResponse>('/rooms', {
       method: 'POST',
@@ -284,6 +300,8 @@ export const roomApi = {
         default_audio_mode: data.defaultAudioMode,
         allow_mode_switch: data.allowModeSwitch,
         is_private: data.isPrivate,
+        default_mode: data.defaultMode,
+        enable_openai_s2s: data.enableOpenaiS2s,
       }),
     });
     return convertRoom(res);
@@ -491,6 +509,23 @@ export const adminApi = {
     };
   },
 
+  /** AI パイプライン設定取得 */
+  getAiPipelineSettings: async (): Promise<PipelineSettingsResponse> => {
+    const res = await apiFetch<PipelineSettingsApiResponse>('/admin/settings/ai-pipeline');
+    return mapPipelineSettings(res);
+  },
+
+  /** AI パイプライン設定更新 */
+  updateAiPipelineSettings: async (
+    fields: Partial<PipelineSettingsFields>
+  ): Promise<PipelineSettingsResponse> => {
+    const res = await apiFetch<PipelineSettingsApiResponse>('/admin/settings/ai-pipeline', {
+      method: 'PUT',
+      body: JSON.stringify(toPipelineSettingsPutBody(fields)),
+    });
+    return mapPipelineSettings(res);
+  },
+
   /** A/B 実験一覧取得（P4-C） */
   listExperiments: async (): Promise<ExperimentInfo[]> => {
     const res = await apiFetch<ExperimentApiResponse[]>('/admin/experiments');
@@ -534,3 +569,64 @@ interface LanguageSettingsApiResponse {
   enabled_languages: string[];
   all_available_languages: LanguageOption[];
 }
+
+/** 会議モード API 応答（snake_case） */
+interface MeetingApiResponse {
+  id: string;
+  room_id: string;
+  mode: string;
+  is_active: boolean;
+  enable_openai_s2s: boolean;
+  language_routes: Record<string, unknown>;
+}
+
+function convertMeeting(m: MeetingApiResponse): MeetingSessionInfo {
+  return {
+    id: m.id,
+    roomId: m.room_id,
+    mode: m.mode as MeetingMode,
+    isActive: m.is_active,
+    enableOpenaiS2s: m.enable_openai_s2s,
+    languageRoutes: m.language_routes || {},
+  };
+}
+
+/** 会議AI主線（a/b/hybrid）の取得・切替。受聴の original/translated とは別概念。 */
+export const meetingsApi = {
+  /** アクティブセッションを副作用なく取得（無ければ null） */
+  getActive: async (roomId: string): Promise<MeetingSessionInfo | null> => {
+    const res = await apiFetch<MeetingApiResponse | null>(`/meetings/active/${roomId}`);
+    return res ? convertMeeting(res) : null;
+  },
+
+  /** セッション開始/取得（作成者またはモデレーター） */
+  start: async (
+    roomId: string,
+    data?: { mode?: MeetingMode; enableOpenaiS2s?: boolean }
+  ): Promise<MeetingSessionInfo> => {
+    const res = await apiFetch<MeetingApiResponse>('/meetings', {
+      method: 'POST',
+      body: JSON.stringify({
+        room_id: roomId,
+        mode: data?.mode,
+        enable_openai_s2s: data?.enableOpenaiS2s,
+      }),
+    });
+    return convertMeeting(res);
+  },
+
+  /** 進行中セッションの主線モードを更新 */
+  updateMode: async (
+    sessionId: string,
+    data: { mode?: MeetingMode; enableOpenaiS2s?: boolean }
+  ): Promise<MeetingSessionInfo> => {
+    const res = await apiFetch<MeetingApiResponse>(`/meetings/${sessionId}/mode`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        mode: data.mode,
+        enable_openai_s2s: data.enableOpenaiS2s,
+      }),
+    });
+    return convertMeeting(res);
+  },
+};

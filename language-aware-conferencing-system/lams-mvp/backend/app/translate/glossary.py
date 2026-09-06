@@ -185,15 +185,29 @@ async def _load_terms(source_language: str, target_language: str) -> list[Glossa
         return []
 
 
+async def match_terms_for_text(
+    text: str, source_language: str, target_language: str
+) -> list[GlossaryMatch]:
+    """
+    翻訳対象テキストに命中した用語を返す（本番 QoS 計測用）。
+
+    用語が無い・同一言語・空文の場合は空リスト。
+    """
+    if not text or not text.strip():
+        return []
+    if _norm_lang(source_language) == _norm_lang(target_language):
+        return []
+    terms = await _load_terms(source_language, target_language)
+    if not terms:
+        return []
+    return match_terms(text, terms, source_language, target_language)
+
+
 async def build_hint_for_text(
     text: str, source_language: str, target_language: str
 ) -> str:
     """翻訳対象テキストに対する用語ヒントを生成（統合用エントリポイント）"""
-    if not text or not text.strip():
+    matches = await match_terms_for_text(text, source_language, target_language)
+    if not matches:
         return ""
-    if _norm_lang(source_language) == _norm_lang(target_language):
-        return ""
-    terms = await _load_terms(source_language, target_language)
-    if not terms:
-        return ""
-    return build_prompt_hint(match_terms(text, terms, source_language, target_language))
+    return build_prompt_hint(matches)

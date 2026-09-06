@@ -7,15 +7,18 @@ AIプロバイダーパッケージ
 - deepgram: Deepgram Nova-3 (ASR <300ms) + GPT-4o-mini翻訳 + TTS
 - gemini_live: Gemini Live S2S (音声直接翻訳 + 原文/翻訳字幕同時取得)
 
-設定は .env ファイルで管理:
-- AI_PROVIDER: プロバイダー選択
-- OPENAI_API_KEY, OPENAI_BASE_URL: OpenAI API設定
-- DEEPGRAM_API_KEY, DEEPGRAM_BASE_URL: Deepgram API設定
-- モデル名は各種 *_MODEL 変数で指定
+設定の優先順位:
+- 管理者 SystemConfig(ai_pipeline) 上書き > `.env` ブートストラップ既定
+- 秘密情報（API キー等）は引き続き `.env` のみ
 """
 
 import logging
+import threading
 
+from app.ai_pipeline.effective_config import (
+    get_cached_pipeline_settings,
+    get_revision,
+)
 from app.ai_pipeline.providers.base import (
     LANGUAGE_NAMES,
     AIProvider,
@@ -42,17 +45,25 @@ __all__ = [
     "TranslationResult",
     "get_ai_provider",
     "get_correction_provider",
+    "invalidate_ai_provider_cache",
 ]
+
+_provider_lock = threading.RLock()
+_cached_provider: AIProvider | None = None
+_cached_provider_revision: int = -1
+
+
+def invalidate_ai_provider_cache() -> None:
+    """管理者切替後にプロバイダインスタンスキャッシュを破棄する。"""
+    global _cached_provider, _cached_provider_revision
+    with _provider_lock:
+        _cached_provider = None
+        _cached_provider_revision = -1
 
 
 def get_ai_provider() -> AIProvider:
     """
-    設定に基づいてAIプロバイダーを取得
-
-    環境変数 AI_PROVIDER で切り替え:
-    - gpt4o_transcribe: GPT-4o-transcribe + GPT-4o-mini + TTS（デフォルト）
-    - gpt_realtime: GPT-Realtime S2S（最速、音声直接翻訳）
-    - deepgram: Deepgram Nova-3 + GPT-4o-mini + TTS（高精度ASR）
+    有効設定に基づいて AI プロバイダーを取得する（revision 単位でキャッシュ）。
 
     Returns:
         AIProvider: 設定されたプロバイダーインスタンス
@@ -61,11 +72,25 @@ def get_ai_provider() -> AIProvider:
         APIKeyError: 必要なAPIキーが未設定の場合
         ValueError: 不明なプロバイダーが指定された場合
     """
+    global _cached_provider, _cached_provider_revision
+    rev = get_revision()
+    with _provider_lock:
+        if _cached_provider is not None and _cached_provider_revision == rev:
+            return _cached_provider
+        provider = _build_ai_provider()
+        _cached_provider = provider
+        _cached_provider_revision = rev
+        return provider
+
+
+def _build_ai_provider() -> AIProvider:
+    """effective 設定からプロバイダーを新規構築する。"""
     # ステージ別スロット（ASR/MT/TTS）はカスケード（Mode B 系）専用。
     # S2S プリセットとはコードパスを共有しない（registry.py の絶対原則。欠陥 #13）。
     from app.ai_pipeline.registry import build_composite_provider, composite_enabled
 
-    provider = settings.ai_provider
+    pipeline = get_cached_pipeline_settings()
+    provider = pipeline.ai_provider
     _S2S_PRESETS = ("gpt_realtime", "gemini_live")
 
     if composite_enabled():
@@ -88,7 +113,7 @@ def get_ai_provider() -> AIProvider:
         )
         return GPT4oTranscribeProvider()
 
-    elif provider == "gpt_realtime":
+    if provider == "gpt_realtime":
         from app.ai_pipeline.providers.gpt_realtime import GPTRealtimeProvider
 
         logger.info(
@@ -97,7 +122,7 @@ def get_ai_provider() -> AIProvider:
         )
         return GPTRealtimeProvider()
 
-    elif provider == "deepgram":
+    if provider == "deepgram":
         from app.ai_pipeline.providers.deepgram import DeepgramProvider
 
         logger.info(
@@ -105,7 +130,7 @@ def get_ai_provider() -> AIProvider:
         )
         return DeepgramProvider()
 
-    elif provider == "gemini_live":
+    if provider == "gemini_live":
         # Gemini Live S2S（音声直接翻訳）。GEMINI_API_KEY/ライブラリ未整備時は
         # 起動エラーにせず既存 provider（gpt4o_transcribe）へフォールバックする。
         from app.ai_pipeline.providers.gemini_live import (
@@ -129,7 +154,7 @@ def get_ai_provider() -> AIProvider:
         )
         return GeminiLiveProvider()
 
-    elif provider == "google":
+    if provider == "google":
         # Mode B（Chirp 3 ASR + Cloud Translation）。認証/ライブラリ未整備時は
         # 起動エラーにせず既存 provider（gpt4o_transcribe）へフォールバックする。
         from app.ai_pipeline.providers.google import (
@@ -154,15 +179,17 @@ def get_ai_provider() -> AIProvider:
         )
         return GoogleProvider()
 
-    else:
-        # 未知のプロバイダー
-        valid_providers = [
-            "gpt4o_transcribe",
-            "gpt_realtime",
-            "deepgram",
-            "google",
-            "gemini_live",
-        ]
-        raise ValueError(
-            f"不明なAIプロバイダー: {provider}. 有効な値: {', '.join(valid_providers)}"
-        )
+    valid_providers = list(AI_PROVIDER_OPTIONS_SAFE)
+    raise ValueError(
+        f"不明なAIプロバイダー: {provider}. 有効な値: {', '.join(valid_providers)}"
+    )
+
+
+# effective_config と同一の許可集合（循環 import 回避のためローカル定義）
+AI_PROVIDER_OPTIONS_SAFE = (
+    "gpt4o_transcribe",
+    "gpt_realtime",
+    "deepgram",
+    "google",
+    "gemini_live",
+)

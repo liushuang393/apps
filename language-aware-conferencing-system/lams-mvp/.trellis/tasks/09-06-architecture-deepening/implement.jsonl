@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "delivery and MT cross layer seams"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "frontend ingress and preference layers"}
+{"file": ".trellis/spec/backend/index.md", "reason": "backend delivery code-spec index"}

@@ -1,6 +1,7 @@
 /**
  * LAMS アプリケーションルート
  */
+import './styles/main.css';
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
@@ -15,8 +16,8 @@ import { RoomPage } from './pages/RoomPage';
 import { TranscriptPage } from './pages/TranscriptPage';
 import { AdminPage } from './pages/AdminPage';
 import { LanguageSettingsPage } from './pages/LanguageSettingsPage';
+import { AiPipelineSettingsPage } from './pages/AiPipelineSettingsPage';
 import { ExperimentsPage } from './pages/ExperimentsPage';
-import './styles/main.css';
 
 /**
  * アプリ起動時にトークン有効性をバックエンドで検証するコンポーネント
@@ -143,6 +144,16 @@ export function App() {
             <PrivateRoute>
               <AdminRoute>
                 <LanguageSettingsPage />
+              </AdminRoute>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin/ai-pipeline"
+          element={
+            <PrivateRoute>
+              <AdminRoute>
+                <AiPipelineSettingsPage />
               </AdminRoute>
             </PrivateRoute>
           }

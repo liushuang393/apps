@@ -1,0 +1,7 @@
+# sr-managed v5.2.0
+interface:
+  display_name: "sr-plan"
+  short_description: "Plan a software change with Trellis, evidence-first requireme..."
+  default_prompt: "Use $sr-plan for this workflow."
+policy:
+  allow_implicit_invocation: false

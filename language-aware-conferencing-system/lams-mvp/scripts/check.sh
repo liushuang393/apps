@@ -94,31 +94,39 @@ if [ "$CHECK_BACKEND" = true ]; then
     echo "----------------------------------------"
     cd "$PROJECT_ROOT/backend"
 
-    # Ruffがインストールされているか確認
-    if ! command -v ruff &> /dev/null; then
-        echo -e "${YELLOW}⚠️ ruff がインストールされていません。インストール中...${NC}"
-        pip install ruff
+    # プロジェクト venv を優先（PEP 668 環境でも system pip に依存しない）
+    BACKEND_VENV="$PROJECT_ROOT/backend/.venv"
+    if [ -x "$BACKEND_VENV/bin/ruff" ]; then
+        RUFF_BIN="$BACKEND_VENV/bin/ruff"
+        PYTHON_BIN="$BACKEND_VENV/bin/python"
+    elif command -v ruff &> /dev/null; then
+        RUFF_BIN="$(command -v ruff)"
+        PYTHON_BIN="python3"
+    else
+        echo -e "${RED}❌ ruff が見つかりません。backend/.venv を用意するか PATH に ruff を追加してください。${NC}"
+        echo -e "${YELLOW}例: cd backend && python3 -m venv .venv && .venv/bin/pip install -e \".[dev]\"${NC}"
+        exit 1
     fi
 
     if [ "$FORMAT_ONLY" = true ]; then
         echo -e "${BLUE}▶ フォーマット実行中...${NC}"
-        ruff format app/
+        "$RUFF_BIN" format app/
         echo -e "${GREEN}✅ フォーマット完了${NC}"
     elif [ "$FIX_MODE" = true ]; then
         echo -e "${BLUE}▶ Lint チェック＋自動修正中...${NC}"
-        ruff check app/ --fix || true
+        "$RUFF_BIN" check app/ --fix || true
         echo -e "${BLUE}▶ フォーマット実行中...${NC}"
-        ruff format app/
+        "$RUFF_BIN" format app/
         echo -e "${GREEN}✅ 自動修正完了${NC}"
     else
         echo -e "${BLUE}▶ Lint チェック中...${NC}"
-        if ruff check app/; then
+        if "$RUFF_BIN" check app/; then
             echo -e "${GREEN}✅ Lint チェック OK${NC}"
         else
             echo -e "${RED}❌ Lint エラーあり（--fix で自動修正可能）${NC}"
         fi
         echo -e "${BLUE}▶ フォーマットチェック中...${NC}"
-        if ruff format app/ --check; then
+        if "$RUFF_BIN" format app/ --check; then
             echo -e "${GREEN}✅ フォーマット OK${NC}"
         else
             echo -e "${RED}❌ フォーマットが必要（--fix で自動修正可能）${NC}"
@@ -126,7 +134,7 @@ if [ "$CHECK_BACKEND" = true ]; then
     fi
 
     echo -e "${BLUE}▶ Python 構文チェック中...${NC}"
-    if python3 -m py_compile app/config.py app/ai_pipeline/providers/__init__.py app/ai_pipeline/pipeline.py app/main.py 2>&1; then
+    if "$PYTHON_BIN" -m py_compile app/config.py app/ai_pipeline/providers/__init__.py app/ai_pipeline/pipeline.py app/main.py 2>&1; then
         echo -e "${GREEN}✅ Python 構文 OK${NC}"
     else
         echo -e "${RED}❌ Python 構文エラー${NC}"

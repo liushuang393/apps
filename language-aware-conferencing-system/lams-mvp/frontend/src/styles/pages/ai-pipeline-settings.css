@@ -1,0 +1,102 @@
+/**
+ * AI パイプライン設定ページスタイル
+ * 利用: AiPipelineSettingsPage
+ */
+
+.ai-pipeline-settings-page .pipeline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.ai-pipeline-settings-page .pipeline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+}
+
+.ai-pipeline-settings-page .pipeline-field span {
+  font-weight: 600;
+}
+
+.ai-pipeline-settings-page .pipeline-field select {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+}
+
+.ai-pipeline-settings-page .pipeline-field small {
+  opacity: 0.75;
+  font-size: 0.85rem;
+}
+
+.ai-pipeline-settings-page .pipeline-field.pipeline-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ai-pipeline-settings-page .pipeline-field.pipeline-checkbox input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.ai-pipeline-settings-page .warning-message {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.ai-pipeline-settings-page .warning-message ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.ai-pipeline-settings-page .settings-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.ai-pipeline-settings-page .pipeline-presets {
+  margin: 1rem 0 1.5rem;
+}
+
+.ai-pipeline-settings-page .preset-buttons {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.ai-pipeline-settings-page .preset-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+}
+
+.ai-pipeline-settings-page .preset-button.active {
+  border-color: rgba(96, 165, 250, 0.8);
+  background: rgba(37, 99, 235, 0.25);
+}
+
+.ai-pipeline-settings-page .preset-button span {
+  opacity: 0.8;
+  font-size: 0.9rem;
+}

@@ -536,9 +536,21 @@ async def test_sink_skips_stale_generation_audio() -> None:
         speaker_id="sp",
         generation_gate=gate,
     )
-    await sink.deliver_audio("u1", b"\x00\x00" * 240, generation_id=3)
+    await sink.publish_audio(
+        speaker_id="sp",
+        language="en",
+        audio=b"\x00\x00" * 240,
+        recipient_ids=["u1"],
+        generation_id=3,
+    )
     assert captured == []
-    await sink.deliver_audio("u1", b"\x00\x00" * 240, generation_id=5)
+    await sink.publish_audio(
+        speaker_id="sp",
+        language="en",
+        audio=b"\x00\x00" * 240,
+        recipient_ids=["u1"],
+        generation_id=5,
+    )
     assert captured == [("sp", "en", 5)]
 
 
@@ -560,6 +572,7 @@ async def test_orchestrator_barge_in_does_not_cancel_reading() -> None:
     reading をキャンセルしないことだけを注入スタブで観測する。
     """
     from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
+    from app.ai_pipeline.output_manager import RecordingTransportAdapter
 
     state = _HearingState()
     reading_done = asyncio.Event()
@@ -579,25 +592,7 @@ async def test_orchestrator_barge_in_does_not_cancel_reading() -> None:
         reading_done.set()
         return "R:en"
 
-    class _Sink:
-        def __init__(self) -> None:
-            self.audio: list[bytes] = []
-            self.subtitles: list[dict] = []
-            self.events: list[dict] = []
-
-        async def deliver_audio(
-            self, _uid: str, audio: bytes, *, generation_id: int | None = None
-        ) -> None:
-            del generation_id
-            self.audio.append(audio)
-
-        async def deliver_subtitle(self, _uid: str, message: dict) -> None:
-            self.subtitles.append(message)
-
-        async def deliver_event(self, _uid: str, message: dict) -> None:
-            self.events.append(message)
-
-    sink = _Sink()
+    sink = RecordingTransportAdapter()
     orch = HybridOrchestrator(hearing_fn=hearing, reading_fn=reading)
     task = asyncio.create_task(
         orch.orchestrate(

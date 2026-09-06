@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "avoid duplicating deliver vs publish paths"}
+{"file": ".trellis/spec/backend/transport-adapter.md", "reason": "TransportAdapter delivery contract after contract phase"}

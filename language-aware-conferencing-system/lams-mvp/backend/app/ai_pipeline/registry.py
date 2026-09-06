@@ -441,11 +441,15 @@ def composite_enabled() -> bool:
 
     いずれかのスロットが非 "auto"、または治理カタログのランタイム選択が有効なとき。
     後者は全スロット "auto" のままでもカタログ主導の選択を効かせるための条件。
+    スロットは管理者 effective 設定（env フォールバック）を参照する。
     """
+    from app.ai_pipeline.effective_config import get_cached_pipeline_settings
+
+    pipeline = get_cached_pipeline_settings()
     return (
-        settings.asr_provider != "auto"
-        or settings.mt_provider != "auto"
-        or settings.tts_provider != "auto"
+        pipeline.asr_provider != "auto"
+        or pipeline.mt_provider != "auto"
+        or pipeline.tts_provider != "auto"
         or settings.use_model_registry_selection
         or settings.enable_ab_testing
     )
@@ -485,21 +489,24 @@ def _slot_name(
 
 
 def build_composite_provider() -> AIProvider:
-    """config スロットに従い CompositeAIProvider を組み立てる"""
-    defaults = default_slot_names(settings.ai_provider)
+    """effective スロットに従い CompositeAIProvider を組み立てる"""
+    from app.ai_pipeline.effective_config import get_cached_pipeline_settings
+
+    pipeline = get_cached_pipeline_settings()
+    defaults = default_slot_names(pipeline.ai_provider)
     # カタログ選択は言語別。Composite はプロセス唯一のため代表言語で解決する。
     # supported_languages 空（病的設定）時は "ja" へ縮退するが、その場合カタログの
     # 各カードも languages=[] で seed されるため production_for は該当なし→None を返し、
     # _slot_name はプリセット既定へ安全に縮退する（クラッシュせず挙動不変。review 指摘）。
     lang = settings.supported_languages[0] if settings.supported_languages else "ja"
     asr = registry.resolve(
-        STAGE_ASR, _slot_name(STAGE_ASR, settings.asr_provider, defaults, lang)
+        STAGE_ASR, _slot_name(STAGE_ASR, pipeline.asr_provider, defaults, lang)
     )
     mt = registry.resolve(
-        STAGE_MT, _slot_name(STAGE_MT, settings.mt_provider, defaults, lang)
+        STAGE_MT, _slot_name(STAGE_MT, pipeline.mt_provider, defaults, lang)
     )
     tts = registry.resolve(
-        STAGE_TTS, _slot_name(STAGE_TTS, settings.tts_provider, defaults, lang)
+        STAGE_TTS, _slot_name(STAGE_TTS, pipeline.tts_provider, defaults, lang)
     )
     # None ステージの実行時 AttributeError を防ぐ（欠陥 #12: フェイルファスト）
     if asr is None or mt is None:

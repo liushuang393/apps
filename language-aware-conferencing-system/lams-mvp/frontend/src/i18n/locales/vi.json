@@ -67,6 +67,8 @@
     "adminDesc": "Quản lý người dùng và cài đặt hệ thống",
     "languageSettings": "Cài đặt ngôn ngữ",
     "languageSettingsDesc": "Tùy chỉnh ngôn ngữ hỗ trợ hệ thống",
+    "aiPipelineSettings": "Cài đặt AI pipeline",
+    "aiPipelineSettingsDesc": "Đổi chế độ dịch không cần triển khai lại",
     "experiments": "Thử nghiệm A/B",
     "experimentsDesc": "Xem định tuyến và chỉ số thử nghiệm",
     "comingSoon": "Sắp ra mắt"
@@ -139,6 +141,53 @@
     "selectionCount": "Đã chọn: {{current}} / {{max}} ngôn ngữ",
     "saveSuccess": "Đã lưu cài đặt ngôn ngữ",
     "tierLabel": "Độ chính xác dịch"
+  },
+  "aiPipelineSettings": {
+    "title": "Cài đặt AI pipeline",
+    "description": "Hiển thị giá trị .env làm mặc định. Lưu tại đây có hiệu lực không cần triển khai lại (không đổi secret).",
+    "revision": "Phiên bản cấu hình: {{revision}}",
+    "presetsTitle": "Preset cách",
+    "presetsHint": "Chọn Cách 1 (Realtime S2S) hoặc Cách 2 (ASR→MT→TTS + gói chất lượng thuật ngữ). GPU local chỉ ở khe nâng cao.",
+    "customPreset": "Khe/cờ chất lượng hiện tại khác preset có tên (tùy chỉnh).",
+    "s2sSlotIgnored": "Khi chọn Cách 1 (Realtime S2S), khe ASR/MT/TTS bị bỏ qua và giữ đường speech-to-speech.",
+    "qualityPackHint": "Cách 2 bật thuật ngữ, song song nhóm ngôn ngữ, cache/TM phụ đề, partial subtitle và hiệu chỉnh LLM.",
+    "advancedLocalHint": "Nâng cao: asr/mt/tts=local là tùy chọn GPU local (không phải cách sản phẩm; khuyến nghị MT cloud cho thuật ngữ).",
+    "showAdvanced": "Hiện cài đặt nâng cao",
+    "hideAdvanced": "Ẩn cài đặt nâng cao",
+    "preset": {
+      "realtime_s2s": {
+        "label": "Cách 1: API giọng nói realtime",
+        "desc": "OpenAI Realtime S2S cho âm thanh dịch độ trễ thấp."
+      },
+      "quality_cascade": {
+        "label": "Cách 2: Quality cascade (thuật ngữ)",
+        "desc": "ASR→MT→TTS với LLM cloud tốt nhất, thuật ngữ, song song, tối ưu phụ đề."
+      }
+    },
+    "aiProvider": "Nhà cung cấp AI (preset)",
+    "asrProvider": "Khe ASR",
+    "mtProvider": "Khe MT",
+    "ttsProvider": "Khe TTS",
+    "defaultMode": "Chế độ mặc định phòng mới",
+    "enablePartialSubtitles": "Bật partial subtitle (khuyến nghị Cách 2)",
+    "llmCorrectionEnabled": "Bật hiệu chỉnh LLM (Cách 2; cần GEMINI_API_KEY)",
+    "envDefault": "mặc định env",
+    "warningsTitle": "Cảnh báo",
+    "saveSuccess": "Đã lưu cài đặt AI pipeline",
+    "loadError": "Không tải được cài đặt",
+    "saveError": "Lưu thất bại",
+    "mode": {
+      "a": "a (nghe / S2S)",
+      "b": "b (đọc / phụ đề)",
+      "hybrid": "hybrid (cả hai)"
+    }
+  },
+  "meetingMode": {
+    "title": "Luồng AI cuộc họp",
+    "description": "Nghe (âm thanh dịch) / Đọc (phụ đề) / Cả hai. Khác với tùy chọn nghe gốc/dịch của người tham gia.",
+    "loadError": "Không tải được chế độ cuộc họp",
+    "saveSuccess": "Đã cập nhật luồng AI cuộc họp",
+    "saveError": "Cập nhật luồng AI cuộc họp thất bại"
   }
 }
 

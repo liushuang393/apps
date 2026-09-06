@@ -10,6 +10,7 @@ import { useAuthStore } from '../store/authStore';
 import { ALL_LANGUAGE_CODES, LANGUAGE_NAMES } from '../constants/languages';
 import { LANGUAGE_DISPLAY_NAMES, SUPPORTED_LANGUAGES, type UILanguage } from '../i18n';
 import type { SupportedLanguage } from '../types';
+import '../styles/pages/auth.css';
 
 export function RegisterPage() {
   const { t, i18n } = useTranslation();

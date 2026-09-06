@@ -1,0 +1,39 @@
+---
+description: Windows での Docker 起動手順（再調査禁止・PowerShell 優先）
+alwaysApply: true
+---
+
+# Docker 起動（このリポジトリ既知）
+
+Docker / compose / Dockerfile / 起動スクリプトを毎回ゼロから探索しない。
+
+## 既知の構成
+- `docker-compose.yml`：postgres / redis / livekit / coturn / backend / frontend
+- `.env`：ユーザー管理（勝手に編集しない）
+- 既定ポート：フロント 5273、API 8090、LiveKit 7880
+- 起動後：`docker compose exec backend alembic upgrade head`
+- 確認：`docker compose ps` と `http://localhost:8090/health`
+- AI モード切替は管理者 UI `/admin/ai-pipeline`（env はブートストラップ既定。秘密は `.env` のみ）
+
+## Windows（Cursor 既定シェル = PowerShell）— 推奨
+`.sh` は不要。PowerShell から直接:
+
+```powershell
+$env:HOST_IP = "<LAN IPv4>"   # 例: 192.168.x.x（LAN 公開時）
+docker compose up -d --build
+docker compose exec backend alembic upgrade head
+```
+
+ローカルのみなら `HOST_IP` 省略可（`.env` の値を使用）。
+
+## WSL2 / Linux のみ
+```bash
+./scripts/start-docker.sh --build --host-ip <LAN_IP>
+```
+
+WSL の `bash` から Windows の Docker Desktop へ `docker info` が失敗することがある。その場合は探索せず PowerShell の `docker compose` に切り替える。
+
+## 禁止
+- compose / Dockerfile / start-*.sh の再調査から始めること
+- 秘密値を含む `.env` 内容のダンプ
+- WSL bash 失敗後に「エンジン未起動」と決めつけて Desktop 再起動だけ勧めること（先に PowerShell で `docker info` を確認）

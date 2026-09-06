@@ -24,6 +24,7 @@ from app.ai_pipeline.orchestrator import (
     Listener,
     RuntimeRegistryPort,
 )
+from app.ai_pipeline.output_manager import RecordingTransportAdapter
 from app.ai_pipeline.runtime.port import RealtimeRuntimePort
 from app.ai_pipeline.runtime.types import (
     RuntimeEvent,
@@ -90,21 +91,28 @@ class _FakeRuntime:
         return None
 
 
-class _Sink:
-    """音声・字幕の配信先スタブ。"""
+class _Sink(RecordingTransportAdapter):
+    """音声・字幕の配信先スタブ（TransportAdapter）。"""
 
-    def __init__(self) -> None:
-        self.audio: list[tuple[str, bytes, int | None]] = []
-        self.subtitles: list[dict] = []
+    @property
+    def audio_by_user(self) -> list[tuple[str, bytes, int | None]]:
+        """受信者単位に展開した翻訳音声。"""
+        out: list[tuple[str, bytes, int | None]] = []
+        for _spk, _lang, audio, recipients, gen in self.audio:
+            for uid in recipients:
+                out.append((uid, audio, gen))
+        return out
 
-    async def deliver_audio(
-        self, user_id: str, audio: bytes, *, generation_id: int | None = None
-    ) -> None:
-        self.audio.append((user_id, audio, generation_id))
+    @property
+    def subtitles(self) -> list[dict]:
+        """字幕イベント本体。"""
+        from app.ai_pipeline.output_manager import TOPIC_SUBTITLE
 
-    async def deliver_subtitle(self, user_id: str, message: dict) -> None:
-        del user_id
-        self.subtitles.append(message)
+        return [
+            ev
+            for _uid, topic, ev in self.data
+            if topic == TOPIC_SUBTITLE and ev.get("type") == "subtitle"
+        ]
 
 
 def _ok_events(generation_id: int = 1) -> tuple[RuntimeEvent, ...]:
@@ -213,7 +221,7 @@ async def test_hearing_respects_runtime_should_capture_only() -> None:
         room_id="room-1",
     )
 
-    assert sink.audio == []
+    assert sink.audio_by_user == []
 
 
 @pytest.mark.asyncio

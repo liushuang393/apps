@@ -57,16 +57,16 @@ class RoomCreate(BaseModel):
     default_audio_mode: str = "original"  # デフォルトは原声
     allow_mode_switch: bool = True
     is_private: bool = False  # 私有会議（他ユーザーの一覧に非表示）
-    # 会議の既定モード（a/b/hybrid）。新規セッションの初期 mode となる（Phase 3）。
-    # モード2（ASR→翻訳→TTS）は hearing 主線 1 本で字幕＋翻訳音声を生成するため A を既定とする。
-    # HYBRID は reading 主線で MT を二重に行い無駄なので明日のリリースでは使わない。
-    default_mode: str = MeetingMode.A.value
+    # 会議の既定モード（a/b/hybrid）。省略時はシステム有効設定（admin / env）を採用。
+    default_mode: str | None = None
     enable_openai_s2s: bool = True  # 聞く主線（S2S 翻訳音声）の会議レベル許可
     language_routes: dict = {}  # 言語ペア単位の主線/プロバイダー上書き
 
     @field_validator("default_mode")
     @classmethod
-    def _check_mode(cls, v: str) -> str:
+    def _check_mode(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
         if v not in _VALID_MODES:
             raise ValueError(f"default_mode は {sorted(_VALID_MODES)} のいずれかです")
         return v
@@ -127,6 +127,9 @@ async def create_room(
                 + ", ".join(invalid_languages)
             ),
         )
+    from app.ai_pipeline.effective_config import get_cached_pipeline_settings
+
+    resolved_mode = data.default_mode or get_cached_pipeline_settings().default_mode
     room = Room(
         name=data.name,
         description=data.description,
@@ -135,7 +138,7 @@ async def create_room(
         default_audio_mode=data.default_audio_mode,
         allow_mode_switch=data.allow_mode_switch,
         is_private=data.is_private,
-        default_mode=data.default_mode,
+        default_mode=resolved_mode,
         enable_openai_s2s=data.enable_openai_s2s,
         language_routes=data.language_routes,
     )

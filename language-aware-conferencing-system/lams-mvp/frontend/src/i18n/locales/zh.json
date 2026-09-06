@@ -67,6 +67,8 @@
     "adminDesc": "用户管理和系统设置",
     "languageSettings": "语言设置",
     "languageSettingsDesc": "自定义系统支持的语言",
+    "aiPipelineSettings": "AI 流水线设置",
+    "aiPipelineSettingsDesc": "切换翻译模式（无需重新部署）",
     "experiments": "A/B实验",
     "experimentsDesc": "查看实验分流与指标比较",
     "comingSoon": "即将推出"
@@ -139,6 +141,53 @@
     "selectionCount": "已选择: {{current}} / {{max}} 种语言",
     "saveSuccess": "语言设置已保存",
     "tierLabel": "翻译准确度"
+  },
+  "aiPipelineSettings": {
+    "title": "AI 流水线设置",
+    "description": "以 .env 值为默认显示。在此保存后无需重新部署即可生效（密钥不可在此修改）。",
+    "revision": "配置修订号: {{revision}}",
+    "presetsTitle": "方式预设",
+    "presetsHint": "选择方式1（Realtime S2S）或方式2（ASR→MT→TTS＋术语库质量包）。本地 GPU 仅在高级插槽指定。",
+    "customPreset": "当前插槽/质量标志与命名预设不同（自定义）。",
+    "s2sSlotIgnored": "选择方式1（Realtime S2S）时将忽略 ASR/MT/TTS 插槽，保持语音到语音路径。",
+    "qualityPackHint": "方式2启用术语库、语言组并行、字幕缓存/TM、partial 字幕与 LLM 校正。",
+    "advancedLocalHint": "高级：asr/mt/tts=local 为本地 GPU 实现选项（不是产品方式；术语库建议云端 MT）。",
+    "showAdvanced": "显示高级设置",
+    "hideAdvanced": "隐藏高级设置",
+    "preset": {
+      "realtime_s2s": {
+        "label": "方式1: 纯实时语音 API",
+        "desc": "OpenAI Realtime 等 S2S，面向低延迟翻译语音。"
+      },
+      "quality_cascade": {
+        "label": "方式2: 质量级联（术语库）",
+        "desc": "ASR→MT→TTS。最佳云端 LLM、术语库、并行、字幕优化。"
+      }
+    },
+    "aiProvider": "AI 提供方（预设）",
+    "asrProvider": "ASR 插槽",
+    "mtProvider": "MT 插槽",
+    "ttsProvider": "TTS 插槽",
+    "defaultMode": "新建会议室默认模式",
+    "enablePartialSubtitles": "启用 partial 字幕（方式2推荐）",
+    "llmCorrectionEnabled": "启用 LLM 校正（方式2；需要 GEMINI_API_KEY）",
+    "envDefault": "env 默认",
+    "warningsTitle": "注意",
+    "saveSuccess": "AI 流水线设置已保存",
+    "loadError": "获取设置失败",
+    "saveError": "保存失败",
+    "mode": {
+      "a": "a（听主线 / S2S）",
+      "b": "b（读主线 / 字幕）",
+      "hybrid": "hybrid（双主线）"
+    }
+  },
+  "meetingMode": {
+    "title": "会议 AI 主线",
+    "description": "听（翻译语音）/ 读（字幕）/ 两者。与听众原音/翻译收听切换不同。",
+    "loadError": "获取会议模式失败",
+    "saveSuccess": "会议 AI 主线已更新",
+    "saveError": "更新会议 AI 主线失败"
   }
 }
 

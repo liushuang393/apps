@@ -80,6 +80,22 @@ class AIPipeline:
 
     def __init__(self) -> None:
         self._provider = get_ai_provider()
+        from app.ai_pipeline.effective_config import get_revision
+
+        self._provider_revision = get_revision()
+
+    def _ensure_provider(self) -> None:
+        """管理者切替後の stale プロバイダを再解決する。"""
+        from app.ai_pipeline.effective_config import get_revision
+
+        rev = get_revision()
+        # __new__ のみのテスト構築では注入済み provider を保持する。
+        if not hasattr(self, "_provider_revision"):
+            self._provider_revision = rev
+            return
+        if self._provider_revision != rev:
+            self._provider = get_ai_provider()
+            self._provider_revision = rev
 
     async def detect_language(
         self,
@@ -96,6 +112,7 @@ class AIPipeline:
         Returns:
             (認識テキスト, 検出された言語コード)
         """
+        self._ensure_provider()
         return await self._provider.transcribe_with_detection(audio_data, hint_language)
 
     async def process_audio(
@@ -119,6 +136,7 @@ class AIPipeline:
         Returns:
             処理済み音声データ
         """
+        self._ensure_provider()
         metrics = _start_latency_measurement()
 
         # A/B 実験の配信単位を発話文脈として設定する（CompositeAIProvider が発話ごとに

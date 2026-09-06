@@ -158,6 +158,26 @@ def test_glossary_hit_rate_accumulates() -> None:
     assert mon.glossary_hit_rate() == 17 / 20
 
 
+def test_record_glossary_if_bound_writes_to_context_monitor() -> None:
+    """ContextVar に bind したモニターへ用語命中を記録できる。"""
+    from app.ai_pipeline.qos import (
+        bind_qos_monitor,
+        record_glossary_if_bound,
+        reset_qos_monitor,
+    )
+
+    mon = HybridQoSMonitor()
+    token = bind_qos_monitor(mon)
+    try:
+        record_glossary_if_bound(3, 4)
+        assert mon.glossary_hit_rate() == 0.75
+    finally:
+        reset_qos_monitor(token)
+    # unbind 後は記録されない
+    record_glossary_if_bound(1, 1)
+    assert mon.glossary_hit_rate() == 0.75
+
+
 def test_record_glossary_ignores_nonpositive_total() -> None:
     """total<=0 は分母に加算しない"""
     mon = HybridQoSMonitor()

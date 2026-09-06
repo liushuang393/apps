@@ -1,0 +1,916 @@
+/**
+ * 会議室ページスタイル
+ * 利用: RoomPage および同ページ専用コンポーネント
+ * （PreferencePanel / ParticipantList / SubtitleDisplay / AudioControlPanel / MeetingModePanel）
+ */
+
+/* 会議室ページ */
+.room-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-light);
+}
+
+.room-page header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: var(--gradient-dark);
+  color: white;
+  box-shadow: var(--shadow-lg);
+}
+
+.room-page header h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* ヘッダー右側エリア */
+.room-page header .header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* ヘッダーデバイス選択コンテナ */
+.header-devices {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 個別デバイス選択 */
+.device-select {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.device-select .device-icon {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.device-select select {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  min-width: 140px;
+  max-width: 200px;
+  outline: none;
+}
+
+.device-select select:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+.device-select select option {
+  background: #1e293b;
+  color: white;
+  padding: 0.5rem;
+}
+
+/* 会議記録ボタン */
+.room-page header .transcript-btn {
+  width: auto;
+  padding: 0.4rem 1rem;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: white;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.room-page header .transcript-btn:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+/* 退室ボタン */
+.room-page header .leave-btn {
+  width: auto;
+  padding: 0.4rem 1rem;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.85rem;
+}
+
+.room-page header .leave-btn:hover {
+  background: var(--danger-color);
+  border-color: var(--danger-color);
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+.connection-status .connected,
+.connection-status .connecting,
+.connection-status .reconnecting,
+.connection-status .disconnected {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.connection-status .connected::before,
+.connection-status .connecting::before,
+.connection-status .reconnecting::before,
+.connection-status .disconnected::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-status .connected {
+  color: #00ff88;
+}
+
+.connection-status .connected::before {
+  background: #00ff88;
+  animation: pulse 2s infinite;
+}
+
+.connection-status .connecting {
+  color: #87ceeb;
+}
+
+.connection-status .connecting::before {
+  background: #87ceeb;
+  animation: pulse 1.5s infinite;
+}
+
+.connection-status .reconnecting {
+  color: #ffa500;
+}
+
+.connection-status .reconnecting::before {
+  background: #ffa500;
+  animation: blink 1s infinite;
+}
+
+.connection-status .disconnected {
+  color: #ff6b6b;
+}
+
+.connection-status .disconnected::before {
+  background: #ff6b6b;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.room-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 320px;
+  padding: 1.5rem;
+  background: var(--bg-white);
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+}
+
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  background: var(--bg-light);
+}
+
+/* 音声状態バー（下部・コンパクト） */
+.audio-status-bar {
+  flex-shrink: 0;
+  padding: 0.75rem 1.25rem;
+  background: var(--gradient-dark);
+  border-radius: var(--radius-lg);
+  color: white;
+  font-size: 0.9rem;
+}
+
+.audio-active-compact {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.audio-inactive-compact {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.mic-status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mic-status.on {
+  color: #00ff88;
+}
+
+.mic-status.off {
+  color: #94a3b8;
+}
+
+.volume-bar-compact {
+  flex: 0 0 100px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.volume-bar-compact .volume-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00ff88, #34d399);
+  border-radius: 3px;
+  transition: width 0.1s ease;
+}
+
+.volume-text {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 36px;
+}
+
+.waveform-compact {
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.hint-compact {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* 旧audio-area（互換性のため残す） */
+.audio-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gradient-dark);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1.5rem;
+  color: white;
+  font-size: 1.1rem;
+}
+
+/* ====================================
+   折りたたみパネル共通スタイル
+   ==================================== */
+.collapsible-panel {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.collapsible-panel:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 折りたたみヘッダー（クリック可能なボタン） */
+.collapsible-panel .panel-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.collapsible-panel .panel-header:hover {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.collapsible-panel .panel-header:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--primary-color);
+}
+
+.collapsible-panel .panel-header:disabled {
+  cursor: default;
+}
+
+/* パネルタイトル */
+.collapsible-panel .panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.collapsible-panel .panel-icon {
+  font-size: 1.1rem;
+}
+
+/* 折りたたみ矢印（シェブロン） */
+.collapsible-panel .chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+  color: white;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+}
+
+.collapsible-panel .chevron:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+}
+
+.collapsible-panel .chevron svg {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapsible-panel .chevron.up svg {
+  transform: rotate(180deg);
+}
+
+.collapsible-panel .chevron.down svg {
+  transform: rotate(0deg);
+}
+
+/* パネルコンテンツ */
+.collapsible-panel .panel-content {
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapsible-panel.expanded .panel-content {
+  max-height: 1000px;
+  opacity: 1;
+  padding: 0 1.25rem 1.25rem;
+}
+
+.collapsible-panel.collapsed .panel-content {
+  max-height: 0;
+  opacity: 0;
+  padding: 0 1.25rem;
+}
+
+/* 空メッセージ・ローディング */
+.collapsible-panel .empty-message,
+.collapsible-panel .loading-message {
+  color: var(--text-light);
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+}
+
+/* ヒントテキスト */
+.collapsible-panel .hint-text {
+  color: var(--text-light);
+  font-size: 0.75rem;
+  margin-top: 0.3rem;
+}
+
+/* ====================================
+   設定パネル
+   ==================================== */
+.preference-panel {
+  margin-top: 1.5rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.preference-panel .panel-header {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.preference-panel .panel-header:hover {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+}
+
+.preference-panel h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 1.25rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* h3のアイコンはコンポーネント側で指定 */
+
+.setting-group {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-divider);
+}
+
+.setting-group:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* 設定ブロックタイトル（淡灰色） */
+.setting-group > label,
+.setting-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.8rem;
+  margin-bottom: 0.625rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.radio-group {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.radio-group label,
+.radio-group .radio-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: var(--bg-white);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid var(--border-color);
+  font-size: 0.9rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.radio-text {
+  white-space: nowrap;
+}
+
+.radio-group label:hover:not(:has(input:disabled)) {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+.radio-group label:has(input:checked) {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+  color: var(--primary-color);
+}
+
+.radio-group label:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-light);
+}
+
+.radio-group input {
+  accent-color: var(--primary-color);
+}
+
+.setting-group select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  background: var(--bg-white);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.setting-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+/* 非活性select */
+.setting-group select:disabled,
+.setting-group select.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-light);
+  color: var(--text-secondary);
+}
+
+/* チェックボックススタイル */
+.setting-group label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-white);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 2px solid var(--border-color);
+  transition: all 0.2s ease;
+}
+
+.setting-group label:has(input[type="checkbox"]):hover {
+  border-color: var(--primary-color);
+}
+
+.setting-group label:has(input[type="checkbox"]:checked) {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+.setting-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary-color);
+}
+
+.current-setting {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  border: 1px solid rgba(79, 70, 229, 0.2);
+}
+
+.current-setting p {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+  color: var(--text-primary);
+}
+
+.current-setting p:last-child {
+  margin-bottom: 0;
+}
+
+/* 字幕表示（上部・大きく） */
+.subtitle-display {
+  flex: 1;
+  padding: 1.25rem;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
+  color: white;
+  border-radius: var(--radius-lg);
+  overflow-y: auto;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 1rem;
+  min-height: 200px;
+}
+
+.subtitle-display h4 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.6);
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 1) 0%, rgba(15, 23, 42, 0.9) 100%);
+  padding: 0.5rem 0;
+  margin: -0.5rem 0 0.75rem 0;
+}
+
+.subtitle-item {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  line-height: 1.6;
+}
+
+.subtitle-item:last-child {
+  margin-bottom: 0;
+}
+
+/* 自分の発言のスタイル */
+.subtitle-item.my-message {
+  background: rgba(80, 70, 229, 0.15);
+  border-left: 3px solid var(--primary-color);
+}
+
+.subtitle-item.my-message .speaker-name {
+  color: #c4b5fd;
+}
+
+.subtitle-text {
+  color: #f1f5f9;
+}
+
+.translated-badge {
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.latency-badge {
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ====================================
+   参加者リスト
+   ==================================== */
+.participant-list {
+  background: var(--bg-white);
+}
+
+.participant-list .panel-header {
+  background: var(--bg-white);
+}
+
+.participant-list .panel-header:hover {
+  background: var(--bg-light);
+}
+
+.participant-list ul {
+  list-style: none;
+  margin-top: 0.5rem;
+}
+
+.participant-list li {
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 0.5rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.participant-list li:last-child {
+  margin-bottom: 0;
+}
+
+.participant-list li:hover {
+  background: var(--bg-light);
+}
+
+.participant-list li.speaking {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid #a7f3d0;
+}
+
+.speaking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  color: var(--success-color);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.speaking-indicator::before {
+  content: '🎤';
+}
+
+/* 注: 接続状態のスタイルは .connection-status 内に定義済み (599行付近) */
+
+/* ====================================
+   音声コントロール（インライン版 - 設定パネル内）
+   ==================================== */
+.audio-control-inline {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-divider);
+}
+
+/* 一般エラー（簡潔版） */
+.audio-control-inline .error-simple {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--danger-color);
+  background: rgba(220, 53, 69, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+/* HTTPS/localhost必須エラー（設定案内付き） */
+.secure-context-error {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%);
+  border: 1px solid #ffc107;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.secure-context-error .error-title {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  color: #856404;
+  font-size: 0.8rem;
+}
+
+.secure-context-error .error-steps {
+  margin: 0;
+  color: #664d03;
+}
+
+.secure-context-error .error-steps p {
+  margin: 0.25rem 0;
+}
+
+.secure-context-error code {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 0.7rem;
+  word-break: break-all;
+}
+
+/* マイク状態コントロール行 */
+.mic-control-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.mic-control-row .mic-button {
+  width: auto;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.mic-control-row .mic-button.on {
+  background: var(--success-color);
+}
+
+.mic-control-row .mic-button.off {
+  background: var(--text-secondary);
+}
+
+.mic-control-row .volume-indicator {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mic-control-row .volume-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--success-color), #34d399);
+  border-radius: 3px;
+  transition: width 0.1s ease;
+}
+
+.mic-control-row .speaking-badge {
+  padding: 0.2rem 0.4rem;
+  background: var(--success-color);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  animation: pulse 1s infinite;
+  flex-shrink: 0;
+}
+
+/* 波形表示 */
+.waveform-container {
+  margin-top: 0.5rem;
+}
+
+.waveform-container canvas {
+  width: 100%;
+  height: 36px;
+  border-radius: var(--radius-sm);
+}
+
+/* 音声エリアの表示 */
+.audio-area .audio-active,
+.audio-area .audio-inactive {
+  text-align: center;
+  padding: 2rem;
+}
+
+.audio-area .speaker-indicator {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.audio-area .volume-display {
+  font-size: 1rem;
+  opacity: 0.8;
+  margin-bottom: 1rem;
+}
+
+/* メインエリア波形表示 */
+.audio-area .main-waveform {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.audio-area .main-waveform canvas {
+  border-radius: var(--radius-md);
+  max-width: 100%;
+}
+
+.audio-area .audio-inactive .hint {
+  font-size: 0.9rem;
+  opacity: 0.6;
+  margin-top: 0.5rem;
+}
+
+/* 会議モード切替パネル（旧 ai-pipeline-settings.css から移設） */
+.meeting-mode-panel {
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.meeting-mode-panel h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.meeting-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.meeting-mode-option {
+  text-align: left;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  cursor: pointer;
+}
+
+.meeting-mode-option.active {
+  border-color: rgba(96, 165, 250, 0.8);
+  background: rgba(37, 99, 235, 0.25);
+}
+
+/* レスポンシブ */
+@media (max-width: 768px) {
+  .room-content {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    max-height: 40vh;
+  }
+}

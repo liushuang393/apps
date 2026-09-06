@@ -53,6 +53,10 @@ HOST_IP=192.168.x.x docker compose up -d --build       # LAN公開用
 docker compose exec backend alembic upgrade head       # コンテナ内でマイグレーション
 ```
 
+**Windows（PowerShell）**: `.sh` は不要。`$env:HOST_IP="192.168.x.x"; docker compose up -d --build` を使う。
+`./scripts/start-docker.sh` は WSL2/Linux 用。WSL から Docker Desktop に届かない場合は PowerShell に切り替える。
+エージェントは毎回 compose を再調査せず `.cursor/rules/docker-windows-startup.mdc` に従う。
+
 ## アーキテクチャ
 
 ```
@@ -95,7 +99,7 @@ backend/            FastAPI + SQLAlchemy 2.0 + Redis
 
 ### 共通
 
-- **ファイルサイズ**: 500行推奨、1000行絶対上限
+- **ファイルサイズ**: 500行推奨、1500行絶対上限
 - **コメント**: 日本語で記載、関数は目的・入出力・注意点を記載
 - **禁止**: `console.log`/`print`、マジックナンバー、秘密情報のハードコード
 

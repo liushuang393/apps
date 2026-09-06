@@ -5,6 +5,7 @@ LiveKitOutputSink（app.webrtc.sink）の単体テスト。
 記録し、リサンプル・(話者, 言語) 単位の重複排除・data トピックを検証する
 （フレーム分割は publisher 側の責務のため sink では検証しない）。
 末尾では実 HybridOrchestrator を本 sink で駆動し、プロトコル整合も確認する。
+公開契約は TransportAdapter（publish_audio / send_data）のみ。
 """
 
 import json
@@ -54,16 +55,22 @@ def _sink(rec: _Recorder, **kw: object) -> LiveKitOutputSink:
         user_language={"u1": "en", "u2": "en", "u3": "ja"},
         capture_audio=rec.capture_audio,
         send_data=rec.send_data,
-        **kw,
+        **kw,  # type: ignore[arg-type]
     )
 
 
 @pytest.mark.asyncio
-async def test_deliver_audio_resamples() -> None:
+async def test_publish_audio_resamples() -> None:
     """24k 100ms 入力は 48k pcm48 として 1 回で capture される（分割は publisher 側）。"""
     rec = _Recorder()
     sink = _sink(rec)
-    await sink.deliver_audio("u1", _pcm(2400))  # 100ms @ 24k
+    await sink.publish_audio(
+        speaker_id="sp",
+        language="en",
+        audio=_pcm(2400),
+        recipient_ids=["u1"],
+        generation_id=None,
+    )
     assert len(rec.audio) == 1
     speaker_id, lang, size = rec.audio[0]
     assert speaker_id == "sp" and lang == "en"
@@ -71,34 +78,68 @@ async def test_deliver_audio_resamples() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deliver_audio_dedups_same_payload_per_language() -> None:
+async def test_publish_audio_dedups_same_payload_per_language() -> None:
     """同一オブジェクトを同一言語へ再配信しても capture は 1 回だけ。"""
     rec = _Recorder()
     sink = _sink(rec)
-    payload = _pcm(480 * 2)  # 48k 2フレーム相当の元データ（24k→48kで4フレーム）
-    await sink.deliver_audio("u1", payload)
+    payload = _pcm(480 * 2)
+    await sink.publish_audio(
+        speaker_id="sp",
+        language="en",
+        audio=payload,
+        recipient_ids=["u1"],
+        generation_id=None,
+    )
     first = len(rec.audio)
-    await sink.deliver_audio("u2", payload)  # 同一 payload・同一言語 → skip
+    await sink.publish_audio(
+        speaker_id="sp",
+        language="en",
+        audio=payload,
+        recipient_ids=["u2"],
+        generation_id=None,
+    )
     assert len(rec.audio) == first
 
 
 @pytest.mark.asyncio
-async def test_deliver_audio_ignores_unknown_user_and_empty() -> None:
-    """未知 user / 空音声は無視。"""
+async def test_publish_audio_ignores_empty_recipients_and_audio() -> None:
+    """空受信者 / 空音声は無視。"""
     rec = _Recorder()
     sink = _sink(rec)
-    await sink.deliver_audio("ghost", _pcm(2400))
-    await sink.deliver_audio("u1", b"")
+    await sink.publish_audio(
+        speaker_id="sp",
+        language="en",
+        audio=_pcm(2400),
+        recipient_ids=[],
+        generation_id=None,
+    )
+    await sink.publish_audio(
+        speaker_id="sp",
+        language="en",
+        audio=b"",
+        recipient_ids=["u1"],
+        generation_id=None,
+    )
     assert rec.audio == []
 
 
 @pytest.mark.asyncio
-async def test_deliver_subtitle_and_event_topics() -> None:
-    """字幕/イベントは受信者 identity 宛て・正しいトピックで JSON 配信。"""
+async def test_send_data_topics() -> None:
+    """字幕/イベントは受信者 identity 宛て・正しいトピックで配信。"""
     rec = _Recorder()
     sink = _sink(rec)
-    await sink.deliver_subtitle("u1", {"type": "subtitle", "text": "こんにちは"})
-    await sink.deliver_event("u3", {"type": "qos_warning", "metric": "latency_p95"})
+    await sink.send_data(
+        user_id="u1",
+        topic=TOPIC_SUBTITLE,
+        payload=json.dumps({"type": "subtitle", "text": "こんにちは"}).encode("utf-8"),
+    )
+    await sink.send_data(
+        user_id="u3",
+        topic=TOPIC_EVENT,
+        payload=json.dumps({"type": "qos_warning", "metric": "latency_p95"}).encode(
+            "utf-8"
+        ),
+    )
     sub_payload, sub_ids, sub_topic = rec.data[0]
     assert sub_ids == ["u1"] and sub_topic == TOPIC_SUBTITLE
     assert json.loads(sub_payload)["text"] == "こんにちは"
@@ -107,8 +148,8 @@ async def test_deliver_subtitle_and_event_topics() -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_data_failure_is_swallowed() -> None:
-    """data 送信例外は伝播させない（配信失敗で収束を止めない）。"""
+async def test_send_data_failure_propagates() -> None:
+    """data 送信例外は伝播する（隔離は Output Manager 側）。"""
 
     async def boom(_p: bytes, _ids: list[str], _t: str) -> None:
         raise RuntimeError("channel closed")
@@ -119,7 +160,12 @@ async def test_send_data_failure_is_swallowed() -> None:
         send_data=boom,
         speaker_id="sp",
     )
-    await sink.deliver_subtitle("u1", {"text": "x"})  # 例外にならなければ合格
+    with pytest.raises(RuntimeError, match="channel closed"):
+        await sink.send_data(
+            user_id="u1",
+            topic=TOPIC_SUBTITLE,
+            payload=b'{"text":"x"}',
+        )
 
 
 @pytest.mark.asyncio
@@ -153,10 +199,9 @@ async def test_orchestrator_drives_livekit_sink() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deliver_audio_strips_wav_header():
+async def test_publish_audio_strips_wav_header() -> None:
     """WAV ヘッダ付き音声はヘッダを除去し実レートで 48kHz 化する。"""
     from app.audio.pcm import wrap_wav16
-    from app.webrtc.sink import OUTPUT_FRAME_SAMPLES, LiveKitOutputSink
 
     captured: list[tuple[str, bytes]] = []
 
@@ -171,7 +216,7 @@ async def test_deliver_audio_strips_wav_header():
         captured.append((lang, frame))
 
     async def send(payload: bytes, ids: list[str], topic: str) -> None:
-        pass
+        del payload, ids, topic
 
     sink = LiveKitOutputSink(
         user_language={"u1": "en"},
@@ -180,17 +225,22 @@ async def test_deliver_audio_strips_wav_header():
         speaker_id="sp",
     )
     pcm24k = b"\x01\x00" * 2400  # 24kHz で 100ms
-    await sink.deliver_audio("u1", wrap_wav16(pcm24k, 24000))
+    await sink.publish_audio(
+        speaker_id="sp",
+        language="en",
+        audio=wrap_wav16(pcm24k, 24000),
+        recipient_ids=["u1"],
+        generation_id=None,
+    )
     total = sum(len(f) for _, f in captured)
     # 100ms @48kHz int16 = 4800 標本 = 9600 バイト（フレーム 480 標本単位）
     assert total == (4800 // OUTPUT_FRAME_SAMPLES) * OUTPUT_FRAME_SAMPLES * 2
 
 
 @pytest.mark.asyncio
-async def test_deliver_audio_passes_speaker_and_language():
+async def test_publish_audio_passes_speaker_and_language() -> None:
     """翻訳音声は (話者, 言語) 単位で capture される（欠陥 #3/#6）。"""
     from app.audio.pcm import wrap_wav16
-    from app.webrtc.sink import LiveKitOutputSink
 
     captured: list[tuple[str, str]] = []
 
@@ -205,7 +255,7 @@ async def test_deliver_audio_passes_speaker_and_language():
         captured.append((speaker_id, lang))
 
     async def send(payload: bytes, ids: list[str], topic: str) -> None:
-        pass
+        del payload, ids, topic
 
     sink = LiveKitOutputSink(
         user_language={"u1": "en"},
@@ -213,5 +263,11 @@ async def test_deliver_audio_passes_speaker_and_language():
         send_data=send,
         speaker_id="alice",
     )
-    await sink.deliver_audio("u1", wrap_wav16(b"\x01\x00" * 480, 24000))
+    await sink.publish_audio(
+        speaker_id="alice",
+        language="en",
+        audio=wrap_wav16(b"\x01\x00" * 480, 24000),
+        recipient_ids=["u1"],
+        generation_id=None,
+    )
     assert captured == [("alice", "en")]

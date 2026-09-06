@@ -6,9 +6,10 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminApi, roomApi, ApiError } from '../api/client';
 import { useAuthStore } from '../store/authStore';
-import type { Room, SupportedLanguage, AudioMode } from '../types';
+import type { Room, SupportedLanguage, AudioMode, MeetingMode } from '../types';
 
 import { LANGUAGE_NAMES, DEFAULT_ENABLED_LANGUAGES } from '../constants/languages';
+import '../styles/pages/room-list.css';
 
 /** 会議作成フォームの初期状態 */
 interface CreateFormState {
@@ -18,6 +19,8 @@ interface CreateFormState {
   defaultAudioMode: AudioMode;
   allowModeSwitch: boolean;
   isPrivate: boolean;
+  /** 会議AI主線の既定（受聴 original/translated とは別） */
+  defaultMode: MeetingMode;
 }
 
 function createInitialFormState(
@@ -30,6 +33,7 @@ function createInitialFormState(
     defaultAudioMode: 'original',
     allowModeSwitch: true,
     isPrivate: false,
+    defaultMode: 'hybrid',
   };
 }
 
@@ -156,6 +160,7 @@ export function RoomListPage() {
         defaultAudioMode: formState.defaultAudioMode,
         allowModeSwitch: formState.allowModeSwitch,
         isPrivate: formState.isPrivate,
+        defaultMode: formState.defaultMode,
       });
       navigate(`/room/${room.id}`);
     } catch (err) {
@@ -261,7 +266,7 @@ export function RoomListPage() {
           {/* 音声モード設定 */}
           <div className="form-row">
             <div className="form-group">
-              <label>デフォルト音声モード</label>
+              <label>デフォルト受聴モード（原音/翻訳音声）</label>
               <select
                 value={formState.defaultAudioMode}
                 onChange={(e) => setFormState((prev) => ({
@@ -272,6 +277,21 @@ export function RoomListPage() {
                 <option value="original">原音（オリジナル音声）</option>
                 <option value="translated">翻訳音声</option>
               </select>
+            </div>
+            <div className="form-group">
+              <label>会議AI主線の既定</label>
+              <select
+                value={formState.defaultMode}
+                onChange={(e) => setFormState((prev) => ({
+                  ...prev,
+                  defaultMode: e.target.value as MeetingMode
+                }))}
+              >
+                <option value="a">a（聞く / 翻訳音声）</option>
+                <option value="b">b（読む / 字幕）</option>
+                <option value="hybrid">hybrid（両方）</option>
+              </select>
+              <small>参加者の原音/翻訳切替とは別の、処理主線の設定です</small>
             </div>
           </div>
 

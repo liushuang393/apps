@@ -9,21 +9,20 @@
  * - useCallback で関数をメモ化
  */
 import { useCallback, useState, memo } from 'react';
-import { useRoomStore } from '../store/roomStore';
-import { AudioControlPanel } from './AudioControlPanel';
-import type { AudioMode, SupportedLanguage, RoomPolicy } from '../types';
-
 import { LANGUAGE_NAMES_WITH_CODE } from '../constants/languages';
+import {
+  applyPreferenceChange,
+  type PreferencePatch,
+} from '../preferences/applyPreferenceChange';
+import { useRoomStore } from '../store/roomStore';
+import type { AudioMode, SupportedLanguage, RoomPolicy } from '../types';
+import { AudioControlPanel } from './AudioControlPanel';
 
 /** 言語表示名（統一形式：言語名（コード）） */
 const LANGUAGE_NAMES = LANGUAGE_NAMES_WITH_CODE;
 
 interface Props {
-  onPreferenceChange: (pref: {
-    audioMode?: string;
-    subtitleEnabled?: boolean;
-    targetLanguage?: string;
-  }) => void;
+  onPreferenceChange: (pref: PreferencePatch) => void;
   policy?: RoomPolicy | null;
   /** 音声コントロール関連props（シンプル版：デバイス選択はヘッダーへ移動済み） */
   audioProps?: {
@@ -40,13 +39,11 @@ interface Props {
  */
 const selectPolicy = (s: ReturnType<typeof useRoomStore.getState>) => s.policy;
 const selectMyPreference = (s: ReturnType<typeof useRoomStore.getState>) => s.myPreference;
-const selectUpdateMyPreference = (s: ReturnType<typeof useRoomStore.getState>) => s.updateMyPreference;
 
 function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioProps }: Readonly<Props>) {
   // ★パフォーマンス最適化: 個別セレクターで購読★
   const storePolicy = useRoomStore(selectPolicy);
   const myPreference = useRoomStore(selectMyPreference);
-  const updateMyPreference = useRoomStore(selectUpdateMyPreference);
 
   // propsまたはstoreからpolicyを取得
   const policy = propPolicy ?? storePolicy;
@@ -54,26 +51,23 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
   /** 音声モード変更 */
   const handleAudioModeChange = useCallback(
     (mode: AudioMode) => {
-      updateMyPreference({ audioMode: mode });
-      onPreferenceChange({ audioMode: mode });
+      applyPreferenceChange({ audioMode: mode }, onPreferenceChange);
     },
-    [updateMyPreference, onPreferenceChange]
+    [onPreferenceChange]
   );
 
   /** 字幕表示トグル */
   const handleSubtitleToggle = useCallback(() => {
     const newValue = !myPreference?.subtitleEnabled;
-    updateMyPreference({ subtitleEnabled: newValue });
-    onPreferenceChange({ subtitleEnabled: newValue });
-  }, [myPreference?.subtitleEnabled, updateMyPreference, onPreferenceChange]);
+    applyPreferenceChange({ subtitleEnabled: newValue }, onPreferenceChange);
+  }, [myPreference?.subtitleEnabled, onPreferenceChange]);
 
   /** 翻訳先言語変更 */
   const handleLanguageChange = useCallback(
     (lang: SupportedLanguage) => {
-      updateMyPreference({ targetLanguage: lang });
-      onPreferenceChange({ targetLanguage: lang });
+      applyPreferenceChange({ targetLanguage: lang }, onPreferenceChange);
     },
-    [updateMyPreference, onPreferenceChange]
+    [onPreferenceChange]
   );
 
   // 折りたたみ状態

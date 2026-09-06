@@ -12,6 +12,7 @@ import {
   type LanguageSettings,
 } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import '../styles/pages/language-settings.css';
 
 /** 最大選択可能言語数 */
 const MAX_LANGUAGES = 4;

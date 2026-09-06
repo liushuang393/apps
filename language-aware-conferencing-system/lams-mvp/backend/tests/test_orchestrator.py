@@ -3,31 +3,64 @@ HybridOrchestrator（Phase 3 ハイブリッド 2 主線同時オーケストレ
 
 聞く主線（S2S）/読む主線（ASR+MT）を注入したフェイクで差し替え、I/O 非依存で
 「フォーク→2 主線同時投入→Output Manager 収束（混ぜない）」の各分岐を検証する。
+配信観測は RecordingTransportAdapter（TransportAdapter）のみ。
 """
+
+from __future__ import annotations
+
+import time
+from collections.abc import Sequence
 
 import pytest
 
 from app.ai_pipeline.orchestrator import HearingOutput, HybridOrchestrator, Listener
+from app.ai_pipeline.output_manager import (
+    TOPIC_EVENT,
+    TOPIC_SUBTITLE,
+    DefaultOutputManager,
+    FinalSubtitleCommand,
+    ListenerRef,
+    RecordingTransportAdapter,
+)
 from app.ai_pipeline.qos import READING_P95_TARGET_MS, HybridQoSMonitor
 
 _FakeProcessed = HearingOutput
 
 
-class _FakeSink:
-    """OutputSink のフェイク。配信先と内容を記録する。"""
+class _FakeSink(RecordingTransportAdapter):
+    """TransportAdapter 観測用。旧 deliver_* フェイク相当の便利ビューを提供する。"""
 
-    def __init__(self) -> None:
-        self.audio: list[tuple[str, bytes]] = []
-        self.subtitles: list[tuple[str, dict]] = []
+    @property
+    def audio_by_user(self) -> list[tuple[str, bytes]]:
+        """受信者単位に展開した翻訳音声一覧。"""
+        out: list[tuple[str, bytes]] = []
+        for _spk, _lang, audio, recipients, _gen in self.audio:
+            for uid in recipients:
+                out.append((uid, audio))
+        return out
 
-    async def deliver_audio(
-        self, user_id: str, audio: bytes, *, generation_id: int | None = None
-    ) -> None:
-        del generation_id
-        self.audio.append((user_id, audio))
+    @property
+    def subtitles(self) -> list[tuple[str, dict]]:
+        """確定/partial 字幕イベント。"""
+        return [
+            (uid, ev)
+            for uid, topic, ev in self.data
+            if topic == TOPIC_SUBTITLE and ev.get("type") == "subtitle"
+        ]
 
-    async def deliver_subtitle(self, user_id: str, message: dict) -> None:
-        self.subtitles.append((user_id, message))
+    @property
+    def interim(self) -> list[tuple[str, dict]]:
+        """暫定字幕イベント。"""
+        return [
+            (uid, ev)
+            for uid, topic, ev in self.data
+            if topic == TOPIC_SUBTITLE and ev.get("type") == "subtitle_interim"
+        ]
+
+    @property
+    def events(self) -> list[tuple[str, dict]]:
+        """QoS / QoE 等のイベント。"""
+        return [(uid, ev) for uid, topic, ev in self.data if topic == TOPIC_EVENT]
 
 
 def _make_orchestrator() -> tuple[HybridOrchestrator, dict]:
@@ -65,9 +98,7 @@ async def test_hybrid_forks_both_mainlines_and_converges() -> None:
     )
 
     assert calls == {"hearing": 1, "reading": 1}
-    # 聞く主線の音声が配信される
-    assert sink.audio == [("u1", b"AUDIO")]
-    # 字幕は読む主線が権威（混ぜない）
+    assert sink.audio_by_user == [("u1", b"AUDIO")]
     assert len(sink.subtitles) == 1
     _, msg = sink.subtitles[0]
     assert msg["original_text"] == "こんにちは"
@@ -95,7 +126,7 @@ async def test_mode_a_audio_only_subtitle_falls_back_to_hearing_delta() -> None:
     )
 
     assert calls == {"hearing": 1, "reading": 0}
-    assert sink.audio == [("u1", b"AUDIO")]
+    assert sink.audio_by_user == [("u1", b"AUDIO")]
     _, msg = sink.subtitles[0]
     assert msg["original_text"] == "text"
     assert msg["translated_text"] == "H:en"
@@ -120,7 +151,7 @@ async def test_mode_b_subtitle_only_no_audio() -> None:
     )
 
     assert calls == {"hearing": 0, "reading": 1}
-    assert sink.audio == []
+    assert sink.audio_by_user == []
     _, msg = sink.subtitles[0]
     assert msg["mainline"] == "reading"
 
@@ -142,37 +173,15 @@ async def test_speaker_gets_subtitle_but_not_audio_echo() -> None:
         speaker_id="spk",
     )
 
-    assert sink.audio == []  # エコー防止
+    assert sink.audio_by_user == []
     assert len(sink.subtitles) == 1
-
-
-class _EventSink(_FakeSink):
-    """deliver_event を備えた OutputSink フェイク（qos_warning 配信検証用）。"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.events: list[tuple[str, dict]] = []
-
-    async def deliver_event(self, user_id: str, message: dict) -> None:
-        self.events.append((user_id, message))
-
-
-class _InterimSink(_EventSink):
-    """暫定字幕対応の配信境界。"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.interim: list[tuple[str, dict]] = []
-
-    async def deliver_interim(self, user_id: str, message: dict) -> None:
-        self.interim.append((user_id, message))
 
 
 @pytest.mark.asyncio
 async def test_mode_a_emits_revisioned_interim_before_final() -> None:
     """Mode A の hearing text を interim 契約で配信し、final へ収束する。"""
     orch, _ = _make_orchestrator()
-    sink = _InterimSink()
+    sink = _FakeSink()
 
     await orch.orchestrate(
         audio_bytes=b"x",
@@ -198,20 +207,20 @@ def test_interim_revision_increases_for_same_utterance() -> None:
 
     orch, _ = _make_orchestrator()
     # 注入権威で隔離（プロセス共有権威の残留 finalize を避ける）
-    orch._revision_authority = RevisionAuthority()
+    orch._revision_authority = RevisionAuthority()  # noqa: SLF001
     common = {
         "subtitle_id": "utt-1",
         "target_language": "en",
         "seq": 1,
         "room_id": "room-1",
         "speaker_id": "spk",
-        "generation_id": 1,
+        "generation_id": 0,
     }
-
     first = orch._interim_message(text="hel", **common)
     second = orch._interim_message(text="hello", **common)
-
-    assert (first["revision"], second["revision"]) == (1, 2)
+    assert first["revision"] == 1
+    assert second["revision"] == 2
+    assert second["revision"] > first["revision"]
 
 
 @pytest.mark.asyncio
@@ -243,9 +252,8 @@ async def test_runtime_fallback_hearing_failure_to_reading() -> None:
         speaker_id="spk",
     )
 
-    # mode A では読む主線は未駆動だが、聞く失敗で縮退起動される
     assert calls == {"hearing": 1, "reading": 1}
-    assert sink.audio == []  # 翻訳音声は生成されない
+    assert sink.audio_by_user == []
     _, msg = sink.subtitles[0]
     assert msg["original_text"] == "text"
     assert msg["translated_text"] == "R:en"
@@ -255,18 +263,13 @@ async def test_runtime_fallback_hearing_failure_to_reading() -> None:
 
 @pytest.mark.asyncio
 async def test_hearing_empty_string_triggers_reading_fallback() -> None:
-    """欠陥 #8: 例外でなくとも hearing が空文字列を返せば hearing_failed 縮退が発動する。
-
-    センチネル文字列（例: "[エラー: ...]"）は非空のため縮退を素通りしていた。
-    「失敗 = 空文字列」契約により、空文字列を返すだけで縮退が正しく起動することを保証する。
-    """
+    """欠陥 #8: hearing が空文字列を返せば hearing_failed 縮退が発動する。"""
     calls: dict[str, int] = {"hearing": 0, "reading": 0}
 
     async def hearing(
         _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
     ) -> HearingOutput:
         calls["hearing"] += 1
-        # 例外を投げず、失敗を空文字列（+ 音声なし）で表現する（空文字列プロトコル）。
         return _FakeProcessed(audio_data=None, translated_text="")
 
     async def reading(_text: str, _src: str, tgt: str) -> str:
@@ -287,9 +290,8 @@ async def test_hearing_empty_string_triggers_reading_fallback() -> None:
         speaker_id="spk",
     )
 
-    # mode A では読む主線は未駆動だが、hearing の空文字列で縮退起動される
     assert calls == {"hearing": 1, "reading": 1}
-    assert sink.audio == []  # 翻訳音声は生成されない
+    assert sink.audio_by_user == []
     _, msg = sink.subtitles[0]
     assert msg["translated_text"] == "R:en"
     assert msg["mainline"] == "reading"
@@ -301,9 +303,8 @@ async def test_all_mainlines_fail_delivers_original_placeholder() -> None:
     """改善点 M4: 翻訳必要かつ全主線失敗でも原文プレースホルダを配信する。"""
 
     async def reading(_text: str, _src: str, _tgt: str) -> str:
-        return ""  # 失敗 = 空文字列
+        return ""
 
-    # mode b は hearing を駆動しない。reading も空 → 全主線失敗。
     orch = HybridOrchestrator(reading_fn=reading)
     sink = _FakeSink()
     listener = Listener("u1", "en", wants_audio=False, subtitle_enabled=True)
@@ -318,7 +319,6 @@ async def test_all_mainlines_fail_delivers_original_placeholder() -> None:
         speaker_id="spk",
     )
 
-    # 原文プレースホルダが配信される（発話の存在を保証）
     assert len(sink.subtitles) == 1
     _, msg = sink.subtitles[0]
     assert msg["original_text"] == "重要な数字は42です"
@@ -326,7 +326,6 @@ async def test_all_mainlines_fail_delivers_original_placeholder() -> None:
     assert msg["is_translated"] is False
     assert msg["translated_text"] is None
     assert msg["mainline"] == "degraded"
-    # 原文は訳文でないため DB 記録（translations）には入れない
     assert res.translations == {}
 
 
@@ -359,9 +358,9 @@ async def test_partial_success_does_not_emit_placeholder() -> None:
 
 @pytest.mark.asyncio
 async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
-    """§9: 目標逸脱時に qos_warning が result と OM→Sink へ反映される。"""
+    """§9: 目標逸脱時に qos_warning が result と OM→TransportAdapter へ反映される。"""
 
-    async def hearing(
+    async def hearing_ok(
         _a: bytes, _s: str, _t: str, _spk: str, _original_text: str | None
     ) -> HearingOutput:
         return _FakeProcessed(audio_data=b"A", translated_text="H")
@@ -372,8 +371,10 @@ async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
     monitor = HybridQoSMonitor()
     monitor.record_latency("reading", READING_P95_TARGET_MS + 1000.0)
     monitor.record_glossary(1, 10)  # 0.1 < 0.95
-    orch = HybridOrchestrator(hearing_fn=hearing, reading_fn=reading, monitor=monitor)
-    sink = _EventSink()
+    orch = HybridOrchestrator(
+        hearing_fn=hearing_ok, reading_fn=reading, monitor=monitor
+    )
+    sink = _FakeSink()
     listener = Listener("u1", "en", wants_audio=False, subtitle_enabled=True)
 
     res = await orch.orchestrate(
@@ -388,7 +389,6 @@ async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
 
     metrics = {w["metric"] for w in res.qos_warnings}
     assert metrics == {"latency_p95", "glossary_hit_rate"}
-    # deliver_event を持つ sink には各受信者へ警告が配信される
     assert {m["metric"] for _, m in sink.events} == {
         "latency_p95",
         "glossary_hit_rate",
@@ -400,7 +400,7 @@ async def test_qos_warnings_emitted_to_result_and_event_sink() -> None:
 async def test_no_monitor_means_no_qos_warnings() -> None:
     """monitor 未注入なら QoS 計測・警告は一切発生しない（純動作）。"""
     orch, _ = _make_orchestrator()
-    sink = _EventSink()
+    sink = _FakeSink()
     listener = Listener("u1", "en", wants_audio=True, subtitle_enabled=True)
 
     res = await orch.orchestrate(
@@ -418,10 +418,8 @@ async def test_no_monitor_means_no_qos_warnings() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hearing_receives_original_text():
+async def test_hearing_receives_original_text() -> None:
     """orchestrator は検出済み原文を hearing 主線へ引き渡す（欠陥 #1）。"""
-    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
-
     received: dict = {}
 
     async def hearing_fn(_audio, _src, _tgt, _speaker, original_text):
@@ -431,20 +429,13 @@ async def test_hearing_receives_original_text():
     async def reading_fn(_text, _src, _tgt):
         return "hello"
 
-    class NullSink:
-        async def deliver_audio(self, user_id, audio, *, generation_id=None):
-            pass
-
-        async def deliver_subtitle(self, user_id, message):
-            pass
-
     orch = HybridOrchestrator(hearing_fn=hearing_fn, reading_fn=reading_fn)
     await orch.orchestrate(
         audio_bytes=b"pcm",
         source_language="ja",
         original_text="こんにちは",
         listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
-        sink=NullSink(),
+        sink=_FakeSink(),
         mode="hybrid",
         speaker_id="sp",
     )
@@ -452,31 +443,53 @@ async def test_hearing_receives_original_text():
 
 
 @pytest.mark.asyncio
-async def test_subtitle_not_blocked_by_slow_hearing():
+async def test_subtitle_not_blocked_by_slow_hearing() -> None:
     """字幕（読む主線）は聞く主線の完了を待たずに配信される（欠陥 #10）。"""
     import asyncio
-    import time
-
-    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
 
     times: dict[str, float] = {}
 
     async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
-        await asyncio.sleep(0.5)  # 遅い S2S を模擬
+        await asyncio.sleep(0.5)
         return HearingOutput(audio_data=b"wav", translated_text="hello")
 
     async def reading_fn(_text, _src, _tgt):
         return "hello"
 
-    class RecordingSink:
-        async def deliver_audio(  # noqa: ARG002
-            self, _user_id, _audio, *, generation_id=None
-        ):
-            del generation_id
-            times.setdefault("audio", time.perf_counter())
+    class TimingSink(RecordingTransportAdapter):
+        """字幕/音声の到達時刻を記録する。"""
 
-        async def deliver_subtitle(self, _user_id, _message):
-            times.setdefault("subtitle", time.perf_counter())
+        async def publish_audio(
+            self,
+            *,
+            speaker_id: str,
+            language: str,
+            audio: bytes,
+            recipient_ids: Sequence[str],
+            generation_id: int | None,
+        ) -> None:
+            times.setdefault("audio", time.perf_counter())
+            await super().publish_audio(
+                speaker_id=speaker_id,
+                language=language,
+                audio=audio,
+                recipient_ids=recipient_ids,
+                generation_id=generation_id,
+            )
+
+        async def send_data(
+            self,
+            *,
+            user_id: str,
+            topic: str,
+            payload: bytes,
+        ) -> None:
+            import json
+
+            event = json.loads(payload.decode("utf-8"))
+            if topic == TOPIC_SUBTITLE and event.get("type") == "subtitle":
+                times.setdefault("subtitle", time.perf_counter())
+            await super().send_data(user_id=user_id, topic=topic, payload=payload)
 
     orch = HybridOrchestrator(hearing_fn=hearing_fn, reading_fn=reading_fn)
     await orch.orchestrate(
@@ -484,27 +497,22 @@ async def test_subtitle_not_blocked_by_slow_hearing():
         source_language="ja",
         original_text="こんにちは",
         listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
-        sink=RecordingSink(),
+        sink=TimingSink(),
         mode="hybrid",
         speaker_id="sp",
     )
     assert "subtitle" in times and "audio" in times
-    assert times["audio"] - times["subtitle"] > 0.3  # 字幕が hearing を待っていない
+    assert times["audio"] - times["subtitle"] > 0.3
 
 
 @pytest.mark.asyncio
-async def test_qoe_decision_suppresses_hearing_keeps_reading():
+async def test_qoe_decision_suppresses_hearing_keeps_reading() -> None:
     """QoE decision 注入で聞く主線が止まり、読む主線と確定発話は継続する。"""
-    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
-    from app.ai_pipeline.qos import HybridQoSMonitor
-
-    # monitor は測定・warning 用。hearing 停止は decision 側が決める。
     monitor = HybridQoSMonitor(window=10)
     for _ in range(10):
         monitor.record_latency("hearing", 9000.0)
 
     hearing_called = {"n": 0}
-    events: list[dict] = []
 
     async def hearing_fn(_audio, _src, _tgt, _speaker, _original_text):
         hearing_called["n"] += 1
@@ -513,16 +521,7 @@ async def test_qoe_decision_suppresses_hearing_keeps_reading():
     async def reading_fn(_text, _src, _tgt):
         return "hello"
 
-    class NullSink:
-        async def deliver_audio(self, _user_id, _audio, *, generation_id=None):
-            pass
-
-        async def deliver_subtitle(self, _user_id, _message):
-            pass
-
-        async def deliver_event(self, _user_id, _message):
-            events.append(_message)
-
+    sink = _FakeSink()
     orch = HybridOrchestrator(
         hearing_fn=hearing_fn, reading_fn=reading_fn, monitor=monitor
     )
@@ -531,7 +530,7 @@ async def test_qoe_decision_suppresses_hearing_keeps_reading():
         source_language="ja",
         original_text="こんにちは",
         listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
-        sink=NullSink(),
+        sink=sink,
         mode="hybrid",
         speaker_id="sp",
         hearing_available=False,
@@ -542,7 +541,7 @@ async def test_qoe_decision_suppresses_hearing_keeps_reading():
     )
     assert hearing_called["n"] == 0
     assert result.translations["en"] == "hello"
-    qoe_events = [e for e in events if e.get("type") == "qoe_degraded"]
+    qoe_events = [e for _, e in sink.events if e.get("type") == "qoe_degraded"]
     assert qoe_events
     assert qoe_events[0]["should_fallback_to_subtitle"] is True
     assert qoe_events[0]["reason_code"] == "ai_hearing_degraded"
@@ -550,11 +549,8 @@ async def test_qoe_decision_suppresses_hearing_keeps_reading():
 
 
 @pytest.mark.asyncio
-async def test_monitor_p95_alone_does_not_suppress_hearing():
+async def test_monitor_p95_alone_does_not_suppress_hearing() -> None:
     """monitor の P95 超過だけでは聞く主線を止めない（測定と制御の分離）。"""
-    from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
-    from app.ai_pipeline.qos import HybridQoSMonitor
-
     monitor = HybridQoSMonitor(window=10)
     for _ in range(10):
         monitor.record_latency("hearing", 9000.0)
@@ -568,16 +564,6 @@ async def test_monitor_p95_alone_does_not_suppress_hearing():
     async def reading_fn(_text, _src, _tgt):
         return "hello"
 
-    class NullSink:
-        async def deliver_audio(self, _user_id, _audio, *, generation_id=None):
-            pass
-
-        async def deliver_subtitle(self, _user_id, _message):
-            pass
-
-        async def deliver_event(self, _user_id, _message):
-            pass
-
     orch = HybridOrchestrator(
         hearing_fn=hearing_fn, reading_fn=reading_fn, monitor=monitor
     )
@@ -586,7 +572,7 @@ async def test_monitor_p95_alone_does_not_suppress_hearing():
         source_language="ja",
         original_text="こんにちは",
         listeners=[Listener("u1", "en", wants_audio=True, subtitle_enabled=True)],
-        sink=NullSink(),
+        sink=_FakeSink(),
         mode="hybrid",
         speaker_id="sp",
         hearing_available=True,
@@ -594,37 +580,53 @@ async def test_monitor_p95_alone_does_not_suppress_hearing():
     assert hearing_called["n"] == 1
 
 
-def test_subtitle_message_includes_speaker_label() -> None:
-    """_subtitle_message は speaker_label を payload に載せる（P4-A ライブ表示）。"""
-    orch = HybridOrchestrator()
-    msg = orch._subtitle_message(
-        subtitle_id="s1",
-        seq=1,
-        speaker_id="spk",
-        original_text="こんにちは",
-        source_language="ja",
-        target_lang="en",
-        subtitle_text="hello",
-        mainline="reading",
-        s2s_provider=None,
-        speaker_label="Speaker 1",
+@pytest.mark.asyncio
+async def test_final_subtitle_event_includes_speaker_label() -> None:
+    """DefaultOutputManager 確定字幕は speaker_label を payload に載せる（P4-A）。"""
+    adapter = RecordingTransportAdapter()
+    manager = DefaultOutputManager(adapter=adapter)
+    await manager.handle(
+        FinalSubtitleCommand(
+            room_id="r",
+            speaker_id="spk",
+            subtitle_id="s1",
+            seq=1,
+            original_text="こんにちは",
+            source_language="ja",
+            target_language="en",
+            translated_text="hello",
+            mainline="reading",
+            listeners=(
+                ListenerRef("u1", "en", wants_audio=False, subtitle_enabled=True),
+            ),
+            speaker_label="Speaker 1",
+        )
     )
+    assert len(adapter.data) == 1
+    msg = adapter.data[0][2]
     assert msg["speaker_label"] == "Speaker 1"
     assert msg["speaker_id"] == "spk"
 
 
-def test_subtitle_message_speaker_label_defaults_none() -> None:
+@pytest.mark.asyncio
+async def test_final_subtitle_event_speaker_label_defaults_none() -> None:
     """speaker_label 未指定なら None（後方互換・未有効時）。"""
-    orch = HybridOrchestrator()
-    msg = orch._subtitle_message(
-        subtitle_id="s1",
-        seq=1,
-        speaker_id="spk",
-        original_text="hi",
-        source_language="ja",
-        target_lang="en",
-        subtitle_text="hi",
-        mainline="reading",
-        s2s_provider=None,
+    adapter = RecordingTransportAdapter()
+    manager = DefaultOutputManager(adapter=adapter)
+    await manager.handle(
+        FinalSubtitleCommand(
+            room_id="r",
+            speaker_id="spk",
+            subtitle_id="s1",
+            seq=1,
+            original_text="hi",
+            source_language="ja",
+            target_language="en",
+            translated_text="hi",
+            mainline="reading",
+            listeners=(
+                ListenerRef("u1", "en", wants_audio=False, subtitle_enabled=True),
+            ),
+        )
     )
-    assert msg["speaker_label"] is None
+    assert adapter.data[0][2]["speaker_label"] is None

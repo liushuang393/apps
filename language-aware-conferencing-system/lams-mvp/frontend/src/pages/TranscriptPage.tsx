@@ -9,6 +9,7 @@ import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
 import { LANGUAGE_NAMES } from '../constants/languages';
+import '../styles/pages/transcript.css';
 
 export function TranscriptPage() {
   const { roomId } = useParams<{ roomId: string }>();

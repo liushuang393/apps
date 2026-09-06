@@ -1,43 +1,58 @@
-"""partial 字幕（§P2）: orchestrator 事件フィールドと配信、processor.process_partial。"""
+"""partial 字幕（§P2）: Output Manager 事件フィールドと配信、processor.process_partial。"""
+
+from __future__ import annotations
 
 import pytest
 
 from app.ai_pipeline.orchestrator import HybridOrchestrator, Listener
-from app.ai_pipeline.output_manager import DefaultOutputManager
+from app.ai_pipeline.output_manager import (
+    TOPIC_SUBTITLE,
+    DefaultOutputManager,
+    FinalSubtitleCommand,
+    ListenerRef,
+    PartialSubtitleCommand,
+    RecordingTransportAdapter,
+)
 from app.rooms.manager import ParticipantPreference
 from app.webrtc.processor import SegmentProcessor
 
 
-class _CapturingSink:
-    """deliver_subtitle を記録するダミー Sink。"""
+class _CapturingSink(RecordingTransportAdapter):
+    """TransportAdapter 観測用。字幕イベントを便利ビューで公開する。"""
 
-    def __init__(self) -> None:
-        self.subtitles: list[tuple[str, dict]] = []
+    @property
+    def subtitles(self) -> list[tuple[str, dict]]:
+        """字幕 topic のイベント一覧。"""
+        return [
+            (uid, ev)
+            for uid, topic, ev in self.data
+            if topic == TOPIC_SUBTITLE and ev.get("type") == "subtitle"
+        ]
 
-    async def deliver_audio(self, user_id: str, audio: bytes) -> None:  # noqa: ARG002
-        pass
 
-    async def deliver_subtitle(self, user_id: str, message: dict) -> None:
-        self.subtitles.append((user_id, message))
-
-
-def test_subtitle_message_partial_fields() -> None:
-    """_subtitle_message は is_partial/revision/is_final/trace_id を持つ（事件協議）。"""
-    orch = HybridOrchestrator()
-    msg = orch._subtitle_message(
-        subtitle_id="sid",
-        seq=3,
-        speaker_id="sp",
-        original_text="こんにちは",
-        source_language="ja",
-        target_lang="en",
-        subtitle_text="",
-        mainline="partial",
-        s2s_provider=None,
-        is_partial=True,
-        revision=2,
-        trace_id="t-1",
+@pytest.mark.asyncio
+async def test_partial_subtitle_event_fields() -> None:
+    """PartialSubtitleCommand 経由の事件は is_partial/revision/is_final/trace_id を持つ。"""
+    adapter = RecordingTransportAdapter()
+    manager = DefaultOutputManager(adapter=adapter)
+    await manager.handle(
+        PartialSubtitleCommand(
+            room_id="",
+            speaker_id="sp",
+            subtitle_id="sid",
+            seq=3,
+            original_text="こんにちは",
+            source_language="ja",
+            target_language="en",
+            listeners=(
+                ListenerRef("u1", "en", wants_audio=False, subtitle_enabled=True),
+            ),
+            revision=2,
+            trace_id="t-1",
+        )
     )
+    assert len(adapter.data) == 1
+    msg = adapter.data[0][2]
     assert msg["is_partial"] is True
     assert msg["is_final"] is False
     assert msg["revision"] == 2
@@ -46,20 +61,28 @@ def test_subtitle_message_partial_fields() -> None:
     assert msg["trace_id"] == "t-1"
 
 
-def test_final_message_defaults_are_backward_compatible() -> None:
-    """既定（partial 引数なし）は従来どおり is_final=True・is_partial=False。"""
-    orch = HybridOrchestrator()
-    msg = orch._subtitle_message(
-        subtitle_id="sid",
-        seq=1,
-        speaker_id="sp",
-        original_text="hi",
-        source_language="en",
-        target_lang="ja",
-        subtitle_text="やあ",
-        mainline="reading",
-        s2s_provider=None,
+@pytest.mark.asyncio
+async def test_final_subtitle_defaults_are_backward_compatible() -> None:
+    """確定字幕は is_final=True・is_partial=False・revision=0。"""
+    adapter = RecordingTransportAdapter()
+    manager = DefaultOutputManager(adapter=adapter)
+    await manager.handle(
+        FinalSubtitleCommand(
+            room_id="",
+            speaker_id="sp",
+            subtitle_id="sid",
+            seq=1,
+            original_text="hi",
+            source_language="en",
+            target_language="ja",
+            translated_text="やあ",
+            mainline="reading",
+            listeners=(
+                ListenerRef("u1", "ja", wants_audio=False, subtitle_enabled=True),
+            ),
+        )
     )
+    msg = adapter.data[0][2]
     assert msg["is_final"] is True
     assert msg["is_partial"] is False
     assert msg["revision"] == 0
@@ -86,7 +109,6 @@ async def test_deliver_partial_subtitle_groups_by_language() -> None:
         partial_text="hello wor",
         source_language="ja",
     )
-    # subtitle_enabled=True の 2 名のみ受信。
     assert {u for u, _ in sink.subtitles} == {"u_en", "u_zh"}
     for _, msg in sink.subtitles:
         assert msg["is_partial"] is True

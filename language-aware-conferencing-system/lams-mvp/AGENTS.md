@@ -68,6 +68,38 @@ cd frontend
 npm run dev
 ```
 
+## Docker / Windows（重要）
+
+このリポジトリの Docker 構成は既知。毎回 compose・Dockerfile・起動スクリプトを再探索しない。
+詳細は `.cursor/rules/docker-windows-startup.mdc`。
+
+AI モード（`AI_PROVIDER` / ASR·MT·TTS / 新規部屋 default_mode）の切替は管理者画面
+`/admin/ai-pipeline` を使う（env はブートストラップ既定。秘密は `.env` のまま）。
+
+実機スモーク:
+```powershell
+powershell -File scripts/smoke_ai_pipeline_settings.ps1
+# または
+python scripts/smoke_ai_pipeline_settings.py
+```
+
+### Windows PowerShell（Cursor 既定・推奨）
+`.sh` 起動スクリプトは不要。そのまま:
+
+```powershell
+$env:HOST_IP = "<LAN IPv4>"   # LAN 公開時のみ
+docker compose up -d --build
+docker compose exec backend alembic upgrade head
+```
+
+### WSL2 / Linux のみ
+```bash
+./scripts/start-docker.sh --build --host-ip <LAN_IP>
+```
+
+WSL bash から `docker info` が失敗したら、探索せず PowerShell の `docker compose` に切り替える。
+モード切替は admin UI（再デプロイ不要）。env を毎回書き換えない。
+
 ## Tests (Single Test Emphasis)
 
 ### Backend Tests
@@ -152,5 +184,5 @@ pytest tests/test_ai_providers.py -k "test_name_substring"
   unilaterally.
 
 ## Cursor / Copilot Rules
-- No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md`
-  were found in this repository.
+- Project rules live in `.cursor/rules/` (always-apply: Docker/Windows startup).
+- Follow those rules in addition to this file.

@@ -58,8 +58,8 @@ def _validate_api_keys() -> None:
     else:
         logger.info("[INFO] GEMINI_API_KEY は未設定（オプション）")
 
-    # AI_PROVIDER の確認
-    logger.info(f"[CONFIG] AI_PROVIDER = {settings.ai_provider}")
+    # AI_PROVIDER の確認（env ブートストラップ。実行時は SystemConfig 上書き可）
+    logger.info(f"[CONFIG] AI_PROVIDER(env) = {settings.ai_provider}")
 
 
 @asynccontextmanager
@@ -73,6 +73,21 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     _validate_api_keys()
     # データベース初期化
     await init_db()
+    # AI パイプライン設定を DB からロード（無ければ env 既定）
+    from app.ai_pipeline.effective_config import (
+        env_pipeline_defaults,
+        load_pipeline_settings_from_db,
+    )
+    from app.db.database import async_session
+
+    async with async_session() as db:
+        effective = await load_pipeline_settings_from_db(db)
+    env_defaults = env_pipeline_defaults()
+    logger.info(
+        "[CONFIG] AI pipeline effective=%s env_defaults=%s",
+        effective.to_dict(),
+        env_defaults.to_dict(),
+    )
     yield
     # 終了時: 常駐 Agent worker を停止（autostart 有効時のみ実体を持つ）
     from app.webrtc.supervisor import agent_supervisor

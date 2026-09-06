@@ -40,20 +40,46 @@ def force_energy_vad(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_partial_events_emitted_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     """有効化すると発話中に暫定イベントが切り出される。"""
-    monkeypatch.setattr(settings, "enable_partial_subtitles", True)
+    from app.ai_pipeline import effective_config as ec
+
+    monkeypatch.setattr(settings, "enable_partial_subtitles", False)
     monkeypatch.setattr(settings, "partial_ms", 200)
+    ec.set_cached_pipeline_settings(
+        ec.PipelineSettingsValues(
+            ai_provider="gpt4o_transcribe",
+            asr_provider="auto",
+            mt_provider="auto",
+            tts_provider="auto",
+            default_mode="hybrid",
+            enable_partial_subtitles=True,
+            llm_correction_enabled=True,
+        )
+    )
 
     segmenter = build_default_segmenter(sample_rate=SAMPLE_RATE)
     events = _feed_speech(segmenter, frames=60)
 
     assert any(event.is_partial for event in events), (
-        "ENABLE_PARTIAL_SUBTITLES を有効にしても暫定字幕が切り出されない"
+        "pipeline enable_partial_subtitles を有効にしても暫定字幕が切り出されない"
     )
 
 
 def test_partial_events_absent_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """既定（無効）では暫定イベントを出さない（final のみ）。"""
+    from app.ai_pipeline import effective_config as ec
+
     monkeypatch.setattr(settings, "enable_partial_subtitles", False)
+    ec.set_cached_pipeline_settings(
+        ec.PipelineSettingsValues(
+            ai_provider="gpt4o_transcribe",
+            asr_provider="auto",
+            mt_provider="auto",
+            tts_provider="auto",
+            default_mode="a",
+            enable_partial_subtitles=False,
+            llm_correction_enabled=False,
+        )
+    )
 
     segmenter = build_default_segmenter(sample_rate=SAMPLE_RATE)
     events = _feed_speech(segmenter, frames=60)

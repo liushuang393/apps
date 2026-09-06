@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { LANGUAGE_DISPLAY_NAMES, SUPPORTED_LANGUAGES, type UILanguage } from '../i18n';
+import '../styles/pages/menu.css';
 
 /** メニュー項目の型定義 */
 interface MenuItem {
@@ -74,6 +75,13 @@ const menuCategories: MenuCategoryExtended[] = [
         titleKey: 'menu.languageSettings',
         descKey: 'menu.languageSettingsDesc',
         path: '/admin/languages',
+        requireAdmin: true,
+      },
+      {
+        icon: '🎛️',
+        titleKey: 'menu.aiPipelineSettings',
+        descKey: 'menu.aiPipelineSettingsDesc',
+        path: '/admin/ai-pipeline',
         requireAdmin: true,
       },
       {

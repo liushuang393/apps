@@ -1,0 +1,7 @@
+# sr-managed v5.2.0
+interface:
+  display_name: "sr-scan"
+  short_description: "Run a gated quality and defensive security scan/remediation w..."
+  default_prompt: "Use $sr-scan for this workflow."
+policy:
+  allow_implicit_invocation: false

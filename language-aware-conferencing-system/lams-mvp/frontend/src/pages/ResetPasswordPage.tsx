@@ -7,6 +7,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { authApi } from '../api/client';
 import { LANGUAGE_DISPLAY_NAMES, SUPPORTED_LANGUAGES, type UILanguage } from '../i18n';
+import '../styles/pages/auth.css';
 
 export function ResetPasswordPage() {
   const { t, i18n } = useTranslation();

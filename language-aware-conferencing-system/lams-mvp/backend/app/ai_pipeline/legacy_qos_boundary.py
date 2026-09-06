@@ -50,7 +50,7 @@ QUALITY_AUTHORITY_MODULES: tuple[str, ...] = (
     "app/ai_pipeline/output_manager/manager.py",
     "app/ai_pipeline/output_manager/adapter.py",
     "app/ai_pipeline/output_manager/commands.py",
-    "app/ai_pipeline/output_manager/sink_adapter.py",
+    "app/ai_pipeline/output_manager/factory.py",
     "app/webrtc/agent.py",
     "app/webrtc/processor.py",
     "app/webrtc/persistence.py",

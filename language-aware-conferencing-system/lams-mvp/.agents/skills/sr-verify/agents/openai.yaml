@@ -1,0 +1,7 @@
+# sr-managed v5.2.0
+interface:
+  display_name: "sr-verify"
+  short_description: "Verify an approved build against spec/design/acceptance crite..."
+  default_prompt: "Use $sr-verify for this workflow."
+policy:
+  allow_implicit_invocation: false

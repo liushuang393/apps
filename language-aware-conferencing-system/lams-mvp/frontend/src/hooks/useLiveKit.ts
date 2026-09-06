@@ -15,6 +15,13 @@ import {
   type RemoteTrackPublication,
 } from 'livekit-client';
 import { ApiError, roomApi } from '../api/client';
+import { decodeLiveEvent } from '../contracts/decodeLiveEvent';
+import type {
+  LiveEvent,
+  SubtitleEvent,
+  SubtitleInterimEvent,
+  TranslationInterruptedEvent,
+} from '../contracts/liveEvent.generated';
 import { ListenerLocalQoE } from '../qoe/listenerLocalQoE';
 import { useAuthStore } from '../store/authStore';
 import { useRoomStore, type ConnectionStatus } from '../store/roomStore';
@@ -37,7 +44,6 @@ const ATTR_SUBTITLE = 'subtitle_enabled';
 const TOPIC_SUBTITLE = 'subtitle';
 const TOPIC_EVENT = 'qos';
 const TOPIC_QOE_STATS = 'qoe_stats';
-const EVENT_SCHEMA_VERSION = 1;
 const QOE_STATS_INTERVAL_MS = 2000;
 /** 翻訳音声トラック名接頭辞（backend publisher と一致させる） */
 const TRACK_NAME_PREFIX = 'translation-';
@@ -118,24 +124,21 @@ async function collectQoeStats(entries: Map<string, AudioEntry>): Promise<QoeSta
   };
 }
 
-/** 未指定の旧契約を許容し、既知の版だけを処理する。 */
-function hasSupportedSchema(message: Record<string, unknown>): boolean {
-  const version = message.schema_version;
-  return typeof version !== 'number' || version === EVENT_SCHEMA_VERSION;
-}
+type QualityLiveEvent = Exclude<LiveEvent, SubtitleEvent | SubtitleInterimEvent>;
+type QualityWarningLiveEvent = Exclude<QualityLiveEvent, TranslationInterruptedEvent>;
 
 /** QoE イベントを接続状態とは独立したメディア状態へ変換する。 */
-function mediaStateForEvent(
-  message: Record<string, unknown>,
-  warning: QosWarningData
-): RoomMediaState | null {
-  if (warning.shouldFallbackToSubtitle || message.type === 'overload_degraded') {
+function mediaStateForEvent(event: QualityLiveEvent): RoomMediaState | null {
+  if (
+    event.type !== 'translation_interrupted'
+    && (event.should_fallback_to_subtitle || event.type === 'overload_degraded')
+  ) {
     return 'degraded';
   }
-  if (message.type === 'qoe_recovered') {
+  if (event.type === 'qoe_recovered') {
     return 'healthy';
   }
-  if (message.type === 'translation_interrupted') {
+  if (event.type === 'translation_interrupted') {
     return 'interrupted';
   }
   return null;
@@ -168,41 +171,42 @@ function prefFromAttributes(
   };
 }
 
-/** data channel の字幕メッセージ（snake_case）を SubtitleData へ変換 */
-function toSubtitle(msg: Record<string, unknown>): SubtitleData {
+/** 検証済み字幕イベントを画面状態の字幕形式へ変換する。 */
+function subtitleDataFromEvent(event: SubtitleEvent): SubtitleData {
   return {
-    schemaVersion: msg.schema_version as number | undefined,
-    id: msg.id as string | undefined,
-    seq: msg.seq as number | undefined,
-    speakerId: msg.speaker_id as string,
-    originalText: msg.original_text as string,
-    sourceLanguage: msg.source_language as SupportedLanguage,
-    translatedText: (msg.translated_text as string | null | undefined) || undefined,
-    targetLanguage: msg.target_language as SupportedLanguage | undefined,
-    isTranslated: Boolean(msg.is_translated),
-    isFinal: Boolean(msg.is_final ?? true),
-    isPartial: Boolean(msg.is_partial),
-    revision: msg.revision as number | undefined,
-    mainline: msg.mainline as 'hearing' | 'reading' | undefined,
-    provider: (msg.provider as string | null | undefined) ?? null,
-    degraded: Boolean(msg.degraded),
-    modelId: (msg.model_id as string | null | undefined) ?? null,
-    speakerLabel: (msg.speaker_label as string | null | undefined) ?? null,
-    utteranceId: msg.utterance_id as string | undefined,
-    generationId: msg.generation_id as number | undefined,
+    schemaVersion: event.schema_version,
+    id: event.id,
+    seq: event.seq,
+    speakerId: event.speaker_id,
+    originalText: event.original_text,
+    sourceLanguage: event.source_language as SupportedLanguage,
+    translatedText: event.translated_text || undefined,
+    targetLanguage: event.target_language as SupportedLanguage | undefined,
+    isTranslated: Boolean(event.is_translated),
+    isFinal: event.is_final,
+    isPartial: Boolean(event.is_partial),
+    revision: event.revision,
+    mainline: event.mainline as 'hearing' | 'reading' | undefined,
+    provider: event.provider ?? null,
+    degraded: Boolean(event.degraded),
+    modelId: event.model_id ?? null,
+    speakerLabel: event.speaker_label ?? null,
+    utteranceId: event.utterance_id,
+    generationId: event.generation_id,
   };
 }
 
-function toQosWarning(msg: Record<string, unknown>): QosWarningData {
+/** 検証済み品質イベントを既存の警告表示形式へ変換する。 */
+function qosWarningFromEvent(event: QualityWarningLiveEvent): QosWarningData {
   return {
     type: 'qos_warning',
-    metric: String(msg.metric ?? 'unknown'),
-    mainline: msg.mainline as 'hearing' | 'reading' | undefined,
-    value: typeof msg.value === 'number' ? msg.value : undefined,
-    value_ms: typeof msg.value_ms === 'number' ? msg.value_ms : undefined,
-    target: typeof msg.target === 'number' ? msg.target : undefined,
-    target_ms: typeof msg.target_ms === 'number' ? msg.target_ms : undefined,
-    shouldFallbackToSubtitle: Boolean(msg.should_fallback_to_subtitle),
+    metric: event.metric,
+    mainline: event.mainline as 'hearing' | 'reading' | undefined,
+    value: 'value' in event ? event.value : undefined,
+    value_ms: 'value_ms' in event ? event.value_ms : undefined,
+    target: 'target' in event ? event.target : undefined,
+    target_ms: 'target_ms' in event ? event.target_ms : undefined,
+    shouldFallbackToSubtitle: event.should_fallback_to_subtitle,
   };
 }
 
@@ -434,35 +438,34 @@ export function useLiveKit(roomId: string | null) {
       })
       .on(RoomEvent.DataReceived, (payload, _p, _kind, topic) => {
         try {
-          const msg = JSON.parse(new TextDecoder().decode(payload)) as Record<string, unknown>;
-          if (!hasSupportedSchema(msg)) {
-            return;
-          }
+          const raw: unknown = JSON.parse(new TextDecoder().decode(payload));
+          const event = decodeLiveEvent(raw);
+          if (event === null) return;
+
           if (topic === TOPIC_SUBTITLE) {
-            if (msg.type === 'subtitle_interim') {
+            if (event.type === 'subtitle_interim') {
               addInterimSubtitle({
-                schemaVersion: msg.schema_version as number | undefined,
-                id: String(msg.id ?? ''),
-                speakerId: String(msg.speaker_id ?? ''),
-                text: String(msg.text ?? msg.original_text ?? ''),
-                isFinal: Boolean(msg.is_final),
-                revision: typeof msg.revision === 'number' ? msg.revision : undefined,
+                schemaVersion: event.schema_version,
+                id: event.id,
+                speakerId: event.speaker_id,
+                text: event.text,
+                isFinal: event.is_final,
+                revision: event.revision,
               });
               return;
             }
-            if (typeof msg.id === 'string') {
-              removeInterimSubtitle(msg.id);
-            }
-            addSubtitle(toSubtitle(msg));
+            if (event.type !== 'subtitle') return;
+            removeInterimSubtitle(event.id);
+            addSubtitle(subtitleDataFromEvent(event));
             return;
           }
           if (topic === TOPIC_EVENT) {
-            const warning = toQosWarning(msg);
-            const nextMediaState = mediaStateForEvent(msg, warning);
-            if (msg.type === 'qoe_recovered') {
+            if (event.type === 'subtitle' || event.type === 'subtitle_interim') return;
+            const nextMediaState = mediaStateForEvent(event);
+            if (event.type === 'qoe_recovered') {
               clearQosWarnings();
-            } else if (msg.type !== 'translation_interrupted') {
-              addQosWarning(warning);
+            } else if (event.type !== 'translation_interrupted') {
+              addQosWarning(qosWarningFromEvent(event));
             }
             if (nextMediaState !== null) {
               setMediaState(nextMediaState);

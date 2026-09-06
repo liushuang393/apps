@@ -32,6 +32,154 @@
 > ASR / MT / TTS は `ASR_PROVIDER` / `MT_PROVIDER` / `TTS_PROVIDER` で独立に差し替え可能（Composite。既定 `auto`）。
 > 補正・議事録用 LLM はテキスト系モデル（GPT: gpt-4o-mini / Gemini: gemini-2.5-flash）を使用する。
 
+### 画面上の2方式（管理者 `/admin/ai-pipeline`）
+
+実装方式（どう翻訳するか）と会議主線（何を出すか）と受聴設定（何を聴くか）は **別レイヤ** である。
+
+| レイヤ | 値 | どこで切替 | 意味 |
+|---|---|---|---|
+| **実装方式** | 方式1 Realtime S2S / 方式2 品質カスケード | 管理者 `/admin/ai-pipeline` | Provider・品質パック・実行経路 |
+| **会議主線** | `a` / `b` / `hybrid` | 部屋作成・会議室サイドバー（作成者/モデレーター） | 聞く主線・読む主線・両方 |
+| **受聴設定** | `original` / `translated` | 参加者 PreferencePanel | 原音を聴くか翻訳音声を聴くか |
+
+共通の入口〜出口は同一。差分は Provider Registry 配下の実装だけに閉じる。
+ローカル GPU（`asr/mt/tts=local`）は **方式ではなく**、方式2の上級実装オプションである。
+
+```mermaid
+flowchart LR
+  mic[Mic] --> lk[LiveKit WebRTC]
+  lk --> ingress[Ingress VAD Segment]
+  ingress --> orch[HybridOrchestrator]
+  orch --> m1[方式1 S2S]
+  orch --> m2[方式2 ASR_MT_TTS]
+  m2 --> gloss[用語集 hint]
+  m2 --> parallel[言語グループ並列]
+  m2 --> subopt[字幕キャッシュ_TM_補正_partial]
+  m1 --> om[OutputManager]
+  m2 --> om
+  om --> audioOut[翻訳音声 track]
+  om --> subOut[字幕 DataChannel]
+```
+
+#### 方式比較（違いの要約）
+
+| 観点 | 方式1: 純リアルタイム音声 API | 方式2: 品質カスケード（用語集） |
+|---|---|---|
+| 管理者プリセット | `realtime_s2s` → `ai_provider=gpt_realtime`、`default_mode=a` | `quality_cascade` → `gpt4o_transcribe` + スロット `auto` + `default_mode=hybrid` + 品質パック ON |
+| 処理形 | Speech→Speech（一体） | ASR → MT → TTS（分離） |
+| ASR/MT/TTS スロット | **無視**（S2S 維持） | クラウド各社を選択可（上級で local 可） |
+| 用語集 | 非対象（S2S のまま） | **必須**（読む主線・Composite OpenAI MT） |
+| 並列・字幕最適化 | 弱め | 言語グループ並列 + キャッシュ/TM + partial + LLM 補正 |
+| 典型出力 | 翻訳音声 + transcript delta | 字幕中心、TTS 任意 |
+| 遅延 | 最も低い想定 | 中（REST/セグメント単位） |
+| 秘密・コスト | クラウド API キー必須 | クラウド API キー必須（補正は `GEMINI_API_KEY`） |
+| 適合 | 低遅延の同通・軽会議 | **既定・正式記録・業界用語** |
+
+#### 方式1: 純リアルタイム音声 API（S2S）
+
+音声をクラウドの Realtime API に渡し、翻訳音声を直接得る。途中の ASR/MT/TTS スロットは使わない。
+
+```mermaid
+flowchart LR
+  pcm[発話 PCM] --> runtime[RealtimeRuntimePort]
+  runtime --> s2s[gpt_realtime / gemini_live]
+  s2s --> ta[翻訳音声]
+  s2s --> td[transcript delta]
+  ta --> om[OutputManager]
+  td --> om
+```
+
+```text
+Mic → LiveKit → Segment → RealtimeRuntimePort
+                         └─ OpenAI Realtime / Gemini Live（S2S）
+                              ├─ 翻訳音声 track
+                              └─ transcript delta（字幕補完）
+```
+
+#### 方式2: 品質カスケード（ASR→MT→TTS + 用語集）
+
+認識・翻訳・合成をステージ分離し、**自社用語集**・並列・字幕最適化を品質パックとして載せる。既定運用。
+
+```mermaid
+flowchart LR
+  pcm[発話 PCM] --> asr[ASR gpt4o/deepgram/google]
+  asr --> text[原文テキスト]
+  text --> mt[MT openai + 用語集]
+  mt --> sub[翻訳字幕]
+  mt --> tts[TTS openai / none]
+  tts --> ta[翻訳音声]
+  sub --> om[OutputManager]
+  ta --> om
+```
+
+```text
+Mic → LiveKit → Segment → 上流 ASR（1回）
+                         ├─ 読む主線: translate_text_simple（用語集・補正・TM）→ 字幕
+                         ├─ Composite OpenAI MT: 同上経路に統一
+                         └─ 聞く主線: Composite TTS（任意）→ 翻訳音声
+                              + 言語グループ並列 / partial 字幕（品質パック）
+```
+
+方式2プリセット保存時に `enable_partial_subtitles` と `llm_correction_enabled` が ON になる（秘密は `.env` のまま。補正には `GEMINI_API_KEY` が必要）。
+
+会議中の **a / b / hybrid**（聞く・読む・両方）は部屋作成者またはモデレーターが会議室サイドバーから切替可能（参加者の原音/翻訳受聴とは別概念）。
+
+#### 方式2の上級実装オプション: ローカル GPU（OSS・4言語単一モデル）
+
+トップレベル「方式」ではない。上級設定で `asr/mt/tts=local` を指定した場合のみ。用語集はクラウド MT 経路向け（local MT は非対応・警告表示）。
+
+各段階 **1モデル** で `ja/en/zh/vi` を扱う（言語対12モデルは使わない）。
+
+| ステージ | モデル | ライセンス | 概算 VRAM |
+|---|---|---|---|
+| ASR | `Systran/faster-whisper-medium` INT8 | MIT | ~1.5GB |
+| MT | `google/madlad400-3b-mt` CT2 INT8 | Apache-2.0 | ~2.5GB |
+| TTS | `openbmb/VoxCPM2`（`load_denoiser=False`） | Apache-2.0 | ~7.5GB |
+
+```mermaid
+flowchart LR
+  pcm[発話 PCM] --> asr[local ASR faster-whisper]
+  asr --> text[原文]
+  text --> mt[local MT MADLAD-400]
+  mt --> sub[翻訳字幕]
+  mt --> broker[VRAM Broker 排他]
+  broker --> tts[local TTS VoxCPM2]
+  tts -->|成功| ta[翻訳音声]
+  tts -->|VRAM不足/失敗| none[音声なし]
+  sub --> om[OutputManager]
+  ta --> om
+  none -.->|字幕は継続| om
+```
+
+```text
+Mic → LiveKit → Segment
+              ├─ ASR: faster-whisper-medium（INT8）
+              ├─ MT:  MADLAD-400 単一モデル（<2ja>/<2en>/<2zh>/<2vi>）
+              └─ TTS: VoxCPM2（8GB 級・他モデルと同時常駐不可）
+                    失敗時 → 翻訳音声のみ停止、字幕は継続
+```
+
+#### ローカル GPU（8GB）の準備
+
+```powershell
+# GPU + local 依存込みで起動
+$env:INSTALL_LOCAL = "1"
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+# モデル取得・MADLAD CT2 変換（永続ボリューム /models）
+docker compose exec backend python /app/scripts/prepare_local_models.py --output-dir /models
+```
+
+推奨 env（`.env` はユーザー管理。例のみ）:
+
+- `LOCAL_MT_MODEL_DIR=/models/madlad400-3b-mt-int8`
+- `LOCAL_ASR_MODEL=Systran/faster-whisper-medium`
+- `LOCAL_TTS_MODEL=openbmb/VoxCPM2`
+- `VRAM_BUDGET_MB=7500`
+- `GEMINI_API_KEY=...`（方式2の LLM 補正用。未設定時は警告のみで保存可）
+
+制約: VoxCPM2 単体で約 8GB のため ASR/MT/TTS 同時常駐はできない。VRAM Broker が排他し、TTS 失敗時は字幕継続。`max_latency_ms=1200` はローカル翻訳音声の達成保証ではなく、超過時は聞く主線縮退→字幕フォールバックが合格条件。
+
 ---
 
 ## アーキテクチャ設計（本番想定）
@@ -41,18 +189,23 @@
 
 ### 0. 絶対原則：2つの大主線を混ぜない
 
+> **製品の画面方式との関係:** 管理者プリセットの「方式1 / 方式2」（本書冒頭）は
+> Provider・品質パックの切替である。本節の「主線1 / 主線2」は会議内の
+> **聞く（hearing）/ 読む（reading）** フォークの設計原則である。混同しないこと。
+> 現行 MVP の方式2読む主線は Google 専用ではなく、`translate_text_simple`
+> （用語集・TM・任意 Gemini 補正）を含むクラウド品質経路が既定である。
+
 本システムは以下 **2本の独立した主線（パイプライン）** で構成する。両者はコードパスを共有せず、
 **フォークは Gateway での音声複製のみ**、**収束は Output Manager と DB（provider/mode タグ付け）のみ**とする。
 
 | 主線 | 方式 | 遅延 | 精度 | 定制能力 | 適合シーン |
 |---|---|---:|---:|---:|---|
-| **主線1（Mode A）** | End-to-End Speech-to-Speech（OpenAI Realtime / Gemini Live） | 最低/較低 | 中高 | 較弱 | 実時同伝・軽会議 |
-| **主線2（Mode B）** | ASR → MT + 術語庫 → 字幕（Google Chirp 3 + Cloud Translation） | 較低 | 高 | 強 | **MVP 首選**・高精度・正式記録 |
+| **主線1（Mode A / 聞く）** | End-to-End Speech-to-Speech（OpenAI Realtime / Gemini Live）ほか | 最低/較低 | 中高 | 較弱 | 実時同伝・軽会議 |
+| **主線2（Mode B / 読む）** | ASR → MT + 術語庫 → 字幕（クラウド品質経路が既定） | 較低 | 高 | 強 | **MVP 首選**・高精度・正式記録 |
 
-- **主線1** は Google ASR / 術語庫 / Cloud Translation を**一切経由しない**。出力は翻訳音声 + transcript delta。
-- **主線2** は翻訳音声を生成しない（字幕・議事録特化）。出力は字幕 + transcript log + 議事録。
-- **Phase 3 ハイブリッド**は「同一マイク音声を Gateway で複製し両主線へ流す」だけで、**パイプライン同士は結合しない**
-  （聞く=OpenAI、読む/残す=Google）。
+- **主線1** は術語庫付き MT を**必須としない**（S2S）。出力は翻訳音声 + transcript delta。
+- **主線2** は字幕・議事録特化を基本とし、用語集経路を通る。聞く主線とコードパスを混ぜない。
+- **Phase 3 ハイブリッド**は「同一マイク音声を Gateway で複製し両主線へ流す」だけで、**パイプライン同士は結合しない**。
 
 ```text
                       ┌─ 主線1: OpenAI Realtime S2S ─→ 翻訳音声 + transcript delta

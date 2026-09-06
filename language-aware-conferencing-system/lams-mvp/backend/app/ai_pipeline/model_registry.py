@@ -336,15 +336,15 @@ def _build_default_catalog() -> ModelCatalog:
     )
     catalog.register(
         _card(
-            "t2t-opus-mt",
+            "t2t-madlad400",
             STAGE_T2T,
-            "opus-mt",
+            settings.local_mt_model_id,
             RUNTIME_CT2,
             quantization=settings.local_mt_compute_type,
             languages=langs,
-            license="cc-by-4.0",  # OPUS-MT は CC-BY（商用可）
-            hardware_profile="cpu",
-            metrics={"quality": 0.82, "latency_ms": 200.0},
+            license="apache-2.0",  # MADLAD-400 は Apache-2.0（商用可）
+            hardware_profile="gpu-8gb",
+            metrics={"quality": 0.86, "latency_ms": 350.0},
             status=STATUS_STAGING,
             provider_name="local",
         )
@@ -357,7 +357,7 @@ def _build_default_catalog() -> ModelCatalog:
             RUNTIME_CT2,
             quantization="int8",
             languages=langs,
-            # NLLB は CC-BY-NC（研究のみ・商用不可）。§4.3 の方針で draft 留め。
+            # NLLB は CC-BY-NC（研究のみ・商用不可）。商用不可のため draft 留め。
             license="cc-by-nc-4.0",
             hardware_profile="cpu",
             metrics={"quality": 0.85, "latency_ms": 250.0},
@@ -398,15 +398,15 @@ def _build_default_catalog() -> ModelCatalog:
     )
     catalog.register(
         _card(
-            "tts-kokoro",
+            "tts-voxcpm2",
             STAGE_TTS,
             settings.local_tts_model,
             RUNTIME_ONNX,
             quantization=None,
             languages=langs,
-            license="apache-2.0",  # Kokoro は Apache-2.0（商用可）
-            hardware_profile="cpu",
-            metrics={"quality": 0.8, "latency_ms": 300.0},
+            license="apache-2.0",  # VoxCPM2 は Apache-2.0（商用可・4言語対応）
+            hardware_profile="gpu-8gb",
+            metrics={"quality": 0.85, "latency_ms": 800.0},
             status=STATUS_STAGING,
             provider_name="local",
         )

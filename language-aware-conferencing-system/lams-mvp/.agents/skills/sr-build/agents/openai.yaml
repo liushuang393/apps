@@ -1,0 +1,7 @@
+# sr-managed v5.2.0
+interface:
+  display_name: "sr-build"
+  short_description: "Build an approved Trellis plan using spec-driven development,..."
+  default_prompt: "Use $sr-build for this workflow."
+policy:
+  allow_implicit_invocation: false

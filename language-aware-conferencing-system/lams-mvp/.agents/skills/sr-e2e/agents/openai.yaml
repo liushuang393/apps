@@ -1,0 +1,7 @@
+# sr-managed v5.2.0
+interface:
+  display_name: "sr-e2e"
+  short_description: "Design, implement, and verify deterministic business-critical..."
+  default_prompt: "Use $sr-e2e for this workflow."
+policy:
+  allow_implicit_invocation: false

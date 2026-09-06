@@ -167,11 +167,16 @@ def get_correction_provider() -> LLMCorrectionProvider | None:
     """
     設定に基づき LLM 補正プロバイダーを取得する（無効時は None）。
 
-    - settings.llm_correction_provider="off"（既定）→ None（既存フロー非介入）。
+    - 方式2 overlay（llm_correction_enabled）が ON なら、env が off でも gemini を試す。
+    - settings.llm_correction_provider="off"（既定）かつ overlay OFF → None。
     - "gemini" かつ GEMINI_API_KEY 設定済 → GeminiCorrectionProvider。
     - 鍵未設定 / 初期化失敗時 → None（フォールバック、翻訳は継続）。
     """
+    from app.ai_pipeline.effective_config import get_cached_pipeline_settings
+
     name = settings.llm_correction_provider
+    if get_cached_pipeline_settings().llm_correction_enabled and name == "off":
+        name = "gemini"
     if name == "off":
         return None
     if name == "gemini":

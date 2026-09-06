@@ -2,16 +2,20 @@
  * 会議室ページ
  * リアルタイム音声会議と字幕表示
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLiveKit } from '../hooks/useLiveKit';
 import { useAudioDevices } from '../hooks/useAudioDevices';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useRoomStore } from '../store/roomStore';
+import { useAuthStore } from '../store/authStore';
+import { roomApi } from '../api/client';
 import { PreferencePanel } from '../components/PreferencePanel';
+import { MeetingModePanel } from '../components/MeetingModePanel';
 import { SubtitleDisplay } from '../components/SubtitleDisplay';
 import { ParticipantList } from '../components/ParticipantList';
-import type { RoomMediaState } from '../types';
+import type { MeetingMode, Room, RoomMediaState } from '../types';
+import '../styles/pages/room.css';
 
 function qualityWarningMessage(
   mediaState: RoomMediaState,
@@ -29,6 +33,8 @@ function qualityWarningMessage(
 export function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const [roomMeta, setRoomMeta] = useState<Room | null>(null);
   const {
     connectionStatus,
     connectionError,
@@ -72,6 +78,24 @@ export function RoomPage() {
 
   // メインエリア波形Canvas
   const mainWaveformRef = useRef<HTMLCanvasElement>(null);
+
+  // 部屋メタ（作成者・既定主線）を取得し、会議主線切替 UI に渡す
+  useEffect(() => {
+    if (!roomId) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const room = await roomApi.get(roomId);
+        if (!cancelled) setRoomMeta(room);
+      } catch {
+        if (!cancelled) setRoomMeta(null);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId]);
 
   useEffect(() => {
     if (!selectedSpeakerId) return;
@@ -214,6 +238,14 @@ export function RoomPage() {
       <div className="room-content">
         <aside className="sidebar">
           <ParticipantList />
+          {roomId && roomMeta && (
+            <MeetingModePanel
+              roomId={roomId}
+              creatorId={roomMeta.creatorId}
+              user={user}
+              roomDefaultMode={(roomMeta.defaultMode || 'hybrid') as MeetingMode}
+            />
+          )}
           <PreferencePanel
             onPreferenceChange={sendPreferenceChange}
             policy={policy}

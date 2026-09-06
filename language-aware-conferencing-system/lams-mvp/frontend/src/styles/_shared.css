@@ -1,0 +1,252 @@
+/**
+ * LAMS 共有ユーティリティ
+ * 目的: 複数ページで使うボタン・フォーム・フィードバック・ヘッダー部品を定義する
+ */
+
+/* フォーム共通 */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  background: var(--bg-white);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.form-group input::placeholder {
+  color: var(--text-light);
+}
+
+/* ボタンスタイル */
+button {
+  width: 100%;
+  padding: 0.875rem 1.5rem;
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-md);
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+  filter: brightness(1.05);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  background: var(--text-light);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+button.btn-secondary {
+  background: var(--bg-white);
+  color: var(--text-primary);
+  border: 2px solid var(--border-color);
+  box-shadow: none;
+}
+
+button.btn-secondary:hover {
+  background: var(--bg-light);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+button.btn-danger {
+  background: var(--danger-color);
+}
+
+button.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  width: auto;
+}
+
+/* エラー表示 */
+.error {
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  color: var(--danger-color);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--danger-color);
+  font-size: 0.9rem;
+}
+
+/* 成功メッセージ（認証・会議モード等で共用） */
+.success-message {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.success-message p {
+  color: #22c55e;
+  margin: 0.5rem 0;
+}
+
+/* ユーザー情報表示 */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-info .user-avatar {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  border-radius: 50%;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: white;
+  padding: 0;
+}
+
+/* ユーザー名表示（統一スタイル） */
+.user-info .user-name {
+  max-width: 150px;
+  padding: 0.4rem 0.8rem;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--primary-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 長い名前の場合は縮小 */
+@media (max-width: 600px) {
+  .user-info .user-name {
+    max-width: 100px;
+    font-size: 0.8rem;
+  }
+}
+
+.user-info button {
+  width: auto;
+  padding: 0.5rem 1.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: none;
+}
+
+.user-info button:hover {
+  background: var(--danger-color);
+  border-color: var(--danger-color);
+  color: white;
+}
+
+/* 空状態 */
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  grid-column: 1 / -1; /* 占据整个网格宽度 */
+}
+
+.empty-state .empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.8;
+}
+
+.empty-state h2 {
+  color: #1f2937;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.empty-state p {
+  color: #6b7280;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+
+.empty-state .empty-hint {
+  color: #9ca3af;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--primary-color);
+}
+
+/* 字幕・会議記録で共用する話者名 */
+.speaker-name {
+  font-weight: 700;
+  margin-right: 0.75rem;
+  color: #a5b4fc;
+}
+
+/* 言語切替セレクター（メニュー等） */
+.language-selector {
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-md);
+  color: #f8fafc;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.language-selector:hover {
+  background: rgba(0, 0, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.language-selector:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.language-selector option {
+  background: #1e1b4b;
+  color: #f8fafc;
+}

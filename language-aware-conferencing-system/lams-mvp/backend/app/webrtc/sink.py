@@ -1,5 +1,5 @@
 """
-LiveKitOutputSink（Phase 3 C1）：HybridOrchestrator の OutputSink を LiveKit へ橋渡し。
+LiveKitOutputSink（Phase 3 C1）：HybridOrchestrator の TransportAdapter を LiveKit へ橋渡し。
 
 収束結果を「混ぜずに」配信する境界:
     - 聞く主線（翻訳音声）= (話者, 目標言語) ごとの音声トラックへ capture（48kHz int16）。
@@ -15,22 +15,23 @@ LiveKitOutputSink（Phase 3 C1）：HybridOrchestrator の OutputSink を LiveKi
     自声翻訳がエコーとして返ってしまう（欠陥 #6）。フレーム分割は publisher 側の
     責務とし、本 sink はセグメント単位の 48kHz PCM を capture コールバックへ渡すのみ。
 
-    orchestrator は目標言語グループ内の全受信者へ同一 audio オブジェクトを渡す。
+    Output Manager は目標言語グループ内の全受信者へ同一 audio を 1 回 publish する。
     本 sink は話者単位のため、同一 payload は最初の 1 回のみ capture する
     （オブジェクト同一性で重複排除）。
 
     generation_id が渡された場合、GenerationGate 不一致なら capture しない。
+
+    公開契約は TransportAdapter（publish_audio / send_data）のみ。
+    send_data の失敗は伝播し、受信者単位の隔離は Output Manager 側で行う。
 """
 
 from __future__ import annotations
 
 import inspect
-import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
-from app.ai_pipeline.events import encode_event
 from app.audio.pcm import parse_wav16, resample16
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ class GenerationGatePort(Protocol):
 
 
 class LiveKitOutputSink:
-    """OutputSink プロトコル実装（翻訳音声=track / 字幕・イベント=data channel）。"""
+    """TransportAdapter 実装（翻訳音声=track / 字幕・イベント=data channel）。"""
 
     def __init__(
         self,
@@ -87,6 +88,7 @@ class LiveKitOutputSink:
         hearing_sample_rate: int = 24000,
         generation_gate: GenerationGatePort | None = None,
     ) -> None:
+        # user_language は sink_factory 契約互換のため受け取る（配信は language 引数）。
         self._user_language = user_language
         self._capture_audio = capture_audio
         self._send_data = send_data
@@ -137,39 +139,6 @@ class LiveKitOutputSink:
         """Output Manager の送信失敗集約のため、例外を伝播して送信する。"""
         await self._send_data(payload, [user_id], topic)
 
-    async def deliver_audio(
-        self,
-        user_id: str,
-        audio: bytes,
-        *,
-        generation_id: int | None = None,
-    ) -> None:
-        """翻訳音声を (話者, 目標言語) トラックへ送る（言語単位で重複排除）。"""
-        lang = self._user_language.get(user_id)
-        if lang is None or not audio:
-            return
-        gate = self._generation_gate
-        if gate is not None and generation_id is not None:
-            if not gate.should_capture(self._speaker_id, lang, generation_id):
-                logger.debug(
-                    "[LiveKitSink] 旧 generation を抑止: speaker=%s lang=%s gen=%s",
-                    self._speaker_id,
-                    lang,
-                    generation_id,
-                )
-                return
-            gate.set_active(self._speaker_id, lang, generation_id)
-        # 同一 payload（同一オブジェクト）は言語トラックへ 1 回だけ capture する。
-        if self._last_audio.get(lang) is audio:
-            return
-        self._last_audio[lang] = audio
-
-        # provider の出力は WAV ヘッダ付きのことがある（TTS / S2S とも）。
-        # ヘッダを剥がし、ヘッダ記載の実レートで 48kHz へ変換する（欠陥 #2 付随）。
-        pcm, rate = parse_wav16(audio, fallback_rate=self._hearing_sample_rate)
-        pcm48 = resample16(pcm, rate, OUTPUT_SAMPLE_RATE)
-        await self._invoke_capture(self._speaker_id, lang, pcm48, generation_id)
-
     async def _invoke_capture(
         self,
         speaker_id: str,
@@ -199,28 +168,3 @@ class LiveKitOutputSink:
             raise TypeError(
                 "capture_audio は generation_id を含む固定 signature が必要"
             ) from exc
-
-    async def deliver_subtitle(self, user_id: str, message: dict) -> None:
-        """字幕を受信者宛てに data channel で配信する。"""
-        await self._send(user_id, message, TOPIC_SUBTITLE)
-
-    async def deliver_interim(self, user_id: str, message: dict) -> None:
-        """暫定字幕を確定字幕と同じ topic で配信する。"""
-        await self._send(user_id, message, TOPIC_SUBTITLE)
-
-    async def deliver_event(self, user_id: str, message: dict) -> None:
-        """QoS 警告等のイベントを受信者宛てに data channel で配信する。"""
-        await self._send(user_id, message, TOPIC_EVENT)
-
-    async def _send(self, user_id: str, message: dict, topic: str) -> None:
-        # version付き本番イベントはcanonical encoderだけを通す。
-        # versionなしは既存Sink API利用者との後方互換として送信形式のみ維持する。
-        payload = (
-            encode_event(message)
-            if "schema_version" in message
-            else json.dumps(message, ensure_ascii=False).encode("utf-8")
-        )
-        try:
-            await self._send_data(payload, [user_id], topic)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[LiveKitSink] data 送信失敗(%s/%s): %s", user_id, topic, e)

@@ -1,0 +1,396 @@
+/**
+ * 会議室一覧ページスタイル
+ * 利用: RoomListPage
+ */
+
+/* 会議室一覧 */
+.room-list-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+  min-height: 100vh;
+  background: var(--gradient-dark);
+}
+
+.room-list-page header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2.5rem;
+  padding: 1.5rem 2rem;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* ヘッダー左側（戻るボタン + タイトル） */
+.room-list-page header .header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.room-list-page header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: white;
+}
+
+/* 戻るボタン */
+.room-list-page .back-btn {
+  width: auto;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.room-list-page .back-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* 新規作成ボタン */
+.room-list-page > button:first-of-type {
+  width: auto;
+  margin-bottom: 1.5rem;
+  padding: 0.875rem 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.room-list-page > button:first-of-type::before {
+  content: '+';
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+/* 作成フォーム */
+.create-form {
+  background: var(--bg-white);
+  padding: 2rem;
+  border-radius: var(--radius-lg);
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-md);
+  border: 2px solid var(--primary-light);
+}
+
+.create-form h3 {
+  margin-bottom: 1.5rem;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.create-form .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.create-form input,
+.create-form select,
+.create-form textarea {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.create-form textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.create-form input:focus,
+.create-form select:focus,
+.create-form textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.create-form .language-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.create-form .language-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-light);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.create-form .language-checkboxes label:hover {
+  background: var(--primary-light);
+}
+
+.create-form .language-checkboxes label:has(input:checked) {
+  background: var(--primary-light);
+  border-color: var(--primary-color);
+}
+
+.create-form .language-checkboxes input {
+  width: auto;
+  accent-color: var(--primary-color);
+}
+
+.create-form .toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.create-form .toggle-group label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.create-form .form-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.create-form .form-actions button {
+  flex: 1;
+}
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.room-card {
+  padding: 1.75rem;
+  background: var(--bg-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.room-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--gradient-primary);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.room-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
+  border-color: var(--primary-light);
+}
+
+.room-card:hover::before {
+  opacity: 1;
+}
+
+.room-card h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--text-primary);
+}
+
+.room-card p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.room-card .room-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.participant-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: var(--primary-light);
+  color: var(--primary-color);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.participant-count::before {
+  content: '👥';
+}
+
+.room-card .languages {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.room-card .language-tag {
+  padding: 0.25rem 0.5rem;
+  background: #e0e7ff;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: #3730a3;
+  font-weight: 600;
+}
+
+/* 私有会議カードスタイル */
+.room-card--private {
+  border-left: 4px solid #9ca3af;
+}
+
+.room-card--private::before {
+  background: linear-gradient(135deg, #6b7280 0%, #9ca3af 100%);
+}
+
+/* 会議カードバッジ */
+.room-card-badge {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+/* 公開会議バッジ（企業向けブルー） */
+.badge--public {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+/* 私有会議バッジ（控えめなグレー） */
+.badge--private {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+}
+
+/* 参加者数のアイコン重複除去（JSで👥を追加したため） */
+.room-card .participant-count::before {
+  content: none;
+}
+
+/* 私有会議説明 */
+.private-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-radius: var(--radius-md);
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+  color: #4b5563;
+  border-left: 3px solid #9ca3af;
+}
+
+/* 私有設定トグルグループ - 双方向切替式 */
+.private-toggle {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-color);
+  justify-content: center;
+}
+
+/* トグル左右のラベル */
+.toggle-label {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  transition: color 0.2s ease, font-weight 0.2s ease;
+  min-width: 4rem;
+}
+
+.toggle-label--active {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* トグルスイッチ（会議室作成フォーム） */
+.toggle-switch {
+  position: relative;
+  width: 48px;
+  height: 26px;
+  background: var(--border-color);
+  border-radius: 13px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.toggle-switch.active {
+  background: var(--primary-color);
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.toggle-switch.active::after {
+  left: 25px;
+}
+
+/* レスポンシブ */
+@media (max-width: 768px) {
+  .room-list-page header {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  .room-grid {
+    grid-template-columns: 1fr;
+  }
+}

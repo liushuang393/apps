@@ -1,0 +1,169 @@
+/**
+ * 認証ページスタイル
+ * 利用: Login / Register / ForgotPassword / ResetPassword
+ */
+
+/* 認証ページ */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--gradient-dark);
+  padding: 2rem;
+}
+
+.auth-page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auth-page form {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  padding: 2.5rem;
+  background: var(--bg-white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+}
+
+.auth-page h1 {
+  margin-bottom: 0.5rem;
+  text-align: center;
+  font-size: 1.75rem;
+  font-weight: 700;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.auth-page .subtitle {
+  text-align: center;
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+}
+
+.auth-page p {
+  text-align: center;
+  margin-top: 1.5rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.auth-page a {
+  color: var(--primary-color);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-page a:hover {
+  text-decoration: underline;
+}
+
+/* 認証ページの言語切替 */
+.auth-language-selector {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 10;
+}
+
+.auth-language-selector select {
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-md);
+  color: #f8fafc;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.auth-language-selector select:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.auth-language-selector select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.auth-language-selector select option {
+  background: #1e1b4b;
+  color: #f8fafc;
+}
+
+/* パスワードリセット関連スタイル */
+.forgot-password-link {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  text-align: right;
+}
+
+.forgot-password-link a {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.forgot-password-link a:hover {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+
+.token-display {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.token-display p {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+}
+
+.reset-token {
+  display: block;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  font-family: monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+  color: #60a5fa;
+  margin: 0.5rem 0;
+}
+
+.token-hint {
+  color: rgba(255, 255, 255, 0.5) !important;
+  font-size: 0.8rem !important;
+  font-style: italic;
+}
+
+.btn-link {
+  display: inline-block;
+  background: var(--primary-color);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  margin-top: 1rem;
+  transition: background 0.2s ease;
+}
+
+.btn-link:hover {
+  background: #2563eb;
+}

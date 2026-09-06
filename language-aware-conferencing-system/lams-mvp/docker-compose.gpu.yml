@@ -1,0 +1,12 @@
+# GPU オーバーライド（NVIDIA Container Toolkit / Docker Desktop GPU 必須）
+# 使い方:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# ローカル依存も入れる場合:
+#   $env:INSTALL_LOCAL="1"; docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+services:
+  backend:
+    gpus: all
+    build:
+      args:
+        INSTALL_LOCAL: ${INSTALL_LOCAL:-1}

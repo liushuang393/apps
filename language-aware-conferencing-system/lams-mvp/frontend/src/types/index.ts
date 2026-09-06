@@ -71,6 +71,22 @@ export interface Room {
   isPrivate: boolean;  // 私有会議（作成者以外は一覧に非表示・入室不可）
   isActive: boolean;
   participantCount: number;
+  /** 会議AI主線の既定（a=聞く / b=読む / hybrid=両方）。受聴の original/translated とは別概念 */
+  defaultMode: MeetingMode;
+  enableOpenaiS2s: boolean;
+}
+
+/** 会議AI主線モード（聞く / 読む / 両方） */
+export type MeetingMode = 'a' | 'b' | 'hybrid';
+
+/** 進行中ミーティングセッション */
+export interface MeetingSessionInfo {
+  id: string;
+  roomId: string;
+  mode: MeetingMode;
+  isActive: boolean;
+  enableOpenaiS2s: boolean;
+  languageRoutes: Record<string, unknown>;
 }
 
 /** 字幕データ（クライアント側翻訳対応） */

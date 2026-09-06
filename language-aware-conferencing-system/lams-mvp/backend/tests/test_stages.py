@@ -74,22 +74,36 @@ class _FakeOpenAIClient:
 
 
 # ============================================================
-# OpenAIMTStage
+# OpenAIMTStage（用語集付き翻訳エンジンへ委譲）
 # ============================================================
-def test_openai_mt_translate_returns_text() -> None:
-    client = _FakeOpenAIClient(chat_content="你好")
-    stage = OpenAIMTStage(client=client, model="m")
+def test_openai_mt_translate_returns_text(monkeypatch) -> None:
+    """Composite MT が共通翻訳エンジンを使う。"""
+
+    async def _fake_simple(text: str, src: str, tgt: str) -> str:
+        assert text == "こんにちは"
+        assert src == "ja"
+        assert tgt == "zh"
+        return "你好"
+
+    monkeypatch.setattr("app.translate.engine.translate_text", _fake_simple)
+    stage = OpenAIMTStage(client=_FakeOpenAIClient(), model="m")
     out = asyncio.run(stage.translate_text("こんにちは", "ja", "zh"))
     assert out == "你好"
-    assert client.chat.completions.calls  # API 呼び出しあり
 
 
-def test_openai_mt_empty_input_skips_api() -> None:
-    client = _FakeOpenAIClient(chat_content="無視")
-    stage = OpenAIMTStage(client=client, model="m")
+def test_openai_mt_empty_input_skips_api(monkeypatch) -> None:
+    called = False
+
+    async def _fake_simple(*_a: object, **_k: object) -> str:
+        nonlocal called
+        called = True
+        return "無視"
+
+    monkeypatch.setattr("app.translate.engine.translate_text", _fake_simple)
+    stage = OpenAIMTStage(client=_FakeOpenAIClient(), model="m")
     out = asyncio.run(stage.translate_text("   ", "ja", "zh"))
     assert out == ""
-    assert client.chat.completions.calls == []
+    assert called is False
 
 
 # ============================================================
@@ -104,15 +118,24 @@ def test_dynamic_max_tokens_floor_and_ceil() -> None:
     assert mid == 800
 
 
-def test_openai_mt_uses_dynamic_max_tokens() -> None:
-    """長文翻訳では max_tokens が固定 500 でなく動的値で呼ばれる（切れ防止）。"""
-    client = _FakeOpenAIClient(chat_content="訳文")
-    stage = OpenAIMTStage(client=client, model="m")
+def test_openai_mt_delegates_long_text(monkeypatch) -> None:
+    """長文も translate_text_simple へそのまま委譲する。"""
     long_text = "これは非常に長い複文の発話です。" * 30
-    asyncio.run(stage.translate_text(long_text, "ja", "en"))
-    sent = client.chat.completions.calls[0]["max_tokens"]
-    assert sent == dynamic_max_tokens(long_text)
-    assert sent > 500  # 固定 500 を超えている
+    seen: dict[str, str] = {}
+
+    async def _fake_simple(text: str, src: str, tgt: str) -> str:
+        seen["text"] = text
+        seen["src"] = src
+        seen["tgt"] = tgt
+        return "訳文"
+
+    monkeypatch.setattr("app.translate.engine.translate_text", _fake_simple)
+    stage = OpenAIMTStage(client=_FakeOpenAIClient(), model="m")
+    out = asyncio.run(stage.translate_text(long_text, "ja", "en"))
+    assert out == "訳文"
+    assert seen["text"] == long_text
+    assert seen["src"] == "ja"
+    assert seen["tgt"] == "en"
 
 
 # ============================================================

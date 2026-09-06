@@ -20,9 +20,11 @@ from app.ai_pipeline.diarization import Enrollment, SpeakerIdentifier
 from app.ai_pipeline.orchestrator import (
     HybridOrchestrator,
     OrchestrationResult,
-    OutputSink,
 )
-from app.ai_pipeline.output_manager import DefaultOutputManager
+from app.ai_pipeline.output_manager import (
+    TransportAdapter,
+    build_default_output_manager,
+)
 from app.ai_pipeline.qoe import QoEDecision
 from app.ai_pipeline.qos import HybridQoSMonitor
 from app.ai_pipeline.revision_authority import RevisionAuthority, get_revision_authority
@@ -55,8 +57,8 @@ _ERROR_PREFIXES = (
 
 # 注入可能な言語検出関数（wav, hint）→（認識テキスト, 検出言語）。
 DetectFn = Callable[[bytes, str], Awaitable[tuple[str, str]]]
-# user_language（user_id→目標言語）と話者 ID から OutputSink を構築するファクトリ。
-SinkFactory = Callable[[dict[str, str], str], OutputSink]
+# user_language（user_id→目標言語）と話者 ID から TransportAdapter を構築するファクトリ。
+SinkFactory = Callable[[dict[str, str], str], TransportAdapter]
 # 中間パイプライン事件（回放ログ）の記録関数（既定 app.db.replay.record_pipeline_event）。
 # 注入されない（None）場合は回放ログを記録しない（従来挙動・単体テスト非破壊）。
 RecordEventFn = Callable[..., Awaitable[str | None]]
@@ -211,8 +213,8 @@ class SegmentProcessor:
         sink = sink_factory(user_language, speaker_id)
         await self._orchestrator.deliver_partial_subtitle(
             sink=sink,
-            output_manager=DefaultOutputManager(
-                adapter=sink,
+            output_manager=build_default_output_manager(
+                sink,
                 revision_authority=revision_authority or get_revision_authority(),
             ),
             listeners=listeners,
@@ -342,7 +344,7 @@ class SegmentProcessor:
                 original_text=original_text,
                 listeners=listeners,
                 sink=sink,
-                output_manager=DefaultOutputManager(adapter=sink),
+                output_manager=build_default_output_manager(sink),
                 mode=config.mode,
                 enable_openai_s2s=config.enable_openai_s2s,
                 language_routes=config.language_routes,

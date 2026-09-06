@@ -1,23 +1,17 @@
 """
-Lite 本地 MT ステージ（OPUS-MT / Marian + CTranslate2 int8）
+Lite 本地 MT ステージ（MADLAD-400 単一多言語 + CTranslate2 int8）
 
 目的:
-    改善案 §6.1「Lite（本地）主線」の MT スロット実体。雲 API に依存せず、
-    OPUS-MT（言語対別 Marian モデルを CTranslate2 で int8 量子化したもの）を
-    CPU/GPU 上で走らせて低コスト翻訳を提供する。既存 OpenAIMTStage / GoogleMTStage
-    と同じステージ契約（name / translate_text / 空文字契約）を満たす。
+    言語対別 OPUS-MT を廃止し、1 モデルで ja/en/zh/vi を相互翻訳する。
+    既存 OpenAIMTStage / GoogleMTStage と同じステージ契約（name / translate_text /
+    空文字契約）を満たす。
 入力 / 出力:
     registry.py の MT ステージ Protocol に準拠する（translate_text）。
 注意点:
-    - ctranslate2 / transformers / sentencepiece は GPU・環境依存が重いため、
-      本モジュール先頭では絶対に import しない（遅延 import）。パッケージ未導入でも
-      `import app.ai_pipeline.providers.local_mt` が成功し単体テスト可能であること。
-    - OPUS-MT は言語対別モデル。ディレクトリ名を `opus-mt-{src}-{tgt}` とし、
-      settings.local_mt_model_dir 直下から解決する。model_dir 未設定なら利用不可。
-    - 実モデルの常駐調停は VRAM Broker に委譲する（loader を注入）。
-    - 失敗（例外・VRAM 逼迫）は logger.warning のうえ "" を返す（＝当該訳の欠落。
-      registry の雲 fallback は構築時のみで、ランタイムの空結果は再試行しない）。
-    - translator / tokenizer は注入可能（テスト用）。注入があれば実ロードを行わない。
+    - ctranslate2 / transformers は遅延 import（未導入環境でもモジュール import 可）。
+    - settings.local_mt_model_dir は CT2 変換済み MADLAD ディレクトリを指す。
+    - ターゲット言語は入力先頭の <2xx> タグで指定する（MADLAD 慣習）。
+    - 失敗・VRAM 逼迫は "" を返し、字幕経路の継続を可能にする。
 """
 
 import asyncio
@@ -25,7 +19,6 @@ import logging
 import os
 from dataclasses import dataclass
 
-from app.ai_pipeline.providers.base import LANGUAGE_NAMES
 from app.ai_pipeline.vram_broker import (
     PRIORITY_MT,
     VRAMCapacityError,
@@ -37,26 +30,37 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# 単一エンジンの VRAM Broker キー（言語対ごとに分割しない）。
+ENGINE_CACHE_KEY = "mt:madlad400"
+
+# LAMS 対応言語 → MADLAD ターゲットタグ。
+SUPPORTED_TARGET_TAGS: dict[str, str] = {
+    "ja": "<2ja>",
+    "en": "<2en>",
+    "zh": "<2zh>",
+    "vi": "<2vi>",
+}
+
+
+def target_tag(language: str) -> str:
+    """言語コードから MADLAD の <2xx> タグを返す。"""
+    return SUPPORTED_TARGET_TAGS.get(language, f"<2{language}>")
+
 
 def available() -> bool:
-    """本地 MT が利用可能かを返す（この環境では False）。
+    """本地 MT が利用可能かを返す。
 
-    ctranslate2 が import 可能、かつ settings.local_mt_model_dir が設定済みの
-    ときのみ True。GPU / ctranslate2 未導入や model_dir 未設定では False。
+    ctranslate2 が import 可能、かつ settings.local_mt_model_dir が存在するときのみ True。
     """
-    if not settings.local_mt_model_dir:
+    model_dir = settings.local_mt_model_dir
+    if not model_dir or not os.path.isdir(model_dir):
         return False
     try:
         import importlib.util
 
         return importlib.util.find_spec("ctranslate2") is not None
-    except (ImportError, ValueError):  # find_spec は稀に ValueError を投げ得る
+    except (ImportError, ValueError):
         return False
-
-
-def _pair_dir_name(source_language: str, target_language: str) -> str:
-    """言語対からモデルディレクトリ名を導出する（例: opus-mt-ja-en）。"""
-    return f"opus-mt-{source_language}-{target_language}"
 
 
 @dataclass
@@ -68,7 +72,7 @@ class _Engine:
 
 
 class LocalMTStage:
-    """OPUS-MT + CTranslate2 によるテキスト翻訳（MT）ステージ。"""
+    """MADLAD-400 + CTranslate2 による単一多言語テキスト翻訳（MT）ステージ。"""
 
     name = "local"
 
@@ -92,20 +96,22 @@ class LocalMTStage:
     async def translate_text(
         self, text: str, source_language: str, target_language: str
     ) -> str:
-        """テキストを翻訳する。失敗は "" を返す（雲へ縮退可能に）。
-
-        - 空 / 空白のみ入力は "" を返す。
-        - source == target は原文をそのまま返す（無駄なロードを避ける）。
-        - 例外・VRAM 逼迫時は logger.warning のうえ "" を返す。
-        """
+        """テキストを翻訳する。失敗は "" を返す（雲へ縮退可能に）。"""
         if not text or not text.strip():
             return ""
         if source_language == target_language:
             return text
+        if target_language not in SUPPORTED_TARGET_TAGS:
+            logger.warning("[MT:local] 未対応ターゲット言語: %s", target_language)
+            return ""
         try:
-            return await self._translate_via_broker(
-                text, source_language, target_language
-            )
+            # テスト注入時はブローカーを経由せず直接実行する。
+            if self._translator is not None and self._tokenizer is not None:
+                engine = _Engine(translator=self._translator, tokenizer=self._tokenizer)
+                return await asyncio.to_thread(
+                    self._run_translate, engine, text, target_language
+                )
+            return await self._translate_via_broker(text, target_language)
         except VRAMCapacityError as e:
             logger.warning("[MT:local] VRAM 逼迫のため縮退: %s", e)
             return ""
@@ -113,81 +119,59 @@ class LocalMTStage:
             logger.warning("[MT:local] 翻訳失敗: %s", e)
             return ""
 
-    async def _translate_via_broker(
-        self, text: str, source_language: str, target_language: str
-    ) -> str:
-        """VRAM Broker 経由でエンジンを常駐させ翻訳を実行する。"""
-        dir_name = _pair_dir_name(source_language, target_language)
+    async def _translate_via_broker(self, text: str, target_language: str) -> str:
+        """VRAM Broker 経由で単一エンジンを常駐させ翻訳する。"""
         broker = self._broker or default_broker
         async with broker.use(
-            key=f"mt:{source_language}-{target_language}",
-            loader=lambda: self._load_pair(source_language, target_language),
+            key=ENGINE_CACHE_KEY,
+            loader=self._load_engine,
             size_mb=settings.local_mt_size_mb,
             priority=PRIORITY_MT,
-            version=dir_name,
+            version=settings.local_mt_model_id,
         ) as engine:
-            # 実翻訳はブロッキングのため別スレッドで実行する。
-            return await asyncio.to_thread(self._run_translate, engine, text)
+            return await asyncio.to_thread(
+                self._run_translate, engine, text, target_language
+            )
 
-    def _load_pair(self, source_language: str, target_language: str) -> _Engine:
-        """言語対モデルをロードする（Broker の loader。遅延 import）。
-
-        注入があればそれを使う。無ければ ctranslate2 / transformers を遅延 import して
-        実ロードする（この環境ではパッケージ未導入のため実行されない）。
-        """
+    def _load_engine(self) -> _Engine:
+        """MADLAD CT2 モデルとトークナイザをロードする（Broker loader）。"""
         if self._translator is not None and self._tokenizer is not None:
             return _Engine(translator=self._translator, tokenizer=self._tokenizer)
 
         model_dir = settings.local_mt_model_dir
         if not model_dir:
             raise RuntimeError("local_mt_model_dir 未設定のため本地 MT は利用不可")
-        path = os.path.join(model_dir, _pair_dir_name(source_language, target_language))
-        if not os.path.isdir(path):
-            raise RuntimeError(f"モデルディレクトリが存在しない: {path}")
+        if not os.path.isdir(model_dir):
+            raise RuntimeError(f"モデルディレクトリが存在しない: {model_dir}")
 
-        # 遅延 import（先頭 import 禁止）。GPU / ネイティブ依存を隔離する。
         import ctranslate2  # noqa: PLC0415
 
-        translator = self._translator or ctranslate2.Translator(
-            path,
+        translator = ctranslate2.Translator(
+            model_dir,
             device=settings.local_mt_device,
             compute_type=settings.local_mt_compute_type,
         )
-        tokenizer = self._tokenizer or self._load_tokenizer(path)
+        tokenizer = self._load_tokenizer()
         return _Engine(translator=translator, tokenizer=tokenizer)
 
     @staticmethod
-    def _load_tokenizer(path: str) -> object:
-        """OPUS-MT 用トークナイザをロードする（遅延 import）。
-
-        TODO(v2): OPUS-MT は sentencepiece ベース。transformers の AutoTokenizer で
-        Marian トークナイザをロードするか、sentencepiece の SentencePieceProcessor を
-        直接使う。v1 は骨格のみで、実運用トークナイズ（サブワード化 / detokenize）は
-        ここに集約する。
-        """
+    def _load_tokenizer() -> object:
+        """MADLAD 用トークナイザをロードする（遅延 import）。"""
         from transformers import AutoTokenizer  # noqa: PLC0415
 
-        return AutoTokenizer.from_pretrained(path)
+        return AutoTokenizer.from_pretrained(settings.local_mt_tokenizer_id)
 
     @staticmethod
-    def _run_translate(engine: _Engine, text: str) -> str:
-        """ブロッキング翻訳本体（to_thread から呼ばれる）。
-
-        tokenizer でサブワードへ分割 → CTranslate2 で翻訳 → detokenize する。
-        注入フェイクは tokenize/detokenize と translate_batch を備える前提。
-        """
+    def _run_translate(engine: _Engine, text: str, target_language: str) -> str:
+        """ブロッキング翻訳本体（to_thread から呼ばれる）。"""
         tokenizer = engine.tokenizer
         translator = engine.translator
-        # サブワード列へ分割（transformers/sentencepiece 互換の tokenize を想定）。
-        tokens = tokenizer.tokenize(text)
-        results = translator.translate_batch([tokens])
-        # CTranslate2 の戻りは results[i].hypotheses[0] にトークン列が入る。
+        tagged = f"{target_tag(target_language)}{text}"
+        # MADLAD + CT2 慣習: encode → convert_ids_to_tokens → translate_batch → decode
+        input_ids = tokenizer.encode(tagged)
+        input_tokens = tokenizer.convert_ids_to_tokens(input_ids)
+        results = translator.translate_batch([input_tokens])
         hypothesis = results[0].hypotheses[0]
-        # サブワード列を文字列へ復元（convert_tokens_to_string を想定）。
-        out = tokenizer.convert_tokens_to_string(hypothesis)
+        output_ids = tokenizer.convert_tokens_to_ids(hypothesis)
+        out = tokenizer.decode(output_ids, skip_special_tokens=True)
         return out.strip() if out else ""
-
-
-def language_name(code: str) -> str:
-    """言語コードを表示名へ変換する（診断ログ用の補助）。"""
-    return LANGUAGE_NAMES.get(code, code)

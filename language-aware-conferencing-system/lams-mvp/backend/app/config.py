@@ -159,32 +159,34 @@ class Settings(BaseSettings):
     tts_provider: Literal["auto", "openai", "none", "local"] = "auto"
 
     # -------------------------------------------
-    # Lite 本地モデル設定（改善案 §4 / §6：faster-whisper・OPUS-MT・Kokoro・VAD）
+    # Lite 本地モデル設定（faster-whisper / MADLAD-400 / VoxCPM2・8GB GPU）
     # -------------------------------------------
-    # GPU 予算（MB）。VRAM Broker がこの範囲でモデル常駐を調停する（12GB の目安）。
-    vram_budget_mb: int = 11000
+    # GPU 予算（MB）。8GB カードではヘッドルームを残し VoxCPM2 と排他調停する。
+    vram_budget_mb: int = 7500
     # VAD バックエンド: energy（既定・CPU エネルギー閾値）/ silero（Silero VAD）。
     # silero 指定時にランタイム未導入なら energy へ自動フォールバックする。
     vad_backend: Literal["energy", "silero"] = "energy"
 
-    # 本地 ASR（faster-whisper / CTranslate2）
-    local_asr_model: str = "large-v3-turbo"
+    # 本地 ASR（faster-whisper / CTranslate2・4言語対応 medium INT8）
+    local_asr_model: str = "Systran/faster-whisper-medium"
     local_asr_device: str = "cuda"  # cuda / cpu
     local_asr_compute_type: str = "int8"  # int8 / int8_float16 / float16
-    local_asr_size_mb: int = 1600  # VRAM Broker 会計用の概算常駐サイズ
+    local_asr_size_mb: int = 1500  # VRAM Broker 会計用の概算常駐サイズ
 
-    # 本地 MT（OPUS-MT / Marian + CTranslate2）。model_dir は言語対別モデルの
-    # 親ディレクトリ（例: {dir}/opus-mt-ja-en）。未設定なら local MT は利用不可。
+    # 本地 MT（MADLAD-400 単一多言語 + CTranslate2）。
+    # model_dir は CT2 変換済みディレクトリ。未設定なら local MT は利用不可。
     local_mt_model_dir: str | None = None
-    local_mt_device: str = "cpu"  # 軽量翻訳は CPU 常駐が既定（§6.1）
+    local_mt_model_id: str = "google/madlad400-3b-mt"
+    local_mt_tokenizer_id: str = "jbochi/madlad400-3b-mt"
+    local_mt_device: str = "cuda"
     local_mt_compute_type: str = "int8"
-    local_mt_size_mb: int = 300  # 1 言語対あたりの概算サイズ
+    local_mt_size_mb: int = 2500  # INT8 換算の概算常駐サイズ
 
-    # 本地 TTS（Kokoro-82M / Piper）。Lite の訳音は任意（字幕優先）。
-    local_tts_model: str = "kokoro-82m"
-    local_tts_voice: str = "af_heart"
-    local_tts_device: str = "cpu"
-    local_tts_size_mb: int = 400
+    # 本地 TTS（VoxCPM2・ja/en/zh/vi 単一モデル）。約 8GB のため他モデルと排他。
+    local_tts_model: str = "openbmb/VoxCPM2"
+    local_tts_voice: str = "default"  # VoxCPM2 は言語タグ不要（互換フィールド）
+    local_tts_device: str = "cuda"
+    local_tts_size_mb: int = 7500
 
     # -------------------------------------------
     # ストリーミング字幕（P2：partial/final 事件協議）

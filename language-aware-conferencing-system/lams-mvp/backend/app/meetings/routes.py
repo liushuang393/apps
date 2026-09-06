@@ -147,6 +147,31 @@ async def _load_session(session_id: str, db: AsyncSession) -> MeetingSession:
     return session
 
 
+@router.get("/active/{room_id}", response_model=MeetingResponse | None)
+async def get_active_meeting(
+    room_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MeetingResponse | None:
+    """
+    会議室のアクティブセッションを副作用なく取得する。
+
+    - セッションが無ければ None を返す（新規作成しない）。
+    - 権限は作成者またはモデレーター以上。
+    """
+    room = await _load_room_for_management(room_id, user, db)
+    result = await db.execute(
+        select(MeetingSession).where(
+            MeetingSession.room_id == room_id,
+            MeetingSession.is_active.is_(True),
+        )
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        return None
+    return _to_response(session, room)
+
+
 @router.post("", response_model=MeetingResponse, status_code=status.HTTP_201_CREATED)
 async def start_meeting(
     data: MeetingCreate,

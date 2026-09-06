@@ -48,14 +48,15 @@ def build_default_segmenter(
     Silero は RNN 状態を持つため話者トラック毎に独立インスタンスを返す。
     silero 有効時はフレーム長を窓長へ整合し確率希釈を防ぐ。
     """
+    from app.ai_pipeline.effective_config import get_cached_pipeline_settings
     from app.audio.vad import SILERO_FRAME_MS, build_vad, resolve_backend
     from app.config import settings
 
     seg_kwargs: dict[str, object] = {"sample_rate": sample_rate}
     if resolve_backend() == "silero":
         seg_kwargs["frame_ms"] = SILERO_FRAME_MS
-    # partial 有効時のみ暫定字幕を切り出す（既定 0＝final のみ）。
-    if settings.enable_partial_subtitles:
+    # partial 有効時のみ暫定字幕を切り出す（pipeline overlay または env 既定）。
+    if get_cached_pipeline_settings().enable_partial_subtitles:
         seg_kwargs["partial_ms"] = settings.partial_ms
     return SpeechSegmenter(
         is_speech=build_vad(sample_rate=sample_rate),

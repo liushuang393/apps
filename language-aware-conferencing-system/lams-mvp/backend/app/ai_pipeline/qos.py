@@ -11,6 +11,7 @@ import re
 import time
 from collections import Counter, deque
 from collections.abc import Callable
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -332,3 +333,33 @@ class HybridQoSMonitor:
             hearing_samples=len(self._fresh_samples("hearing")),
             reading_samples=len(self._fresh_samples("reading")),
         )
+
+
+# 本番翻訳経路から用語命中を記録するための ContextVar。
+# HybridOrchestrator が発話処理中に bind し、translate_text_simple が参照する。
+_active_qos_monitor: ContextVar[HybridQoSMonitor | None] = ContextVar(
+    "active_qos_monitor", default=None
+)
+
+
+def bind_qos_monitor(monitor: HybridQoSMonitor | None) -> Token:
+    """現在のコンテキストに QoS モニターを紐付ける。"""
+    return _active_qos_monitor.set(monitor)
+
+
+def reset_qos_monitor(token: Token) -> None:
+    """bind_qos_monitor で得た token をリセットする。"""
+    _active_qos_monitor.reset(token)
+
+
+def get_bound_qos_monitor() -> HybridQoSMonitor | None:
+    """現在のコンテキストに紐付いた QoS モニター（無ければ None）。"""
+    return _active_qos_monitor.get()
+
+
+def record_glossary_if_bound(hits: int, total: int) -> None:
+    """紐付モニターがあるときだけ用語命中を記録する（total<=0 は無視）。"""
+    monitor = _active_qos_monitor.get()
+    if monitor is None or total <= 0:
+        return
+    monitor.record_glossary(hits, total)

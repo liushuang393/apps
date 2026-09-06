@@ -16,22 +16,12 @@
 import logging
 
 from app.ai_pipeline.providers.base import (
-    LANGUAGE_NAMES,
     AIProvider,
     check_api_key,
-    dynamic_max_tokens,
 )
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-# 翻訳用 system プロンプト（AI 乱話防止）。gpt4o_transcribe と同方針を踏襲する。
-_MT_SYSTEM_PROMPT = (
-    "[CRITICAL] You are a TRANSLATION MACHINE for multilingual meetings.\n"
-    "Translate the following {src} text into {tgt}.\n"
-    "Output ONLY the direct translation. Never add comments, greetings, or "
-    "acknowledgments. Keep technical terms and proper nouns intact."
-)
 
 
 async def _new_openai_client() -> object:
@@ -59,42 +49,30 @@ class AIProviderASRStage:
 
 
 class OpenAIMTStage:
-    """OpenAI Chat Completions によるテキスト翻訳（MT）ステージ"""
+    """OpenAI テキスト翻訳（MT）ステージ。
+
+    用語集・TM・LLM 補正付きの翻訳エンジンへ委譲し、
+    Composite / 読む主線で用語集経路を統一する。
+    client/model 引数は Registry 後方互換のみ（実翻訳では未使用）。
+    """
 
     name = "openai"
 
     def __init__(self, client: object | None = None, model: str | None = None) -> None:
-        self._client = client
-        self._model = model or settings.openai_translate_model
+        # client/model は Registry シグネチャ互換のみ（実翻訳では未使用）。
+        _ = (client, model)
         if client is None:
             check_api_key(settings.openai_api_key, "OpenAI")
-
-    async def _get_client(self) -> object:
-        if self._client is None:
-            self._client = await _new_openai_client()
-            logger.info("[MT:openai] クライアント初期化")
-        return self._client
 
     async def translate_text(
         self, text: str, source_language: str, target_language: str
     ) -> str:
         if not text or not text.strip():
             return ""
-        src_name = LANGUAGE_NAMES.get(source_language, source_language)
-        tgt_name = LANGUAGE_NAMES.get(target_language, target_language)
-        system_prompt = _MT_SYSTEM_PROMPT.format(src=src_name, tgt=tgt_name)
-        client = await self._get_client()
-        response = await client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text},
-            ],
-            max_tokens=dynamic_max_tokens(text),  # 改善点 Q3: 長文の訳文切れ防止
-            temperature=0.2,
-        )
-        out = response.choices[0].message.content
-        return out.strip() if out else ""
+        # 素プロンプト直叩きをやめ、用語集付き本番経路へ統一する。
+        from app.translate.engine import translate_text
+
+        return await translate_text(text, source_language, target_language)
 
 
 class OpenAITTSStage:

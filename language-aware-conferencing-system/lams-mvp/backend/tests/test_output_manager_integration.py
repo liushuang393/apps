@@ -6,6 +6,7 @@ import ast
 import asyncio
 import inspect
 import textwrap
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import pytest
@@ -27,7 +28,6 @@ from app.ai_pipeline.output_manager import (
     RecordingTransportAdapter,
     TranslatedAudioCommand,
 )
-from app.ai_pipeline.qos import HybridQoSMonitor, READING_P95_TARGET_MS
 from app.ai_pipeline.qoe import (
     QoEDecision,
     QoEReason,
@@ -35,6 +35,7 @@ from app.ai_pipeline.qoe import (
     QoEState,
     QoEUiReason,
 )
+from app.ai_pipeline.qos import READING_P95_TARGET_MS, HybridQoSMonitor
 from app.ai_pipeline.revision_authority import RevisionAuthority
 from app.webrtc.agent import LiveKitAgent
 from app.webrtc.processor import SegmentProcessor
@@ -52,24 +53,30 @@ class _RecordingOutputManager:
         return DeliveryReport()
 
 
-class _RejectingSink:
-    """Output Manager を迂回した主線配信を検出する Sink。"""
+class _RejectingSink(RecordingTransportAdapter):
+    """Output Manager を迂回した主線配信を検出する TransportAdapter。"""
 
-    async def deliver_audio(
+    async def publish_audio(
         self,
-        _user_id: str,
-        _audio: bytes,
         *,
-        generation_id: int | None = None,
+        speaker_id: str,
+        language: str,
+        audio: bytes,
+        recipient_ids: Sequence[str],
+        generation_id: int | None,
     ) -> None:
-        del generation_id
+        del speaker_id, language, audio, recipient_ids, generation_id
         raise AssertionError("音声が Output Manager を迂回しました")
 
-    async def deliver_subtitle(self, _user_id: str, _message: dict) -> None:
-        raise AssertionError("字幕が Output Manager を迂回しました")
-
-    async def deliver_event(self, _user_id: str, _message: dict) -> None:
-        raise AssertionError("イベントが Output Manager を迂回しました")
+    async def send_data(
+        self,
+        *,
+        user_id: str,
+        topic: str,
+        payload: bytes,
+    ) -> None:
+        del user_id, topic, payload
+        raise AssertionError("字幕/イベントが Output Manager を迂回しました")
 
 
 @pytest.mark.asyncio
@@ -388,6 +395,15 @@ def test_mainline_delivery_has_no_direct_sink_helper_calls() -> None:
     assert "_deliver_event_group(" not in emit_qos_source
     assert "deliver_event(" not in emit_qos_source
     assert "QosWarningCommand" in emit_qos_source
+
+
+def test_orchestrate_delegates_language_group_convergence() -> None:
+    """言語別 fork/join/fallback は深い収束モジュールへ委譲する。"""
+    orchestrate_source = inspect.getsource(HybridOrchestrator.orchestrate)
+
+    assert "UtteranceConvergence(" in orchestrate_source
+    assert "convergence.converge(" in orchestrate_source
+    assert "asyncio.ensure_future(" not in orchestrate_source
 
 
 def test_agent_passes_authoritative_qoe_decision_without_flattening() -> None:

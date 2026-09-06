@@ -22,6 +22,10 @@ from app.ai_pipeline.output_manager.commands import (
     QualityEventCommand,
     TranslatedAudioCommand,
 )
+from app.ai_pipeline.output_manager.factory import (
+    build_default_output_manager,
+    resolve_transport_adapter,
+)
 from app.ai_pipeline.output_manager.manager import (
     DefaultOutputManager,
     DeliveryFailure,
@@ -51,4 +55,6 @@ __all__ = [
     "Suppression",
     "TranslatedAudioCommand",
     "TransportAdapter",
+    "build_default_output_manager",
+    "resolve_transport_adapter",
 ]

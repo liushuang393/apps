@@ -9,6 +9,7 @@ import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
 import { LANGUAGE_NAMES } from '../constants/languages';
+import '../styles/pages/admin.css';
 
 /** ロール表示名マッピング */
 const ROLE_NAMES: Record<string, string> = {

@@ -80,9 +80,36 @@ def test_build_correction_prompt_includes_glossary_and_context() -> None:
 
 def test_get_correction_provider_off_returns_none(monkeypatch) -> None:
     """既定（off）では補正プロバイダーは無効（None）"""
+    from app.ai_pipeline import effective_config as ec
+
     reset_correction_provider()
     monkeypatch.setattr(settings, "llm_correction_provider", "off")
+    ec.reset_pipeline_settings_cache_for_tests()
     assert get_correction_provider() is None
+
+
+def test_get_correction_provider_overlay_enables_gemini(monkeypatch) -> None:
+    """方式2 overlay が ON なら env off でも gemini を試す。"""
+    from app.ai_pipeline import effective_config as ec
+
+    reset_correction_provider()
+    monkeypatch.setattr(settings, "llm_correction_provider", "off")
+    monkeypatch.setattr(settings, "gemini_api_key", "dummy-key")
+    ec.set_cached_pipeline_settings(
+        ec.PipelineSettingsValues(
+            ai_provider="gpt4o_transcribe",
+            asr_provider="auto",
+            mt_provider="auto",
+            tts_provider="auto",
+            default_mode="hybrid",
+            enable_partial_subtitles=True,
+            llm_correction_enabled=True,
+        )
+    )
+    provider = get_correction_provider()
+    assert isinstance(provider, GeminiCorrectionProvider)
+    reset_correction_provider()
+    ec.reset_pipeline_settings_cache_for_tests()
 
 
 def test_get_correction_provider_gemini_without_key_returns_none(monkeypatch) -> None:

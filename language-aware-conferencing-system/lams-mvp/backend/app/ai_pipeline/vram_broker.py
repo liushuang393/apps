@@ -1,9 +1,10 @@
 """
-VRAM Broker / Model Manager v1（改善案 §6.1）：12GB GPU 前提のモデル常駐調停。
+VRAM Broker / Model Manager v1：8GB GPU 前提のモデル常駐調停。
 
-12GB では全大モデルを常駐できないため、ステージ優先度に従って GPU 上のモデルを
-ロード/退避する調停器。実時間 ASR > TTS 首パケット > 翻訳バッチ > 後編集/要約 LLM の
-順で優先し、予算超過時は「使用中でない」低優先度モデルを LRU で退避する。
+8GB では ASR + MT + TTS（特に VoxCPM2 約 7.5GB）を同時常駐できないため、
+ステージ優先度に従って GPU 上のモデルをロード/退避する。
+実時間 ASR > TTS 首パケット > 翻訳バッチ > 後編集/要約 LLM の順で優先し、
+予算超過時は「使用中でない」低優先度モデルを LRU で退避する。
 
 設計原則:
     - 純ロジック＋依存注入（loader/clock を注入）→ GPU 無し環境でも単体テスト可能。
@@ -20,6 +21,8 @@ import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 # ステージ優先度（大きいほど優先。予算逼迫時は小さい方から退避）。
@@ -28,8 +31,8 @@ PRIORITY_TTS = 30  # TTS 首パケット
 PRIORITY_MT = 20  # 翻訳バッチ
 PRIORITY_LLM = 10  # 後編集 / 要約 LLM
 
-# 既定の GPU 予算（MB）。12GB のうち実運用に回せる目安（フラグメント/他用途を除く）。
-_DEFAULT_BUDGET_MB = 11000
+# 既定の GPU 予算（MB）。8GB カードのヘッドルーム込み。
+_DEFAULT_BUDGET_MB = 7500
 
 
 class VRAMCapacityError(RuntimeError):
@@ -241,4 +244,5 @@ class VRAMBroker:
 
 
 # モジュール唯一の既定ブローカー（stage アダプターはこれを共有する）。
-broker = VRAMBroker()
+# 予算は Settings.vram_budget_mb（8GB 想定の既定 7500）に追従する。
+broker = VRAMBroker(budget_mb=settings.vram_budget_mb)

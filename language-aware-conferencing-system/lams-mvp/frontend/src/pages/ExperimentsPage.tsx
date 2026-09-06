@@ -11,6 +11,7 @@ import {
   type ExperimentSummary,
 } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import '../styles/pages/admin.css';
 
 /** 数値を小数 2 桁へ丸めて表示（NaN/未定義は "-"）。 */
 function fmt(n: number | undefined): string {
