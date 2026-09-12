@@ -7,3 +7,7 @@
 # picking either side (task state lives in task.json, not index.md). See
 # .trellis/spec/cli/backend/directory-structure.md for details.
 .trellis/workspace/*/journal-*.md merge=union
+
+# シェルスクリプトは必ず LF。CRLF だと Linux / WSL / Docker 内で
+# `$'\r': command not found` になり、README 記載の入口スクリプトが動かない。
+*.sh text eol=lf

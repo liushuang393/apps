@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sonowa 操作マニュアル</title>
+<style>
+:root{
+  --bg:#f7f7fb; --surface:#ffffff; --surface-2:#f2f2f8; --text:#1b1b2b; --muted:#5d5d74;
+  --border:#e3e3ee; --accent:#4f46e5; --accent-soft:#eeecff; --accent-text:#3730a3;
+  --warn-bg:#fff8e6; --warn-border:#f0c65a; --warn-text:#6b4c00;
+  --tip-bg:#ecfdf5; --tip-border:#6ee7b7; --tip-text:#065f46;
+  --code-bg:#f0f0f6;
+  --shadow:0 1px 2px rgba(16,16,40,.06),0 8px 24px rgba(16,16,40,.06);
+  --radius:12px;
+  --sans:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic UI",Meiryo,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#12121a; --surface:#1a1a24; --surface-2:#21212e; --text:#e8e8f2; --muted:#a0a0b8;
+    --border:#2c2c3c; --accent:#8b85ff; --accent-soft:#26243f; --accent-text:#c7c3ff;
+    --warn-bg:#2e2513; --warn-border:#7a5f1d; --warn-text:#f0d79a;
+    --tip-bg:#132a22; --tip-border:#1f5c47; --tip-text:#8ee0c0;
+    --code-bg:#23232f;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--sans); font-size:15.5px; line-height:1.85;
+  -webkit-font-smoothing:antialiased;
+}
+.layout{display:grid; grid-template-columns:270px minmax(0,1fr); gap:0; max-width:1360px; margin:0 auto}
+
+/* ---- サイドバー ---- */
+.sidebar{
+  position:sticky; top:0; align-self:start; height:100vh; overflow-y:auto;
+  padding:32px 20px 48px; border-right:1px solid var(--border); background:var(--surface);
+}
+.brand{display:flex; align-items:center; gap:10px; margin-bottom:4px}
+.brand .mark{
+  width:30px;height:30px;border-radius:9px;flex:none;
+  background:linear-gradient(135deg,#6366f1,#a855f7);
+  display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px
+}
+.brand b{font-size:17px; letter-spacing:.02em}
+.brand-sub{color:var(--muted); font-size:12.5px; margin:0 0 24px 40px}
+.toc{list-style:none; margin:0; padding:0; font-size:13.5px}
+.toc li{margin:0}
+.toc a{
+  display:block; padding:6px 10px; border-radius:8px;
+  color:var(--muted); text-decoration:none; transition:background .12s,color .12s
+}
+.toc a:hover{background:var(--surface-2); color:var(--text)}
+.toc .sec>a{color:var(--text); font-weight:700; margin-top:14px}
+.toc .sub a{padding-left:22px; font-size:13px}
+
+/* ---- 本文 ---- */
+main{padding:44px 48px 96px; min-width:0}
+.hero{margin-bottom:56px}
+.hero h1{font-size:34px; line-height:1.35; margin:0 0 12px; letter-spacing:.01em}
+.hero p{color:var(--muted); font-size:16px; margin:0 0 6px; max-width:62ch}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+.chip{
+  font-size:12px; padding:4px 11px; border-radius:999px;
+  background:var(--accent-soft); color:var(--accent-text); font-weight:600
+}
+section{margin-bottom:64px; scroll-margin-top:24px}
+h2{
+  font-size:23px; margin:0 0 8px; padding-bottom:10px;
+  border-bottom:2px solid var(--border); letter-spacing:.01em
+}
+h2 .num{color:var(--accent); font-variant-numeric:tabular-nums; margin-right:10px}
+h3{font-size:17.5px; margin:40px 0 10px}
+h3:first-of-type{margin-top:28px}
+p{margin:0 0 14px; max-width:70ch}
+.lead{color:var(--muted); max-width:70ch}
+
+/* ---- 手順 ---- */
+ol.steps{counter-reset:step; list-style:none; margin:18px 0 0; padding:0}
+ol.steps>li{
+  counter-increment:step; position:relative;
+  padding:0 0 22px 42px; border-left:2px solid var(--border); margin-left:13px
+}
+ol.steps>li:last-child{border-left-color:transparent; padding-bottom:4px}
+ol.steps>li::before{
+  content:counter(step); position:absolute; left:-14px; top:0;
+  width:26px;height:26px;border-radius:50%; background:var(--accent); color:#fff;
+  display:grid;place-items:center; font-size:12.5px; font-weight:700; font-family:var(--mono)
+}
+ol.steps>li>strong{display:block; margin-bottom:2px; font-size:15.5px}
+ol.steps p{margin:0 0 8px}
+
+/* ---- 図版 ---- */
+figure{margin:20px 0 26px}
+figure img{
+  display:block; width:100%; height:auto; border:1px solid var(--border);
+  border-radius:var(--radius); box-shadow:var(--shadow); background:var(--surface)
+}
+figcaption{
+  margin-top:9px; font-size:12.5px; color:var(--muted);
+  padding-left:12px; border-left:3px solid var(--accent-soft)
+}
+
+/* ---- 注記 ---- */
+.note,.warn,.tip{
+  border:1px solid var(--border); border-left-width:4px; background:var(--surface);
+  border-radius:8px; padding:14px 18px; margin:18px 0; font-size:14.5px
+}
+.note{border-left-color:var(--accent)}
+.warn{background:var(--warn-bg); border-color:var(--warn-border); color:var(--warn-text)}
+.tip{background:var(--tip-bg); border-color:var(--tip-border); color:var(--tip-text)}
+.note p:last-child,.warn p:last-child,.tip p:last-child{margin-bottom:0}
+.note b,.warn b,.tip b{display:block; margin-bottom:3px}
+
+/* ---- 表 ---- */
+.table-wrap{overflow-x:auto; margin:18px 0}
+table{border-collapse:collapse; width:100%; font-size:14.5px; min-width:440px}
+th,td{text-align:left; padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:top}
+th{background:var(--surface-2); font-weight:700; white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+
+/* ---- その他 ---- */
+code{font-family:var(--mono); font-size:.88em; background:var(--code-bg); padding:2px 6px; border-radius:5px}
+pre{
+  background:var(--code-bg); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px 18px; overflow-x:auto; font-family:var(--mono); font-size:13px; line-height:1.7
+}
+pre code{background:none;padding:0}
+.cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; margin:20px 0}
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px}
+.card h4{margin:0 0 6px; font-size:15px}
+.card p{margin:0; font-size:14px; color:var(--muted)}
+.kbd{
+  font-family:var(--mono); font-size:12.5px; border:1px solid var(--border);
+  border-bottom-width:2px; border-radius:6px; padding:1px 7px; background:var(--surface-2)
+}
+footer{
+  margin-top:72px; padding-top:24px; border-top:1px solid var(--border);
+  color:var(--muted); font-size:13px
+}
+a{color:var(--accent)}
+
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{position:static; height:auto; overflow:visible; border-right:none; border-bottom:1px solid var(--border); padding:20px}
+  /* 狭い画面では目次を折り返すチップ列にして、本文までのスクロールを短くする */
+  .toc{display:flex; flex-wrap:wrap; gap:6px}
+  .toc a{padding:5px 10px; border:1px solid var(--border); border-radius:999px; background:var(--surface-2)}
+  .toc .sec>a{margin-top:0; background:var(--accent-soft); color:var(--accent-text); border-color:transparent}
+  .toc .sub a{padding-left:10px}
+  main{padding:32px 20px 64px}
+  .hero h1{font-size:27px}
+  body{font-size:15px}
+}
+@media print{
+  .sidebar{display:none}
+  .layout{display:block}
+  main{padding:0}
+  section{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="sidebar">
+  <div class="brand"><span class="mark">S</span><b>Sonowa</b></div>
+  <p class="brand-sub">操作マニュアル</p>
+  <ul class="toc">
+    <li class="sec"><a href="#intro">1. はじめに</a></li>
+    <li class="sub"><a href="#concept">原声と翻訳音声</a></li>
+    <li class="sec"><a href="#before">2. はじめる前に</a></li>
+    <li class="sec"><a href="#account">3. アカウント</a></li>
+    <li class="sub"><a href="#register">アカウント登録</a></li>
+    <li class="sub"><a href="#login">ログイン</a></li>
+    <li class="sub"><a href="#password">パスワードを忘れた</a></li>
+    <li class="sec"><a href="#meeting">4. 会議に参加する</a></li>
+    <li class="sub"><a href="#menu">メニュー</a></li>
+    <li class="sub"><a href="#rooms">会議室を選ぶ・作る</a></li>
+    <li class="sub"><a href="#room">会議室画面の見方</a></li>
+    <li class="sub"><a href="#audio-mode">音声と字幕を切り替える</a></li>
+    <li class="sub"><a href="#mainline">会議AI主線（作成者向け）</a></li>
+    <li class="sec"><a href="#transcript">5. 会議記録</a></li>
+    <li class="sec"><a href="#admin">6. 管理者向け</a></li>
+    <li class="sub"><a href="#admin-users">ユーザー管理・統計</a></li>
+    <li class="sub"><a href="#admin-languages">対応言語設定</a></li>
+    <li class="sub"><a href="#admin-pipeline">AIパイプライン設定</a></li>
+    <li class="sub"><a href="#admin-experiments">A/B実験</a></li>
+    <li class="sec"><a href="#trouble">7. 困ったとき</a></li>
+    <li class="sec"><a href="#glossary">8. 用語集</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<header class="hero">
+  <h1>Sonowa 操作マニュアル</h1>
+  <p>Sonowa（ソノワ）は、多言語会議の言語の壁をなくすリアルタイム音声翻訳・字幕システムです。参加者はそれぞれ「原声」か「翻訳音声」を選べ、聴いている音声と同じ言語の字幕が表示されます。</p>
+  <p>このマニュアルは、はじめて使う参加者と、システムを運用する管理者の両方に向けたものです。</p>
+  <div class="meta">
+    <span class="chip">対応言語 日本語 / English / 中文 / Tiếng Việt</span>
+    <span class="chip">画面はすべて実際の動作画面</span>
+  </div>
+</header>
+
+<!-- ============ 1 ============ -->
+<section id="intro">
+  <h2><span class="num">1</span>はじめに</h2>
+  <p class="lead">Sonowa は「翻訳ツール」ではなく「言語の壁を意識させない会議体験」を目指しています。話す人はいつもどおり自分の言語で話し、聴く人はそれぞれ自分に合った形で受け取ります。</p>
+
+  <div class="cards">
+    <div class="card"><h4>話す人</h4><p>ふだんどおり自分の言語で話すだけ。特別な操作は必要ありません。</p></div>
+    <div class="card"><h4>聴く人</h4><p>「原声」か「翻訳音声」を自分で選べます。ほかの参加者には影響しません。</p></div>
+    <div class="card"><h4>読む人</h4><p>聴いている音声と同じ言語の字幕が出ます。音声と字幕がずれません。</p></div>
+  </div>
+
+  <h3 id="concept">「原声」と「翻訳音声」の違い</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>選択</th><th>聞こえる音声</th><th>表示される字幕</th><th>向いている場面</th></tr></thead>
+    <tbody>
+      <tr><td><b>原声</b>（既定）</td><td>話した人の声そのまま</td><td>話された言語のまま（原文）</td><td>相手の言語がある程度わかる / 声色やニュアンスを大事にしたい</td></tr>
+      <tr><td><b>翻訳音声</b></td><td>自分が選んだ言語に翻訳された合成音声</td><td>翻訳された言語</td><td>相手の言語がわからない / 内容の理解を優先したい</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <b>参加者ごとに別々</b>
+    <p>この選択は<b>あなたの画面だけ</b>に適用されます。同じ会議で、日本語話者は原声、英語話者は翻訳音声、というように混在できます。</p>
+  </div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="before">
+  <h2><span class="num">2</span>はじめる前に</h2>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>項目</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td>ブラウザ</td><td>Google Chrome または Microsoft Edge の最新版を推奨します。</td></tr>
+      <tr><td>マイク</td><td>発言する場合はマイクが必要です。ヘッドセットの利用を強く推奨します（スピーカーの音をマイクが拾うと、翻訳音声が二重に処理されます）。</td></tr>
+      <tr><td>アクセス先</td><td>社内で案内された URL を開きます。標準構成では <code>http://&lt;サーバーのIP&gt;:5273</code> です。</td></tr>
+      <tr><td>マイクの許可</td><td>会議室に入ると、ブラウザがマイクの使用許可を求めます。<b>「許可」</b>を選んでください。</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="warn">
+    <b>社内 LAN で HTTP 接続する場合の注意</b>
+    <p>ブラウザは <code>https://</code> または <code>localhost</code> 以外ではマイクを使えない仕様になっています。IP アドレス＋HTTP で検証するときは、各端末の Chrome / Edge で <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> に対象 URL を登録してブラウザを再起動してください。<b>これは検証目的の一時的な回避策です。実運用では HTTPS 化してください。</b></p>
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="account">
+  <h2><span class="num">3</span>アカウント</h2>
+
+  <h3 id="register">3-1. アカウントを登録する</h3>
+  <ol class="steps">
+    <li><strong>登録画面を開く</strong><p>ログイン画面の「新規登録」リンクから移動します。</p></li>
+    <li><strong>必要事項を入力する</strong><p>メールアドレス、パスワード、表示名、母語（ネイティブ言語）を入力します。<b>母語</b>は翻訳先の初期値として使われるため、正しく選んでください。</p></li>
+    <li><strong>登録を実行する</strong><p>登録が完了すると、そのままログイン状態になります。</p></li>
+  </ol>
+  <figure>
+    <img src="manual/assets/02-register.png" alt="アカウント登録画面">
+    <figcaption>アカウント登録画面。母語は後から管理者に変更してもらうこともできます。</figcaption>
+  </figure>
+  <div class="note"><b>ロールについて</b><p>登録したアカウントは必ず「一般ユーザー」になります。管理者権限は既存の管理者が付与します。</p></div>
+
+  <h3 id="login">3-2. ログインする</h3>
+  <figure>
+    <img src="manual/assets/01-login.png" alt="ログイン画面">
+    <figcaption>ログイン画面。登録済みのメールアドレスとパスワードを入力します。</figcaption>
+  </figure>
+
+  <h3 id="password">3-3. パスワードを忘れたとき</h3>
+  <ol class="steps">
+    <li><strong>「パスワードをお忘れですか？」を開く</strong><p>ログイン画面のリンクから再設定画面へ移動します。</p></li>
+    <li><strong>メールアドレスを入力する</strong><p>登録済みのメールアドレス宛に、再設定用のリンクが送られます。</p></li>
+    <li><strong>新しいパスワードを設定する</strong><p>リンクを開くと再設定画面が表示されます。リンクには有効期限があります。</p></li>
+  </ol>
+  <figure>
+    <img src="manual/assets/03-forgot-password.png" alt="パスワード再設定の申請画面">
+    <figcaption>パスワード再設定の申請画面。</figcaption>
+  </figure>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="meeting">
+  <h2><span class="num">4</span>会議に参加する</h2>
+
+  <h3 id="menu">4-1. メニュー画面</h3>
+  <p>ログインするとメニュー画面が表示されます。会議に参加するには「多言語会議」を選びます。</p>
+  <figure>
+    <img src="manual/assets/05-menu.png" alt="メニュー画面">
+    <figcaption>メニュー画面。右上で表示言語の切替とログアウトができます。</figcaption>
+  </figure>
+
+  <h3 id="rooms">4-2. 会議室を選ぶ・作る</h3>
+  <p>会議室の一覧が表示されます。参加したい会議室のカードを選ぶと入室します。新しく会議を開く場合は「＋ 新規会議室作成」を押します。</p>
+  <figure>
+    <img src="manual/assets/06-rooms.png" alt="会議室一覧">
+    <figcaption>会議室一覧。カードには会議室名・概要・参加人数・許可言語が表示されます。</figcaption>
+  </figure>
+  <p>会議室を作成するときは、次の項目を設定します。</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>項目</th><th>説明</th></tr></thead>
+    <tbody>
+      <tr><td>会議室名 / 会議概要</td><td>一覧に表示される名前と説明です。</td></tr>
+      <tr><td>許可言語</td><td>その会議で使う言語を選びます。管理者が有効化した言語から選択できます。</td></tr>
+      <tr><td>デフォルト音声モード</td><td>参加者が入室したときの初期状態（原声 / 翻訳音声）です。</td></tr>
+      <tr><td>モード切替を許可</td><td>参加者が自分で原声 / 翻訳音声を切り替えられるようにするかどうかです。</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 id="room">4-3. 会議室画面の見方</h3>
+  <figure>
+    <img src="manual/assets/07-room.png" alt="会議室画面">
+    <figcaption>会議室画面。左に参加者・主線・設定、右に字幕が表示されます。</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>場所</th><th>表示・操作</th></tr></thead>
+    <tbody>
+      <tr><td>上部バー</td><td>会議室名、接続状態、マイク・スピーカーのデバイス選択、<b>記録</b>（会議記録を開く）、<b>退室</b>。</td></tr>
+      <tr><td>参加者</td><td>いま入室している人と、その母語が表示されます。</td></tr>
+      <tr><td>会議AI主線</td><td>会議全体の動作方針。作成者・モデレーターのみ変更できます（<a href="#mainline">4-5</a>）。</td></tr>
+      <tr><td>設定</td><td>あなた自身の受け取り方の設定（<a href="#audio-mode">4-4</a>）。</td></tr>
+      <tr><td>右側の黒い領域</td><td>字幕・会議記録。発言があるとリアルタイムで流れます。</td></tr>
+      <tr><td>下部バー</td><td>マイクの ON / OFF 状態。OFF のままでは発言が認識されません。</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="tip"><b>接続状態を確認する</b><p>上部バーの丸印が緑色で「接続中」と表示されていれば正常です。灰色のままの場合は <a href="#trouble">7. 困ったとき</a> を参照してください。</p></div>
+
+  <h3 id="audio-mode">4-4. 音声と字幕を切り替える</h3>
+  <p>左下の「設定」パネルが、あなた専用の受け取り方の設定です。</p>
+  <figure>
+    <img src="manual/assets/07b-room-settings.png" alt="会議室の設定パネル">
+    <figcaption>設定パネル。上から、マイク状態・音声モード・字幕表示・翻訳先言語・現在の状態。</figcaption>
+  </figure>
+  <ol class="steps">
+    <li><strong>マイク状態</strong><p>発言するときは ON にします。OFF の間は、あなたの声は誰にも届かず、字幕にもなりません。</p></li>
+    <li><strong>音声モード</strong><p><b>原音</b>＝話した人の声をそのまま聴きます。<b>翻訳音声</b>＝翻訳された合成音声を聴きます。</p></li>
+    <li><strong>字幕を表示</strong><p>チェックを外すと字幕が非表示になります。音声だけに集中したいときに使います。</p></li>
+    <li><strong>翻訳先言語</strong><p>翻訳音声を選んだときだけ設定できます。どの言語に翻訳して聴くかを指定します。</p></li>
+    <li><strong>現在の状態</strong><p>パネル下部に「音声: 原音 / 字幕: 原文」のように、いまの状態がまとめて表示されます。</p></li>
+  </ol>
+  <figure>
+    <img src="manual/assets/07c-room-translated.png" alt="翻訳音声を選んだ状態">
+    <figcaption>「翻訳音声」を選んだ状態。翻訳先言語の指定が有効になります。</figcaption>
+  </figure>
+  <div class="note"><b>遅延について</b><p>翻訳音声は、発言を認識してから翻訳・合成するため、原声より少し遅れて聞こえます。ネットワークや負荷の状況で遅延が大きくなった場合は、翻訳音声を自動的に止めて<b>字幕だけを続ける</b>動作に切り替わります。会議が止まらないようにするための仕組みです。</p></div>
+
+  <h3 id="mainline">4-5. 会議AI主線（会議の作成者・モデレーター向け）</h3>
+  <p>会議全体として「何を出すか」を決める設定です。参加者ごとの原声 / 翻訳音声の切替とは別のものです。</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>主線</th><th>意味</th><th>向いている会議</th></tr></thead>
+    <tbody>
+      <tr><td><b>a（聞く主線 / S2S）</b></td><td>音声から音声へ直接翻訳します。もっとも遅延が小さい方式です。</td><td>会話のテンポを優先する打合せ、同時通訳的な使い方</td></tr>
+      <tr><td><b>b（読む主線 / 字幕）</b></td><td>音声認識 → 翻訳 → 字幕の順に処理します。用語集が効き、記録の精度が高くなります。</td><td>正式な記録を残す会議、業界用語が多い会議</td></tr>
+      <tr><td><b>hybrid（両主線）</b></td><td>上の両方を同時に動かします。</td><td>聴く人と読む人が混在する会議</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="transcript">
+  <h2><span class="num">5</span>会議記録を見る</h2>
+  <p class="lead">会議中の発言は自動的に記録されます。会議室の上部バーにある「記録」から開きます。</p>
+  <figure>
+    <img src="manual/assets/08-transcript.png" alt="会議記録（原文表示）">
+    <figcaption>会議記録。発言者・時刻・言語とともに、発言が時系列で並びます。</figcaption>
+  </figure>
+  <ol class="steps">
+    <li><strong>表示言語を選ぶ</strong><p>「原文」を選ぶと話された言語のまま表示されます。特定の言語を選ぶと、その言語に翻訳された内容が表示され、原文が小さく併記されます。</p></li>
+    <li><strong>会議回を選ぶ</strong><p>同じ会議室で複数回ミーティングを行った場合、「会議回」で対象を切り替えられます。</p></li>
+    <li><strong>テキストでエクスポートする</strong><p>右上のボタンで、表示中の内容をテキストとして書き出せます。議事録の下書きとして使えます。</p></li>
+  </ol>
+  <figure>
+    <img src="manual/assets/08b-transcript-translated.png" alt="会議記録（日本語に翻訳した表示）">
+    <figcaption>表示言語を「日本語」にした状態。英語・中国語の発言が日本語で表示され、原文が下に併記されます。</figcaption>
+  </figure>
+</section>
+
+<!-- ============ 6 ============ -->
+<section id="admin">
+  <h2><span class="num">6</span>管理者向け</h2>
+  <p class="lead">以下の画面は <b>管理者（admin）ロール</b> のみ利用できます。メニュー画面の「管理・設定」から移動します。</p>
+
+  <h3 id="admin-users">6-1. ユーザー管理・システム統計</h3>
+  <figure>
+    <img src="manual/assets/10-admin.png" alt="管理者パネル">
+    <figcaption>管理者パネル。上部に統計、下部にユーザー一覧が並びます（この図は個人情報を含む行を除いています）。</figcaption>
+  </figure>
+  <p>「編集」から、そのユーザーの表示名・母語・ロール・有効／無効を変更できます。退職者のアカウントは削除せず<b>無効化</b>することで、過去の会議記録の発言者名を保ったまま利用を停止できます。</p>
+  <div class="note"><b>ロール</b><p><b>admin</b>＝全設定にアクセス可能。<b>moderator</b>＝会議の主線切替など進行の権限。<b>user</b>＝一般参加者。</p></div>
+
+  <h3 id="admin-languages">6-2. 対応言語設定</h3>
+  <p>システム全体で使う言語を選びます。ここで有効にした言語が、新しく作成される会議室で選択できるようになります。</p>
+  <figure>
+    <img src="manual/assets/11-admin-languages.png" alt="対応言語設定">
+    <figcaption>対応言語設定。各言語に翻訳品質の目安（★）が表示されます。既定では日本語・英語・中国語・ベトナム語の4言語が有効です。</figcaption>
+  </figure>
+  <div class="warn"><b>注意</b><p>すでに作成済みの会議室の許可言語は、この設定を変えても自動では変わりません。</p></div>
+
+  <h3 id="admin-pipeline">6-3. AIパイプライン設定</h3>
+  <p>翻訳の処理方式を、サーバーを再デプロイせずに切り替えられます。API キーなどの秘密情報はこの画面からは変更できません。</p>
+  <figure>
+    <img src="manual/assets/12-admin-ai-pipeline.png" alt="AIパイプライン設定">
+    <figcaption>AIパイプライン設定。方式プリセットを選び、必要に応じて上級設定を開きます。</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>プリセット</th><th>処理のしかた</th><th>選ぶ基準</th></tr></thead>
+    <tbody>
+      <tr><td><b>方式1: 純リアルタイム音声 API</b></td><td>音声から音声へ直接翻訳します（S2S）。途中の認識・翻訳・合成の切替設定は使いません。</td><td>低遅延の翻訳音声を最優先したいとき</td></tr>
+      <tr><td><b>方式2: 品質カスケード（用語集）</b></td><td>音声認識 → 翻訳 → 音声合成に分けて処理し、用語集・字幕キャッシュ・暫定字幕・LLM 補正を有効にします。</td><td>用語の正確さと記録品質を優先したいとき</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>そのほか、この画面では次の項目を設定します。</p>
+  <ul>
+    <li><b>新規会議室の既定モード</b> — 新しく作られる会議室の主線（a / b / hybrid）の初期値。</li>
+    <li><b>暫定（partial）字幕を有効化</b> — 発言の途中から字幕を出し、最初の文字が出るまでの時間を短くします。方式2で推奨。</li>
+    <li><b>LLM 補正を有効化</b> — 表記ゆれや文脈を整えます。方式2で推奨で、別途 API キーの設定が必要です。</li>
+    <li><b>上級設定</b> — 音声認識・翻訳・音声合成のそれぞれについて、使用するサービスを個別に指定します。ローカル GPU での実行もここで指定します。</li>
+  </ul>
+  <div class="note"><b>設定リビジョン</b><p>保存するたびにリビジョン番号が上がります。変更が反映されたかどうかの確認に使えます。</p></div>
+
+  <h3 id="admin-experiments">6-4. A/B実験</h3>
+  <p>複数の設定を並行して配信し、品質や遅延の指標を比較するための画面です。実験が設定されていない場合は、その旨のメッセージが表示されます。</p>
+  <figure>
+    <img src="manual/assets/13-admin-experiments.png" alt="A/B実験画面">
+    <figcaption>実験が未設定のときの表示。利用するにはサーバー側で実験の定義が必要です。</figcaption>
+  </figure>
+</section>
+
+<!-- ============ 7 ============ -->
+<section id="trouble">
+  <h2><span class="num">7</span>困ったとき</h2>
+
+  <h3>自分の声が相手に届かない</h3>
+  <ol class="steps">
+    <li><strong>マイクが ON か確認する</strong><p>設定パネルの「マイク状態」が OFF になっていないか確認します。</p></li>
+    <li><strong>ブラウザの許可を確認する</strong><p>アドレスバーのカメラ・マイクのアイコンから、マイクが「許可」になっているか確認します。</p></li>
+    <li><strong>入力デバイスを選び直す</strong><p>上部バーのマイク選択から、実際に使っているマイクを選びます。ヘッドセットは接続してからブラウザを開き直すと確実です。</p></li>
+  </ol>
+
+  <h3>字幕が出ない</h3>
+  <ul>
+    <li>設定パネルの「字幕を表示」にチェックが入っているか確認します。</li>
+    <li>発言者のマイクが ON になっているか確認します。</li>
+    <li>会議AI主線が <b>a（聞く主線）</b> の場合、字幕は補助的な表示になります。字幕を重視する会議では <b>b</b> または <b>hybrid</b> を選んでください。</li>
+  </ul>
+
+  <h3>翻訳音声が聞こえない / 途中で止まった</h3>
+  <p>遅延が大きくなると、Sonowa は翻訳音声を自動的に止めて字幕だけを続けます（意図された動作です）。しばらく待っても戻らない場合は、いったん退室して入り直してください。</p>
+
+  <h3>ほかの PC から接続できない</h3>
+  <ol class="steps">
+    <li><strong>URL を確認する</strong><p>全端末で、サーバーの LAN IP を使った同じ URL を開きます。<code>localhost</code> では他の端末から接続できません。</p></li>
+    <li><strong>疎通を確認する</strong><p>参加端末のブラウザで <code>http://&lt;サーバーのIP&gt;:8090/health</code> を開き、応答が返るか確認します。</p></li>
+    <li><strong>ファイアウォールを確認する</strong><p>画面は開くのに音声が届かない場合、サーバー側のファイアウォールでメディア用のポートが閉じている可能性があります。管理者に確認してください。</p></li>
+  </ol>
+
+  <h3>パスワードを忘れた</h3>
+  <p><a href="#password">3-3. パスワードを忘れたとき</a>の手順で再設定します。メールが届かない場合は管理者に連絡してください。</p>
+</section>
+
+<!-- ============ 8 ============ -->
+<section id="glossary">
+  <h2><span class="num">8</span>用語集</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>用語</th><th>意味</th></tr></thead>
+    <tbody>
+      <tr><td>原声 / 原音</td><td>話した人の声そのもの。翻訳されていない音声です。</td></tr>
+      <tr><td>翻訳音声</td><td>発言を翻訳して合成した音声です。</td></tr>
+      <tr><td>主線</td><td>会議全体として「聞く」「読む」のどちらを主に出すかという方針です。</td></tr>
+      <tr><td>ASR（音声認識）</td><td>話した音声を文字に起こす処理です。</td></tr>
+      <tr><td>MT（機械翻訳）</td><td>文字になった内容を別の言語に翻訳する処理です。</td></tr>
+      <tr><td>TTS（音声合成）</td><td>翻訳した文章を音声にする処理です。</td></tr>
+      <tr><td>S2S（音声対音声）</td><td>文字を経由せず、音声から直接翻訳音声を作る方式です。遅延が小さくなります。</td></tr>
+      <tr><td>用語集（Glossary）</td><td>社内の製品名・人名などの訳し方を登録しておく仕組みです。翻訳の表記を統一します。</td></tr>
+      <tr><td>暫定（partial）字幕</td><td>発言が終わる前に、途中経過として表示される字幕です。あとから確定内容に置き換わります。</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer>
+  <p>Sonowa — Language-Aware Meeting System / 操作マニュアル</p>
+  <p>掲載している画面は実際に動作する Sonowa から取得したものです。表示される会議室名・ユーザー名はデモ用のサンプルです。</p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>
