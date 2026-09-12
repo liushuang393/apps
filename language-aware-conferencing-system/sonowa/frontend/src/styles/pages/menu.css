@@ -48,6 +48,35 @@
   gap: 1rem;
 }
 
+.menu-header .user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.menu-header .user-info .user-role {
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.menu-header .user-info .user-role.role-user {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.menu-header .user-info .user-role.role-moderator {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.menu-header .user-info .user-role.role-admin {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 /* メニューページのユーザー名表示 */
 .menu-header .user-info .user-name {
   max-width: 150px;

@@ -121,3 +121,115 @@ export async function putAiPipelineSettings(
     body,
   });
 }
+
+/** GET /api/auth/me */
+export async function getMe(token: string): Promise<
+  ApiResult<{
+    id: string;
+    email: string;
+    display_name: string;
+    native_language: string;
+    role: string;
+  }>
+> {
+  return apiFetch("/api/auth/me", { token });
+}
+
+/** PATCH /api/auth/me */
+export async function patchMe(
+  token: string,
+  body: { display_name?: string; native_language?: string },
+): Promise<ApiResult<{ access_token?: string; user?: { display_name?: string } }>> {
+  return apiFetch("/api/auth/me", {
+    method: "PATCH",
+    token,
+    body,
+  });
+}
+
+/** GET /api/auth/history */
+export async function getHistory(token: string): Promise<
+  ApiResult<Array<{ room_id: string; room_name: string }>>
+> {
+  return apiFetch("/api/auth/history", { token });
+}
+
+/** GET /api/admin/users（admin のみ） */
+export async function listAdminUsers(token: string): Promise<
+  ApiResult<Array<{ id: string; email: string; role: string; native_language?: string }>>
+> {
+  return apiFetch("/api/admin/users", { token });
+}
+
+/** GET /api/admin/settings/languages */
+export async function getLanguageSettings(token: string): Promise<ApiResult<unknown>> {
+  return apiFetch("/api/admin/settings/languages", { token });
+}
+
+/** GET /api/admin/experiments */
+export async function listExperiments(token: string): Promise<ApiResult<unknown>> {
+  return apiFetch("/api/admin/experiments", { token });
+}
+
+/** GET /api/glossaries/terms（admin のみ） */
+export async function listGlossaryTerms(token: string): Promise<
+  ApiResult<Array<{ id: string; source_term: string; target_term?: string | null }>>
+> {
+  return apiFetch("/api/glossaries/terms", { token });
+}
+
+/** POST /api/glossaries/terms（admin のみ） */
+export async function createGlossaryTerm(
+  token: string,
+  body: {
+    source_language: string;
+    target_language: string;
+    source_term: string;
+    target_term?: string | null;
+    term_type?: string;
+    do_not_translate?: boolean;
+  },
+): Promise<ApiResult<{ id: string; source_term: string }>> {
+  return apiFetch("/api/glossaries/terms", {
+    method: "POST",
+    token,
+    body: {
+      term_type: "general",
+      ...body,
+    },
+  });
+}
+
+/** DELETE /api/glossaries/terms/{id}（admin のみ） */
+export async function deleteGlossaryTerm(
+  token: string,
+  termId: string,
+): Promise<ApiResult<unknown>> {
+  return apiFetch(`/api/glossaries/terms/${encodeURIComponent(termId)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/** GET /api/rooms/{id}/minutes */
+export async function getMinutes(
+  token: string,
+  roomId: string,
+  lang = "ja",
+): Promise<ApiResult<unknown>> {
+  return apiFetch(
+    `/api/rooms/${encodeURIComponent(roomId)}/minutes?lang=${encodeURIComponent(lang)}`,
+    { token },
+  );
+}
+
+/** POST /api/admin/sessions/{id}/rerun（admin のみ） */
+export async function rerunSession(
+  token: string,
+  sessionId: string,
+): Promise<ApiResult<unknown>> {
+  return apiFetch(`/api/admin/sessions/${encodeURIComponent(sessionId)}/rerun`, {
+    method: "POST",
+    token,
+  });
+}

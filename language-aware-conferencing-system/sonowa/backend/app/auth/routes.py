@@ -19,7 +19,8 @@ from app.auth.jwt_handler import (
     verify_password,
 )
 from app.db.database import get_db
-from app.db.models import PasswordResetToken, User
+from app.db.models import Participant, PasswordResetToken, Room, User
+from app.languages import ALL_SUPPORTED_LANGUAGES
 
 router = APIRouter()
 
@@ -62,6 +63,45 @@ class AuthResponse(BaseModel):
     user: UserResponse
 
 
+class UserSelfUpdate(BaseModel):
+    """自己プロフィール更新（表示名・母語のみ）"""
+
+    display_name: str | None = None
+    native_language: str | None = None
+
+
+class HistoryItem(BaseModel):
+    """会議参加履歴の1行"""
+
+    room_id: str
+    room_name: str
+    is_private: bool
+    joined_at: str
+    updated_at: str
+
+
+def _build_auth_response(user: User) -> AuthResponse:
+    """ユーザーから JWT 付き認証レスポンスを組み立てる。"""
+    return AuthResponse(
+        access_token=create_access_token(
+            {
+                "user_id": str(user.id),
+                "email": user.email,
+                "native_language": user.native_language,
+                "role": user.role,
+            }
+        ),
+        user=UserResponse(
+            id=str(user.id),
+            email=user.email,
+            display_name=user.display_name,
+            native_language=user.native_language,
+            role=user.role,
+            is_active=user.is_active,
+        ),
+    )
+
+
 @router.post("/register", response_model=AuthResponse)
 async def register(
     data: UserCreate, db: AsyncSession = Depends(get_db)
@@ -93,25 +133,7 @@ async def register(
         ) from exc
     await db.refresh(user)
 
-    # トークン＋ユーザー情報を返す
-    return AuthResponse(
-        access_token=create_access_token(
-            {
-                "user_id": str(user.id),
-                "email": user.email,
-                "native_language": user.native_language,
-                "role": user.role,
-            }
-        ),
-        user=UserResponse(
-            id=str(user.id),
-            email=user.email,
-            display_name=user.display_name,
-            native_language=user.native_language,
-            role=user.role,
-            is_active=user.is_active,
-        ),
-    )
+    return _build_auth_response(user)
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -133,31 +155,82 @@ async def login(creds: UserLogin, db: AsyncSession = Depends(get_db)) -> AuthRes
             detail="アカウントが無効化されています",
         )
 
-    # トークン＋ユーザー情報を返す
-    return AuthResponse(
-        access_token=create_access_token(
-            {
-                "user_id": str(user.id),
-                "email": user.email,
-                "native_language": user.native_language,
-                "role": user.role,
-            }
-        ),
-        user=UserResponse(
-            id=str(user.id),
-            email=user.email,
-            display_name=user.display_name,
-            native_language=user.native_language,
-            role=user.role,
-            is_active=user.is_active,
-        ),
-    )
+    return _build_auth_response(user)
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)) -> User:
     """現在のユーザー情報取得"""
     return user
+
+
+@router.patch("/me", response_model=AuthResponse)
+async def update_me(
+    data: UserSelfUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AuthResponse:
+    """
+    自己プロフィール更新（表示名・母語）。
+    母語は JWT に載るため、更新後はトークンを再発行する。
+    """
+    if data.display_name is None and data.native_language is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="display_name または native_language を指定してください",
+        )
+
+    if data.display_name is not None:
+        name = data.display_name.strip()
+        if not name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="表示名は空にできません",
+            )
+        user.display_name = name
+
+    if data.native_language is not None:
+        if data.native_language not in ALL_SUPPORTED_LANGUAGES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"無効な言語: {data.native_language}",
+            )
+        user.native_language = data.native_language
+
+    await db.commit()
+    await db.refresh(user)
+    return _build_auth_response(user)
+
+
+@router.get("/history", response_model=list[HistoryItem])
+async def get_my_history(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[HistoryItem]:
+    """
+    自分の会議参加履歴。
+    participant を一次ソースとし、他ユーザーの行は返さない。
+    """
+    result = await db.execute(
+        select(Participant, Room)
+        .join(Room, Participant.room_id == Room.id)
+        .where(Participant.user_id == user.id)
+        .order_by(Participant.updated_at.desc())
+    )
+    items: list[HistoryItem] = []
+    for participant, room in result.all():
+        if participant.user_id != user.id:
+            continue
+        items.append(
+            HistoryItem(
+                room_id=room.id,
+                room_name=room.name,
+                is_private=room.is_private,
+                joined_at=participant.joined_at.isoformat(),
+                updated_at=participant.updated_at.isoformat(),
+            )
+        )
+    return items
 
 
 # ===========================================

@@ -54,14 +54,12 @@ const menuCategories: MenuCategoryExtended[] = [
         titleKey: 'menu.profile',
         descKey: 'menu.profileDesc',
         path: '/profile',
-        badgeKey: 'menu.comingSoon',
       },
       {
         icon: '📊',
         titleKey: 'menu.history',
         descKey: 'menu.historyDesc',
         path: '/history',
-        badgeKey: 'menu.comingSoon',
       },
       {
         icon: '🔧',
@@ -89,6 +87,13 @@ const menuCategories: MenuCategoryExtended[] = [
         titleKey: 'menu.experiments',
         descKey: 'menu.experimentsDesc',
         path: '/admin/experiments',
+        requireAdmin: true,
+      },
+      {
+        icon: '📖',
+        titleKey: 'menu.glossary',
+        descKey: 'menu.glossaryDesc',
+        path: '/admin/glossary',
         requireAdmin: true,
       },
     ],
@@ -146,7 +151,16 @@ export function MenuPage() {
             ))}
           </select>
           <div className="user-info">
-            <span className="user-name" title={user?.displayName}>{user?.displayName || '?'}</span>
+            <span className="user-name" data-testid="menu-user-name" title={user?.displayName}>
+              {user?.displayName || '?'}
+            </span>
+            <span
+              className={`user-role role-${user?.role ?? 'user'}`}
+              data-testid="menu-user-role"
+              data-role={user?.role ?? 'user'}
+            >
+              {t(`role.${user?.role ?? 'user'}`)}
+            </span>
           </div>
           <button
             className="btn-logout"
@@ -173,7 +187,7 @@ export function MenuPage() {
                     key={item.path}
                     to={isComingSoon(item) ? '#' : item.path}
                     className={`menu-item ${isComingSoon(item) ? 'disabled' : ''}`}
-                    data-testid={item.path === '/rooms' ? 'menu-item-rooms' : undefined}
+                    data-testid={`menu-item${item.path.replace(/\//g, '-')}`}
                     onClick={(e) => {
                       if (isComingSoon(item)) {
                         e.preventDefault();

@@ -93,14 +93,14 @@ export function LanguageSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="language-settings-page">
+      <div className="language-settings-page" data-testid="language-settings-page">
         <div className="loading">{t('common.loading')}</div>
       </div>
     );
   }
 
   return (
-    <div className="language-settings-page">
+    <div className="language-settings-page" data-testid="language-settings-page">
       <header className="page-header">
         <button className="btn-back" onClick={() => navigate('/admin')}>
           ← {t('common.back')}

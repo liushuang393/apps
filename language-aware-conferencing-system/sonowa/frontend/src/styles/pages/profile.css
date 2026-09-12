@@ -1,0 +1,40 @@
+/**
+ * プロフィール設定ページ
+ * 利用: ProfilePage（auth-page シェルを流用）
+ */
+
+.profile-page {
+  position: relative;
+}
+
+.profile-back {
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
+  z-index: 10;
+  width: auto;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+  color: white;
+  cursor: pointer;
+}
+
+.profile-back:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.profile-page .success {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: var(--radius-sm);
+  color: #065f46;
+}
+
+.profile-page input:disabled {
+  background: var(--bg-light);
+  color: var(--text-secondary);
+}

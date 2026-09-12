@@ -1,0 +1,14 @@
+/**
+ * 利用履歴ページ
+ * 利用: HistoryPage
+ */
+
+.history-row {
+  cursor: pointer;
+}
+
+.admin-page .empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: rgba(255, 255, 255, 0.7);
+}

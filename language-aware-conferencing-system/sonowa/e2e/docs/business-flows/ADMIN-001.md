@@ -15,7 +15,7 @@
 ## 前提
 
 - seed: self（通常ユーザーは register）
-- admin: `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` がある場合のみ admin GET を実行
+- admin: `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD`、または Docker postgres で昇格して再ログイン
 - 認証: JWT Bearer（bypass 禁止）
 - register は常に `role=user`（admin 昇格は DB 手動 or 既存アカウント）
 
@@ -29,7 +29,7 @@
 ## 期待結果
 
 - 非 admin PUT → 403
-- admin GET → 200 かつ JSON ボディあり（env 未設定時は skip）
+- admin GET → 200 かつ JSON ボディあり
 
 ## 期待 DB / API 観測
 
@@ -39,7 +39,7 @@
 ## 異常系 / 境界 / 権限
 
 - `ADMIN-001-E1`: 未認証 PUT → 401
-- `ADMIN-001-E2`: admin env 未設定 → テスト skip（失敗にしない）
+- `ADMIN-001-E2`: 昇格後は再ログインしないと JWT の role が古いまま
 
 ## 確認事項
 

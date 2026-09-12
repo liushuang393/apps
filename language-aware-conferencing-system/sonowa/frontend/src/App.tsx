@@ -18,6 +18,9 @@ import { AdminPage } from './pages/AdminPage';
 import { LanguageSettingsPage } from './pages/LanguageSettingsPage';
 import { AiPipelineSettingsPage } from './pages/AiPipelineSettingsPage';
 import { ExperimentsPage } from './pages/ExperimentsPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { HistoryPage } from './pages/HistoryPage';
+import { GlossaryPage } from './pages/GlossaryPage';
 
 /**
  * アプリ起動時にトークン有効性をバックエンドで検証するコンポーネント
@@ -105,6 +108,22 @@ export function App() {
           }
         />
         <Route
+          path="/profile"
+          element={
+            <PrivateRoute>
+              <ProfilePage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <PrivateRoute>
+              <HistoryPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/rooms"
           element={
             <PrivateRoute>
@@ -164,6 +183,16 @@ export function App() {
             <PrivateRoute>
               <AdminRoute>
                 <ExperimentsPage />
+              </AdminRoute>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin/glossary"
+          element={
+            <PrivateRoute>
+              <AdminRoute>
+                <GlossaryPage />
               </AdminRoute>
             </PrivateRoute>
           }

@@ -15,7 +15,7 @@ import '../styles/pages/admin.css';
 const ROLE_NAMES: Record<string, string> = {
   admin: '管理者',
   moderator: 'モデレーター',
-  user: '一般ユーザー',
+  user: '従業員',
 };
 
 export function AdminPage() {
@@ -97,7 +97,7 @@ export function AdminPage() {
 
   if (!hasHydrated || loading) {
     return (
-      <div className="admin-page">
+      <div className="admin-page" data-testid="admin-page">
         <div className="empty-state">
           <p>読み込み中...</p>
         </div>
@@ -118,7 +118,7 @@ export function AdminPage() {
   }
 
   return (
-    <div className="admin-page">
+    <div className="admin-page" data-testid="admin-page">
       <header>
         <div className="header-left">
           <button onClick={() => navigate('/menu')}>戻る</button>
@@ -126,6 +126,13 @@ export function AdminPage() {
         </div>
         <div className="header-right">
           <span className="user-name">{user?.displayName}</span>
+          <span
+            className={`user-role role-${user?.role ?? 'user'}`}
+            data-testid="admin-user-role"
+            data-role={user?.role ?? 'user'}
+          >
+            {ROLE_NAMES[user?.role ?? 'user'] || user?.role}
+          </span>
         </div>
       </header>
 
@@ -196,6 +203,7 @@ export function AdminPage() {
                   <td>
                     <button
                       className="edit-btn"
+                      data-testid={`admin-edit-${u.email}`}
                       onClick={() => setEditingUser(u)}
                       disabled={u.id === user?.id}
                     >
@@ -212,7 +220,11 @@ export function AdminPage() {
       {/* 編集モーダル */}
       {editingUser && (
         <div className="modal-overlay" onClick={() => setEditingUser(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="modal-content"
+              data-testid="admin-user-edit-modal"
+              onClick={(e) => e.stopPropagation()}
+            >
             <h3>ユーザー編集</h3>
             <div className="form-group">
               <label>表示名</label>
@@ -221,6 +233,22 @@ export function AdminPage() {
                 value={editingUser.displayName}
                 onChange={(e) => setEditingUser({ ...editingUser, displayName: e.target.value })}
               />
+            </div>
+            <div className="form-group">
+              <label>母語</label>
+              <select
+                data-testid="admin-user-native-language"
+                value={editingUser.nativeLanguage}
+                onChange={(e) =>
+                  setEditingUser({ ...editingUser, nativeLanguage: e.target.value })
+                }
+              >
+                {Object.entries(LANGUAGE_NAMES).map(([code, name]) => (
+                  <option key={code} value={code}>
+                    {name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="form-group">
               <label>ロール</label>

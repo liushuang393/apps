@@ -4,7 +4,7 @@
  * ローカル GPU は上級スロットのみ（方式ではない）。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   adminApi,
@@ -241,7 +241,10 @@ export function AiPipelineSettingsPage() {
             <p className="hint-text">{t('aiPipelineSettings.s2sSlotIgnored')}</p>
           )}
           {activePreset === 'quality_cascade' && (
-            <p className="hint-text">{t('aiPipelineSettings.qualityPackHint')}</p>
+            <p className="hint-text">
+              {t('aiPipelineSettings.qualityPackHint')}{' '}
+              <Link to="/admin/glossary">{t('aiPipelineSettings.glossaryLink')}</Link>
+            </p>
           )}
         </section>
 

@@ -21,6 +21,11 @@
     "logout": "Đăng xuất",
     "guest": "Khách"
   },
+  "role": {
+    "user": "Nhân viên",
+    "moderator": "Điều hành",
+    "admin": "Quản trị"
+  },
   "auth": {
     "login": "Đăng nhập",
     "register": "Đăng ký",
@@ -71,7 +76,59 @@
     "aiPipelineSettingsDesc": "Đổi chế độ dịch không cần triển khai lại",
     "experiments": "Thử nghiệm A/B",
     "experimentsDesc": "Xem định tuyến và chỉ số thử nghiệm",
+    "glossary": "Thuật ngữ",
+    "glossaryDesc": "Đăng ký và quản lý thuật ngữ dịch",
     "comingSoon": "Sắp ra mắt"
+  },
+  "profile": {
+    "title": "Cài đặt hồ sơ",
+    "subtitle": "Đổi tên hiển thị và ngôn ngữ mẹ đẻ",
+    "role": "Quyền",
+    "saveSuccess": "Đã lưu hồ sơ",
+    "saveFailed": "Lưu hồ sơ thất bại"
+  },
+  "history": {
+    "title": "Lịch sử sử dụng",
+    "empty": "Bạn chưa tham gia cuộc họp nào",
+    "emptyHint": "Phòng bạn tham gia sẽ hiện ở đây",
+    "roomName": "Phòng họp",
+    "visibility": "Phạm vi",
+    "private": "Riêng tư",
+    "public": "Công khai",
+    "joinedAt": "Tham gia lần đầu",
+    "updatedAt": "Cập nhật cuối",
+    "loadFailed": "Không tải được lịch sử"
+  },
+  "glossary": {
+    "title": "Thuật ngữ",
+    "description": "Thuật ngữ doanh nghiệp dùng cho gói chất lượng Mode 2. Thay đổi có hiệu lực ngay.",
+    "add": "Thêm thuật ngữ",
+    "editTitle": "Sửa thuật ngữ",
+    "empty": "Chưa có thuật ngữ",
+    "pair": "Cặp ngôn ngữ",
+    "sourceLanguage": "Ngôn ngữ nguồn",
+    "targetLanguage": "Ngôn ngữ đích",
+    "sourceTerm": "Thuật ngữ nguồn",
+    "targetTerm": "Bản dịch",
+    "termType": "Loại",
+    "priority": "Ưu tiên",
+    "flags": "Trạng thái",
+    "doNotTranslate": "Không dịch",
+    "enabled": "Bật",
+    "disabled": "Tắt",
+    "targetRequired": "Thuật ngữ cần dịch phải có bản dịch",
+    "adminRequired": "Cần quyền quản trị",
+    "loadFailed": "Không tải được thuật ngữ",
+    "saveFailed": "Lưu thuật ngữ thất bại",
+    "deleteFailed": "Xóa thuật ngữ thất bại",
+    "deleteConfirm": "Xóa \"{{term}}\"?",
+    "aiPipelineLink": "Đến cài đặt AI pipeline",
+    "type": {
+      "general": "Chung",
+      "business": "Nghiệp vụ",
+      "person": "Tên người",
+      "product": "Sản phẩm"
+    }
   },
   "room": {
     "list": "Danh sách phòng họp",
@@ -151,6 +208,7 @@
     "customPreset": "Khe/cờ chất lượng hiện tại khác preset có tên (tùy chỉnh).",
     "s2sSlotIgnored": "Khi chọn Cách 1 (Realtime S2S), khe ASR/MT/TTS bị bỏ qua và giữ đường speech-to-speech.",
     "qualityPackHint": "Cách 2 bật thuật ngữ, song song nhóm ngôn ngữ, cache/TM phụ đề, partial subtitle và hiệu chỉnh LLM.",
+    "glossaryLink": "Quản lý thuật ngữ",
     "advancedLocalHint": "Nâng cao: asr/mt/tts=local là tùy chọn GPU local (không phải cách sản phẩm; khuyến nghị MT cloud cho thuật ngữ).",
     "showAdvanced": "Hiện cài đặt nâng cao",
     "hideAdvanced": "Ẩn cài đặt nâng cao",

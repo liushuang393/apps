@@ -21,6 +21,11 @@
     "logout": "Logout",
     "guest": "Guest"
   },
+  "role": {
+    "user": "Employee",
+    "moderator": "Moderator",
+    "admin": "Administrator"
+  },
   "auth": {
     "login": "Login",
     "register": "Register",
@@ -71,7 +76,59 @@
     "aiPipelineSettingsDesc": "Switch translation modes without redeploy",
     "experiments": "A/B Experiments",
     "experimentsDesc": "Review experiment routing and metrics",
+    "glossary": "Glossary",
+    "glossaryDesc": "Register and manage translation terms",
     "comingSoon": "Coming Soon"
+  },
+  "profile": {
+    "title": "Profile Settings",
+    "subtitle": "Change your display name and native language",
+    "role": "Role",
+    "saveSuccess": "Profile saved",
+    "saveFailed": "Failed to save profile"
+  },
+  "history": {
+    "title": "Usage History",
+    "empty": "You have not joined any meetings yet",
+    "emptyHint": "Rooms you join will appear here",
+    "roomName": "Room",
+    "visibility": "Visibility",
+    "private": "Private",
+    "public": "Public",
+    "joinedAt": "First joined",
+    "updatedAt": "Last updated",
+    "loadFailed": "Failed to load history"
+  },
+  "glossary": {
+    "title": "Glossary",
+    "description": "Business terms used by Mode 2 quality pack. Changes apply immediately.",
+    "add": "Add term",
+    "editTitle": "Edit term",
+    "empty": "No terms yet",
+    "pair": "Language pair",
+    "sourceLanguage": "Source language",
+    "targetLanguage": "Target language",
+    "sourceTerm": "Source term",
+    "targetTerm": "Target term",
+    "termType": "Type",
+    "priority": "Priority",
+    "flags": "Status",
+    "doNotTranslate": "Do not translate",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "targetRequired": "A target term is required unless do-not-translate is set",
+    "adminRequired": "Admin access required",
+    "loadFailed": "Failed to load glossary",
+    "saveFailed": "Failed to save term",
+    "deleteFailed": "Failed to delete term",
+    "deleteConfirm": "Delete \"{{term}}\"?",
+    "aiPipelineLink": "Go to AI pipeline settings",
+    "type": {
+      "general": "General",
+      "business": "Business",
+      "person": "Person",
+      "product": "Product"
+    }
   },
   "room": {
     "list": "Meeting Rooms",
@@ -151,6 +208,7 @@
     "customPreset": "Current slots/quality flags differ from the named presets (custom).",
     "s2sSlotIgnored": "With Mode 1 (Realtime S2S), ASR/MT/TTS slots are ignored and speech-to-speech is kept.",
     "qualityPackHint": "Mode 2 enables glossary, language-group parallelism, subtitle cache/TM, partial subtitles, and LLM correction.",
+    "glossaryLink": "Manage glossary",
     "advancedLocalHint": "Advanced: asr/mt/tts=local is a local GPU implementation option (not a product mode; cloud MT recommended for glossary).",
     "showAdvanced": "Show advanced settings",
     "hideAdvanced": "Hide advanced settings",

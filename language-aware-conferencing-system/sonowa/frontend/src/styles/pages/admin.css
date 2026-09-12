@@ -36,8 +36,20 @@
 }
 
 .admin-page header .header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: rgba(255, 255, 255, 0.8);
   font-size: 0.9rem;
+}
+
+.admin-page header .user-role {
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .admin-page header button {

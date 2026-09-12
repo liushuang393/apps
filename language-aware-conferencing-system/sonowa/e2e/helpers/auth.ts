@@ -8,11 +8,15 @@
  *
  * 注意:
  *   - auth bypass / stub token は導入しない
- *   - register は常に role=user。admin 検証は E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD を使う
+ *   - register は常に role=user。admin は env 資格、または Docker postgres で昇格して再ログインする
  *   - 秘密値（password / token）はログに出さない
  */
+import { spawnSync } from "node:child_process";
+import * as path from "node:path";
+
 import type { Page } from "@playwright/test";
 
+import { resolveAppE2ERoot } from "./app-root";
 import { API_BASE_URL, FRONTEND_BASE_URL } from "./navigation";
 
 /** フロント User 型と揃えた永続化用ユーザー */
@@ -134,14 +138,81 @@ export function hasAdminCredentials(): boolean {
 
 /**
  * 管理者ロールのテスト可否を判定する。
- * 未設定なら理由付きでスキップ用メッセージを返す。
+ * env が無くても Docker postgres で昇格できるため、通常は null。
  */
 export function adminSkipReason(): string | null {
-  if (hasAdminCredentials()) return null;
-  return (
-    "admin ロールは register では作成できない。" +
-    "E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD を設定するか、本ケースをスキップする。"
-  );
+  return null;
+}
+
+function repoRoot(): string {
+  return path.resolve(resolveAppE2ERoot(), "..");
+}
+
+/**
+ * 登録済みユーザーを DB 上で admin に昇格する。
+ * JWT には古い role が残るため、呼び出し後に再ログインすること。
+ */
+export function promoteEmailToAdmin(email: string): void {
+  const escaped = email.replace(/'/g, "''");
+  const sql = `UPDATE users SET role = 'admin' WHERE email = '${escaped}';`;
+  const args = [
+    "compose",
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-U",
+    "sonowa",
+    "-d",
+    "sonowa",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    sql,
+  ];
+  let result = spawnSync("docker", args, {
+    cwd: repoRoot(),
+    encoding: "utf-8",
+  });
+  if (result.status !== 0) {
+    const quoted = args.map((part) => `'${part.replace(/'/g, "''")}'`).join(" ");
+    result = spawnSync(
+      "powershell.exe",
+      ["-NoProfile", "-Command", `docker ${quoted}`],
+      { cwd: repoRoot(), encoding: "utf-8" },
+    );
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `[sonowa/auth] admin 昇格に失敗しました (docker compose exec postgres). exit=${result.status}`,
+    );
+  }
+}
+
+/**
+ * 新規ユーザーを登録し、DB で admin にして再ログインする。
+ * 秘密（password / token）は返却値のみ。ログ禁止。
+ */
+export async function registerPromotedAdmin(): Promise<{
+  token: string;
+  user: SonowaUser;
+  credentials: LoginCredentials;
+}> {
+  const credentials = {
+    email: E2E_USERS.user.email(),
+    password: E2E_USERS.user.password(),
+  };
+  await registerUser({
+    email: credentials.email,
+    password: credentials.password,
+    displayName: `E2E Admin ${uniqueSuffix()}`,
+  });
+  promoteEmailToAdmin(credentials.email);
+  const { token, user } = await loginViaApi(credentials);
+  if (user.role !== "admin") {
+    throw new Error("[sonowa/auth] 昇格後の再ログインでも role=admin になりません");
+  }
+  return { token, user, credentials };
 }
 
 /** ログイン API を呼び、トークンとユーザーを返す（秘密は返却値のみ、ログ禁止） */
@@ -236,12 +307,14 @@ export async function loginAsRole(
   role: E2EUserRole = "user",
 ): Promise<{ token: string; user: SonowaUser }> {
   if (role === "admin") {
-    const reason = adminSkipReason();
-    if (reason) throw new Error(`[sonowa/auth] ${reason}`);
-    return loginAs(page, {
-      email: E2E_USERS.admin.email(),
-      password: E2E_USERS.admin.password(),
-    });
+    if (hasAdminCredentials()) {
+      return loginAs(page, {
+        email: E2E_USERS.admin.email(),
+        password: E2E_USERS.admin.password(),
+      });
+    }
+    const promoted = await registerPromotedAdmin();
+    return loginAs(page, promoted.credentials);
   }
 
   // user: 毎回 register してから login（共有 DB で seed 不要）

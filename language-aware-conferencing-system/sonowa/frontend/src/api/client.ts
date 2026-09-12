@@ -107,7 +107,14 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, data.detail || 'APIエラー');
+    const detail = data.detail;
+    const message =
+      typeof detail === 'string' ? detail : 'APIエラー';
+    throw new ApiError(res.status, message);
+  }
+
+  if (res.status === 204) {
+    return undefined as T;
   }
 
   return res.json();
@@ -117,6 +124,24 @@ async function apiFetch<T>(
 interface AuthApiResponse {
   access_token: string;
   user: UserApiResponse;
+}
+
+/** 会議参加履歴（camelCase） */
+export interface ParticipationHistory {
+  roomId: string;
+  roomName: string;
+  isPrivate: boolean;
+  joinedAt: string;
+  updatedAt: string;
+}
+
+/** 会議参加履歴 API 応答（snake_case） */
+interface ParticipationHistoryApiResponse {
+  room_id: string;
+  room_name: string;
+  is_private: boolean;
+  joined_at: string;
+  updated_at: string;
 }
 
 /** 認証API */
@@ -159,6 +184,36 @@ export const authApi = {
   me: async (): Promise<User> => {
     const res = await apiFetch<UserApiResponse>('/auth/me');
     return convertUser(res);
+  },
+
+  /** 自己プロフィール更新（トークン再発行） */
+  updateMe: async (data: {
+    displayName?: string;
+    nativeLanguage?: string;
+  }): Promise<{ access_token: string; user: User }> => {
+    const res = await apiFetch<AuthApiResponse>('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        display_name: data.displayName,
+        native_language: data.nativeLanguage,
+      }),
+    });
+    return {
+      access_token: res.access_token,
+      user: convertUser(res.user),
+    };
+  },
+
+  /** 自分の会議参加履歴 */
+  getHistory: async (): Promise<ParticipationHistory[]> => {
+    const res = await apiFetch<ParticipationHistoryApiResponse[]>('/auth/history');
+    return res.map((row) => ({
+      roomId: row.room_id,
+      roomName: row.room_name,
+      isPrivate: row.is_private,
+      joinedAt: row.joined_at,
+      updatedAt: row.updated_at,
+    }));
   },
 
   /** パスワードリセットリクエスト */
@@ -346,7 +401,59 @@ export const roomApi = {
       total: res.total,
     };
   },
+
+  /** 議事録（要約・決定・ToDo）をオンデマンド生成 */
+  getMinutes: async (
+    roomId: string,
+    lang?: string,
+    sessionId?: string
+  ): Promise<MinutesData> => {
+    const params = new URLSearchParams();
+    if (lang) params.set('lang', lang);
+    if (sessionId) params.set('session_id', sessionId);
+    const queryParams = params.toString() ? `?${params.toString()}` : '';
+    const res = await apiFetch<MinutesApiResponse>(
+      `/rooms/${roomId}/minutes${queryParams}`
+    );
+    return {
+      roomId: res.room_id,
+      roomName: res.room_name,
+      sessionId: res.session_id,
+      outputLanguage: res.output_language,
+      summary: res.summary,
+      decisions: res.decisions,
+      actionItems: res.action_items,
+      provider: res.provider,
+      segmentCount: res.segment_count,
+    };
+  },
 };
+
+/** 議事録（camelCase） */
+export interface MinutesData {
+  roomId: string;
+  roomName: string;
+  sessionId: string | null;
+  outputLanguage: string;
+  summary: string;
+  decisions: string[];
+  actionItems: string[];
+  provider: string;
+  segmentCount: number;
+}
+
+/** 議事録 API 応答（snake_case） */
+interface MinutesApiResponse {
+  room_id: string;
+  room_name: string;
+  session_id: string | null;
+  output_language: string;
+  summary: string;
+  decisions: string[];
+  action_items: string[];
+  provider: string;
+  segment_count: number;
+}
 
 /** 管理者用ユーザー情報 */
 export interface AdminUser {
@@ -548,6 +655,143 @@ export const adminApi = {
       `/admin/experiments/${encodeURIComponent(key)}/summary`
     );
     return res.summary;
+  },
+
+  /** 離線高品質再処理（本地モデル未導入時は 503） */
+  rerunSession: async (sessionId: string): Promise<RerunSummary> => {
+    const res = await apiFetch<RerunSummaryApiResponse>(
+      `/admin/sessions/${encodeURIComponent(sessionId)}/rerun`,
+      { method: 'POST' }
+    );
+    return {
+      sessionId: res.session_id,
+      total: res.total,
+      done: res.done,
+      skipped: res.skipped,
+      failed: res.failed,
+    };
+  },
+};
+
+/** 離線 rerun 集計 */
+export interface RerunSummary {
+  sessionId: string;
+  total: number;
+  done: number;
+  skipped: number;
+  failed: number;
+}
+
+interface RerunSummaryApiResponse {
+  session_id: string;
+  total: number;
+  done: number;
+  skipped: number;
+  failed: number;
+}
+
+/** 用語集用語（camelCase） */
+export interface GlossaryTerm {
+  id: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  sourceTerm: string;
+  targetTerm: string | null;
+  termType: string;
+  priority: number;
+  doNotTranslate: boolean;
+  enabled: boolean;
+}
+
+interface GlossaryTermApiResponse {
+  id: string;
+  source_language: string;
+  target_language: string;
+  source_term: string;
+  target_term: string | null;
+  term_type: string;
+  priority: number;
+  do_not_translate: boolean;
+  enabled: boolean;
+}
+
+function convertGlossaryTerm(t: GlossaryTermApiResponse): GlossaryTerm {
+  return {
+    id: t.id,
+    sourceLanguage: t.source_language,
+    targetLanguage: t.target_language,
+    sourceTerm: t.source_term,
+    targetTerm: t.target_term,
+    termType: t.term_type,
+    priority: t.priority,
+    doNotTranslate: t.do_not_translate,
+    enabled: t.enabled,
+  };
+}
+
+export interface GlossaryTermInput {
+  sourceLanguage: string;
+  targetLanguage: string;
+  sourceTerm: string;
+  targetTerm?: string | null;
+  termType?: string;
+  priority?: number;
+  doNotTranslate?: boolean;
+  enabled?: boolean;
+}
+
+/** 用語集 CRUD（管理者専用） */
+export const glossaryApi = {
+  list: async (filters?: {
+    sourceLanguage?: string;
+    targetLanguage?: string;
+    enabled?: boolean;
+  }): Promise<GlossaryTerm[]> => {
+    const params = new URLSearchParams();
+    if (filters?.sourceLanguage) params.set('source_language', filters.sourceLanguage);
+    if (filters?.targetLanguage) params.set('target_language', filters.targetLanguage);
+    if (filters?.enabled !== undefined) params.set('enabled', String(filters.enabled));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await apiFetch<GlossaryTermApiResponse[]>(`/glossaries/terms${query}`);
+    return res.map(convertGlossaryTerm);
+  },
+
+  create: async (data: GlossaryTermInput): Promise<GlossaryTerm> => {
+    const res = await apiFetch<GlossaryTermApiResponse>('/glossaries/terms', {
+      method: 'POST',
+      body: JSON.stringify({
+        source_language: data.sourceLanguage,
+        target_language: data.targetLanguage,
+        source_term: data.sourceTerm,
+        target_term: data.targetTerm,
+        term_type: data.termType ?? 'general',
+        priority: data.priority ?? 100,
+        do_not_translate: data.doNotTranslate ?? false,
+        enabled: data.enabled ?? true,
+      }),
+    });
+    return convertGlossaryTerm(res);
+  },
+
+  update: async (termId: string, data: Partial<GlossaryTermInput>): Promise<GlossaryTerm> => {
+    const res = await apiFetch<GlossaryTermApiResponse>(`/glossaries/terms/${termId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        source_language: data.sourceLanguage,
+        target_language: data.targetLanguage,
+        source_term: data.sourceTerm,
+        target_term: data.targetTerm,
+        term_type: data.termType,
+        priority: data.priority,
+        do_not_translate: data.doNotTranslate,
+        enabled: data.enabled,
+      }),
+    });
+    return convertGlossaryTerm(res);
+  },
+
+  delete: async (termId: string): Promise<void> => {
+    await apiFetch<void>(`/glossaries/terms/${termId}`, { method: 'DELETE' });
   },
 };
 

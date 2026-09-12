@@ -4,7 +4,15 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { adminApi, roomApi, ApiError, type SubtitleRecord, type TranscriptData } from '../api/client';
+import {
+  adminApi,
+  roomApi,
+  ApiError,
+  type MinutesData,
+  type RerunSummary,
+  type SubtitleRecord,
+  type TranscriptData,
+} from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
@@ -19,8 +27,16 @@ export function TranscriptPage() {
   const [selectedLang, setSelectedLang] = useState<string>('');
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [availableLanguages, setAvailableLanguages] = useState<SupportedLanguage[]>([]);
+  const [minutes, setMinutes] = useState<MinutesData | null>(null);
+  const [minutesError, setMinutesError] = useState<string | null>(null);
+  const [minutesLoading, setMinutesLoading] = useState(false);
+  const [rerunSummary, setRerunSummary] = useState<RerunSummary | null>(null);
+  const [rerunError, setRerunError] = useState<string | null>(null);
+  const [rerunLoading, setRerunLoading] = useState(false);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
+  const activeSessionId = selectedSessionId || transcript?.selectedSessionId || '';
 
   /**
    * 会議記録を取得
@@ -87,6 +103,74 @@ export function TranscriptPage() {
   };
 
   /**
+   * 議事録をオンデマンド生成する。
+   * 出力言語は表示言語、未選択時はユーザー母語。
+   */
+  const generateMinutes = async () => {
+    if (!roomId) return;
+    if (!transcript?.subtitles.length) {
+      setMinutes(null);
+      setMinutesError('会議記録が空のため議事録を生成できません');
+      return;
+    }
+    const lang = selectedLang || user?.nativeLanguage || 'ja';
+    try {
+      setMinutesLoading(true);
+      setMinutesError(null);
+      setMinutes(
+        await roomApi.getMinutes(roomId, lang, selectedSessionId || undefined)
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        navigate('/login');
+        return;
+      }
+      if (err instanceof ApiError && err.status === 503) {
+        setMinutesError('議事録生成は現在無効です（LLM 未設定）');
+      } else if (err instanceof ApiError) {
+        setMinutesError(err.message);
+      } else {
+        setMinutesError('議事録の生成に失敗しました');
+      }
+      setMinutes(null);
+    } finally {
+      setMinutesLoading(false);
+    }
+  };
+
+  /**
+   * 管理者向け離線再処理。本地モデル未導入時は 503 を表示する。
+   */
+  const triggerRerun = async () => {
+    if (!activeSessionId) {
+      setRerunError('会議回を選択してください');
+      return;
+    }
+    try {
+      setRerunLoading(true);
+      setRerunError(null);
+      setRerunSummary(await adminApi.rerunSession(activeSessionId));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        navigate('/login');
+        return;
+      }
+      if (err instanceof ApiError && err.status === 503) {
+        setRerunError('離線再処理に利用可能な本地モデルがありません');
+      } else if (err instanceof ApiError) {
+        setRerunError(err.message);
+      } else {
+        setRerunError('離線再処理に失敗しました');
+      }
+      setRerunSummary(null);
+    } finally {
+      setRerunLoading(false);
+    }
+  };
+
+  /**
    * 表示テキストを取得（言語選択に応じて）
    */
   const getDisplayText = (sub: SubtitleRecord): string => {
@@ -124,7 +208,7 @@ export function TranscriptPage() {
   }
 
   return (
-    <div className="transcript-page">
+    <div className="transcript-page" data-testid="transcript-page">
       <header>
         <h1>📝 {transcript?.roomName || '会議記録'}</h1>
         <div className="header-right">
@@ -167,8 +251,75 @@ export function TranscriptPage() {
           <button onClick={exportAsText} disabled={!transcript?.subtitles.length}>
             テキストでエクスポート
           </button>
+          <button
+            type="button"
+            data-testid="transcript-minutes-btn"
+            onClick={() => void generateMinutes()}
+            disabled={minutesLoading}
+          >
+            {minutesLoading ? '生成中...' : '議事録を生成'}
+          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              data-testid="transcript-rerun-btn"
+              title={!activeSessionId ? '会議回を選択してください' : undefined}
+              onClick={() => void triggerRerun()}
+              disabled={rerunLoading || !activeSessionId}
+            >
+              {rerunLoading ? '再処理中...' : '離線再処理'}
+            </button>
+          )}
         </div>
       </div>
+
+      {(minutesError || minutes) && (
+        <section className="minutes-panel">
+          <h2>議事録</h2>
+          {minutesError && (
+            <div className="error" data-testid="transcript-minutes-error">
+              {minutesError}
+            </div>
+          )}
+          {minutes && (
+            <>
+              <p className="minutes-meta">
+                発言数: {minutes.segmentCount} / 生成: {minutes.provider}
+              </p>
+              <h3>要約</h3>
+              <p>{minutes.summary}</p>
+              <h3>決定事項</h3>
+              <ul>
+                {minutes.decisions.length === 0 ? (
+                  <li>なし</li>
+                ) : (
+                  minutes.decisions.map((item) => <li key={item}>{item}</li>)
+                )}
+              </ul>
+              <h3>ToDo</h3>
+              <ul>
+                {minutes.actionItems.length === 0 ? (
+                  <li>なし</li>
+                ) : (
+                  minutes.actionItems.map((item) => <li key={item}>{item}</li>)
+                )}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+
+      {(rerunError || rerunSummary) && (
+        <section className="minutes-panel">
+          <h2>離線再処理</h2>
+          {rerunError && <div className="error">{rerunError}</div>}
+          {rerunSummary && (
+            <p className="minutes-meta">
+              対象 {rerunSummary.total} / 完了 {rerunSummary.done} / スキップ {rerunSummary.skipped} / 失敗 {rerunSummary.failed}
+            </p>
+          )}
+        </section>
+      )}
 
       <div className="transcript-content">
         {!transcript || transcript.subtitles.length === 0 ? (

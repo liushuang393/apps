@@ -42,5 +42,7 @@ test.describe("[AUTH-001] 登録後メニュー表示", () => {
 
     await expect(page.getByTestId("menu-item-rooms").or(page.locator('a[href="/rooms"]'))).toBeVisible();
     await expect(page.getByTestId("menu-logout").or(page.locator(".btn-logout"))).toBeVisible();
+    await expect(page.getByTestId("menu-user-role")).toHaveAttribute("data-role", "user");
+    await expect(page.getByTestId("menu-user-role")).toHaveText("従業員");
   });
 });

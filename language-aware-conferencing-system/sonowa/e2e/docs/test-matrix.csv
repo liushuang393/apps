@@ -1,9 +1,16 @@
 id,domain,scenario,type,priority,status,test_file,owner,last_run,notes
 AUTH-001,AUTH,登録後メニュー表示,smoke,P1,automated,e2e/smoke/AUTH-001.spec.ts,e2e,,JWT localStorage; no bypass
 AUTH-002,AUTH,未認証 /rooms → /login,smoke,P1,automated,e2e/smoke/AUTH-002.spec.ts,e2e,,PrivateRoute
+AUTH-003,AUTH,未認証 /profile /history /admin/glossary → /login,smoke,P1,automated,e2e/smoke/AUTH-003.spec.ts,e2e,,PrivateRoute
+ROLE-001,AUTH,ログイン後に従業員バッジ・管理者メニュー非表示,smoke,P1,automated,e2e/smoke/ROLE-001.spec.ts,e2e,,UI+GET /me+403 users
 ROOM-001,ROOM,会議室作成と一覧+API二次観測,smoke,P1,automated,e2e/smoke/ROOM-001.spec.ts,e2e,,self seed
 HEALTH-001,QOS,GET /health ok,smoke,P1,automated,e2e/smoke/HEALTH-001.spec.ts,e2e,,backend /health
 SAMPLE-001,AUTH,frontend / 疎通,smoke,P2,automated,e2e/smoke/SAMPLE-001.spec.ts,e2e,,existing-server
-ADMIN-001,ADMIN,非admin PUT ai-pipeline 403,regression,P1,automated,e2e/regression/ADMIN-001.spec.ts,e2e,,admin GET optional via env
+ADMIN-001,ADMIN,非admin PUT ai-pipeline 403 / admin GET 200,regression,P1,automated,e2e/regression/ADMIN-001.spec.ts,e2e,,admin via env or docker promote
+ADMIN-002,ADMIN,管理者バッジと管理画面横断,regression,P1,automated,e2e/regression/ADMIN-002.spec.ts,e2e,,UI+admin APIs
+GLOSSARY-001,ADMIN,用語集 CRUD と従業員 403,regression,P1,automated,e2e/regression/GLOSSARY-001.spec.ts,e2e,,UI create + API list/delete
+PROFILE-001,AUTH,プロフィール保存で表示名更新,regression,P1,automated,e2e/regression/PROFILE-001.spec.ts,e2e,,UI+GET /me
+HISTORY-001,AUTH,部屋作成だけでは履歴空,regression,P2,automated,e2e/regression/HISTORY-001.spec.ts,e2e,,participant 未記録
+TRANSCRIPT-001,TRANSCRIPT,空議事録メッセージと再処理権限,regression,P1,automated,e2e/regression/TRANSCRIPT-001.spec.ts,e2e,,rerun は admin のみ
 PREF-001,PREFERENCE,room preference/connection UI,regression,P2,automated,e2e/regression/PREF-001.spec.ts,e2e,,soft-skip if LiveKit down
 SUBTITLE-001,SUBTITLE,decodeLiveEvent契約+room shell,regression,P2,automated,e2e/regression/SUBTITLE-001.spec.ts,e2e,,full subtitle needs LiveKit+AI

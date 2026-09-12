@@ -121,6 +121,34 @@
   cursor: not-allowed;
 }
 
+.minutes-panel {
+  margin: 1rem 2rem;
+  padding: 1.25rem 1.5rem;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.minutes-panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.minutes-panel h3 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.minutes-panel .minutes-meta {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.minutes-panel ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
 .transcript-content {
   flex: 1;
   padding: 1.5rem 2rem;

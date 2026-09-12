@@ -72,14 +72,14 @@ export function ExperimentsPage() {
 
   if (loading) {
     return (
-      <div className="admin-page">
+      <div className="admin-page" data-testid="experiments-page">
         <div className="empty-state">読み込み中...</div>
       </div>
     );
   }
 
   return (
-    <div className="admin-page">
+    <div className="admin-page" data-testid="experiments-page">
       <div className="admin-header">
         <div className="header-left">
           <button onClick={() => navigate('/admin')}>戻る</button>

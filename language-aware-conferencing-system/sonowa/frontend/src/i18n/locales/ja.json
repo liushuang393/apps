@@ -21,6 +21,11 @@
     "logout": "ログアウト",
     "guest": "ゲスト"
   },
+  "role": {
+    "user": "従業員",
+    "moderator": "モデレーター",
+    "admin": "管理者"
+  },
   "auth": {
     "login": "ログイン",
     "register": "新規登録",
@@ -71,7 +76,59 @@
     "aiPipelineSettingsDesc": "翻訳モードの切替（再デプロイ不要）",
     "experiments": "A/B実験",
     "experimentsDesc": "実験配信と指標比較の確認",
+    "glossary": "用語集",
+    "glossaryDesc": "翻訳用語の登録と管理",
     "comingSoon": "準備中"
+  },
+  "profile": {
+    "title": "プロフィール設定",
+    "subtitle": "表示名と母語を変更できます",
+    "role": "権限",
+    "saveSuccess": "プロフィールを保存しました",
+    "saveFailed": "プロフィールの保存に失敗しました"
+  },
+  "history": {
+    "title": "利用履歴",
+    "empty": "参加した会議はまだありません",
+    "emptyHint": "会議室に入室するとここに表示されます",
+    "roomName": "会議室",
+    "visibility": "公開範囲",
+    "private": "私有",
+    "public": "公開",
+    "joinedAt": "初回参加",
+    "updatedAt": "最終更新",
+    "loadFailed": "利用履歴の取得に失敗しました"
+  },
+  "glossary": {
+    "title": "用語集",
+    "description": "方式2の翻訳品質パックで使う企業用語です。変更は翻訳パイプラインへ即時反映されます。",
+    "add": "用語を追加",
+    "editTitle": "用語を編集",
+    "empty": "用語はまだありません",
+    "pair": "言語ペア",
+    "sourceLanguage": "原語の言語",
+    "targetLanguage": "訳語の言語",
+    "sourceTerm": "原語",
+    "targetTerm": "訳語",
+    "termType": "種別",
+    "priority": "優先度",
+    "flags": "状態",
+    "doNotTranslate": "翻訳しない",
+    "enabled": "有効",
+    "disabled": "無効",
+    "targetRequired": "翻訳対象の用語には訳語が必要です",
+    "adminRequired": "管理者権限が必要です",
+    "loadFailed": "用語集の取得に失敗しました",
+    "saveFailed": "用語の保存に失敗しました",
+    "deleteFailed": "用語の削除に失敗しました",
+    "deleteConfirm": "「{{term}}」を削除しますか？",
+    "aiPipelineLink": "AIパイプライン設定へ",
+    "type": {
+      "general": "一般",
+      "business": "業務",
+      "person": "人名",
+      "product": "製品"
+    }
   },
   "room": {
     "list": "会議室一覧",
@@ -151,6 +208,7 @@
     "customPreset": "詳細スロット／品質フラグがプリセットと異なるカスタム構成です。",
     "s2sSlotIgnored": "方式1（Realtime S2S）選択時は ASR/MT/TTS スロットは無視され、音声対音声経路が維持されます。",
     "qualityPackHint": "方式2は用語集必須・言語グループ並列・字幕キャッシュ/TM・partial 字幕・LLM 補正を品質パックとして有効化します。",
+    "glossaryLink": "用語集を管理",
     "advancedLocalHint": "上級: asr/mt/tts=local はローカル GPU 実装オプションです（方式ではありません。用語集はクラウド MT 推奨）。",
     "showAdvanced": "上級設定を表示",
     "hideAdvanced": "上級設定を隠す",
