@@ -152,7 +152,7 @@ def _matches_kind(value: object, kind: str) -> bool:
     if kind == "integer":
         return isinstance(value, int) and not isinstance(value, bool)
     if kind == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
+        return isinstance(value, int | float) and not isinstance(value, bool)
     raise RuntimeError(f"未対応の契約型です: {kind}")
 
 

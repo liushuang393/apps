@@ -15,8 +15,12 @@ dist/
 # ログ・OS
 *.log
 .DS_Store
-.tmp
+.tmp/
 .playwright-mcp/*
+.playwright-cli/
+
+# 実行成果物（スクリーンショット・音声・state）
+output/
 
 # testing-kit / E2E 成果物
 .venv-testing-kit/

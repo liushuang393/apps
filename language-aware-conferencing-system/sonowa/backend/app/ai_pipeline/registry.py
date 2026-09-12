@@ -261,7 +261,7 @@ def _make_google_asr() -> object:
     return AIProviderASRStage(GoogleProvider(), "google")
 
 
-# --- Lite 本地栈（faster-whisper / OPUS-MT / Kokoro）。ランタイム未導入時は
+# --- 本地スタック（faster-whisper / MADLAD-400 / VoxCPM2）。ランタイム未導入時は
 #     available() が False を返し、雲プロバイダーへ自動フォールバックする（§P1）。
 def _local_asr_available() -> bool:
     from app.ai_pipeline.providers import local_asr

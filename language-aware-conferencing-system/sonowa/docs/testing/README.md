@@ -25,7 +25,7 @@
 | [`docs/テスト観点.md`](../テスト観点.md) | 実業務合否観点（表示＋動作） |
 | [`scripts/e2e_run_a_lane.sh`](../../scripts/e2e_run_a_lane.sh) | A レーン実行入口 |
 | [`scripts/e2e_run_b_lane.sh`](../../scripts/e2e_run_b_lane.sh) | B レーン実行入口（実 AI ゲート付き） |
-| `/home/liush/projects/serverlessAIAgents/testing-kit` | 外部 testing-kit v0.3.0（installed-kit 利用） |
+| `<testing-kit>` | 外部 testing-kit v0.3.0（installed-kit 利用） |
 
 ## 方針要約（1 段落）
 

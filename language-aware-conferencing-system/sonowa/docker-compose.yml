@@ -90,7 +90,7 @@ services:
       # 認証
       - JWT_SECRET=${JWT_SECRET:-sonowa-jwt-secret-change-in-production}
       # AIプロバイダー設定
-      - AI_PROVIDER=${AI_PROVIDER:-gpt4o_transcribe}
+      - AI_PROVIDER=${AI_PROVIDER:-gpt_realtime}
       # start-common.sh が解決した値を明示注入し、シェル環境変数 > .env の
       # 優先順位をコンテナ内でも維持する。
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}

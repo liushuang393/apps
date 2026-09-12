@@ -133,7 +133,10 @@ class Settings(BaseSettings):
     # ===========================================
     # AIプロバイダー設定
     # ===========================================
-    # プロバイダー選択: gpt4o_transcribe, gpt_realtime, deepgram, google, gemini_live
+    # プロバイダー選択: gpt_realtime（既定）, gpt4o_transcribe, deepgram, google, gemini_live
+    #   gpt_realtime = 既定。OpenAI Realtime による S2S（方式1 realtime_s2s）。最低遅延。
+    #   gpt4o_transcribe = カスケード ASR→MT→TTS（方式2 quality_cascade）の基準実装。
+    #            既定ではないが、下記の各フォールバック先として全経路の受け皿になる。
     #   google = Mode B（Chirp 3 ASR + Cloud Translation）。認証/ライブラリ未整備時は
     #            起動エラーにせず gpt4o_transcribe へ自動フォールバックする。
     #   gemini_live = Gemini Live API による S2S 翻訳（音声直接翻訳）。GEMINI_API_KEY
@@ -146,7 +149,7 @@ class Settings(BaseSettings):
         "google",
         "gemini_live",
         "mock",
-    ] = "gpt4o_transcribe"
+    ] = "gpt_realtime"
 
     # -------------------------------------------
     # ステージ別プロバイダースロット（Phase 2-T5.5 / 集中管理）
@@ -158,7 +161,7 @@ class Settings(BaseSettings):
     #   - asr_provider: auto / gpt4o / deepgram / google / local
     #   - mt_provider : auto / openai / google / local
     #   - tts_provider: auto / openai / none / local
-    # "local" は Lite 本地栈（faster-whisper / OPUS-MT-CT2 / Kokoro）。ランタイム
+    # "local" は本地スタック（faster-whisper / MADLAD-400 CT2 / VoxCPM2）。ランタイム
     # 未導入時は registry の available() が False を返し雲へ自動フォールバックする。
     asr_provider: Literal["auto", "gpt4o", "deepgram", "google", "local"] = "auto"
     mt_provider: Literal["auto", "openai", "google", "local"] = "auto"

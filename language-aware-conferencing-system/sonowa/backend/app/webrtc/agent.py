@@ -202,7 +202,7 @@ class LiveKitAgent:
             payload = json.loads(bytes(data_packet.data).decode("utf-8"))
             loss = payload.get("packet_loss_ratio")
             if loss is not None and not (
-                isinstance(loss, (int, float)) and 0 <= float(loss) <= 1
+                isinstance(loss, int | float) and 0 <= float(loss) <= 1
             ):
                 logger.warning(
                     "[Agent] 不正な QoE Stats を無視: speaker=%s",

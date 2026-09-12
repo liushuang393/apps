@@ -104,9 +104,8 @@ def _upgrade_to_head(database_url: str) -> None:
         ``alembic.ini`` を読み込ませない（config_file_name を None に保つ）ことで
         env.py 側の ``fileConfig`` によるアプリのログ設定上書きを避ける。
     """
-    from alembic.config import Config
-
     from alembic import command
+    from alembic.config import Config
 
     config = Config()
     config.set_main_option("script_location", str(_BACKEND_ROOT / "alembic"))

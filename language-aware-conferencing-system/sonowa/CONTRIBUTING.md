@@ -42,15 +42,15 @@ Sonowaプロジェクトへの貢献に興味を持っていただき、あり�
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/liushuang393/apps.git
-cd apps/language-aware-conferencing-system/sonowa
+git clone https://github.com/liushuang393/sonowa.git
+cd sonowa
 
 # 2. 環境変数を設定
 cp .env.example .env
-# .env ファイルを編集して必要な値を設定
+# .env を編集し、OPENAI_API_KEY を記入する（他は既定値のままで起動できる）
 
-# 3. Docker環境を起動
-docker compose up -d --build
+# 3. 起動（LAN IP 検出から compose 起動までを 1 本で行う）
+./start-with-keys.sh --build
 
 # 4. データベースマイグレーション
 docker compose exec backend alembic upgrade head
@@ -95,7 +95,7 @@ git checkout -b feature/your-feature-name
 - 適切なコメントを記載
 - テストを追加・更新
 
-### 4. 静的解析を実行
+### 4. 静的解析とテストを実行
 
 ```bash
 # 全チェック
@@ -103,6 +103,12 @@ git checkout -b feature/your-feature-name
 
 # 自動修正
 ./scripts/check.sh --fix
+
+# 単体テスト
+cd backend && pytest
+
+# E2E（frontend:5273 / API:8090 起動済みで実行）
+./scripts/e2e_run_a_lane.sh
 ```
 
 ### 5. コミット
@@ -212,15 +218,16 @@ Closes #123
 
 ### マージ条件
 
-- ✅ 静的解析エラー 0
-- ✅ テスト通過
+- ✅ 静的解析エラー 0（`./scripts/check.sh`）
+- ✅ テスト通過（`pytest` / E2E A レーン）
 - ✅ 最低1名のレビュー承認
 - ✅ コンフリクト解消済み
 - ✅ ドキュメント更新（必要に応じて）
 
 ### レビュープロセス
 
-1. 自動チェック（CI）が通過
+1. 作成者がローカルで `./scripts/check.sh` とテストを実行し、結果を PR に記載する
+   （GitHub Actions による自動チェックは未整備。導入までは自己申告とレビューで担保する）
 2. レビュアーがコードレビュー
 3. 必要に応じて修正
 4. 承認後、マージ
@@ -259,13 +266,12 @@ Closes #123
 
 - GitHub Discussions（推奨）
 - Issue（バグ報告・機能リクエスト）
-- メール（緊急の場合）
 
 ---
 
 ## ライセンス
 
-このプロジェクトに貢献することで、あなたの貢献がMITライセンスの下で公開されることに同意したものとみなされます。
+このプロジェクトに貢献することで、あなたの貢献が [Apache License 2.0](./LICENSE) の下で公開されることに同意したものとみなされます。
 
 ---
 

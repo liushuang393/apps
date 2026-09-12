@@ -26,17 +26,41 @@
 
 **対応言語**: 日本語(ja) / 英語(en) / 中国語(zh) / ベトナム語(vi)
 
+### 機能一覧
+
+| 分類 | 機能 | 説明 |
+|---|---|---|
+| 会議 | 会議室の作成・参加 | ロール（admin/moderator/user）に応じた作成・参加・退出 |
+| 会議 | リアルタイム翻訳音声 | 参加者ごとに「原声 / 翻訳音声」を切替（`PreferencePanel`） |
+| 会議 | リアルタイム字幕 | 聴いている音声と同じ言語で表示。partial（暫定）字幕にも対応 |
+| 会議 | 会議主線の切替 | `a`（聞く）/ `b`（読む）/ `hybrid` を作成者・モデレーターが切替 |
+| 会議 | QoS 監視と自動縮退 | 遅延超過時に翻訳音声を止め字幕へフォールバック |
+| 記録 | 会議記録（transcript） | 全発言を原文・翻訳付きで保存、言語別エクスポート |
+| 記録 | 議事録の自動生成 | LLM で要約・ToDo 抽出（GPT 優先・Gemini フォールバック） |
+| 品質 | 用語集（Glossary）管理 | 企業ごとの用語資産を CRUD し、翻訳の前後処理に適用 |
+| 品質 | LLM 補正 | 表記統一・文脈補正・数字/固有名詞の保持（既定 OFF） |
+| 品質 | 翻訳キャッシュ / TM | 同一表現の再翻訳を抑制し遅延とコストを削減 |
+| 運用 | AI パイプライン設定 | 管理画面で方式1 / 方式2 とステージ別プロバイダーを切替 |
+| 運用 | 言語設定 | 利用可能言語の有効・無効を管理 |
+| 運用 | ユーザー管理・統計 | ユーザー一覧・権限変更・利用統計 |
+| 運用 | 離線重跑（オフライン再処理） | 記録済みパイプライン事件を高品質モデルで再処理し、実時出力との差分から訓練訂正候補を生成 |
+| 運用 | A/B テスト | プロバイダー・設定の実験メトリクスを収集し比較 |
+| 学習 | 学習データ収集 | ASR / 翻訳の修正履歴、話者登録、TTS 同意、評価サンプルを蓄積 |
+| 基盤 | WebRTC（LiveKit） | 音声・字幕・制御を LiveKit に一本化 |
+| 基盤 | ローカル GPU 実行（任意） | ASR / MT / TTS を OSS モデルで自ホスト（8GB GPU 対応） |
+
 **AIプロバイダー**（`AI_PROVIDER` で選択。モデル名は `backend/app/config.py` の既定値）:
 
 | プロバイダー | パイプライン / モデル | 用途 |
 |---|---|---|
-| `gpt4o_transcribe` | GPT-4o-transcribe ASR + GPT-4o-mini 翻訳 + tts-1 | 推奨（デフォルト） |
-| `gpt_realtime` | GPT-Realtime S2S（GA対応が必要な実験経路） | 最低遅延 |
+| `gpt_realtime` | GPT-Realtime S2S（OpenAI Realtime GA プロトコル） | **既定（デフォルト）**・最低遅延 |
+| `gpt4o_transcribe` | GPT-4o-transcribe ASR + GPT-4o-mini 翻訳 + tts-1 | 方式2の基準実装・全フォールバックの受け皿 |
 | `deepgram` | Deepgram Nova-3 ASR + GPT-4o-mini 翻訳 + tts-1 | 高精度ASR |
 | `google` | Google Chirp 3 ASR + Cloud Translation v3（Mode B） | 高精度・正式記録 |
-| `gemini_live` | Gemini Live S2S（鍵整備後に再検証する実験経路） | S2S 代替 |
+| `gemini_live` | Gemini Live S2S | S2S 代替 |
 
-> `google` / `gemini_live` はキー・認証未整備時、起動を止めず `gpt4o_transcribe` へ自動フォールバックする。
+> **既定 ≠ フォールバック先**。既定は `gpt_realtime` だが、`google` / `gemini_live` はキー・認証未整備時に
+> 起動を止めず `gpt4o_transcribe` へ自動フォールバックし、ステージ別 ASR も `gpt4o` を最終受け皿とする。
 > ASR / MT / TTS は `ASR_PROVIDER` / `MT_PROVIDER` / `TTS_PROVIDER` で独立に差し替え可能（Composite。既定 `auto`）。
 > 補正・議事録用 LLM はテキスト系モデル（GPT: gpt-4o-mini / Gemini: gemini-2.5-flash）を使用する。
 
@@ -192,7 +216,7 @@ docker compose exec backend python /app/scripts/prepare_local_models.py --output
 
 ## アーキテクチャ設計（本番想定）
 
-> 本章は設計仕様書 [`改善.md`](./改善.md)（全20章）を Sonowa 実装へマッピングした本番アーキテクチャである。
+> 本章は設計仕様書 [`docs/改善.md`](./docs/改善.md)（全20章）を Sonowa 実装へマッピングした本番アーキテクチャである。
 > 通信は **WebRTC に統一**、翻訳は **2系統（OpenAI / Google）**、LLM は **2種（GPT / Gemini）** に限定する。
 
 ### 0. 絶対原則：2つの大主線を混ぜない
@@ -289,15 +313,17 @@ WebSocket は廃止済みで、トランスポートは LiveKit へ一本化済�
 - **切替単位は3つに限定**：会議単位 / ユーザー単位（翻訳音声 ON/OFF）/ 言語ペア単位（`language_routes`）。
 - **Provider Registry**（`registry.py`）：ASR（GPT-4o / Deepgram Nova-3 / Chirp 3）・MT（OpenAI / Cloud Translation）・
   TTS（OpenAI / none）をステージ単位のカタログで集中管理し、`*_PROVIDER` env で差し替える。S2S は OpenAI Realtime / Gemini Live。
-- **既定は `AI_PROVIDER=gpt4o_transcribe`**（カスケード ASR→MT→TTS、標準 REST で安定）。`gpt_realtime` は
-  OpenAI Realtime **GA プロトコル**へ移行済みの低遅延オプション（beta 形状は 2025 年に廃止され `beta_api_shape_disabled` になる）。
-  ただし現状は発話ごとに WebSocket を張り直すため、接続ハンドシェイク分の遅延が乗る点に注意。
+- **既定は `AI_PROVIDER=gpt_realtime`**（管理者プリセット「方式1 `realtime_s2s`」と一致）。OpenAI Realtime の
+  **GA プロトコル**へ移行済み（beta 形状は 2025 年に廃止され `beta_api_shape_disabled` になる）。
+  現状は発話ごとに WebSocket を張り直すため接続ハンドシェイク分の遅延が乗る点は実機検証を継続中。
+- **`gpt4o_transcribe`** はカスケード ASR→MT→TTS（方式2 `quality_cascade`）の基準実装。標準 REST で安定しており、
+  他プロバイダーが使えないときのフォールバック先を兼ねる。正式記録・用語集重視の運用ではこちらを明示指定する。
 
 ### 4. Provider Interface ↔ 既存 `AIProvider` 抽象の対応
 
-`改善.md` 8.3 の4インターフェースを、既存 `app/ai_pipeline/providers/base.py::AIProvider` と整合させる。
+設計仕様書 8.3 の4インターフェースを、既存 `app/ai_pipeline/providers/base.py::AIProvider` と整合させる。
 
-| 改善.md Interface | 既存抽象との関係 | 実装状況 |
+| 設計インターフェース | 既存抽象との関係 | 実装状況 |
 |---|---|---|
 | `SpeechToSpeechProvider` | `gpt_realtime` / `gemini_live` | 実装済み（主線1。OpenAI Realtime + Gemini Live） |
 | `ASRProvider` | `AIProvider.transcribe_*` を分離 | 実装済み（`stages.py` でステージ化。Chirp 3 / Deepgram / GPT-4o） |
@@ -331,7 +357,7 @@ LLM_MINUTES_PROVIDER=auto         # auto（GPT優先・Gemini fallback） / gpt 
 
 ### 7. データ設計 ↔ 既存モデル
 
-| 改善.md テーブル | 既存モデル（`app/db/models.py`） | 方針 |
+| 設計テーブル | 既存モデル（`app/db/models.py`） | 方針 |
 |---|---|---|
 | `meeting` | `Room` + `MeetingSession` | 既存流用（`default_mode` 等を拡張） |
 | `participant` | Redis（`rooms/manager.py`）+ 一部DB | 永続化が必要な項目のみDB化 |
@@ -352,6 +378,12 @@ LLM_MINUTES_PROVIDER=auto         # auto（GPT優先・Gemini fallback） / gpt 
 | `GET /api/rooms/{id}/transcript` | 会議記録取得（`session_id` 指定で会議回単位に絞込可能） |
 | `GET /api/rooms/{id}/minutes` | 議事録生成（`session_id` 指定で会議回単位に絞込可能） |
 | `POST/GET/PATCH/DELETE /api/glossaries/terms` | 術語庫 CRUD（要admin） |
+| `GET /api/meetings/active/{room_id}` | 進行中の会議セッション取得 |
+| `POST /api/translate` | テキスト翻訳（キャッシュ・用語集付き） |
+| `GET/PATCH /api/admin/users`, `GET /api/admin/stats` | ユーザー管理・利用統計（要admin） |
+| `GET/PUT /api/admin/settings/languages` | 利用可能言語の設定（要admin） |
+| `GET/PUT /api/admin/settings/ai-pipeline` | AI パイプライン設定・プリセット適用（要admin） |
+| `/api/admin` 配下（離線重跑 / A/Bテスト） | 保存音声の再処理と実験メトリクス取得（要admin） |
 
 ### 9. 品質ゲート（最低基準）
 
@@ -386,7 +418,7 @@ LLM_MINUTES_PROVIDER=auto         # auto（GPT優先・Gemini fallback） / gpt 
 | Phase | 内容 | 現状 |
 |---|---|---|
 | **Phase 1（MVP・主線2優先）** | Chirp 3 ASR → Cloud Translation + 術語庫 → 字幕 → 議事録 | 実装済み（現行の出荷基線） |
-| **Phase 2（主線1追加）** | OpenAI Realtime S2S + ユーザー翻訳音声 ON/OFF + Mode Router | 実装あり（`mode1` は再検証/再設計対象） |
+| **Phase 2（主線1追加）** | OpenAI Realtime S2S + ユーザー翻訳音声 ON/OFF + Mode Router | 実装済み（既定経路。発話ごとの再接続遅延は実機検証を継続中） |
 | **Phase 3（ハイブリッド）** | 同一音声を両主線へ複製（聞く=S2S / 読む=ASR+MT） | 実装あり（QoS・実機検証は継続中） |
 
 > **通信レイヤー**：WebRTC（LiveKit）へ一本化済み（詳細は §2.4）。
@@ -414,7 +446,7 @@ cp .env.example .env
 | 変数 | 記入 | 自動設定のされ方 |
 |---|---|---|
 | `OPENAI_API_KEY` | **必須** | 自動化なし。`.env` に記入するか `export OPENAI_API_KEY=sk-xxx`（シェル環境変数が `.env` より優先） |
-| `AI_PROVIDER` | 任意 | 既定 `gpt_realtime`。`gpt4o_transcribe` / `deepgram` / `google` / `gemini_live` |
+| `AI_PROVIDER` | 任意 | 既定 `gpt_realtime`。他に `gpt4o_transcribe` / `deepgram` / `google` / `gemini_live` |
 | `DEEPGRAM_API_KEY` | `deepgram` 使用時のみ | — |
 | `GEMINI_API_KEY` | `gemini_live` / LLM補正・議事録(Gemini) 使用時のみ | 未設定なら該当機能は自動無効化 |
 | `GOOGLE_PROJECT_ID` ほか | `google` 使用時のみ | 未設定なら `gpt4o_transcribe` へ自動フォールバック |
@@ -505,13 +537,25 @@ http://<Windows LAN IP>:8090/health
 ## 開発コマンド
 
 ```bash
+# 依存インストール（ローカル開発時。Docker だけを使う場合は不要）
+cd backend && pip install -e ".[dev]"   # ローカル GPU も使うなら ".[dev,local]"
+cd frontend && npm install
+
 # 静的解析（コミット前必須）
 ./scripts/check.sh            # 全チェック
 ./scripts/check.sh --fix      # 自動修正付き
+./scripts/check.sh --format   # フォーマットのみ
 ./scripts/check.sh --backend  # / --frontend
 
-# テスト
+# ローカル開発起動（DB/Redis は Docker、backend/frontend はホストで直接起動）
+./scripts/start-local.sh
+
+# 単体テスト
 cd backend && pytest
+
+# E2E テスト（frontend:5273 / API:8090 が起動済みであること）
+./scripts/e2e_run_a_lane.sh   # A レーン: mock provider・外部 API キー不要
+./scripts/e2e_run_b_lane.sh   # B レーン: 実 AI / LiveKit
 
 # DBマイグレーション（Alembic）
 docker compose exec backend alembic upgrade head                       # 適用
@@ -519,4 +563,28 @@ docker compose exec backend alembic revision --autogenerate -m "説明"  # 作�
 docker compose exec backend alembic downgrade -1                       # ロールバック
 ```
 
-詳細なコーディング規約・品質管理は [DEVELOPMENT_RULES.md](./DEVELOPMENT_RULES.md) を参照。
+詳細なコーディング規約・品質管理は [DEVELOPMENT_RULES.md](./DEVELOPMENT_RULES.md)、
+貢献方法は [CONTRIBUTING.md](./CONTRIBUTING.md) を参照。
+
+---
+
+## ライセンス
+
+Copyright 2026 Sonowa contributors
+
+[Apache License 2.0](./LICENSE) で公開している。
+
+## 謝辞
+
+Sonowa は以下のオープンソースプロジェクトとサービスの上に成り立っている。開発者・コミュニティに感謝する。
+
+| 区分 | プロジェクト |
+|---|---|
+| リアルタイム基盤 | [LiveKit](https://github.com/livekit/livekit)（SFU・Agent SDK・クライアント SDK / Apache-2.0）、[coturn](https://github.com/coturn/coturn) |
+| バックエンド | [FastAPI](https://github.com/fastapi/fastapi)、[Uvicorn](https://github.com/encode/uvicorn)、[SQLAlchemy](https://github.com/sqlalchemy/sqlalchemy)、[Alembic](https://github.com/sqlalchemy/alembic)、[Pydantic](https://github.com/pydantic/pydantic)、[asyncpg](https://github.com/MagicStack/asyncpg)、[redis-py](https://github.com/redis/redis-py)、[python-jose](https://github.com/mpdavis/python-jose)、[cryptography](https://github.com/pyca/cryptography)、[httpx](https://github.com/encode/httpx)、[NumPy](https://github.com/numpy/numpy)、[Ruff](https://github.com/astral-sh/ruff) |
+| フロントエンド | [React](https://github.com/facebook/react)、[Vite](https://github.com/vitejs/vite)、[TypeScript](https://github.com/microsoft/TypeScript)、[Zustand](https://github.com/pmndrs/zustand)、[React Router](https://github.com/remix-run/react-router)、[i18next](https://github.com/i18next/i18next) / [react-i18next](https://github.com/i18next/react-i18next)、[ESLint](https://github.com/eslint/eslint) |
+| ローカル GPU（任意） | [faster-whisper](https://github.com/SYSTRAN/faster-whisper)、[CTranslate2](https://github.com/OpenNMT/CTranslate2)、[Silero VAD](https://github.com/snakers4/silero-vad)、[PyTorch](https://github.com/pytorch/pytorch)、[Transformers](https://github.com/huggingface/transformers)、[SentencePiece](https://github.com/google/sentencepiece)、[Resemblyzer](https://github.com/resemble-ai/Resemblyzer)、[VoxCPM2](https://huggingface.co/openbmb/VoxCPM2)（Apache-2.0）、[MADLAD-400](https://huggingface.co/google/madlad400-3b-mt)（Apache-2.0） |
+| インフラ / テスト | [PostgreSQL](https://www.postgresql.org/)、[Redis](https://github.com/redis/redis)、[Docker](https://www.docker.com/)、[Nginx](https://github.com/nginx/nginx)、[Playwright](https://github.com/microsoft/playwright) |
+| クラウド AI | OpenAI（Realtime / GPT-4o-transcribe / GPT-4o-mini / TTS）、Google（Chirp 3 / Cloud Translation / Gemini）、Deepgram（Nova-3） |
+
+各プロジェクトのライセンスは、それぞれのリポジトリの表記に従う。

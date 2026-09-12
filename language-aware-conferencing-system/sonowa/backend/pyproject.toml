@@ -12,6 +12,8 @@ name = "sonowa-backend"
 version = "1.0.0"
 description = "Language-Aware Meeting System Backend"
 requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Sonowa contributors" }]
 
 dependencies = [
     # Web Framework

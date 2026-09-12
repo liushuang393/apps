@@ -8,7 +8,7 @@ Sonowa（Language-Aware Meeting System）は、多言語会議向けのリアル
 
 - **対応言語**: 日本語 (ja), 英語 (en), 中国語 (zh), ベトナム語 (vi)
 - **遅延目標**: ≤1200ms（超過時は字幕のみにフォールバック）
-- **AIプロバイダー**: gpt4o_transcribe（推奨）, gpt_realtime, deepgram
+- **AIプロバイダー**: gpt_realtime（既定）, gpt4o_transcribe, deepgram, google, gemini_live
 
 ## 開発コマンド
 
@@ -38,7 +38,7 @@ ruff check app/ --fix && ruff format app/        # リント+フォーマット
 ```bash
 cd frontend
 npm install                  # 依存関係インストール
-npm run dev                  # 開発サーバー起動（port 5273）
+npm run dev                  # 開発サーバー起動（既定 5173。5273 で使うなら VITE_PORT=5273）
 npm run build                # プロダクションビルド
 npm run lint                 # ESLint
 npm run type-check           # TypeScript型チェック
@@ -63,8 +63,8 @@ docker compose exec backend alembic upgrade head       # コンテナ内でマ�
 frontend/           React 18 + TypeScript + Zustand + Vite
   src/
     components/     UI: AudioControlPanel, PreferencePanel, SubtitleDisplay
-    hooks/          useWebSocket, useAudioCapture, useAudioDevices, useTranslation
-    pages/          ページコンポーネント（10ファイル）
+    hooks/          useLiveKit, useAudioCapture, useAudioDevices, useTranslation
+    pages/          ページコンポーネント（12ファイル）
     store/          authStore, roomStore（Zustand）
     constants/      言語設定等の定数
     i18n/           多言語対応
@@ -75,11 +75,12 @@ backend/            FastAPI + SQLAlchemy 2.0 + Redis
     rooms/          会議室CRUD、Redis状態管理
     admin/          ユーザー管理、統計API、言語設定
     ai_pipeline/    AIプロバイダー抽象化、QoS監視
-      providers/    GPT-4o, GPT-Realtime, Deepgram実装
+      providers/    GPT-Realtime, GPT-4o, Deepgram, Google, Gemini Live, local 実装
     audio/          音声処理（VAD）
-    translate/      翻訳API、字幕キャッシュ
-    websocket/      リアルタイム通信（handler.py）
-    db/             SQLAlchemy モデル（User, Room, Subtitle）
+    translate/      翻訳API、用語集、字幕キャッシュ、翻訳メモリ
+    webrtc/         LiveKit Agent（音声フォーク Gateway）・配信
+    meetings/       会議セッション・モード切替
+    db/             SQLAlchemy モデル（User, Room, Subtitle ほか）
   alembic/          DBマイグレーション
 ```
 
@@ -93,7 +94,7 @@ backend/            FastAPI + SQLAlchemy 2.0 + Redis
 | `POST /api/translate` | テキスト翻訳（キャッシュ付き） |
 | `GET/PATCH /api/admin/users/{id}` | ユーザー管理（要admin） |
 | `GET/PUT /api/admin/settings/languages` | 言語設定（要admin） |
-| `WS /ws/room/{room_id}?token={jwt}` | リアルタイム接続 |
+| `POST /api/rooms/{id}/token` | LiveKit 参加トークン発行（リアルタイム接続） |
 
 ## コーディング規則
 
@@ -128,7 +129,7 @@ backend/            FastAPI + SQLAlchemy 2.0 + Redis
 DATABASE_URL=postgresql://sonowa:sonowa_secret_2024@localhost:5432/sonowa
 REDIS_URL=redis://localhost:6379/0
 JWT_SECRET=your-secret-key
-AI_PROVIDER=gpt4o_transcribe          # gpt4o_transcribe, gpt_realtime, deepgram
+AI_PROVIDER=gpt_realtime              # gpt_realtime, gpt4o_transcribe, deepgram, google, gemini_live
 OPENAI_API_KEY=your-key
 # DEEPGRAM_API_KEY=your-key           # deepgram使用時
 HOST_IP=192.168.x.x                   # LAN公開時のみ

@@ -124,7 +124,7 @@ class SegmentProcessor:
         if not callable(exceeded):
             return None
         result = exceeded()
-        return result if isinstance(result, (bool, type(None))) else None
+        return result if isinstance(result, bool | None) else None
 
     def is_provider_recovering(self, speaker_id: str) -> bool:
         """Runtime 由来の Provider 回復中観測を返す。"""

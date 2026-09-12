@@ -31,7 +31,7 @@ cd /mnt/d/apps/language-aware-conferencing-system/sonowa
 # kit CLI（例: プロジェクト venv）
 python3 -m venv .venv-testing-kit
 .venv-testing-kit/bin/pip install dist が無い場合は \
-  /home/liush/projects/serverlessAIAgents/testing-kit/dist/testing_kit_py-0.3.0-py3-none-any.whl
+  <testing-kit>/dist/testing_kit_py-0.3.0-py3-none-any.whl
 # 依存: playwright 等は venv に導入済み想定
 
 export PATH="$PWD/.venv-testing-kit/bin:$PATH"

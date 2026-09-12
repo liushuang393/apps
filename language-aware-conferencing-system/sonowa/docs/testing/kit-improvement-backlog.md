@@ -1,6 +1,6 @@
 # testing-kit 改善バックログ
 
-対象: `/home/liush/projects/serverlessAIAgents/testing-kit` v0.3.0  
+対象: `<testing-kit>` v0.3.0  
 目的: **手順は共通、差分は契約で宣言**できるようにする。  
 作成日: 2026-09-06
 
