@@ -118,5 +118,5 @@ Relates to #
 - [ ] 適切なコミットメッセージを記載
 - [ ] セルフレビュー実施
 - [ ] コンフリクト解消
-- [ ] [DEVELOPMENT_RULES.md](../lams-mvp/DEVELOPMENT_RULES.md) に準拠
+- [ ] [DEVELOPMENT_RULES.md](../sonowa/DEVELOPMENT_RULES.md) に準拠
 

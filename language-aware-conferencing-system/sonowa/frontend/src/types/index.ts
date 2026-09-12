@@ -1,0 +1,178 @@
+/**
+ * Sonowa フロントエンド型定義
+ */
+
+/**
+ * システムで利用可能な全言語コード
+ * OpenAI Whisper/GPT-4oで高精度な10言語
+ */
+export type AllLanguageCode =
+  | 'en'
+  | 'ja'
+  | 'zh'
+  | 'ko'
+  | 'vi'
+  | 'fr'
+  | 'de'
+  | 'ru'
+  | 'es'
+  | 'pt';
+
+/** 対応言語（後方互換性のため維持、動的に有効化された言語） */
+export type SupportedLanguage = AllLanguageCode;
+
+/** 音声モード: 原声 or 翻訳 */
+export type AudioMode = 'original' | 'translated';
+
+/** 会議メディアの品質状態（接続状態とは独立）。 */
+export type RoomMediaState = 'healthy' | 'degraded' | 'interrupted';
+
+/** ユーザーロール */
+export type UserRole = 'admin' | 'moderator' | 'user';
+
+/** ユーザー情報 */
+export interface User {
+  id: string;
+  email: string;
+  displayName: string;
+  nativeLanguage: SupportedLanguage;
+  role: UserRole;
+  isActive: boolean;
+}
+
+/** 参加者設定 */
+export interface ParticipantPreference {
+  userId: string;
+  displayName: string;
+  nativeLanguage: SupportedLanguage;
+  audioMode: AudioMode;
+  subtitleEnabled: boolean;
+  targetLanguage: SupportedLanguage;
+  /** マイクがONかどうか */
+  isMicOn?: boolean;
+}
+
+/** 会議室ポリシー */
+export interface RoomPolicy {
+  allowedLanguages: SupportedLanguage[];
+  defaultAudioMode: AudioMode;
+  allowModeSwitch: boolean;
+}
+
+/** 会議室情報 */
+export interface Room {
+  id: string;
+  name: string;
+  description: string | null;
+  creatorId: string;
+  allowedLanguages: SupportedLanguage[];
+  defaultAudioMode: AudioMode;
+  allowModeSwitch: boolean;
+  isPrivate: boolean;  // 私有会議（作成者以外は一覧に非表示・入室不可）
+  isActive: boolean;
+  participantCount: number;
+  /** 会議AI主線の既定（a=聞く / b=読む / hybrid=両方）。受聴の original/translated とは別概念 */
+  defaultMode: MeetingMode;
+  enableOpenaiS2s: boolean;
+}
+
+/** 会議AI主線モード（聞く / 読む / 両方） */
+export type MeetingMode = 'a' | 'b' | 'hybrid';
+
+/** 進行中ミーティングセッション */
+export interface MeetingSessionInfo {
+  id: string;
+  roomId: string;
+  mode: MeetingMode;
+  isActive: boolean;
+  enableOpenaiS2s: boolean;
+  languageRoutes: Record<string, unknown>;
+}
+
+/** 字幕データ（クライアント側翻訳対応） */
+export interface SubtitleData {
+  /** DataChannel イベント契約の版 */
+  schemaVersion?: number;
+  /** 字幕の一意識別子（重複排除用） */
+  id?: string;
+  /** シーケンス番号（順序保証用） */
+  seq?: number;
+  /** 話者ID */
+  speakerId: string;
+  /** 原文テキスト */
+  originalText: string;
+  /** 原文の言語 */
+  sourceLanguage: SupportedLanguage;
+  /** 翻訳後テキスト（クライアント側で翻訳した場合） */
+  translatedText?: string;
+  /** サーバーがこの受信者向けに用意した翻訳先言語 */
+  targetLanguage?: SupportedLanguage;
+  /** ★サーバー側プリ翻訳結果（言語コード → 翻訳テキスト） */
+  translations?: Record<string, string>;
+  /** 翻訳済みフラグ */
+  isTranslated?: boolean;
+  /** 翻訳遅延（ms） */
+  latencyMs?: number;
+  /** 字幕が最終確定かどうか */
+  isFinal?: boolean;
+  /** 暫定字幕（partial/interim）かどうか。true の場合は原文のみの低遅延表示 */
+  isPartial?: boolean;
+  /** 暫定字幕の版番号（大きいほど新しい。順序逆転ガードに使用） */
+  revision?: number;
+  /** どちらの主線から字幕化したか */
+  mainline?: 'hearing' | 'reading';
+  /** 使用プロバイダー */
+  provider?: string | null;
+  /** 全主線失敗による縮退字幕（原文プレースホルダ・翻訳なし）。改善点 M4 */
+  degraded?: boolean;
+  /** 使用モデルID（可観測・A/B。改善案 §3 事件協議） */
+  modelId?: string | null;
+  /** 話者分離ラベル（P4-A）。track 権威の speakerId を補う増強情報（未有効時 null） */
+  speakerLabel?: string | null;
+  /** 発話識別子（イベント契約） */
+  utteranceId?: string;
+  /** barge-in 抑止に用いる音声世代 */
+  generationId?: number;
+}
+
+/** WebSocketメッセージ型 */
+export type WSMessageType =
+  | 'room_state'
+  | 'user_joined'
+  | 'user_left'
+  | 'preference_updated'
+  | 'user_preference_changed'
+  | 'speaking_start'
+  | 'speaking_end'
+  | 'mic_status_changed'
+  | 'subtitle'
+  | 'subtitle_interim'  // ★ストリーミング字幕（認識中）
+  | 'qos_warning'
+  | 'error';
+
+/** ★暫定字幕データ（ストリーミングASR用） */
+export interface InterimSubtitleData {
+  schemaVersion?: number;
+  /** 字幕の一意識別子 */
+  id: string;
+  /** 話者ID */
+  speakerId: string;
+  /** 認識中テキスト */
+  text: string;
+  /** 最終確定かどうか */
+  isFinal: boolean;
+  /** 同一発話内で単調増加する更新番号 */
+  revision?: number;
+}
+
+/** QoS 警告イベント */
+export interface QosWarningData {
+  type: 'qos_warning';
+  metric: string;
+  mainline?: 'hearing' | 'reading';
+  value?: number;
+  value_ms?: number;
+  target?: number;
+  target_ms?: number;
+  shouldFallbackToSubtitle?: boolean;
+}

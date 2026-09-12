@@ -1,0 +1,9 @@
+/**
+ * Sonowa グローバルスタイル入口（非推奨の巨大単一ファイルからの移行用）
+ * 目的: tokens / base / shared のみを読み込む薄いシェル
+ * 注意: ページ固有スタイルは各 page TSX から import すること。本ファイルへ追加しない。
+ */
+
+@import "./_tokens.css";
+@import "./_base.css";
+@import "./_shared.css";

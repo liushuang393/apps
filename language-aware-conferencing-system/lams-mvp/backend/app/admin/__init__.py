@@ -1,1 +1,0 @@
-"""LAMS Admin module"""

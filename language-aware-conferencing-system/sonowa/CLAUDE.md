@@ -1,0 +1,149 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## プロジェクト概要
+
+Sonowa（Language-Aware Meeting System）は、多言語会議向けのリアルタイム音声翻訳・字幕システム。参加者は「原声」か「翻訳音声」を自由に選択でき、聴いている音声と同じ言語の字幕が表示される。
+
+- **対応言語**: 日本語 (ja), 英語 (en), 中国語 (zh), ベトナム語 (vi)
+- **遅延目標**: ≤1200ms（超過時は字幕のみにフォールバック）
+- **AIプロバイダー**: gpt4o_transcribe（推奨）, gpt_realtime, deepgram
+
+## 開発コマンド
+
+### 静的解析・リント（コミット前必須）
+
+```bash
+./scripts/check.sh           # 全チェック
+./scripts/check.sh --fix     # 自動修正付き
+./scripts/check.sh --backend # バックエンドのみ
+./scripts/check.sh --frontend # フロントエンドのみ
+```
+
+### バックエンド（Python/FastAPI）
+
+```bash
+cd backend
+pip install .                                    # 依存関係インストール
+uvicorn app.main:app --reload --port 8090        # 開発サーバー起動
+alembic upgrade head                             # マイグレーション適用
+alembic revision --autogenerate -m "説明"        # マイグレーション作成
+pytest                                           # テスト実行
+ruff check app/ --fix && ruff format app/        # リント+フォーマット
+```
+
+### フロントエンド（React/TypeScript）
+
+```bash
+cd frontend
+npm install                  # 依存関係インストール
+npm run dev                  # 開発サーバー起動（port 5273）
+npm run build                # プロダクションビルド
+npm run lint                 # ESLint
+npm run type-check           # TypeScript型チェック
+```
+
+### Docker
+
+```bash
+docker compose up --build                              # 全サービス起動
+docker compose up postgres redis -d                    # DB/Cache のみ起動
+HOST_IP=192.168.x.x docker compose up -d --build       # LAN公開用
+docker compose exec backend alembic upgrade head       # コンテナ内でマイグレーション
+```
+
+**Windows（PowerShell）**: `.sh` は不要。`$env:HOST_IP="192.168.x.x"; docker compose up -d --build` を使う。
+`./scripts/start-docker.sh` は WSL2/Linux 用。WSL から Docker Desktop に届かない場合は PowerShell に切り替える。
+エージェントは毎回 compose を再調査せず `.cursor/rules/docker-windows-startup.mdc` に従う。
+
+## アーキテクチャ
+
+```
+frontend/           React 18 + TypeScript + Zustand + Vite
+  src/
+    components/     UI: AudioControlPanel, PreferencePanel, SubtitleDisplay
+    hooks/          useWebSocket, useAudioCapture, useAudioDevices, useTranslation
+    pages/          ページコンポーネント（10ファイル）
+    store/          authStore, roomStore（Zustand）
+    constants/      言語設定等の定数
+    i18n/           多言語対応
+
+backend/            FastAPI + SQLAlchemy 2.0 + Redis
+  app/
+    auth/           JWT認証、RBAC（admin/moderator/user）
+    rooms/          会議室CRUD、Redis状態管理
+    admin/          ユーザー管理、統計API、言語設定
+    ai_pipeline/    AIプロバイダー抽象化、QoS監視
+      providers/    GPT-4o, GPT-Realtime, Deepgram実装
+    audio/          音声処理（VAD）
+    translate/      翻訳API、字幕キャッシュ
+    websocket/      リアルタイム通信（handler.py）
+    db/             SQLAlchemy モデル（User, Room, Subtitle）
+  alembic/          DBマイグレーション
+```
+
+### 主要APIエンドポイント
+
+| パス | 説明 |
+|------|------|
+| `POST /api/auth/register`, `/login` | 認証 |
+| `GET/POST /api/rooms` | 会議室一覧・作成 |
+| `GET /api/rooms/{id}/transcript` | 会議記録取得 |
+| `POST /api/translate` | テキスト翻訳（キャッシュ付き） |
+| `GET/PATCH /api/admin/users/{id}` | ユーザー管理（要admin） |
+| `GET/PUT /api/admin/settings/languages` | 言語設定（要admin） |
+| `WS /ws/room/{room_id}?token={jwt}` | リアルタイム接続 |
+
+## コーディング規則
+
+### 共通
+
+- **ファイルサイズ**: 500行推奨、1500行絶対上限
+- **コメント**: 日本語で記載、関数は目的・入出力・注意点を記載
+- **禁止**: `console.log`/`print`、マジックナンバー、秘密情報のハードコード
+
+### TypeScript
+
+- `strict: true`、`any`禁止（`unknown`使用）
+- Propsは`interface`で定義
+- 関数コンポーネント + カスタムフックでロジック分離
+
+### Python
+
+- 型ヒント必須（引数・戻り値）
+- Pydanticでバリデーション
+- `logging`モジュール使用（`print`禁止）
+- Ruff: `E`, `W`, `F`, `I`, `B`, `C4`, `UP`, `ARG`, `SIM`
+
+## Git運用
+
+- **ブランチ**: `feature/`, `bugfix/`, `hotfix/`, `refactor/`, `docs/`
+- **コミット**: Conventional Commits形式（`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`）
+- **コミット前**: `./scripts/check.sh` でエラー0を確認
+
+## 環境変数（.env）
+
+```bash
+DATABASE_URL=postgresql://sonowa:sonowa_secret_2024@localhost:5432/sonowa
+REDIS_URL=redis://localhost:6379/0
+JWT_SECRET=your-secret-key
+AI_PROVIDER=gpt4o_transcribe          # gpt4o_transcribe, gpt_realtime, deepgram
+OPENAI_API_KEY=your-key
+# DEEPGRAM_API_KEY=your-key           # deepgram使用時
+HOST_IP=192.168.x.x                   # LAN公開時のみ
+```
+
+## アクセスURL
+
+| サービス | URL |
+|---------|-----|
+| フロントエンド | http://localhost:5273 |
+| バックエンドAPI | http://localhost:8090 |
+| APIドキュメント | http://localhost:8090/docs |
+
+<!-- testing-kit-ai:bridge:start -->
+## Testing Kit
+
+Before planning or running end-to-end tests, read `.testing-kit/AI-INSTRUCTIONS.md` and run `testing-kit ai-guide --format text`. The package-owned instruction file is the Testing Kit workflow source of truth.
+<!-- testing-kit-ai:bridge:end -->
