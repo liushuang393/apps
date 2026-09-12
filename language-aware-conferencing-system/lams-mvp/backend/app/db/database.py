@@ -24,13 +24,33 @@ logger = logging.getLogger(__name__)
 # backend ルート（alembic.ini / alembic ディレクトリの所在）
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
-# 非同期エンジン作成（postgresql → postgresql+asyncpg）
-_db_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://")
-engine = create_async_engine(
-    _db_url,
-    echo=(settings.env == "development"),
-    pool_pre_ping=True,
-)
+
+def _build_async_database_url(url: str) -> str:
+    """同期 URL を SQLAlchemy 非同期ドライバ URL に変換する。
+
+    Args:
+        url: 設定上の DATABASE_URL（postgresql / sqlite 等）。
+
+    Returns:
+        asyncpg / aiosqlite 付きの接続 URL。
+    """
+    if url.startswith("sqlite+aiosqlite:"):
+        return url
+    if url.startswith("sqlite:"):
+        return url.replace("sqlite:", "sqlite+aiosqlite:", 1)
+    return url.replace("postgresql://", "postgresql+asyncpg://")
+
+
+# 非同期エンジン作成（postgresql→asyncpg / sqlite→aiosqlite）
+_db_url = _build_async_database_url(settings.database_url)
+_engine_kwargs: dict = {
+    "echo": (settings.env == "development"),
+    "pool_pre_ping": True,
+}
+if _db_url.startswith("sqlite"):
+    # SQLite は単一ファイル向け。E2E（Docker 無し）で使用する。
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+engine = create_async_engine(_db_url, **_engine_kwargs)
 
 # セッションファクトリ
 async_session = async_sessionmaker(
@@ -131,7 +151,20 @@ async def run_migrations_to_head(database_url: str | None = None) -> None:
 
 
 async def init_db() -> None:
-    """スキーマを head へ収束させ、Alembic 管理前の永続スキーマを補完する。"""
+    """スキーマを head へ収束させ、Alembic 管理前の永続スキーマを補完する。
+
+    Notes:
+        ``sqlite`` URL の場合は Docker/Postgres が使えない E2E 向けに
+        ``Base.metadata.create_all`` でスキーマを用意する（Alembic は Postgres 前提 DDL を含むため）。
+    """
+    if settings.database_url.startswith("sqlite"):
+        from app.db.models import Base
+
+        logger.info("[DB] sqlite E2E モード: metadata.create_all で初期化")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return
+
     await run_migrations_to_head()
     async with engine.begin() as conn:
         await _reconcile_legacy_schema(conn)

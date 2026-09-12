@@ -1,7 +1,0 @@
-# sr-managed v5.2.0
-interface:
-  display_name: "sr-refactor"
-  short_description: "Restructure code without changing observable behavior: charac..."
-  default_prompt: "Use $sr-refactor for this workflow."
-policy:
-  allow_implicit_invocation: false

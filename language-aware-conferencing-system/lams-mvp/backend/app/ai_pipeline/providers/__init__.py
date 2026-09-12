@@ -101,8 +101,7 @@ def _build_ai_provider() -> AIProvider:
 
     if e2e_mock_ai_enabled() or provider == "mock":
         logger.info(
-            "[AI Provider] MockAIProvider を使用 "
-            "(LAMS_E2E_MOCK_AI=%s, ai_provider=%s)",
+            "[AI Provider] MockAIProvider を使用 (LAMS_E2E_MOCK_AI=%s, ai_provider=%s)",
             "1" if e2e_mock_ai_enabled() else "0",
             provider,
         )

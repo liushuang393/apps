@@ -1,7 +1,0 @@
-# sr-managed v5.2.0
-interface:
-  display_name: "sr-route"
-  short_description: "Classify a natural-language development request into the righ..."
-  default_prompt: "Use $sr-route for this workflow."
-policy:
-  allow_implicit_invocation: false

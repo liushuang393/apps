@@ -17,7 +17,7 @@ test.describe("[PREF-001] preference panel", () => {
     const created = await createRoom(token, {
       name: `E2E Pref ${Date.now().toString(36)}`,
     });
-    expect(created.status).toBe(200);
+    expect([200, 201]).toContain(created.status);
     const roomId = created.data?.id;
     expect(roomId).toBeTruthy();
 

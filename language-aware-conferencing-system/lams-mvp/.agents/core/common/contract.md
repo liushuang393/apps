@@ -106,94 +106,21 @@ issue is outside the approved scope.
 Do not claim success for checks that could not run. State the blocker and required
 human action.
 
-## Out-of-band requests
+## Interaction trigger
 
-A workflow is a constraint on what may be _changed_, never on what may be _answered_.
+Read `./interaction.md` only when a person asks a question during a phase, corrects a relied-on
+fact, changes scope or requirements, requests stop/switch, or when a decision may need human
+ownership. A question is not approval. Before suspending work, persist the current phase and
+next action in the task artifact. A scope or requirement change invalidates the owning approval;
+a plain question does not.
 
-While a phase is running, a person may ask something the phase has no opinion about — an
-explanation, a summary, a number, a document for a different audience. Answer it in the
-same turn. A gated process that goes quiet on everything outside its own scope is not
-disciplined; it has become a machine the person has to work around.
+## Retry circuit breaker
 
-Three rules keep this from eroding the gate:
-
-```text
-answer now             the answer is not a phase deliverable and does not wait for one
-change nothing         no production edit outside the approved envelope, whatever was asked
-say where it landed    if the answer is worth keeping, name the file it went to
-```
-
-Deciding where it lands:
-
-| The answer is                          | Where it goes                                                |
-| -------------------------------------- | ------------------------------------------------------------ |
-| Only useful in this conversation       | The reply. No file.                                          |
-| A durable artifact of this task        | The `design` destination for this task                       |
-| A durable asset unrelated to this task | Its own home, resolved through `./artifact-map.md`           |
-| A change to how work is done here      | `.agents/local/` or the repository's rules, proposed at the gate |
-
-The third row is the one that gets lost: an asset produced during a task, belonging to
-something else, and left in the chat because the task had nowhere to put it. Give it a
-file, then return to the phase.
-
-### Which interruptions the phase survives
-
-| Interruption                                | Effect on the phase                    | After answering                                   |
-| ------------------------------------------- | -------------------------------------- | ------------------------------------------------- |
-| A question, explanation, summary, or number | None                                   | Resume at the same step                           |
-| An asset for a different audience           | None. Write the file                   | Resume at the same step                           |
-| A correction to a fact the phase relies on  | Evidence is stale                      | Re-derive that evidence, then resume              |
-| A new or changed requirement                | PLAN approval is stale                 | Return to PLAN. Do not continue the current phase |
-| "Change this code now"                      | Not out-of-band — it is a scope change | Envelope and gate decide, not the request         |
-| "Stop" / "switch to something else"         | Phase suspended                        | Record the next action before leaving             |
-
-Only the first two rows resume where they left off. The rest change what the phase is
-allowed to assume, and continuing as if they had not happened is how a phase finishes
-against a specification nobody holds any more.
-
-### Resuming
-
-The resume point lives in the task artifacts, never in the conversation. Before answering
-an out-of-band request, the current phase and the next action are already recorded — if
-they are not, record them first, then answer. Recording after the fact depends on
-remembering, and the interruption is exactly the moment that fails.
-
-Return by saying which task and which step is resuming. A silent return leaves the person
-unable to tell whether the interruption cost them the thread.
-
-## Handing a decision to a person
-
-A gate is where a person approves. It is not the same thing as a question, and the two
-get confused in the direction that costs the most: a workflow that asks at every fork
-turns approval into a reflex, and a reflex approves the one thing that mattered.
-
-Ask a person mid-phase only when **both** hold:
-
-```text
-the answer changes what gets built, not merely how it is written
-AND proceeding on any assumption would be unsafe, or would waste the work if wrong
-```
-
-Everything else is decided, recorded, and reported — not asked.
-
-| Situation                                                                 | Ask, or decide                                |
-| ------------------------------------------------------------------------- | --------------------------------------------- |
-| A contract must change in a way that touches other people's code          | Ask                                           |
-| The specification and the codebase disagree on a fact the design rests on | Ask                                           |
-| Two designs are both defensible and the choice is a business preference   | Ask                                           |
-| A requirement turns out to be **narrower** than written, with evidence    | Decide. Record the evidence and the narrowing |
-| A requirement turns out to be wider, or a new one appears                 | Ask — this is scope                           |
-| Naming, file layout, helper structure, test shape                         | Decide                                        |
-| An interpretation with one sensible default                               | Decide, state the assumption                  |
-
-The fourth row is the one usually got wrong. A requirement written against a premise that
-turned out to be false is not a scope change when it is corrected downward — the work
-those words asked for never existed. Correct it, record why, keep going. Asking there
-spends a person's attention on confirming that something imaginary is imaginary.
-
-Stopping is also a decision, and it is not free. A phase that stops has cost someone a
-context switch; if the answer was going to be "yes, obviously", the stop was a defect in
-the workflow, not diligence.
+For an environment, tool, or integration failure, record a failure signature: command, exit
+status, and primary error. Without new evidence, allow at most two attempts with the same
+signature. A third identical attempt is prohibited: record the blocker and move to a known
+fallback or the exact human action required. A changed signature or new evidence supporting a
+different hypothesis opens a new two-attempt budget; renaming the same attempt does not.
 
 ## Quality baseline
 
@@ -208,7 +135,7 @@ Where `project.md` is silent, prefer repository-defined tooling and conventions.
 - Treat required CI as authoritative when it exists.
 - Sanitize logs, traces, screenshots, scan output, and examples before storing evidence.
 
-## External / destructive actions
+## Prohibited actions and external / destructive actions
 
 Honor `project.md` section 5 (prohibited actions) as a hard constraint. A prohibited
 action is not negotiable by a workflow step that seems to require it — report the

@@ -45,6 +45,8 @@ auth.mode =
 
 **受入**: 権限問題と「未起動」を区別したメッセージが出る。
 
+**LAMS 実測（2026-09-06）**: `docker info` は Client 情報まで出るが `docker.proxy.sock` で Permission denied。B レーン preflight はこれを `BLOCKED` として記録（失敗にしない）。
+
 ### K3. identity probe の汎用化
 
 **問題**: `/__testing_kit_identity` 固定は多くの実アプリに無い。
@@ -121,14 +123,21 @@ path = "/health"
 
 - CDN／キャッシュ済み chromium の再利用
 - `--with-deps` 失敗時のフォールバックメッセージ
+- **LAMS 実測（2026-09-06）**: グローバル `~/.cache/ms-playwright` が root 所有だと symlink 不可。プロジェクトローカル `PLAYWRIGHT_BROWSERS_PATH=.scratch/ms-playwright` と revision alias（1208→1200）＋ ffmpeg 同梱が有効。kit doctor に「writable browsers path」検査を追加したい。
 
 ### K10. レポート鮮度 API の portable 同梱
 
 - installed-kit でも `docs/testing/report/` 生成が一コマンド
 
-### K11. adapter マニフェストに auth 例を明記
+### K12. installed-kit Spec C（AI manifest）と doctor ratchet
 
-- FastAPI+React の JWT／Cookie の両方を examples に
+**LAMS 実測（2026-09-06）**:
+
+- `testing-kit doctor`: `project root contract` が `legacy=41 > baseline=40`（kit ソース側 `check_frontend_auth_contract.py`）
+- `certify-project`: `spec_c_ai_manifest_missing`（portable_preflight）。`ai-install` 実施後も installed-kit / ソース kit の境界で不合格
+- デモ Django の evidence にも同エラーが残存 → アプリ固有ではない
+
+**受入**: installed wheel だけで `doctor` + `certify-project` が LAMS の A レーン証拠と独立に緑になる。
 
 ---
 

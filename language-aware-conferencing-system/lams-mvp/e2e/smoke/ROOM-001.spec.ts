@@ -29,10 +29,17 @@ test.describe("[ROOM-001] 会議室作成", () => {
       .fill(roomName);
     await page.getByTestId("room-create-submit").click();
 
-    // 作成後は会議室ページへ遷移
+    // 作成後は会議室ページへ遷移（部屋名は API メタ or ストア）
     await expect(page).toHaveURL(/\/room\/[^/]+/, { timeout: 20_000 });
     await expect(page.getByTestId("room-page")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(roomName, { exact: false })).toBeVisible();
+    await expect(page.getByTestId("connection-status")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("leave-btn")).toBeVisible();
+    // roomMeta 取得後にヘッダへ部屋名が出る（LiveKit 不要）
+    await expect(page.locator("header h1")).toContainText(roomName, {
+      timeout: 20_000,
+    });
 
     // 一覧へ戻して UI 観測
     await goto(page, "/rooms");

@@ -91,15 +91,28 @@ function runId(): string {
 }
 
 /**
+ * 並列 worker でも衝突しない一意サフィックス。
+ * TEST_PARALLEL_INDEX は Playwright が付与。無い場合は時刻＋乱数。
+ */
+function uniqueSuffix(): string {
+  const worker =
+    process.env.TEST_PARALLEL_INDEX ??
+    process.env.TEST_WORKER_INDEX ??
+    "0";
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `${runId()}.w${worker}.${Date.now().toString(36)}.${rand}`;
+}
+
+/**
  * E2E 用ユーザー定義。
- * email は E2E_RUN_ID サフィックスで一意化し、共有 DB での再実行衝突を避ける。
+ * email は runId + worker + 乱数で一意化し、共有 DB / 並列実行の衝突を避ける。
  */
 export const E2E_USERS = {
   user: {
     role: "user" as const,
-    email: () => `e2e.user.${runId()}@example.com`,
+    email: () => `e2e.user.${uniqueSuffix()}@example.com`,
     password: () => process.env.E2E_USER_PASSWORD ?? "E2eUserPass123!",
-    displayName: () => `E2E User ${runId()}`,
+    displayName: () => `E2E User ${uniqueSuffix()}`,
   },
   admin: {
     role: "admin" as const,
@@ -156,7 +169,10 @@ export async function loginViaApi(
   };
 }
 
-/** ユーザー登録 API（常に role=user） */
+/**
+ * ユーザー登録 API（常に role=user）。
+ * 既登録（400）や並列競合（500 UNIQUE）のときは login へフォールバックする。
+ */
 export async function registerUser(
   input: RegisterInput,
 ): Promise<{ token: string; user: LamsUser }> {
@@ -170,17 +186,24 @@ export async function registerUser(
       native_language: input.nativeLanguage ?? "ja",
     }),
   });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(
-      `[lams/auth] register failed status=${res.status} detail=${detail.slice(0, 200)}`,
-    );
+  if (res.ok) {
+    const body = (await res.json()) as AuthApiResponse;
+    return {
+      token: body.access_token,
+      user: mapApiUser(body.user),
+    };
   }
-  const body = (await res.json()) as AuthApiResponse;
-  return {
-    token: body.access_token,
-    user: mapApiUser(body.user),
-  };
+
+  const detail = await res.text().catch(() => "");
+  const already =
+    res.status === 400 ||
+    (res.status === 500 && /unique|already|既に登録/i.test(detail));
+  if (already) {
+    return loginViaApi({ email: input.email, password: input.password });
+  }
+  throw new Error(
+    `[lams/auth] register failed status=${res.status} detail=${detail.slice(0, 200)}`,
+  );
 }
 
 /**

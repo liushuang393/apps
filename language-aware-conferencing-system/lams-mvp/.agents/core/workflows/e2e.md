@@ -1,10 +1,6 @@
 # SR E2E Workflow
 
-Read `../common/contract.md`, `../common/method-router.md`, `../common/artifact-map.md`,
-`../common/approval-gate.md`, and `../common/closeout.md`.
-
-Per phase: `../common/test-evidence.md` in JOURNEY DESIGN, `../common/review.md` in
-IMPLEMENT, `../common/receipt.md` in VERIFY.
+The host adapter loads the base common contract once. Read additional common modules only when the current phase names them.
 
 Artifacts, in `design` under `e2e/`:
 `01-journey-plan.md`, `02-implementation-report.md`, `03-verification-report.md`, plus `evidence`.
@@ -47,9 +43,13 @@ Precondition: approved E2E implementation.
 2. Run from a clean/reproducible environment and execute the approved journey matrix.
 3. Repeat runs according to the approved flake strategy. Retry-dependent passes remain suspect.
 4. Classify failures: test defect / application defect / environment-infrastructure / flaky timing-data.
-5. Use traces/screenshots/video/log/network evidence only as needed; sanitize and follow artifact-retention policy.
-6. Use Trellis verification/check for changed test/support code and verify required CI.
-7. Verify accessibility/keyboard/focus and manual UAT only when required and evidenced.
-8. Do not claim production verification unless it actually ran in production with explicit authorization.
-9. Run `../common/closeout.md` and the receipt in `../common/receipt.md`, write `03-verification-report.md`, run the finish checkpoint in `../common/guard.md`, and stop at final gate.
-10. After `APPROVE`, Trellis finish/archive. Hosted-Git handoff is a separate authorization.
+5. For environment/infrastructure failures, inspect the nearest runtime health evidence first,
+   record the command/exit/primary-error signature from `../common/contract.md`, and circuit-break
+   after two identical attempts without new evidence. Move to a known fallback or `blocked` with
+   the exact human action; do not restart broad environment discovery.
+6. Use traces/screenshots/video/log/network evidence only as needed; sanitize and follow artifact-retention policy.
+7. Use Trellis verification/check for changed test/support code and verify required CI.
+8. Verify accessibility/keyboard/focus and manual UAT only when required and evidenced.
+9. Do not claim production verification unless it actually ran in production with explicit authorization.
+10. Run `../common/closeout.md` and the receipt in `../common/receipt.md`, write `03-verification-report.md`, run the finish checkpoint in `../common/guard.md`, and stop at final gate.
+11. After `APPROVE`, Trellis finish/archive. Hosted-Git handoff is a separate authorization.

@@ -20,9 +20,13 @@ dist/
 
 # testing-kit / E2E 成果物
 .venv-testing-kit/
+.testing-kit-evidence/
 e2e/playwright-report/
 e2e/test-results/
+test-results/
+playwright-report/
 e2e/.snapshots/
 e2e/.auth/
 e2e/.runtime/*
 !e2e/.runtime/lams-shared-no-wipe.marker
+.scratch/

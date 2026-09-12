@@ -59,7 +59,7 @@
 - 失敗時も summary markdown が残る
 - LiveKit 未起動時は PREF が soft-skip（失敗にしない）
 **Tests**: A レーン再実行でフレーク調査
-**進捗状況**: 進行中（ハーネス・testid 構文修復済。8090/5273 未起動のため未実行）
+**進捗状況**: 完了（8 passed / 1 skipped ×2、flaky 0。証跡: `docs/testing/report/a-lane-summary.md`）
 
 ## E2E ステージ4: B レーン（実 AI / LiveKit）
 **目的**: `E2E_ALLOW_REAL_AI=1` 時のみ LiveKit 2 クライアントと ai-pipeline smoke を走らせる。
@@ -67,7 +67,7 @@
 - `./scripts/e2e_run_b_lane.sh` がゲート付きで動く
 - タイムアウト上限付き
 **Tests**: `test_livekit_two_clients` + `smoke_ai_pipeline_settings.py`
-**進捗状況**: 未着手
+**進捗状況**: 完了（smoke GREEN。LiveKit は Docker sock Permission denied + :7880 未到達で BLOCKED・証跡付き）
 
 ## E2E ステージ5: CI / 文書締め
 **目的**: 実行手順・ブロッカー・マトリクスを開発者向けに確定する。
@@ -75,8 +75,8 @@
 - Docker 不可時の existing-server 手順が文書化済み
 - admin は env 任意であることの注記
 - kit schema と共有 DB の整合: `data_identity.kind=file` + no-wipe marker（wipe は safe_noop）
-**Tests**: ドキュメントレビュー
-**進捗状況**: 設計アーカイブ完了。A レーン実行は API 未起動のため待ち
+**Tests**: ドキュメントレビュー + `quality-verdict.md`
+**進捗状況**: 完了（`docs/testing/report/quality-verdict.md` / `failure-classification.md`）
 
 ## 設計アーカイブ（2026-09-06）
 **目的**: 基本設計・改善案・運用手順を `docs/testing/` に固定し、実装とバックログの正本にする。

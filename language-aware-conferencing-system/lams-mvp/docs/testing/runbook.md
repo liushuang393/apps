@@ -55,7 +55,21 @@ curl -fsS http://127.0.0.1:8090/health
 curl -fsS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5273/
 ```
 
-A レーン最小は API health。Room／PREF は LiveKit も必要（無い場合 soft-skip 設計）。
+Docker が使えない場合（WSL から Desktop sock 権限無し等）:
+
+```bash
+bash scripts/start-e2e-local-stack.sh
+# SQLite + Redis:6380 + Mock AI + Vite
+```
+
+Playwright ブラウザがグローバルキャッシュで使えない場合:
+
+```bash
+export PLAYWRIGHT_BROWSERS_PATH="$PWD/.scratch/ms-playwright"
+# chromium_headless_shell-1200 / ffmpeg-1011 を配置済みであること
+```
+
+A レーン最小は API health。Room／PREF は LiveKit 無しでもシェル UI を断言（接続失敗は soft-skip）。
 
 ## 4. A レーン（決定論）
 
@@ -83,14 +97,16 @@ export E2E_ALLOW_NO_DB=1
 
 ```bash
 export E2E_ALLOW_REAL_AI=1
+# Docker 無しで admin smoke のみ回す場合:
+export LAMS_E2E_SQLITE_PATH="$PWD/.scratch/lams_e2e.sqlite3"
 # キーは .env 管理。値をログ／レポートに出さない
 ./scripts/e2e_run_b_lane.sh
 ```
 
 対象:
 
-1. LiveKit 2 クライアント（ja→en）
-2. `scripts/smoke_ai_pipeline_settings.py`
+1. LiveKit 2 クライアント（ja→en）— Docker + LiveKit:7880 必須。無ければ `BLOCKED`
+2. `scripts/smoke_ai_pipeline_settings.py` — SQLite 昇格可
 
 停止条件: quota／認証拒否／外部障害はコード不具合と分離して記録。
 

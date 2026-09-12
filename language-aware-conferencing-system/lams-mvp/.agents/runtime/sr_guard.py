@@ -23,7 +23,7 @@ obligations. This one is the checkpoint that does not have to depend on the mode
 instructions, which is why it is the one written in code.
 """
 
-# sr-managed v5.2.0
+# sr-managed v5.3.0
 from __future__ import annotations
 
 import argparse

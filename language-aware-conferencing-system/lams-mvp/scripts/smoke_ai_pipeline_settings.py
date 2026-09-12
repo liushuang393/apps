@@ -16,10 +16,11 @@
 環境変数:
     LAMS_API_BASE   既定 http://localhost:8090
     LAMS_FRONTEND   既定 http://localhost:5273（省略可・到達確認用）
+    LAMS_E2E_SQLITE_PATH  指定時は docker ではなく SQLite で admin 昇格
 
 注意:
-    一時ユーザーを登録し postgres で admin 昇格する。秘密値は出力しない。
-    exit 0 = 緑 / exit 1 = 赤
+    一時ユーザーを登録し admin 昇格する（postgres=docker / sqlite=直接 UPDATE）。
+    秘密値は出力しない。exit 0 = 緑 / exit 1 = 赤
 """
 
 from __future__ import annotations
@@ -89,9 +90,36 @@ def _request(
 
 
 def _promote_admin(user_id: str) -> None:
-    """docker compose 経由で users.role を admin にする（psql 変数で SQL 注入を避ける）。"""
+    """users.role を admin にする。
+
+    優先順位:
+      1. LAMS_E2E_SQLITE_PATH が指定されていれば SQLite を直接更新（Docker 無し E2E）
+      2. それ以外は docker compose exec postgres（従来経路）
+    """
     if not _UUID_RE.match(user_id):
         raise SmokeError(f"admin 昇格に使う user_id が UUID 形式ではない: {user_id!r}")
+
+    sqlite_path = os.environ.get("LAMS_E2E_SQLITE_PATH", "").strip()
+    if sqlite_path:
+        import sqlite3
+
+        if not os.path.isfile(sqlite_path):
+            raise SmokeError(f"SQLite が見つかりません: {sqlite_path}")
+        conn = sqlite3.connect(sqlite_path)
+        try:
+            cur = conn.execute(
+                "UPDATE users SET role = 'admin' WHERE id = ?",
+                (user_id,),
+            )
+            conn.commit()
+            if cur.rowcount != 1:
+                raise SmokeError(
+                    f"SQLite admin 昇格が反映されませんでした: rowcount={cur.rowcount}"
+                )
+        finally:
+            conn.close()
+        return
+
     cmd = [
         "docker",
         "compose",

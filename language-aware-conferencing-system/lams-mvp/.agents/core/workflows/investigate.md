@@ -1,10 +1,6 @@
 # SR Investigation / Specification Workflow
 
-Read `../common/contract.md`, `../common/method-router.md`, `../common/artifact-map.md`,
-and `../common/approval-gate.md`.
-
-Per phase: `../common/impact.md` and `../common/zones.md` in INVESTIGATE,
-`../common/change-envelope.md` in SYNTHESIZE.
+The host adapter loads the base common contract once. Read additional common modules only when the current phase names them.
 
 Artifacts, in `design` under `investigation/`:
 `01-question-scope.md`, `02-findings-map.md`, `03-spec-impact-recommendation.md`, plus `evidence`.
@@ -57,7 +53,7 @@ Precondition: approved frame.
 6. Use a throwaway prototype only to answer a design question; it lives in `scratch` and never becomes production work.
 7. Map relationships, not file lists: business rule -> UI/journey -> API -> domain/service -> data/events/external -> consumers, with tests/docs/ops attached.
 8. Search aliases/old terminology and surprising history so renamed concepts are not missed.
-9. Record contradictions, confidence, and missing evidence. Do not arbitrarily choose between code/docs/tests/user intent when they disagree.
+9. Record contradictions, confidence, and missing evidence. Do not arbitrarily choose between code/docs/tests/user intent when they disagree. For a tool or environment failure, record the command/exit/primary-error signature and apply the two-attempt circuit breaker in `../common/contract.md`; after it opens, use a known fallback or record the exact blocker instead of repeating broad discovery.
 10. Stop research when:
    - all relevant coverage rows are checked or explicitly blocked;
    - the approved decision can be made with cited evidence;

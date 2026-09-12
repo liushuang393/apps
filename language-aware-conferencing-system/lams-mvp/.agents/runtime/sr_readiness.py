@@ -14,7 +14,7 @@ no logs — a baseline holds ids, counts, hashes and an exit code, so nothing a 
 can end up committed with it.
 """
 
-# sr-managed v5.2.0
+# sr-managed v5.3.0
 from __future__ import annotations
 
 import argparse

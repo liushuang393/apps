@@ -16,7 +16,7 @@
 
 ### L1. data-testid 契約の完成
 
-**状態**: Login／Menu／Room 等に一部追加済み。RoomList／Preference／Subtitle／Admin を完了させる。
+**状態**: **完了**（2026-09-06）。Login／Menu／RoomList／Room／Preference／Subtitle／AiPipeline に配置。ROOM-001／PREF-001 が testid で通過。
 
 **必須 ID（契約）**:
 
@@ -34,7 +34,7 @@
 
 ### L2. E2E データ境界
 
-**現行**: `seed_mode=self` + email `e2e.user.<runId>@...`（共有 DB wipe 禁止）。
+**現行**: `seed_mode=self` + email `e2e.user.<runId>.w<worker>.<rand>@...`（共有 DB wipe 禁止）。並列衝突は login フォールバック＋サーバ側 IntegrityError→400。
 
 **推奨**:
 
@@ -72,9 +72,11 @@
 
 ### L6. B レーン正式化
 
-- [`scripts/e2e_run_b_lane.sh`](../../scripts/e2e_run_b_lane.sh): `E2E_ALLOW_REAL_AI=1` 必須
-- LIVE-001: `backend/tests/integration/test_livekit_two_clients.py` 公式化
-- ADMIN-AI: `scripts/smoke_ai_pipeline_settings.py`
+**状態**: **部分完了**（2026-09-06）。
+
+- [`scripts/e2e_run_b_lane.sh`](../../scripts/e2e_run_b_lane.sh): `E2E_ALLOW_REAL_AI=1` 必須 + preflight（Docker/LiveKit/API）
+- LIVE-001: Docker/7880 不可時は `BLOCKED`（失敗にしない）
+- ADMIN-AI: `scripts/smoke_ai_pipeline_settings.py`（`LAMS_E2E_SQLITE_PATH` で Docker 無し admin 昇格可）→ GREEN
 - 回数上限・固定短音声・秘密非記録
 
 ### L7. LiveKit E2E helper（固有）

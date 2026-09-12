@@ -2,14 +2,15 @@
 
 The entry point for someone who should not have to know which SR workflow their request is.
 
-Read `../common/contract.md` and `../common/method-router.md`.
+The host adapter loads the routing contract and method router once.
 
 This workflow **routes and stops**. It does not investigate, plan, implement, remediate,
-or verify. It reads enough to classify honestly, then hands over.
+or verify. It does not write files or mutate Trellis task state. It reads enough to classify
+honestly, then hands over.
 
 ## CLASSIFY
 
-1. Attach to the current Trellis task, or note that no task exists yet.
+1. Read the current Trellis task state if available, or note that none exists. Do not create or update a task.
 2. Restate the request in one sentence. If the restatement is wrong, everything after it is.
 3. Determine the intent. More than one can apply; say so rather than forcing one.
 

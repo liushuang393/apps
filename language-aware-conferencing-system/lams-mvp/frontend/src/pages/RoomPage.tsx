@@ -159,7 +159,8 @@ export function RoomPage() {
     <div className="room-page" data-testid="room-page">
       {/* E2E: room-page / connection-status / leave-btn（preference-panel / subtitle-display は子） */}
       <header>
-        <h1>🎤 {roomName || '会議室'}</h1>
+        {/* LiveKit 未接続時も API メタの部屋名を表示する */}
+        <h1>🎤 {roomMeta?.name || roomName || '会議室'}</h1>
         <div className="header-right">
           <div className="connection-status" data-testid="connection-status">
             {connectionStatus === 'connected' && (

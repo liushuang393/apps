@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -74,7 +75,7 @@ async def register(
             detail="このメールアドレスは既に登録されています",
         )
 
-    # ユーザー作成
+    # ユーザー作成（並列登録の UNIQUE 競合は 400 に正規化する）
     user = User(
         email=data.email,
         password_hash=hash_password(data.password),
@@ -82,7 +83,14 @@ async def register(
         native_language=data.native_language,
     )
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="このメールアドレスは既に登録されています",
+        ) from exc
     await db.refresh(user)
 
     # トークン＋ユーザー情報を返す

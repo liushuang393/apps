@@ -1,10 +1,6 @@
 # SR Quality / Security Workflow
 
-Read `../common/contract.md`, `../common/method-router.md`, `../common/artifact-map.md`,
-`../common/approval-gate.md`, and `../common/closeout.md`.
-
-Per phase: `../common/change-envelope.md` in SCOPE & BASELINE, `../common/review.md` (including the anti-fake lens in `../common/anti-fake.md`) in
-REMEDIATE, `../common/receipt.md` in VERIFY.
+The host adapter loads the base common contract once. Read additional common modules only when the current phase names them.
 
 Artifacts, in `design` under `quality-security/`:
 `01-scope-baseline.md`, `02-remediation.md`, `03-verification.md`, plus `evidence`.

@@ -1,65 +1,46 @@
 # SR Sub-agent Dispatch
 
-A sub-agent is a shield, not a workforce.
+A sub-agent shields the main context from one bounded read; it is not a parallel writer.
+Writing code is never dispatched. `Parallel: yes` records dependency structure only.
 
-## When to dispatch
+## Discovery then bounded work
 
-One situation only: a read that would pollute the main context — investigation, impact
-analysis, independent review, a scan. The sub-agent reads widely and returns a conclusion.
+If paths are unknown, run one discovery dispatch. It returns the evidence manifest below.
+Every later dispatch receives that manifest, reads only its `Paths`, and may search outside the
+manifest only to close a named `Unresolved` item. Update the manifest before another dispatch.
 
-Writing code is never dispatched. The main session holds the single writer for the
-duration of a slice (`./requirement-interaction.md`), and a writer that cannot see the
-other writers' edits is how contracts drift apart without anyone noticing.
+## Evidence manifest
 
-`Parallel: yes` in a decomposition table records dependency structure. It does not
-authorize concurrent writers.
+| Field | Required content |
+| --- | --- |
+| Revision | Exact repository revision used for discovery |
+| Paths | Explicit bounded path list; never “the repository” or an unbounded directory |
+| Evidence | Openable path:line references supporting inclusion |
+| Already-read hashes | Content hashes for material already inspected |
+| Unresolved | Missing fact and what would settle it |
+| Stop boundary | Condition at which reading stops |
 
-## The brief
+A manifest missing any field is not dispatched. A later agent that reads outside the manifest
+without closing a named unresolved item is rejected.
 
-Six fields. A dispatch missing any of them is not sent.
+## Brief
 
-| Field      | Content                                                               |
-| ---------- | --------------------------------------------------------------------- |
-| Background | What the whole change is trying to do. One paragraph.                 |
-| Purpose    | What this dispatch must settle. One sentence.                         |
-| Position   | Which phase and which task this is part of.                           |
-| Input      | An explicit list of files, with the revision.                         |
-| Output     | The three-section template below.                                     |
-| Prohibited | No writes. No reading outside the input list. No guessed conclusions. |
+The brief states Background, Purpose, Position, Input manifest, Output template, and Prohibited
+actions. `Input` includes the manifest and revision. `Prohibited` says: no writes, no guessed
+conclusions, no reads beyond the bounded rule above.
 
-`Input` is the field that decides whether this works. "Read the repository", "look at the
-codebase", or a directory with no boundary hands the sub-agent the same unbounded problem
-the dispatch was supposed to contain. Name the files. If the right files are not yet
-known, that discovery is itself the dispatch, and its output is the list.
-
-## The return
-
-Three sections. Nothing else comes back.
+## Return
 
 ```text
 ## Conclusion
-The answer to Purpose. "Cannot determine" is a valid conclusion.
+The answer to Purpose. "Cannot determine" is valid.
 
 ## Evidence
-path:line rows. Something a reader can open. A summary is not evidence.
+path:line rows a reader can open.
 
 ## Unresolved
-What was attempted, and what access, artifact or decision would settle it.
+What was attempted and what access, artifact, or decision would settle it.
 ```
 
-A conclusion with no evidence rows is rejected and re-dispatched, not accepted with a
-caveat.
-
-## Persistence
-
-At risk R2 and above, write the brief and the return to `evidence` before acting on them.
-Below R2, do not: a disposable investigation should not leave files behind.
-
-## Failure modes this prevents
-
-```text
-the sub-agent reads everything and returns a summary of the repository
-the main session receives raw file dumps it never asked for
-two sub-agents edit the same file and the conflict surfaces at integration
-a conclusion is trusted because it sounds confident, with nothing to open
-```
+A conclusion with no evidence row is rejected. At R2 or above, persist brief, manifest, and
+return to `evidence`; below R2 keep disposable research out of the repository.

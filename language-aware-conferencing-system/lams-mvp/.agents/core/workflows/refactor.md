@@ -1,11 +1,6 @@
 # SR Refactor Workflow
 
-Read `../common/contract.md`, `../common/method-router.md`, `../common/artifact-map.md`,
-`../common/approval-gate.md`, and `../common/closeout.md`.
-
-Per phase: `../common/impact.md`, `../common/change-envelope.md` and
-`../common/test-evidence.md` in CHARACTERIZE,
-`../common/review.md` (including the anti-fake lens in `../common/anti-fake.md`) in TRANSFORM, `../common/receipt.md` in VERIFY & PROVE INVARIANCE.
+The host adapter loads the base common contract once. Read additional common modules only when the current phase names them.
 
 Artifacts, in `design` under `refactor/`:
 `01-characterization.md`, `02-transformation-report.md`, `03-invariance-verification.md`,

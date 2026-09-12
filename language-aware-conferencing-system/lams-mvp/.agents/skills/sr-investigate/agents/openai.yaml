@@ -1,7 +1,0 @@
-# sr-managed v5.2.0
-interface:
-  display_name: "sr-investigate"
-  short_description: "Investigate questions and specifications without production i..."
-  default_prompt: "Use $sr-investigate for this workflow."
-policy:
-  allow_implicit_invocation: false
