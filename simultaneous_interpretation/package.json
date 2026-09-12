@@ -136,6 +136,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "better-sqlite3": "^12.4.1",
-    "core-util-is": "^1.0.3"
+    "core-util-is": "^1.0.3",
+    "ws": "^8.21.1"
   }
 }

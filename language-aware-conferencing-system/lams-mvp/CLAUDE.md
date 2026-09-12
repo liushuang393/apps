@@ -141,3 +141,9 @@ HOST_IP=192.168.x.x                   # LAN公開時のみ
 | フロントエンド | http://localhost:5273 |
 | バックエンドAPI | http://localhost:8090 |
 | APIドキュメント | http://localhost:8090/docs |
+
+<!-- testing-kit-ai:bridge:start -->
+## Testing Kit
+
+Before planning or running end-to-end tests, read `.testing-kit/AI-INSTRUCTIONS.md` and run `testing-kit ai-guide --format text`. The package-owned instruction file is the Testing Kit workflow source of truth.
+<!-- testing-kit-ai:bridge:end -->

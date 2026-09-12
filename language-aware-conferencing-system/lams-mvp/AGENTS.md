@@ -186,3 +186,9 @@ pytest tests/test_ai_providers.py -k "test_name_substring"
 ## Cursor / Copilot Rules
 - Project rules live in `.cursor/rules/` (always-apply: Docker/Windows startup).
 - Follow those rules in addition to this file.
+
+<!-- testing-kit-ai:bridge:start -->
+## Testing Kit
+
+Before planning or running end-to-end tests, read `.testing-kit/AI-INSTRUCTIONS.md` and run `testing-kit ai-guide --format text`. The package-owned instruction file is the Testing Kit workflow source of truth.
+<!-- testing-kit-ai:bridge:end -->
