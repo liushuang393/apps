@@ -1707,6 +1707,7 @@ describe('Admin Routes', () => {
           id: '550e8400-e29b-41d4-a716-446655440050',
           stripeEventId: 'evt_1',
           eventType: 'payment_intent.succeeded',
+          payload: { data: { object: { metadata: { developer_id: 'dev-123' } } } },
           status: 'dlq',
           attempts: 5,
           lastAttemptAt: new Date('2024-01-01'),
@@ -1717,6 +1718,7 @@ describe('Admin Routes', () => {
           id: '550e8400-e29b-41d4-a716-446655440051',
           stripeEventId: 'evt_2',
           eventType: 'customer.subscription.updated',
+          payload: { data: { object: { metadata: { developer_id: 'dev-123' } } } },
           status: 'dlq',
           attempts: 3,
           lastAttemptAt: null,
@@ -1748,6 +1750,24 @@ describe('Admin Routes', () => {
       expect(webhookLogRepository.findInDLQ).toHaveBeenCalledWith(10);
     });
 
+    it('should exclude webhooks owned by another developer', async () => {
+      (webhookLogRepository.findInDLQ as jest.Mock).mockResolvedValue([
+        {
+          id: '550e8400-e29b-41d4-a716-446655440052',
+          payload: {
+            data: { object: { metadata: { developer_id: 'dev-other' } } },
+          },
+        },
+      ]);
+
+      const response = await request(app)
+        .get('/admin/webhooks/failed')
+        .set('x-api-key', 'test_api_key');
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([]);
+    });
+
     it('should return 500 on database error', async () => {
       (webhookLogRepository.findInDLQ as jest.Mock).mockRejectedValue(new Error('Database error'));
 
@@ -1768,6 +1788,7 @@ describe('Admin Routes', () => {
         id: validWebhookId,
         stripeEventId: 'evt_1',
         eventType: 'payment_intent.succeeded',
+        payload: { data: { object: { metadata: { developer_id: 'dev-123' } } } },
         status: 'dlq',
       };
 
@@ -1793,6 +1814,7 @@ describe('Admin Routes', () => {
         id: validWebhookId,
         stripeEventId: 'evt_1',
         eventType: 'payment_intent.succeeded',
+        payload: { data: { object: { metadata: { developer_id: 'dev-123' } } } },
         status: 'dlq',
       };
 
@@ -1821,6 +1843,21 @@ describe('Admin Routes', () => {
       expect(response.body.error.message).toBe('Webhook not found');
     });
 
+    it('should return 404 when webhook belongs to another developer', async () => {
+      (webhookLogRepository.findById as jest.Mock).mockResolvedValue({
+        id: validWebhookId,
+        payload: {
+          data: { object: { metadata: { developer_id: 'dev-other' } } },
+        },
+      });
+
+      const response = await request(app)
+        .post(`/admin/webhooks/${validWebhookId}/retry`)
+        .set('x-api-key', 'test_api_key');
+
+      expect(response.status).toBe(404);
+    });
+
     it('should return 400 for invalid UUID format', async () => {
       const response = await request(app)
         .post('/admin/webhooks/not-a-valid-uuid/retry')
@@ -1838,7 +1875,7 @@ describe('Admin Routes', () => {
         id: validWebhookId,
         stripeEventId: 'evt_1',
         eventType: 'payment_intent.succeeded',
-        payload: { data: { object: {} } },
+        payload: { data: { object: { metadata: { developer_id: 'dev-123' } } } },
         status: 'processed',
         attempts: 1,
         lastAttemptAt: new Date('2024-01-01'),
@@ -1863,7 +1900,7 @@ describe('Admin Routes', () => {
         id: validWebhookId,
         stripeEventId: 'evt_1',
         eventType: 'payment_intent.succeeded',
-        payload: {},
+        payload: { data: { object: { metadata: { developer_id: 'dev-123' } } } },
         status: 'pending',
         attempts: 0,
         lastAttemptAt: null,
@@ -1890,6 +1927,21 @@ describe('Admin Routes', () => {
 
       expect(response.status).toBe(404);
       expect(response.body.error.message).toBe('Webhook not found');
+    });
+
+    it('should return 404 when webhook belongs to another developer', async () => {
+      (webhookLogRepository.findById as jest.Mock).mockResolvedValue({
+        id: validWebhookId,
+        payload: {
+          data: { object: { metadata: { developer_id: 'dev-other' } } },
+        },
+      });
+
+      const response = await request(app)
+        .get(`/admin/webhooks/${validWebhookId}`)
+        .set('x-api-key', 'test_api_key');
+
+      expect(response.status).toBe(404);
     });
 
     it('should return 500 on database error', async () => {
@@ -1958,7 +2010,7 @@ describe('Admin Routes', () => {
       expect(response.body.data[0].status).toBe('active');
     });
 
-    it('should filter entitlements by status', async () => {
+    it('should filter entitlements by status within the developer tenant', async () => {
       const mockEntitlements = [
         {
           id: '550e8400-e29b-41d4-a716-446655440060',
@@ -1973,16 +2025,33 @@ describe('Admin Routes', () => {
           createdAt: new Date('2024-01-01'),
           updatedAt: new Date('2024-01-01'),
         },
+        {
+          id: '550e8400-e29b-41d4-a716-446655440061',
+          customerId: 'cust-1',
+          productId: '550e8400-e29b-41d4-a716-446655440001',
+          purchaseIntentId: 'pi_2',
+          paymentId: 'pay_2',
+          subscriptionId: null,
+          status: 'revoked',
+          expiresAt: null,
+          revokedReason: 'refund',
+          createdAt: new Date('2024-01-02'),
+          updatedAt: new Date('2024-01-02'),
+        },
       ];
 
-      (entitlementRepository.findByStatus as jest.Mock).mockResolvedValue(mockEntitlements);
+      (customerRepository.findByDeveloperId as jest.Mock).mockResolvedValue([{ id: 'cust-1' }]);
+      (entitlementRepository.findByCustomerId as jest.Mock).mockResolvedValue(mockEntitlements);
 
       const response = await request(app)
         .get('/admin/entitlements?status=active')
         .set('x-api-key', 'test_api_key');
 
       expect(response.status).toBe(200);
-      expect(entitlementRepository.findByStatus).toHaveBeenCalledWith('active');
+      expect(customerRepository.findByDeveloperId).toHaveBeenCalledWith('dev-123');
+      expect(entitlementRepository.findByStatus).not.toHaveBeenCalled();
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0].id).toBe('550e8400-e29b-41d4-a716-446655440060');
     });
 
     it('should filter entitlements by customer_id', async () => {

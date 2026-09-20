@@ -32,6 +32,21 @@ import { notFound, internalError } from '../utils/errors';
 
 const router = Router();
 
+/**
+ * Webhook ペイロードに記録された開発者IDで所有権を検証する。
+ * 所有者を特定できないイベントは情報漏洩を防ぐため拒否する。
+ */
+function isWebhookOwnedByDeveloper(
+  payload: Record<string, any>,
+  developerId: string
+): boolean {
+  const metadata = payload?.data?.object?.metadata;
+  return (
+    metadata?.developer_id === developerId ||
+    metadata?.developerId === developerId
+  );
+}
+
 // Apply authentication and rate limiting to all admin routes
 router.use(apiKeyAuth);
 router.use(adminRateLimiter);
@@ -736,7 +751,9 @@ router.get('/webhooks/failed', validate(listFailedWebhooksQuery, 'query'), async
   try {
     const { limit } = req.query as unknown as { limit: number };
 
-    const webhooks = await webhookLogRepository.findInDLQ(limit);
+    const webhooks = (await webhookLogRepository.findInDLQ(limit)).filter((webhook) =>
+      isWebhookOwnedByDeveloper(webhook.payload, req.developer!.id)
+    );
 
     res.json({
       data: webhooks.map((w) => ({
@@ -766,7 +783,10 @@ router.post('/webhooks/:id/retry', validate(webhookIdParams, 'params'), async (r
   try {
     const webhook = await webhookLogRepository.findById(req.params.id);
 
-    if (!webhook) {
+    if (
+      !webhook ||
+      !isWebhookOwnedByDeveloper(webhook.payload, req.developer!.id)
+    ) {
       notFound(res, 'Webhook not found');
       return;
     }
@@ -811,7 +831,10 @@ router.get('/webhooks/:id', validate(webhookIdParams, 'params'), async (req: Aut
   try {
     const webhook = await webhookLogRepository.findById(req.params.id);
 
-    if (!webhook) {
+    if (
+      !webhook ||
+      !isWebhookOwnedByDeveloper(webhook.payload, req.developer!.id)
+    ) {
       notFound(res, 'Webhook not found');
       return;
     }
@@ -865,7 +888,15 @@ router.get('/entitlements', validate(listEntitlementsQuery, 'query'), async (req
         entitlements = await entitlementRepository.findByCustomerId(customer_id as string);
       }
     } else if (status) {
-      entitlements = await entitlementRepository.findByStatus(status as any);
+      const customers = await customerRepository.findByDeveloperId(req.developer!.id);
+      const allEntitlements = await Promise.all(
+        customers.map((customer) =>
+          entitlementRepository.findByCustomerId(customer.id)
+        )
+      );
+      entitlements = allEntitlements
+        .flat()
+        .filter((entitlement) => entitlement.status === status);
     } else {
       // Get all customers for developer, then get all entitlements
       const customers = await customerRepository.findByDeveloperId(req.developer!.id);

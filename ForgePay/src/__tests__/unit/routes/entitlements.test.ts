@@ -2,6 +2,7 @@ import express, { Express, Response, NextFunction } from 'express';
 import request from 'supertest';
 import entitlementsRouter from '../../../routes/entitlements';
 import { entitlementService } from '../../../services';
+import { customerRepository } from '../../../repositories';
 import { AuthenticatedRequest } from '../../../middleware';
 
 // Mock the services
@@ -12,6 +13,12 @@ jest.mock('../../../services', () => ({
     getEntitlement: jest.fn(),
     getEntitlementsByCustomerId: jest.fn(),
     getActiveEntitlementsByCustomerId: jest.fn(),
+  },
+}));
+
+jest.mock('../../../repositories', () => ({
+  customerRepository: {
+    findById: jest.fn(),
   },
 }));
 
@@ -110,6 +117,10 @@ describe('Entitlements Routes', () => {
     app.use(express.json());
     app.use('/api/v1/entitlements', entitlementsRouter);
     jest.clearAllMocks();
+    (customerRepository.findById as jest.Mock).mockResolvedValue({
+      id: 'cust-123',
+      developerId: 'dev-123',
+    });
   });
 
   describe('GET /api/v1/entitlements/verify', () => {
@@ -472,6 +483,22 @@ describe('Entitlements Routes', () => {
         });
       });
 
+      it('should hide an entitlement owned by another developer', async () => {
+        (entitlementService.getEntitlement as jest.Mock).mockResolvedValue({
+          id: 'ent-other',
+          customerId: 'cus-other',
+        });
+        (customerRepository.findById as jest.Mock).mockResolvedValue({
+          id: 'cus-other',
+          developerId: 'dev-other',
+        });
+
+        await request(app)
+          .get('/api/v1/entitlements/ent-other')
+          .set('x-api-key', 'valid-api-key')
+          .expect(404);
+      });
+
       it('should return null for optional fields when not set', async () => {
         const createdAt = new Date('2024-01-15T10:00:00.000Z');
         const updatedAt = new Date('2024-01-20T15:30:00.000Z');
@@ -582,6 +609,20 @@ describe('Entitlements Routes', () => {
     });
 
     describe('with valid authentication', () => {
+      it('should hide a customer owned by another developer', async () => {
+        (customerRepository.findById as jest.Mock).mockResolvedValue({
+          id: 'cus-other',
+          developerId: 'dev-other',
+        });
+
+        await request(app)
+          .get('/api/v1/entitlements/customer/cus-other')
+          .set('x-api-key', 'valid-api-key')
+          .expect(404);
+
+        expect(entitlementService.getEntitlementsByCustomerId).not.toHaveBeenCalled();
+      });
+
       it('should return all entitlements for a customer', async () => {
         const createdAt = new Date('2024-01-15T10:00:00.000Z');
         const expiresAt = new Date('2025-01-15T10:00:00.000Z');

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { entitlementService } from '../services';
+import { customerRepository } from '../repositories';
 import { AuthenticatedRequest, apiKeyAuth, optionalApiKeyAuth } from '../middleware';
 import { logger } from '../utils/logger';
 
@@ -103,6 +104,18 @@ router.get('/:id', apiKeyAuth, async (req: AuthenticatedRequest, res: Response) 
       return;
     }
 
+    const customer = await customerRepository.findById(entitlement.customerId);
+    if (!customer || customer.developerId !== req.developer!.id) {
+      res.status(404).json({
+        error: {
+          code: 'resource_not_found',
+          message: 'Entitlement not found',
+          type: 'invalid_request_error',
+        },
+      });
+      return;
+    }
+
     res.json({
       id: entitlement.id,
       customer_id: entitlement.customerId,
@@ -138,6 +151,18 @@ router.get(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { active_only } = req.query;
+      const customer = await customerRepository.findById(req.params.customerId);
+
+      if (!customer || customer.developerId !== req.developer!.id) {
+        res.status(404).json({
+          error: {
+            code: 'resource_not_found',
+            message: 'Customer not found',
+            type: 'invalid_request_error',
+          },
+        });
+        return;
+      }
 
       let entitlements;
       if (active_only === 'true') {
