@@ -1,7 +1,7 @@
 import { pool } from '../config/database.config';
 import logger from './logger.util';
 // import { hashPassword } from './crypto.util';
-import { generatePositions } from './position-calculator.util';
+import { calculateLayerPositions, generatePositions } from './position-calculator.util';
 
 /**
  * Seed development data
@@ -130,7 +130,8 @@ export async function seedDatabase(): Promise<void> {
 
       // Create layers
       for (let layerNumber = 1; layerNumber <= campaign.base_length; layerNumber++) {
-        const positionsInLayer = campaign.base_length - layerNumber + 1;
+        // 層Nの格子数は N（Layer 1 = 1等 = 1 マス）。positions 生成と同じ規則に揃える
+        const positionsInLayer = calculateLayerPositions(campaign.base_length, layerNumber);
         const price = campaign.layer_prices[layerNumber.toString() as '1' | '2' | '3' | '4' | '5'];
 
         await client.query(

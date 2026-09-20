@@ -182,7 +182,7 @@ CREATE INDEX idx_layers_available ON layers(campaign_id, positions_available) WH
 |---------|---|-----|-----|
 | layer_id | UUID | ✓ | 主キー |
 | campaign_id | UUID | ✓ | 親キャンペーン |
-| layer_number | INTEGER | ✓ | レイヤー番号 (1が底辺、頂点に向かって増加) |
+| layer_number | INTEGER | ✓ | レイヤー番号 (現行実装では 1 が頂点=1等、底辺に向かって増加) |
 | positions_count | INTEGER | ✓ | このレイヤーのポジション数 |
 | price | INTEGER | ✓ | このレイヤーの価格（円） |
 | positions_sold | INTEGER | ✓ | 販売済みポジション数 |
@@ -190,8 +190,8 @@ CREATE INDEX idx_layers_available ON layers(campaign_id, positions_available) WH
 
 ### 生成ルール
 
-- **FR-006**: layer_number = 1（底辺）の positions_count = base_length
-- **FR-006**: 上層に向かって positions_count が1ずつ減少
+- **FR-006**: 現行実装では layer_number = 1（頂点/1等）の positions_count = 1
+- **FR-006**: 底辺に向かって positions_count が1ずつ増加し、layer_number = base_length で base_length となる
 - **FR-005**: price は layer_prices から取得
 
 ### 更新トリガー
@@ -295,8 +295,12 @@ reserved → expired (予約期限切れ)
 
 ### 座標計算ルール
 
+> 【改訂】現行実装では layer_number = 1 を頂点（1等）とし、層Nの格子数は N である。
+> 以下の擬似コードは初版（layer_number = 1 が底辺）の記述であり、実装は
+> `api/src/utils/position-calculator.util.ts` の `calculateLayerPositions` を参照のこと。
+
 ```typescript
-// 三角形の座標生成ロジック
+// 三角形の座標生成ロジック（初版。現行実装は positionsInLayer = layer）
 function generatePositions(baseLength: number): Position[] {
   const positions: Position[] = [];
 
