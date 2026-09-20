@@ -20,6 +20,25 @@ unset DATABASE_URL REDIS_URL JWT_SECRET AI_PROVIDER SONOWA_E2E_MOCK_AI \
       LIVEKIT_API_KEY LIVEKIT_API_SECRET || true
 
 # ---------------------------------------------------------------------------
+# 0) システムパッケージ（冪等）
+#    デフォルトイメージ上でも動作するよう、未導入なら apt で導入する。
+#    スナップショット／Dockerfile に含まれている場合はこの手順は no-op。
+# ---------------------------------------------------------------------------
+need_pkgs=0
+for bin in mvn psql redis-server; do
+  command -v "$bin" >/dev/null 2>&1 || need_pkgs=1
+done
+if [ "$need_pkgs" = "1" ]; then
+  log "システムパッケージを導入（maven / postgresql / redis / build-essential）"
+  sudo apt-get update -y
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    maven postgresql postgresql-contrib redis-server \
+    build-essential python3-venv python3-dev libpq-dev ca-certificates curl
+else
+  log "システムパッケージは導入済み（スキップ）"
+fi
+
+# ---------------------------------------------------------------------------
 # 1) Node プロジェクトの依存関係
 # ---------------------------------------------------------------------------
 npm_install() {
