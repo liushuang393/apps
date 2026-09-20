@@ -1,0 +1,92 @@
+schema_version: 1
+app: sonowa
+observation_sha256: 22df97770f4cdfbb8495a7c06796c95482cb3ee853f2a7c0bf0eba4ab7492c77
+items:
+- id: MM-001
+  kind: route
+  severity: high
+  status: open
+  source_ref: /admin
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-002
+  kind: route
+  severity: high
+  status: open
+  source_ref: /admin/ai-pipeline
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-003
+  kind: route
+  severity: high
+  status: open
+  source_ref: /admin/experiments
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-004
+  kind: route
+  severity: high
+  status: open
+  source_ref: /admin/languages
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-005
+  kind: route
+  severity: high
+  status: open
+  source_ref: /forgot-password
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-006
+  kind: route
+  severity: high
+  status: open
+  source_ref: /menu
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-007
+  kind: route
+  severity: high
+  status: open
+  source_ref: /register
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-008
+  kind: route
+  severity: high
+  status: open
+  source_ref: /reset-password
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-009
+  kind: route
+  severity: high
+  status: open
+  source_ref: /room/:roomId
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-010
+  kind: route
+  severity: high
+  status: open
+  source_ref: /room/:roomId/transcript
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-011
+  kind: route
+  severity: high
+  status: open
+  source_ref: /rooms
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner

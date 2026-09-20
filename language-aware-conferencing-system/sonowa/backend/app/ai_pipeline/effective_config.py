@@ -212,13 +212,23 @@ def reset_pipeline_settings_cache_for_tests() -> None:
 def collect_availability_warnings(values: PipelineSettingsValues) -> list[str]:
     """資格・ランタイム不足の警告メッセージ（PUT は拒否せず表示用）。"""
     warnings: list[str] = []
-    if values.ai_provider in ("gpt4o_transcribe", "gpt_realtime") and not (
-        settings.openai_api_key
+    local_hybrid = values.default_mode == "hybrid" and all(
+        provider == "local"
+        for provider in (values.asr_provider, values.mt_provider, values.tts_provider)
+    )
+    if (
+        not local_hybrid
+        and values.ai_provider in ("gpt4o_transcribe", "gpt_realtime")
+        and not settings.openai_api_key
     ):
         warnings.append("OPENAI_API_KEY が未設定です。")
-    if values.ai_provider == "deepgram" and not settings.deepgram_api_key:
+    if (
+        not local_hybrid
+        and values.ai_provider == "deepgram"
+        and not settings.deepgram_api_key
+    ):
         warnings.append("DEEPGRAM_API_KEY が未設定です。")
-    if values.ai_provider == "gemini_live":
+    if not local_hybrid and values.ai_provider == "gemini_live":
         try:
             from app.ai_pipeline.providers.gemini_live import (
                 gemini_live_runtime_available,
@@ -231,7 +241,9 @@ def collect_availability_warnings(values: PipelineSettingsValues) -> list[str]:
                 )
         except Exception:  # noqa: BLE001
             warnings.append("gemini_live の可用性判定に失敗しました。")
-    if values.ai_provider == "google" or values.asr_provider == "google":
+    if (
+        not local_hybrid and values.ai_provider == "google"
+    ) or values.asr_provider == "google":
         try:
             from app.ai_pipeline.providers.google import google_runtime_available
 
@@ -258,12 +270,8 @@ def collect_availability_warnings(values: PipelineSettingsValues) -> list[str]:
     ):
         warnings.append(
             "local スロットは上級実装オプションです（方式そのものではありません）。"
-            " ランタイム/モデル未導入時は雲プロバイダーへ縮退します。"
-        )
-    if values.mt_provider == "local" and not settings.local_mt_model_dir:
-        warnings.append(
-            "LOCAL_MT_MODEL_DIR 未設定のため local MT（MADLAD-400）は無効です。"
-            " scripts/prepare_local_models.py で CT2 変換済みディレクトリを用意してください。"
+            " ランタイム/モデル未導入時もクラウドへ切り替えません。"
+            " ASR/MT は利用不可、TTS は字幕のみへ縮退します。"
         )
     if values.tts_provider == "local":
         try:
@@ -271,25 +279,29 @@ def collect_availability_warnings(values: PipelineSettingsValues) -> list[str]:
 
             if not local_tts.available():
                 warnings.append(
-                    "voxcpm 未導入のため local TTS（VoxCPM2）は無効です。"
+                    f"依存未導入のため local TTS（{local_tts.model_label()}）は無効です。"
                     " pip install '.[local]' 後に再起動してください。"
+                )
+            if settings.vram_budget_mb < local_tts.model_size_mb():
+                warnings.append(
+                    f"VRAM 予算 {settings.vram_budget_mb}MB が "
+                    f"{local_tts.model_label()} 概算 "
+                    f"{local_tts.model_size_mb()}MB 未満のため、"
+                    "TTS は VRAMCapacityError 時に字幕のみへ縮退します。"
                 )
         except Exception:  # noqa: BLE001
             warnings.append("local TTS の可用性判定に失敗しました。")
-        if settings.vram_budget_mb < settings.local_tts_size_mb:
-            warnings.append(
-                f"VRAM 予算 {settings.vram_budget_mb}MB が VoxCPM2 概算 "
-                f"{settings.local_tts_size_mb}MB 未満のため、"
-                "TTS は VRAMCapacityError 時に字幕のみへ縮退します。"
-            )
-    if values.asr_provider == "local":
+    if values.asr_provider == "local" or values.mt_provider == "local":
         try:
-            from app.ai_pipeline.providers import local_asr
+            from app.ai_pipeline.providers import local_multimodal
 
-            if not local_asr.available():
-                warnings.append("faster-whisper 未導入のため local ASR は無効です。")
+            if not local_multimodal.available():
+                warnings.append(
+                    "Gemma 4 E2B の依存未導入のため local ASR/MT は無効です。"
+                    " pip install '.[local]' とモデル準備を実行してください。"
+                )
         except Exception:  # noqa: BLE001
-            warnings.append("local ASR の可用性判定に失敗しました。")
+            warnings.append("local ASR/MT の可用性判定に失敗しました。")
     return warnings
 
 

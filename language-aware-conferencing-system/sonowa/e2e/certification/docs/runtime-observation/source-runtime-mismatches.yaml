@@ -1,0 +1,20 @@
+schema_version: 1
+app: sonowa
+observation_sha256: 9ce8297980c8bf33ba905639a2dbe92149df3191f3c183c8b22f8a93b996cebd
+items:
+- id: MM-001
+  kind: route
+  severity: high
+  status: open
+  source_ref: /room/:roomId
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner
+- id: MM-002
+  kind: route
+  severity: high
+  status: open
+  source_ref: /room/:roomId/transcript
+  runtime_ref: (not observed)
+  summary: source route was not observed at runtime
+  owner: application-owner

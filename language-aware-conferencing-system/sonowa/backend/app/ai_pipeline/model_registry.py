@@ -55,6 +55,8 @@ RUNTIME_FASTER_WHISPER = "faster_whisper"
 RUNTIME_LLAMA_CPP = "llama_cpp"
 RUNTIME_ONNX = "onnx"
 RUNTIME_CLOUD = "cloud"
+RUNTIME_TRANSFORMERS = "transformers"
+RUNTIME_TORCH = "torch"
 RUNTIMES: frozenset[str] = frozenset(
     {
         RUNTIME_CT2,
@@ -62,6 +64,8 @@ RUNTIMES: frozenset[str] = frozenset(
         RUNTIME_LLAMA_CPP,
         RUNTIME_ONNX,
         RUNTIME_CLOUD,
+        RUNTIME_TRANSFORMERS,
+        RUNTIME_TORCH,
     }
 )
 
@@ -285,8 +289,12 @@ def _card(
 
 def _build_default_catalog() -> ModelCatalog:
     """config の既存モデル名から既定カードを seed する。"""
+    from app.ai_pipeline.providers.local_multimodal import MODEL_ID as GEMMA_MODEL_ID
+    from app.ai_pipeline.providers.local_tts import OMNIVOICE_MODEL_ID
+
     langs = list(settings.supported_languages)  # ["ja", "en", "zh", "vi"]
     catalog = ModelCatalog()
+    omnivoice_selected = settings.local_tts_model == OMNIVOICE_MODEL_ID
 
     catalog.register(
         _card(
@@ -305,15 +313,15 @@ def _build_default_catalog() -> ModelCatalog:
     )
     catalog.register(
         _card(
-            "asr-faster-whisper",
+            "asr-gemma4-e2b",
             STAGE_ASR,
-            settings.local_asr_model,
-            RUNTIME_FASTER_WHISPER,
-            quantization=settings.local_asr_compute_type,
+            GEMMA_MODEL_ID,
+            RUNTIME_TRANSFORMERS,
+            quantization="nf4-text/bf16-audio",
             languages=langs,
-            license="mit",  # Whisper は MIT ライセンス（商用可）
+            license="apache-2.0",
             hardware_profile="gpu-12gb",
-            metrics={"quality": 0.92, "latency_ms": 600.0},
+            metrics={},
             status=STATUS_STAGING,
             provider_name="local",
         )
@@ -336,15 +344,15 @@ def _build_default_catalog() -> ModelCatalog:
     )
     catalog.register(
         _card(
-            "t2t-madlad400",
+            "t2t-gemma4-e2b",
             STAGE_T2T,
-            settings.local_mt_model_id,
-            RUNTIME_CT2,
-            quantization=settings.local_mt_compute_type,
+            GEMMA_MODEL_ID,
+            RUNTIME_TRANSFORMERS,
+            quantization="nf4-text/bf16-audio",
             languages=langs,
-            license="apache-2.0",  # MADLAD-400 は Apache-2.0（商用可）
-            hardware_profile="gpu-8gb",
-            metrics={"quality": 0.86, "latency_ms": 350.0},
+            license="apache-2.0",
+            hardware_profile="gpu-12gb",
+            metrics={},
             status=STATUS_STAGING,
             provider_name="local",
         )
@@ -398,15 +406,15 @@ def _build_default_catalog() -> ModelCatalog:
     )
     catalog.register(
         _card(
-            "tts-voxcpm2",
+            "tts-omnivoice" if omnivoice_selected else "tts-voxcpm2",
             STAGE_TTS,
             settings.local_tts_model,
-            RUNTIME_ONNX,
+            RUNTIME_TRANSFORMERS if omnivoice_selected else RUNTIME_TORCH,
             quantization=None,
             languages=langs,
-            license="apache-2.0",  # VoxCPM2 は Apache-2.0（商用可・4言語対応）
-            hardware_profile="gpu-8gb",
-            metrics={"quality": 0.85, "latency_ms": 800.0},
+            license="cc-by-nc-4.0" if omnivoice_selected else "apache-2.0",
+            hardware_profile="gpu-12gb",
+            metrics={},
             status=STATUS_STAGING,
             provider_name="local",
         )

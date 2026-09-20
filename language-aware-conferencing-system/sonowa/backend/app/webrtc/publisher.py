@@ -35,8 +35,11 @@ class GenerationGate:
         self._active: dict[tuple[str, str], int] = {}
 
     def set_active(self, speaker_id: str, language: str, generation_id: int) -> None:
-        """当該トラックの現行 generation を更新する。"""
-        self._active[(speaker_id, language)] = generation_id
+        """現行 generation を前へ進め、遅延した旧要求による巻き戻しを拒否する。"""
+        key = (speaker_id, language)
+        active = self._active.get(key)
+        if active is None or generation_id >= active:
+            self._active[key] = generation_id
 
     def flush(self, speaker_id: str, language: str) -> int | None:
         """

@@ -142,6 +142,26 @@ async def translate_text(
             cached=True,
         )
 
+    # local 指定時は字幕と同じローカル経路へ委譲する。
+    from app.ai_pipeline.effective_config import get_cached_pipeline_settings
+
+    if get_cached_pipeline_settings().mt_provider == "local":
+        translated = await translate_text_simple(
+            req.text, req.source_language, req.target_language
+        )
+        if not translated:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="ローカル翻訳サービスが利用できません",
+            )
+        return TranslateResponse(
+            original_text=req.text,
+            translated_text=translated,
+            source_language=req.source_language,
+            target_language=req.target_language,
+            cached=False,
+        )
+
     # キャッシュチェック
     glossary_version = await _glossary_version()
     cache_key = _cache_key(

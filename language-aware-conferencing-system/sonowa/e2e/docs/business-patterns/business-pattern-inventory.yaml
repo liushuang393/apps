@@ -1,0 +1,566 @@
+{
+  "schema_version": 1,
+  "app": "sonowa",
+  "reviewed_by": "Codex source inventory review",
+  "reviewed_at": "2026-09-20T10:40:00Z",
+  "patterns": [
+    {
+      "id": "BP-SONOWA-USER-BOUNDARY",
+      "kind": "authorization.role",
+      "origin": "declared",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "専用Dockerで2ラウンド成功済み。正式なwalkthrough・実行証拠・コピー隔離の認証は未完了。",
+      "obligations": [
+        {
+          "id": "role",
+          "kind": "role",
+          "ref": "user"
+        },
+        {
+          "id": "route",
+          "kind": "route",
+          "ref": "GET /api/admin/users"
+        }
+      ],
+      "bindings": [
+        {
+          "scenario_id": "CERT-AUTH-USER",
+          "obligation_ids": [
+            "role",
+            "route"
+          ],
+          "observation_channels": [
+            "ui",
+            "api"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BP-SONOWA-LOCAL-SETTINGS",
+      "kind": "settings.local_pipeline",
+      "origin": "declared",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "専用Dockerで2ラウンド成功済み。正式なwalkthrough・実行証拠・コピー隔離の認証は未完了。",
+      "obligations": [
+        {
+          "id": "role",
+          "kind": "role",
+          "ref": "admin"
+        },
+        {
+          "id": "route",
+          "kind": "route",
+          "ref": "GET /api/admin/settings/ai-pipeline"
+        }
+      ],
+      "bindings": [
+        {
+          "scenario_id": "CERT-AUTH-ADMIN",
+          "obligation_ids": [
+            "role",
+            "route"
+          ],
+          "observation_channels": [
+            "ui",
+            "api"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BP-SONOWA-MODERATOR-BOUNDARY",
+      "kind": "authorization.role",
+      "origin": "declared",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "専用Dockerで2ラウンド成功済み。正式なwalkthrough・実行証拠・コピー隔離の認証は未完了。",
+      "obligations": [
+        {
+          "id": "role",
+          "kind": "role",
+          "ref": "moderator"
+        },
+        {
+          "id": "route",
+          "kind": "route",
+          "ref": "GET /api/admin/users"
+        }
+      ],
+      "bindings": [
+        {
+          "scenario_id": "CERT-AUTH-MODERATOR",
+          "obligation_ids": [
+            "role",
+            "route"
+          ],
+          "observation_channels": [
+            "ui",
+            "api"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BP-SONOWA-ROOM-CREATE",
+      "kind": "room.create",
+      "origin": "declared",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "専用Dockerで2ラウンド成功済み。正式なwalkthrough・実行証拠・コピー隔離の認証は未完了。",
+      "obligations": [
+        {
+          "id": "role",
+          "kind": "role",
+          "ref": "user"
+        },
+        {
+          "id": "route",
+          "kind": "route",
+          "ref": "GET /api/rooms"
+        }
+      ],
+      "bindings": [
+        {
+          "scenario_id": "CERT-ROOM-CREATE",
+          "obligation_ids": [
+            "role",
+            "route"
+          ],
+          "observation_channels": [
+            "ui",
+            "api"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BP-SONOWA-AUTH-LIFECYCLE",
+      "kind": "authentication.session",
+      "origin": "source_discovered",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "登録ソースを照合した未完了範囲。正常・異常・権限境界の正式な2観測証拠が揃っていない。",
+      "obligations": [
+        {
+          "id": "api-1",
+          "kind": "route",
+          "ref": "GET /api/auth/history"
+        },
+        {
+          "id": "api-2",
+          "kind": "route",
+          "ref": "POST /api/auth/login"
+        },
+        {
+          "id": "api-3",
+          "kind": "route",
+          "ref": "GET /api/auth/me"
+        },
+        {
+          "id": "api-4",
+          "kind": "route",
+          "ref": "PATCH /api/auth/me"
+        },
+        {
+          "id": "api-5",
+          "kind": "route",
+          "ref": "POST /api/auth/password-reset/confirm"
+        },
+        {
+          "id": "api-6",
+          "kind": "route",
+          "ref": "POST /api/auth/password-reset/request"
+        },
+        {
+          "id": "api-7",
+          "kind": "route",
+          "ref": "POST /api/auth/register"
+        },
+        {
+          "id": "screen-1",
+          "kind": "route",
+          "ref": "/login"
+        },
+        {
+          "id": "screen-2",
+          "kind": "route",
+          "ref": "/register"
+        },
+        {
+          "id": "screen-3",
+          "kind": "route",
+          "ref": "/forgot-password"
+        },
+        {
+          "id": "screen-4",
+          "kind": "route",
+          "ref": "/reset-password"
+        },
+        {
+          "id": "screen-5",
+          "kind": "route",
+          "ref": "/profile"
+        },
+        {
+          "id": "screen-6",
+          "kind": "route",
+          "ref": "/history"
+        },
+        {
+          "id": "screen-7",
+          "kind": "route",
+          "ref": "/menu"
+        },
+        {
+          "id": "screen-8",
+          "kind": "route",
+          "ref": "/"
+        },
+        {
+          "id": "role-admin",
+          "kind": "role",
+          "ref": "admin"
+        },
+        {
+          "id": "role-moderator",
+          "kind": "role",
+          "ref": "moderator"
+        },
+        {
+          "id": "role-user",
+          "kind": "role",
+          "ref": "user"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "id": "BP-SONOWA-ADMIN",
+      "kind": "administration.access",
+      "origin": "source_discovered",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "登録ソースを照合した未完了範囲。正常・異常・権限境界の正式な2観測証拠が揃っていない。",
+      "obligations": [
+        {
+          "id": "api-1",
+          "kind": "route",
+          "ref": "GET /api/admin/experiments"
+        },
+        {
+          "id": "api-2",
+          "kind": "route",
+          "ref": "GET /api/admin/experiments/{experiment_key}/summary"
+        },
+        {
+          "id": "api-3",
+          "kind": "route",
+          "ref": "POST /api/admin/sessions/{session_id}/rerun"
+        },
+        {
+          "id": "api-4",
+          "kind": "route",
+          "ref": "GET /api/admin/settings/ai-pipeline"
+        },
+        {
+          "id": "api-5",
+          "kind": "route",
+          "ref": "PUT /api/admin/settings/ai-pipeline"
+        },
+        {
+          "id": "api-6",
+          "kind": "route",
+          "ref": "GET /api/admin/settings/languages"
+        },
+        {
+          "id": "api-7",
+          "kind": "route",
+          "ref": "PUT /api/admin/settings/languages"
+        },
+        {
+          "id": "api-8",
+          "kind": "route",
+          "ref": "GET /api/admin/stats"
+        },
+        {
+          "id": "api-9",
+          "kind": "route",
+          "ref": "GET /api/admin/users"
+        },
+        {
+          "id": "api-10",
+          "kind": "route",
+          "ref": "GET /api/admin/users/{user_id}"
+        },
+        {
+          "id": "api-11",
+          "kind": "route",
+          "ref": "PATCH /api/admin/users/{user_id}"
+        },
+        {
+          "id": "screen-1",
+          "kind": "route",
+          "ref": "/admin"
+        },
+        {
+          "id": "screen-2",
+          "kind": "route",
+          "ref": "/admin/languages"
+        },
+        {
+          "id": "screen-3",
+          "kind": "route",
+          "ref": "/admin/ai-pipeline"
+        },
+        {
+          "id": "screen-4",
+          "kind": "route",
+          "ref": "/admin/experiments"
+        },
+        {
+          "id": "role-admin",
+          "kind": "role",
+          "ref": "admin"
+        },
+        {
+          "id": "role-moderator",
+          "kind": "role",
+          "ref": "moderator"
+        },
+        {
+          "id": "role-user",
+          "kind": "role",
+          "ref": "user"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "id": "BP-SONOWA-GLOSSARY",
+      "kind": "glossary.lifecycle",
+      "origin": "source_discovered",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "登録ソースを照合した未完了範囲。正常・異常・権限境界の正式な2観測証拠が揃っていない。",
+      "obligations": [
+        {
+          "id": "api-1",
+          "kind": "route",
+          "ref": "GET /api/glossaries/terms"
+        },
+        {
+          "id": "api-2",
+          "kind": "route",
+          "ref": "POST /api/glossaries/terms"
+        },
+        {
+          "id": "api-3",
+          "kind": "route",
+          "ref": "DELETE /api/glossaries/terms/{term_id}"
+        },
+        {
+          "id": "api-4",
+          "kind": "route",
+          "ref": "GET /api/glossaries/terms/{term_id}"
+        },
+        {
+          "id": "api-5",
+          "kind": "route",
+          "ref": "PATCH /api/glossaries/terms/{term_id}"
+        },
+        {
+          "id": "screen-1",
+          "kind": "route",
+          "ref": "/admin/glossary"
+        },
+        {
+          "id": "role-admin",
+          "kind": "role",
+          "ref": "admin"
+        },
+        {
+          "id": "role-moderator",
+          "kind": "role",
+          "ref": "moderator"
+        },
+        {
+          "id": "role-user",
+          "kind": "role",
+          "ref": "user"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "id": "BP-SONOWA-MEETING",
+      "kind": "meeting.translation",
+      "origin": "source_discovered",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "登録ソースを照合した未完了範囲。正常・異常・権限境界の正式な2観測証拠が揃っていない。",
+      "obligations": [
+        {
+          "id": "api-1",
+          "kind": "route",
+          "ref": "POST /api/meetings"
+        },
+        {
+          "id": "api-2",
+          "kind": "route",
+          "ref": "GET /api/meetings/active/{room_id}"
+        },
+        {
+          "id": "api-3",
+          "kind": "route",
+          "ref": "PATCH /api/meetings/{session_id}/mode"
+        },
+        {
+          "id": "api-4",
+          "kind": "route",
+          "ref": "PATCH /api/meetings/{session_id}/participants/{pid}/voice-translation"
+        },
+        {
+          "id": "api-5",
+          "kind": "route",
+          "ref": "GET /api/rooms"
+        },
+        {
+          "id": "api-6",
+          "kind": "route",
+          "ref": "POST /api/rooms"
+        },
+        {
+          "id": "api-7",
+          "kind": "route",
+          "ref": "GET /api/rooms/{room_id}"
+        },
+        {
+          "id": "api-8",
+          "kind": "route",
+          "ref": "GET /api/rooms/{room_id}/minutes"
+        },
+        {
+          "id": "api-9",
+          "kind": "route",
+          "ref": "POST /api/rooms/{room_id}/token"
+        },
+        {
+          "id": "api-10",
+          "kind": "route",
+          "ref": "GET /api/rooms/{room_id}/transcript"
+        },
+        {
+          "id": "api-11",
+          "kind": "route",
+          "ref": "POST /api/translate"
+        },
+        {
+          "id": "api-12",
+          "kind": "route",
+          "ref": "GET /api/translate/subtitle/{subtitle_id}/{target_lang}"
+        },
+        {
+          "id": "screen-1",
+          "kind": "route",
+          "ref": "/rooms"
+        },
+        {
+          "id": "screen-2",
+          "kind": "route",
+          "ref": "/room/:roomId"
+        },
+        {
+          "id": "screen-3",
+          "kind": "route",
+          "ref": "/room/:roomId/transcript"
+        },
+        {
+          "id": "role-admin",
+          "kind": "role",
+          "ref": "admin"
+        },
+        {
+          "id": "role-moderator",
+          "kind": "role",
+          "ref": "moderator"
+        },
+        {
+          "id": "role-user",
+          "kind": "role",
+          "ref": "user"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "id": "BP-SONOWA-HEALTH",
+      "kind": "operations.health",
+      "origin": "source_discovered",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "登録ソースを照合した未完了範囲。正常・異常・権限境界の正式な2観測証拠が揃っていない。",
+      "obligations": [
+        {
+          "id": "api-1",
+          "kind": "route",
+          "ref": "GET /health"
+        },
+        {
+          "id": "role-admin",
+          "kind": "role",
+          "ref": "admin"
+        },
+        {
+          "id": "role-moderator",
+          "kind": "role",
+          "ref": "moderator"
+        },
+        {
+          "id": "role-user",
+          "kind": "role",
+          "ref": "user"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "id": "BP-SONOWA-LOCAL-SPEECH",
+      "kind": "speech.local_translation",
+      "origin": "declared",
+      "priority": "P1",
+      "status": "blocked",
+      "reason": "実GPU・12方向・LiveKitの個別証拠はあるが、ベトナム語の語句保持と正式認証への統合が未完了。",
+      "obligations": [
+        {
+          "id": "languages",
+          "kind": "variant",
+          "ref": "ja/en/zh/vi: all 12 directed pairs; preserve meaning, numbers and negation"
+        },
+        {
+          "id": "participants",
+          "kind": "side_effect",
+          "ref": "two LiveKit clients receive nonempty translated audio and matching subtitles; server DB agrees"
+        },
+        {
+          "id": "offline",
+          "kind": "data_boundary",
+          "ref": "inference containers have no external route and never fall back to cloud"
+        },
+        {
+          "id": "failures",
+          "kind": "state",
+          "ref": "missing model, insufficient VRAM, TTS failure: explicit error or subtitles continue"
+        },
+        {
+          "id": "restart",
+          "kind": "state",
+          "ref": "restart and concurrent execution preserve the two-model budget and outputs"
+        }
+      ],
+      "bindings": []
+    }
+  ]
+}

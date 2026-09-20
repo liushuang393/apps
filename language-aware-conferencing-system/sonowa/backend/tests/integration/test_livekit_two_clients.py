@@ -78,8 +78,19 @@ def _openai_client() -> AsyncOpenAI:
 
 
 def _integration_ready() -> bool:
-    """統合テスト実行に必要な前提が揃っているか。"""
-    return bool(os.getenv("OPENAI_API_KEY"))
+    """有料クラウド推論を明示的に許可し、認証情報も設定されているか。"""
+    return os.getenv("SONOWA_RUN_CLOUD_TESTS") == "1" and bool(
+        os.getenv("OPENAI_API_KEY")
+    )
+
+
+def test_cloud_integration_requires_explicit_opt_in(monkeypatch) -> None:
+    """API キーがあるだけでは、通常の全テストからクラウド推論を起動しない。"""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-placeholder")
+    monkeypatch.delenv("SONOWA_RUN_CLOUD_TESTS", raising=False)
+    assert not _integration_ready()
+    monkeypatch.setenv("SONOWA_RUN_CLOUD_TESTS", "1")
+    assert _integration_ready()
 
 
 async def _api_reachable() -> bool:
@@ -288,7 +299,7 @@ async def _issue_token(client: httpx.AsyncClient, bearer: str, room_id: str) -> 
 async def test_b1_pipeline_direct() -> None:
     """B1: ja 音声 → ASR → en 翻訳 → 翻訳 WAV を生成する。"""
     if not _integration_ready():
-        pytest.skip("OPENAI_API_KEY 未設定")
+        pytest.skip("クラウド統合試験は SONOWA_RUN_CLOUD_TESTS=1 と API キーが必要")
     if not await _api_reachable():
         pytest.skip(f"API 未到達: {_API_BASE}")
 
@@ -307,7 +318,7 @@ async def test_b1_pipeline_direct() -> None:
 async def test_livekit_two_clients_subtitle_and_audio() -> None:
     """B2/B3: 話者 publish → 聞き手が英語字幕と翻訳音声を受信する。"""
     if not _integration_ready():
-        pytest.skip("OPENAI_API_KEY 未設定")
+        pytest.skip("クラウド統合試験は SONOWA_RUN_CLOUD_TESTS=1 と API キーが必要")
     if not await _api_reachable():
         pytest.skip(f"API 未到達: {_API_BASE}")
 

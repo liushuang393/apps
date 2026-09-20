@@ -1,0 +1,57 @@
+schema_version: 1
+app: sonowa
+outcome: observed
+run:
+  id: 20260920T070323Z
+  observed_at: '2026-09-20T07:03:26+00:00'
+  base_url: http://127.0.0.1:5273
+  browser:
+    name: chromium
+    version: 143.0.7499.4
+  source_map_sha256: 7357bd589ab3aef38c6cc79bfb8dc6d73e7344b2f6853c46eaa5a81347e6cf84
+  app_config_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+  kernel_sha256: 79dadfe61138419909f67281db4185fabfdfdd757894b48e14c1d374806c623e
+limits:
+  max_routes: 2
+  max_depth: 1
+  max_interactions_per_route: 1
+  max_seconds: 60
+roles:
+- anonymous
+routes:
+- path: /login
+  requested_path: /
+  final_url: http://127.0.0.1:5273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+unvisited:
+- role: anonymous
+  path: /
+  reason: max_interactions reached
+redactions:
+  contract: testing-kit-sensitive-evidence-v1
+  sanitizer_applied: true
+  fields_scanned: 18
+  values_redacted: 0
+  residual_sensitive_values: 0
+  secrets_removed: true
+  response_bodies_stored: false

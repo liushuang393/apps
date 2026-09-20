@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "configured": true,
+  "data_identity": {
+    "kind": "jdbc",
+    "environment": "e2e",
+    "expected_name": "sonowa_cert_e2e",
+    "url_env": "E2E_DB_URL",
+    "allowed_hosts": [
+      "127.0.0.1"
+    ]
+  },
+  "commands": {
+    "source_inventory": {
+      "argv": [
+        "{app_python}",
+        "e2e/scripts/extract.py",
+        "--out",
+        "e2e/certification/docs/business-flows/_extracted.yaml"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 120,
+      "side_effects": [
+        "read_source",
+        "evidence"
+      ]
+    },
+    "build": {
+      "argv": [
+        "npm",
+        "--prefix",
+        "frontend",
+        "run",
+        "build"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 300,
+      "side_effects": [
+        "build_output"
+      ]
+    },
+    "server_start": {
+      "argv": [
+        "{app_python}",
+        "e2e/scripts/owned_runtime.py",
+        "serve"
+      ],
+      "cwd": ".",
+      "env": [
+        "E2E_DB_URL"
+      ],
+      "timeout_seconds": 180,
+      "side_effects": [
+        "process"
+      ]
+    },
+    "auth_setup": {
+      "argv": [
+        "{app_python}",
+        "e2e/scripts/owned_auth_setup.py"
+      ],
+      "cwd": ".",
+      "env": [
+        "E2E_DB_URL"
+      ],
+      "timeout_seconds": 120,
+      "side_effects": [
+        "evidence"
+      ]
+    },
+    "data_identity": {
+      "argv": [
+        "{app_python}",
+        "e2e/scripts/owned_postgres.py",
+        "identity"
+      ],
+      "cwd": ".",
+      "env": [
+        "E2E_DB_URL"
+      ],
+      "timeout_seconds": 120,
+      "side_effects": [
+        "evidence"
+      ]
+    },
+    "data_reset": {
+      "argv": [
+        "{app_python}",
+        "e2e/scripts/owned_runtime.py",
+        "reset"
+      ],
+      "cwd": ".",
+      "env": [
+        "E2E_DB_URL"
+      ],
+      "timeout_seconds": 180,
+      "side_effects": [
+        "e2e_database"
+      ]
+    },
+    "data_snapshot": {
+      "argv": [
+        "{app_python}",
+        "e2e/scripts/owned_postgres.py",
+        "snapshot"
+      ],
+      "cwd": ".",
+      "env": [
+        "E2E_DB_URL"
+      ],
+      "timeout_seconds": 120,
+      "side_effects": [
+        "e2e_database",
+        "evidence"
+      ]
+    },
+    "data_restore": {
+      "argv": [
+        "{app_python}",
+        "e2e/scripts/owned_postgres.py",
+        "restore"
+      ],
+      "cwd": ".",
+      "env": [
+        "E2E_DB_URL"
+      ],
+      "timeout_seconds": 120,
+      "side_effects": [
+        "e2e_database"
+      ]
+    },
+    "playwright_run": {
+      "argv": [
+        "npx",
+        "--no-install",
+        "playwright",
+        "test",
+        "--config",
+        "e2e/playwright.certification.config.ts"
+      ],
+      "cwd": ".",
+      "env": [],
+      "timeout_seconds": 240,
+      "side_effects": [
+        "evidence"
+      ]
+    }
+  },
+  "certification": {
+    "source_inventory": "e2e/certification/docs/business-flows/_extracted.yaml",
+    "business_pattern_inventory": "e2e/docs/business-patterns/business-pattern-inventory.yaml",
+    "scenario_sets": [
+      "e2e/docs/scenario-sets/owned-runtime.yaml"
+    ],
+    "playwright_config": "e2e/playwright.certification.config.ts",
+    "auth_storage_states": {
+      "admin": "e2e/certification/.auth/admin.json",
+      "moderator": "e2e/certification/.auth/moderator.json",
+      "user": "e2e/certification/.auth/user.json"
+    },
+    "scenarios": [
+      {
+        "id": "CERT-AUTH-USER",
+        "test_file": "e2e/certification/auth.spec.ts",
+        "test_line": 22,
+        "evidence_line": 30,
+        "assert_text": "expect(response.status()).toBe(403);",
+        "evidence_step": "[TK-EVIDENCE:CERT-AUTH-USER]"
+      },
+      {
+        "id": "CERT-AUTH-ADMIN",
+        "test_file": "e2e/certification/auth.spec.ts",
+        "test_line": 39,
+        "evidence_line": 49,
+        "assert_text": "expect(body.effective).toMatchObject({ asr_provider: \"local\", mt_provider: \"local\", tts_provider: \"local\", llm_correction_enabled: false });",
+        "evidence_step": "[TK-EVIDENCE:CERT-AUTH-ADMIN]"
+      },
+      {
+        "id": "CERT-AUTH-MODERATOR",
+        "test_file": "e2e/certification/auth.spec.ts",
+        "test_line": 58,
+        "evidence_line": 65,
+        "assert_text": "expect(response.status()).toBe(403);",
+        "evidence_step": "[TK-EVIDENCE:CERT-AUTH-MODERATOR]"
+      },
+      {
+        "id": "CERT-ROOM-CREATE",
+        "test_file": "e2e/certification/room.spec.ts",
+        "test_line": 14,
+        "evidence_line": 39,
+        "assert_text": "expect(payload.rooms.filter((room) => room.name === roomName)).toHaveLength(1);",
+        "evidence_step": "[TK-EVIDENCE:CERT-ROOM-CREATE]"
+      }
+    ]
+  }
+}

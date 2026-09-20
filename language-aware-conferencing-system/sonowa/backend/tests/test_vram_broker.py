@@ -1,11 +1,14 @@
 """VRAM Broker v1 の単体テスト（予算会計・優先度退避・バージョン・アイドル卸載）。"""
 
-import pytest
+import asyncio
+import threading
 
+import pytest
 from app.ai_pipeline.vram_broker import (
     PRIORITY_ASR,
     PRIORITY_LLM,
     PRIORITY_MT,
+    PRIORITY_TTS,
     VRAMBroker,
     VRAMCapacityError,
 )
@@ -27,6 +30,44 @@ def _loader(tag: str):
 
 
 @pytest.mark.asyncio
+async def test_cancelled_load_keeps_lock_until_model_can_be_accounted() -> None:
+    """ロード取消でも実スレッドの完了を待ち、生成モデルを idle として管理する。"""
+    broker = VRAMBroker(budget_mb=1000)
+    started = threading.Event()
+    finish = threading.Event()
+    model = object()
+
+    def load() -> object:
+        started.set()
+        assert finish.wait(timeout=5)
+        return model
+
+    task = asyncio.create_task(
+        broker.get_or_load(
+            "asr:x", loader=load, size_mb=800, priority=PRIORITY_ASR, version="v1"
+        )
+    )
+    try:
+        assert await asyncio.to_thread(started.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not task.done()
+        assert broker._lock.locked()
+    finally:
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert broker.used_mb == 800
+    assert broker._entries["asr:x"].refs == 0
+    assert broker._entries["asr:x"].model is model
+    await broker.warmup(
+        "asr:y", loader=object, size_mb=800, priority=PRIORITY_ASR, version="v1"
+    )
+    assert broker.resident_keys() == ["asr:y"]
+
+
+@pytest.mark.asyncio
 async def test_get_or_load_caches_same_version() -> None:
     broker = VRAMBroker(budget_mb=1000)
     m1 = await broker.get_or_load(
@@ -39,6 +80,50 @@ async def test_get_or_load_caches_same_version() -> None:
     assert m1 is m2
     assert m1["tag"] == "a"
     assert broker.used_mb == 100
+
+
+@pytest.mark.asyncio
+async def test_waiting_tts_loads_after_parallel_asr_releases() -> None:
+    """並行字幕が使用中のモデルを解放するまで TTS が待機する。"""
+    broker = VRAMBroker(budget_mb=1000, allow_idle_preemption=True)
+    await broker.get_or_load(
+        "asr", loader=object, size_mb=800, priority=PRIORITY_ASR, version="v1"
+    )
+    task = asyncio.create_task(
+        broker.get_or_load(
+            "tts",
+            loader=object,
+            size_mb=800,
+            priority=PRIORITY_TTS,
+            version="v1",
+            wait_timeout=2,
+        )
+    )
+    await asyncio.sleep(0)
+    assert not task.done()
+    assert broker.resident_keys() == ["asr"]
+    await broker.release("asr")
+    await task
+    assert broker.resident_keys() == ["tts"]
+
+
+@pytest.mark.asyncio
+async def test_capacity_wait_is_bounded() -> None:
+    """使用中モデルが解放されない場合も待機上限で明示エラーにする。"""
+    broker = VRAMBroker(budget_mb=1000, allow_idle_preemption=True)
+    await broker.get_or_load(
+        "asr", loader=object, size_mb=800, priority=PRIORITY_ASR, version="v1"
+    )
+    with pytest.raises(VRAMCapacityError, match="待機"):
+        await broker.get_or_load(
+            "tts",
+            loader=object,
+            size_mb=800,
+            priority=PRIORITY_TTS,
+            version="v1",
+            wait_timeout=0.01,
+        )
+    assert broker.resident_keys() == ["asr"]
 
 
 @pytest.mark.asyncio
@@ -178,6 +263,40 @@ async def test_close_called_on_version_change() -> None:
         "mt:x", loader=_loader("new"), size_mb=100, priority=PRIORITY_MT, version="v2"
     )
     assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_local_cascade_can_swap_idle_stages_within_budget() -> None:
+    """逐次ローカル処理は ASR→MT→TTS→次の ASR を予算内で完走する。"""
+    broker = VRAMBroker(budget_mb=7500, allow_idle_preemption=True)
+    for key, size, priority in [
+        ("asr", 1500, PRIORITY_ASR),
+        ("mt", 2500, PRIORITY_MT),
+        ("tts", 7500, PRIORITY_TTS),
+        ("asr", 1500, PRIORITY_ASR),
+        ("mt", 2500, PRIORITY_MT),
+    ]:
+        async with broker.use(
+            key, loader=_loader(key), size_mb=size, priority=priority, version="v1"
+        ):
+            assert broker.used_mb <= broker.budget_mb
+
+
+@pytest.mark.asyncio
+async def test_local_preemption_never_evicts_active_model() -> None:
+    """段階入れ替えを許可しても推論中の参照は保護する。"""
+    broker = VRAMBroker(budget_mb=7500, allow_idle_preemption=True)
+    async with broker.use(
+        "asr", loader=_loader("asr"), size_mb=1500, priority=PRIORITY_ASR, version="v1"
+    ):
+        with pytest.raises(VRAMCapacityError):
+            await broker.get_or_load(
+                "tts",
+                loader=_loader("tts"),
+                size_mb=7500,
+                priority=PRIORITY_TTS,
+                version="v1",
+            )
 
 
 @pytest.mark.asyncio

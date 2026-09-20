@@ -33,6 +33,7 @@ from app.ai_pipeline.vram_broker import (
 from app.ai_pipeline.vram_broker import (
     broker as default_broker,
 )
+from app.audio.pcm import resample16
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ _SUPPORTED_LANGUAGES = frozenset({"ja", "en", "zh", "vi"})
 # int16 → float32 正規化係数（[-1.0, 1.0] へ写像）。
 _INT16_FULL_SCALE = 32768.0
 _WAV_SAMPLE_WIDTH_BYTES = 2  # int16 = 2 バイト/標本
+_ASR_SAMPLE_RATE = 16000
 
 
 def available() -> bool:
@@ -67,6 +69,7 @@ def _decode_wav(audio_data: bytes) -> np.ndarray:
             if wav.getsampwidth() != _WAV_SAMPLE_WIDTH_BYTES:
                 return np.empty(0, dtype=np.float32)
             channels = wav.getnchannels()
+            sample_rate = wav.getframerate()
             frames = wav.readframes(wav.getnframes())
     except (wave.Error, EOFError, OSError):
         return np.empty(0, dtype=np.float32)
@@ -78,6 +81,11 @@ def _decode_wav(audio_data: bytes) -> np.ndarray:
         if usable == 0:
             return np.empty(0, dtype=np.float32)
         pcm = pcm[:usable].reshape(-1, channels).mean(axis=1)
+    if sample_rate != _ASR_SAMPLE_RATE:
+        pcm = np.frombuffer(
+            resample16(pcm.astype(np.int16).tobytes(), sample_rate, _ASR_SAMPLE_RATE),
+            dtype=np.int16,
+        )
     return (pcm.astype(np.float32) / _INT16_FULL_SCALE).astype(np.float32)
 
 

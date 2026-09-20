@@ -64,7 +64,7 @@ DataSend = Callable[[bytes, list[str], str], Awaitable[None]]  # (payload, ids, 
 
 
 class GenerationGatePort(Protocol):
-    """Sink が必要とする generation gate の最小契約。"""
+    """Sink の世代契約。set_active は旧世代へ巻き戻してはならない。"""
 
     def set_active(
         self, speaker_id: str, language: str, generation_id: int
@@ -113,6 +113,7 @@ class LiveKitOutputSink:
             return
         gate = self._generation_gate
         if gate is not None and generation_id is not None:
+            gate.set_active(speaker_id, language, generation_id)
             if not gate.should_capture(speaker_id, language, generation_id):
                 logger.debug(
                     "[LiveKitSink] 旧 generation を抑止: speaker=%s lang=%s gen=%s",
@@ -121,7 +122,6 @@ class LiveKitOutputSink:
                     generation_id,
                 )
                 return
-            gate.set_active(speaker_id, language, generation_id)
         if self._last_audio.get(language) is audio:
             return
         self._last_audio[language] = audio

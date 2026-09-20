@@ -8,6 +8,7 @@ SegmentProcessor（Phase 3 C1-5）の単体テスト。
 import pytest
 
 from app.ai_pipeline.orchestrator import OrchestrationResult
+from app.ai_pipeline.output_manager.adapter import RecordingTransportAdapter
 from app.ai_pipeline.qoe import (
     QoEDecision,
     QoEReason,
@@ -87,7 +88,7 @@ def _sink_factory(captured: list):
 
     def factory(user_language: dict[str, str], _speaker_id: str) -> object:
         captured.append(user_language)
-        return object()
+        return RecordingTransportAdapter()
 
     return factory
 

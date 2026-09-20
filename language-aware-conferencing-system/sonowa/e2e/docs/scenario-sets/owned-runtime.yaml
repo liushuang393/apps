@@ -1,0 +1,364 @@
+{
+  "schema_version": 2,
+  "name": "sonowa-owned-runtime",
+  "business_flow": "SONOWA-OWNED-001",
+  "restore_policy": {
+    "mode": "after_each_flow",
+    "snapshot": "baseline",
+    "fail_closed": true,
+    "max_flows_per_set": 2
+  },
+  "scenarios": [
+    {
+      "id": "CERT-AUTH-USER",
+      "description": "従業員の管理API拒否",
+      "type": "regression",
+      "priority": "P1",
+      "execution_surface": "browser",
+      "category": "abnormal",
+      "route": "/menu",
+      "role": "user",
+      "mutates_state": false,
+      "preconditions": [
+        "authenticated:user",
+        "seeded:certification"
+      ],
+      "steps": [
+        {
+          "action": "navigate",
+          "target": "/menu"
+        },
+        {
+          "action": "observe_api",
+          "target": "/api/admin/users",
+          "expected_status": 403
+        }
+      ],
+      "expects": [
+        "ログイン済みユーザーのロールが画面に表示される",
+        "管理者ユーザー一覧APIが403を返す"
+      ],
+      "expected_result_bindings": [
+        {
+          "id": "RESULT-CERT-AUTH-USER-UI",
+          "expect_index": 0,
+          "expect_text": "ログイン済みユーザーのロールが画面に表示される",
+          "evidence": [
+            {
+              "id": "ASSERT-CERT-AUTH-USER-UI",
+              "channel": "ui",
+              "kind": "visible",
+              "target": "testid:menu-user-role",
+              "negative": false
+            }
+          ]
+        },
+        {
+          "id": "RESULT-CERT-AUTH-USER-API",
+          "expect_index": 1,
+          "expect_text": "管理者ユーザー一覧APIが403を返す",
+          "evidence": [
+            {
+              "id": "ASSERT-CERT-AUTH-USER-API",
+              "channel": "api",
+              "kind": "status",
+              "method": "GET",
+              "path": "/api/admin/users",
+              "expected_status": 403,
+              "negative": true
+            }
+          ]
+        }
+      ],
+      "expected_targets": [
+        "testid:menu-user-role"
+      ],
+      "observation_channels": [
+        "ui",
+        "api"
+      ],
+      "business_patterns": [
+        "BP-SONOWA-USER-BOUNDARY"
+      ]
+    },
+    {
+      "id": "CERT-AUTH-ADMIN",
+      "description": "管理者による完全ローカル設定の参照",
+      "type": "regression",
+      "priority": "P1",
+      "execution_surface": "browser",
+      "category": "normal",
+      "route": "/menu",
+      "role": "admin",
+      "mutates_state": false,
+      "preconditions": [
+        "authenticated:admin",
+        "seeded:certification"
+      ],
+      "steps": [
+        {
+          "action": "navigate",
+          "target": "/menu"
+        },
+        {
+          "action": "observe_api",
+          "target": "/api/admin/settings/ai-pipeline",
+          "expected_status": 200
+        }
+      ],
+      "expects": [
+        "管理者向けAI設定メニューが表示される",
+        "ASR・MT・TTSがlocalでクラウド補正が無効である"
+      ],
+      "expected_result_bindings": [
+        {
+          "id": "RESULT-CERT-AUTH-ADMIN-UI",
+          "expect_index": 0,
+          "expect_text": "管理者向けAI設定メニューが表示される",
+          "evidence": [
+            {
+              "id": "ASSERT-CERT-AUTH-ADMIN-UI",
+              "channel": "ui",
+              "kind": "visible",
+              "target": "testid:menu-item-admin-ai-pipeline",
+              "negative": false
+            }
+          ]
+        },
+        {
+          "id": "RESULT-CERT-AUTH-ADMIN-API",
+          "expect_index": 1,
+          "expect_text": "ASR・MT・TTSがlocalでクラウド補正が無効である",
+          "evidence": [
+            {
+              "id": "ASSERT-CERT-AUTH-ADMIN-API-0",
+              "channel": "api",
+              "kind": "json_path_equals",
+              "method": "GET",
+              "path": "/api/admin/settings/ai-pipeline",
+              "expected_status": 200,
+              "json_path": "effective.asr_provider",
+              "expected_value": "local",
+              "negative": false
+            },
+            {
+              "id": "ASSERT-CERT-AUTH-ADMIN-API-1",
+              "channel": "api",
+              "kind": "json_path_equals",
+              "method": "GET",
+              "path": "/api/admin/settings/ai-pipeline",
+              "expected_status": 200,
+              "json_path": "effective.mt_provider",
+              "expected_value": "local",
+              "negative": false
+            },
+            {
+              "id": "ASSERT-CERT-AUTH-ADMIN-API-2",
+              "channel": "api",
+              "kind": "json_path_equals",
+              "method": "GET",
+              "path": "/api/admin/settings/ai-pipeline",
+              "expected_status": 200,
+              "json_path": "effective.tts_provider",
+              "expected_value": "local",
+              "negative": false
+            },
+            {
+              "id": "ASSERT-CERT-AUTH-ADMIN-API-3",
+              "channel": "api",
+              "kind": "json_path_equals",
+              "method": "GET",
+              "path": "/api/admin/settings/ai-pipeline",
+              "expected_status": 200,
+              "json_path": "effective.llm_correction_enabled",
+              "expected_value": false,
+              "negative": false
+            }
+          ]
+        }
+      ],
+      "expected_targets": [
+        "testid:menu-item-admin-ai-pipeline"
+      ],
+      "observation_channels": [
+        "ui",
+        "api"
+      ],
+      "business_patterns": [
+        "BP-SONOWA-LOCAL-SETTINGS"
+      ]
+    },
+    {
+      "id": "CERT-AUTH-MODERATOR",
+      "description": "モデレーターの管理API拒否",
+      "type": "regression",
+      "priority": "P1",
+      "execution_surface": "browser",
+      "category": "abnormal",
+      "route": "/menu",
+      "role": "moderator",
+      "mutates_state": false,
+      "preconditions": [
+        "authenticated:moderator",
+        "seeded:certification"
+      ],
+      "steps": [
+        {
+          "action": "navigate",
+          "target": "/menu"
+        },
+        {
+          "action": "observe_api",
+          "target": "/api/admin/users",
+          "expected_status": 403
+        }
+      ],
+      "expects": [
+        "ログイン済みユーザーのロールが画面に表示される",
+        "管理者ユーザー一覧APIが403を返す"
+      ],
+      "expected_result_bindings": [
+        {
+          "id": "RESULT-CERT-AUTH-MODERATOR-UI",
+          "expect_index": 0,
+          "expect_text": "ログイン済みユーザーのロールが画面に表示される",
+          "evidence": [
+            {
+              "id": "ASSERT-CERT-AUTH-MODERATOR-UI",
+              "channel": "ui",
+              "kind": "visible",
+              "target": "testid:menu-user-role",
+              "negative": false
+            }
+          ]
+        },
+        {
+          "id": "RESULT-CERT-AUTH-MODERATOR-API",
+          "expect_index": 1,
+          "expect_text": "管理者ユーザー一覧APIが403を返す",
+          "evidence": [
+            {
+              "id": "ASSERT-CERT-AUTH-MODERATOR-API",
+              "channel": "api",
+              "kind": "status",
+              "method": "GET",
+              "path": "/api/admin/users",
+              "expected_status": 403,
+              "negative": true
+            }
+          ]
+        }
+      ],
+      "expected_targets": [
+        "testid:menu-user-role"
+      ],
+      "observation_channels": [
+        "ui",
+        "api"
+      ],
+      "business_patterns": [
+        "BP-SONOWA-MODERATOR-BOUNDARY"
+      ]
+    },
+    {
+      "id": "CERT-ROOM-CREATE",
+      "description": "会議室の作成と永続化",
+      "type": "regression",
+      "priority": "P1",
+      "execution_surface": "browser",
+      "category": "normal",
+      "route": "/rooms",
+      "role": "user",
+      "mutates_state": true,
+      "preconditions": [
+        "authenticated:user",
+        "seeded:certification"
+      ],
+      "steps": [
+        {
+          "action": "navigate",
+          "target": "/rooms"
+        },
+        {
+          "action": "click",
+          "target": "testid:room-create-open"
+        },
+        {
+          "action": "fill",
+          "target": "css:[data-testid=\"room-create-form\"] input[type=\"text\"]",
+          "value": "Certification Room"
+        },
+        {
+          "action": "click",
+          "target": "testid:room-create-submit",
+          "allowed_mutations": [
+            {
+              "method": "POST",
+              "path": "/api/rooms",
+              "max_count": 1
+              }
+          ]
+        },
+        {
+          "action": "navigate",
+          "target": "/rooms"
+        },
+        {
+          "action": "observe_api",
+          "target": "/api/rooms",
+          "expected_status": 200
+        }
+      ],
+      "expects": [
+        "作成した会議室名が一覧に表示される",
+        "同名の会議室が公開APIに保存される"
+      ],
+      "expected_result_bindings": [
+        {
+          "id": "RESULT-CERT-ROOM-CREATE-UI",
+          "expect_index": 0,
+          "expect_text": "作成した会議室名が一覧に表示される",
+          "evidence": [
+            {
+              "id": "ASSERT-CERT-ROOM-CREATE-UI",
+              "channel": "ui",
+              "kind": "visible",
+              "target": "text:Certification Room",
+              "negative": false
+            }
+          ]
+        },
+        {
+          "id": "RESULT-CERT-ROOM-CREATE-API",
+          "expect_index": 1,
+          "expect_text": "同名の会議室が公開APIに保存される",
+          "evidence": [
+            {
+              "id": "ASSERT-CERT-ROOM-CREATE-API",
+              "channel": "api",
+              "kind": "json_array_contains",
+              "method": "GET",
+              "path": "/api/rooms",
+              "expected_status": 200,
+              "negative": false,
+              "json_path": "rooms",
+              "where": {
+                "name": "Certification Room"
+              }
+            }
+          ]
+        }
+      ],
+      "expected_targets": [
+        "text:Certification Room"
+      ],
+      "observation_channels": [
+        "ui",
+        "api"
+      ],
+      "business_patterns": [
+        "BP-SONOWA-ROOM-CREATE"
+      ]
+    }
+  ]
+}

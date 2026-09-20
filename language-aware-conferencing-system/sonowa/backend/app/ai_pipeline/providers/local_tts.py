@@ -13,14 +13,21 @@ Lite ローカル TTS ステージ（VoxCPM2 / Apache-2.0 / 4言語単一モデ�
     - 出力は 48kHz。LiveKit 向けに int16 WAV へ正規化する。
 """
 
-import asyncio
+import gc
 import importlib.util
 import logging
+import sys
+import threading
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 
-from app.ai_pipeline.vram_broker import PRIORITY_TTS, VRAMCapacityError
+from app.ai_pipeline.vram_broker import (
+    PRIORITY_TTS,
+    VRAMCapacityError,
+    run_model_worker,
+)
 from app.ai_pipeline.vram_broker import broker as default_broker
 from app.audio.pcm import wrap_wav16
 from app.config import settings
@@ -38,11 +45,63 @@ _INT16_MIN = -32768
 
 # 単一エンジンの VRAM Broker キー。
 ENGINE_CACHE_KEY = "tts:voxcpm2"
+OMNIVOICE_MODEL_ID = "k2-fsa/OmniVoice"
+OMNIVOICE_SIZE_MB = 2400
+
+
+def model_label() -> str:
+    """設定されたローカル音声モデルの表示名を返す。"""
+    return "OmniVoice" if settings.local_tts_model == OMNIVOICE_MODEL_ID else "VoxCPM2"
+
+
+def model_size_mb() -> int:
+    """付属コーデックを含むモデルのVRAM予算を返す。"""
+    if settings.local_tts_model == OMNIVOICE_MODEL_ID:
+        return OMNIVOICE_SIZE_MB
+    return settings.local_tts_size_mb
+
+
+def create_stage(broker: object | None = None) -> "LocalTTSStage":
+    """既存のlocal設定から選択されたモデルの実体を生成する。"""
+    if settings.local_tts_model == OMNIVOICE_MODEL_ID:
+        from app.ai_pipeline.providers.local_omnivoice import LocalOmniVoiceTTSStage
+
+        return LocalOmniVoiceTTSStage(broker=broker)
+    return LocalTTSStage(broker=broker)
+
+
+class _SerializedEngine:
+    """共有 VoxCPM の推論と解放を排他し、退避時に GPU キャッシュも戻す。"""
+
+    def __init__(self, model: object) -> None:
+        self.model: object | None = model
+        self.lock = threading.Lock()
+
+    def synthesize(self, text: str, voice: str) -> object:
+        """同一モデルの生成を直列化し、波形を返す。"""
+        with self.lock:
+            if self.model is None:
+                raise RuntimeError("TTS モデルは解放済みです")
+            if hasattr(self.model, "generate"):
+                return self.model.generate(text)
+            return self.model.synthesize(text, voice=voice)
+
+    def close(self) -> None:
+        """モデル参照を破棄し、次の ASR/MT が CUDA 領域を再利用できるようにする。"""
+        with self.lock:
+            self.model = None
+            gc.collect()
+            torch = sys.modules.get("torch")
+            if torch is not None and torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
 
 def available() -> bool:
-    """voxcpm が import 可能かを返す。"""
-    return importlib.util.find_spec("voxcpm") is not None
+    """選択されたローカルTTSの依存が導入済みかを返す。"""
+    package = (
+        "omnivoice" if settings.local_tts_model == OMNIVOICE_MODEL_ID else "voxcpm"
+    )
+    return importlib.util.find_spec(package) is not None
 
 
 def _to_wav_bytes(waveform: object, sample_rate: int) -> bytes:
@@ -60,6 +119,9 @@ class LocalTTSStage:
     """VoxCPM2 によるローカル多言語音声合成ステージ（VRAM Broker 調停下）。"""
 
     name = "local"
+    CAPACITY_WAIT_SECONDS = 120
+    CACHE_KEY = ENGINE_CACHE_KEY
+    SAMPLE_RATE = VOXCPM_SAMPLE_RATE
 
     def __init__(
         self, engine: object | None = None, broker: object | None = None
@@ -72,16 +134,45 @@ class LocalTTSStage:
         self._engine = engine
         self._broker = broker or default_broker
 
+    @property
+    def size_mb(self) -> int:
+        """VRAM Brokerへ申告するモデル常駐サイズを返す。"""
+        return settings.local_tts_size_mb
+
+    @property
+    def version(self) -> str:
+        """キャッシュの再利用判定に使うモデル識別子を返す。"""
+        return settings.local_tts_model
+
+    async def prepare(self) -> None:
+        """発話受付前にモデルを事前ロードする。失敗は呼び出し元へ伝える。"""
+        await self._broker.warmup(
+            self.CACHE_KEY,
+            loader=self._load_engine,
+            size_mb=self.size_mb,
+            priority=PRIORITY_TTS,
+            version=self.version,
+        )
+
     def _load_engine(self) -> object:
         """VoxCPM エンジンを生成する（loader）。注入 engine があればそれを返す。"""
         if self._engine is not None:
-            return self._engine
+            return _SerializedEngine(self._engine)
+        from huggingface_hub import snapshot_download
         from voxcpm import VoxCPM  # 遅延 import（先頭 import 禁止）
 
+        model_path = settings.local_tts_model
+        if not Path(model_path).is_dir():
+            model_path = snapshot_download(model_path, local_files_only=True)
+
         # load_denoiser=False で 8GB 級 GPU に収める。
-        return VoxCPM.from_pretrained(
-            settings.local_tts_model,
-            load_denoiser=False,
+        return _SerializedEngine(
+            VoxCPM.from_pretrained(
+                model_path,
+                load_denoiser=False,
+                optimize=False,
+                device=settings.local_tts_device,
+            )
         )
 
     @staticmethod
@@ -104,16 +195,17 @@ class LocalTTSStage:
         loader: Callable[[], object] = self._load_engine
         try:
             async with self._broker.use(
-                key=ENGINE_CACHE_KEY,
+                key=self.CACHE_KEY,
                 loader=loader,
-                size_mb=settings.local_tts_size_mb,
+                size_mb=self.size_mb,
                 priority=PRIORITY_TTS,
-                version=settings.local_tts_model,
+                version=self.version,
+                wait_timeout=self.CAPACITY_WAIT_SECONDS,
             ) as engine:
-                waveform = await asyncio.to_thread(
+                waveform = await run_model_worker(
                     self._synthesize_blocking, engine, text, language
                 )
-            return _to_wav_bytes(waveform, VOXCPM_SAMPLE_RATE)
+            return _to_wav_bytes(waveform, self.SAMPLE_RATE)
         except VRAMCapacityError as exc:
             logger.warning("[TTS:local] VRAM 確保不能のため合成中止: %s", exc)
             return None

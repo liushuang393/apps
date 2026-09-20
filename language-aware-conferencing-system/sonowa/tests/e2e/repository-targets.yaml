@@ -1,0 +1,37 @@
+# ソース起点の対象一覧。認証完了や実行済みを宣言する設定ではない。
+# discover-targets には --apps-root backend --apps-root frontend を指定する。
+schema_version: 1
+targets:
+  backend:
+    kind: runtime
+    deployment:
+      unit_id: sonowa
+      publish_target: sonowa-local
+      wave: local
+      runtime_kind: service
+      profile: local-small
+      compose_files:
+        - docker-compose.yml
+        - docker-compose.gpu.yml
+        - docker-compose.local-small.yml
+      services: [backend, postgres, redis, livekit, coturn]
+      healthcheck_urls: [http://127.0.0.1:8090/health]
+      probe_argv: []
+  backend/app:
+    kind: alias
+    canonical_target_id: backend
+  frontend:
+    kind: runtime
+    deployment:
+      unit_id: sonowa
+      publish_target: sonowa-local
+      wave: local
+      runtime_kind: service
+      profile: local-small
+      compose_files:
+        - docker-compose.yml
+        - docker-compose.gpu.yml
+        - docker-compose.local-small.yml
+      services: [frontend]
+      healthcheck_urls: [http://127.0.0.1:5273/]
+      probe_argv: []

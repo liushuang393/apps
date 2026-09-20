@@ -7,9 +7,14 @@
     - ja/en/zh/vi を同一エンジンで合成し、失敗時は字幕継続のため None を返す。
 """
 
+import asyncio
+import sys
+import time
+from types import ModuleType
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
-
 from app.ai_pipeline.providers.local_tts import (
     VOXCPM_SAMPLE_RATE,
     LocalTTSStage,
@@ -92,3 +97,55 @@ async def test_vram_capacity_error_returns_none_for_subtitle_fallback() -> None:
     # local_tts_size_mb（既定 7500）より小さい予算で VRAMCapacityError を起こす。
     stage = LocalTTSStage(engine=_FakeEngine(), broker=VRAMBroker(budget_mb=100))
     assert await stage.synthesize("hello", "ja") is None
+
+
+def test_loader_uses_configured_device_without_compile_workers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """少容量 GPU のロードは追加コンパイルと意図しない device 選択を避ける。"""
+    from app.ai_pipeline.providers import local_tts
+
+    factory = Mock(return_value=_FakeEngine())
+    module = ModuleType("voxcpm")
+    module.VoxCPM = Mock(from_pretrained=factory)
+    monkeypatch.setitem(sys.modules, "voxcpm", module)
+    hub = ModuleType("huggingface_hub")
+    hub.snapshot_download = Mock(return_value="/cached/voxcpm2")
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setattr(local_tts.settings, "local_tts_device", "cuda")
+    LocalTTSStage()._load_engine()
+    factory.assert_called_once_with(
+        "/cached/voxcpm2",
+        load_denoiser=False,
+        optimize=False,
+        device="cuda",
+    )
+    hub.snapshot_download.assert_called_once_with(
+        local_tts.settings.local_tts_model, local_files_only=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_shared_tts_model_does_not_generate_concurrently() -> None:
+    """複数ステージが共有する VoxCPM の内部状態を並行推論で競合させない。"""
+
+    class Engine(_FakeEngine):
+        active = 0
+        peak = 0
+
+        def generate(self, text: str, **kwargs: object) -> np.ndarray:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            time.sleep(0.02)
+            result = super().generate(text, **kwargs)
+            self.active -= 1
+            return result
+
+    engine = Engine()
+    broker = _fresh_broker()
+    stages = [LocalTTSStage(engine=engine, broker=broker) for _ in range(3)]
+    results = await asyncio.gather(
+        *(stage.synthesize("hello", "en") for stage in stages)
+    )
+    assert all(results)
+    assert engine.peak == 1

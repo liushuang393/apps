@@ -101,6 +101,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         effective.to_dict(),
         env_defaults.to_dict(),
     )
+    from app.ai_pipeline.local_warmup import prepare_local_pipeline
+
+    await prepare_local_pipeline(effective)
     yield
     # 終了時: 常駐 Agent worker を停止（autostart 有効時のみ実体を持つ）
     from app.webrtc.supervisor import agent_supervisor

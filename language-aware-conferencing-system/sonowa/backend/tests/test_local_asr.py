@@ -91,6 +91,15 @@ async def test_transcribe_audio_joins_segments() -> None:
 
 
 @pytest.mark.asyncio
+async def test_48khz_wav_is_resampled_before_inference() -> None:
+    """TTS の 48kHz WAV を 16kHz と誤解釈して速度を変えない。"""
+    model = FakeModel(["正常速度"], language="ja")
+    stage = FasterWhisperASRStage(model=model, broker=_fresh_broker())
+    await stage.transcribe_audio(wrap_wav16(b"\x00\x01" * 48000, 48000), "ja")
+    assert model.calls[0]["n"] == 16000
+
+
+@pytest.mark.asyncio
 async def test_transcribe_audio_unknown_language_auto() -> None:
     """未対応/multi 指定は language=None（自動検出）で呼ばれる。"""
     model = FakeModel(["hello"], language="en")

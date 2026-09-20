@@ -63,7 +63,7 @@
 | `gemini_live` | Gemini Live S2S | S2S 代替 |
 
 > **既定 ≠ フォールバック先**。既定は `gpt_realtime` だが、`google` / `gemini_live` はキー・認証未整備時に
-> 起動を止めず `gpt4o_transcribe` へ自動フォールバックし、ステージ別 ASR も `gpt4o` を最終受け皿とする。
+> 起動を止めず `gpt4o_transcribe` へ自動フォールバックする。明示的な `local` 指定は対象外で、クラウドへの自動切替や A/B 実験による置換を行わない。
 > ASR / MT / TTS は `ASR_PROVIDER` / `MT_PROVIDER` / `TTS_PROVIDER` で独立に差し替え可能（Composite。既定 `auto`）。
 > 補正・議事録用 LLM はテキスト系モデル（GPT: gpt-4o-mini / Gemini: gemini-2.5-flash）を使用する。
 
@@ -159,23 +159,28 @@ Mic → LiveKit → Segment → 上流 ASR（1回）
 
 会議中の **a / b / hybrid**（聞く・読む・両方）は部屋作成者またはモデレーターが会議室サイドバーから切替可能（参加者の原音/翻訳受聴とは別概念）。
 
-#### 方式2の上級実装オプション: ローカル GPU（OSS・4言語単一モデル）
+#### 方式2の上級実装オプション: ローカル GPU（4言語・2モデル）
 
 トップレベル「方式」ではない。上級設定で `asr/mt/tts=local` を指定した場合のみ。用語集はクラウド MT 経路向け（local MT は非対応・警告表示）。
 
-各段階 **1モデル** で `ja/en/zh/vi` を扱う（言語対12モデルは使わない）。
+完全ローカル運用では管理画面 `/admin/ai-pipeline` で3段階を `local` にし、LLM 補正も OFF にする。local のロード・推論に失敗してもクラウドへ自動切替しない。ASR/MT 失敗は翻訳不可、TTS 失敗は字幕継続となる。
+
+**合計2モデル** で `ja/en/zh/vi` を扱う。ASR と MT は同じ Gemma を共有し、言語対別モデルを追加しない。
+
+**検証中・公開未完了**: ベトナム語の音声品質の追加評価と Testing Kit 総合認証が残っている。起動成功や音声ファイル生成のみを品質合格とはしていない。後続発話の音声が配信されない世代管理の不具合は修正済み。実測と判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
 
 | ステージ | モデル | ライセンス | 概算 VRAM |
 |---|---|---|---|
-| ASR | `Systran/faster-whisper-medium` INT8 | MIT | ~1.5GB |
-| MT | `google/madlad400-3b-mt` CT2 INT8 | Apache-2.0 | ~2.5GB |
-| TTS | `openbmb/VoxCPM2`（`load_denoiser=False`） | Apache-2.0 | ~7.5GB |
+| ASR + MT | `google/gemma-4-E2B-it` テキスト側 NF4、音声側 BF16 | Apache-2.0 | ~7.3GB |
+| TTS | `openbmb/VoxCPM2`（`load_denoiser=False`, `optimize=False`） | Apache-2.0 | ~7.5GB |
+
+低遅延の検証用構成では、TTS を `k2-fsa/OmniVoice`（0.6B、重み CC-BY-NC）へ変更できる。Gemma と同時常駐し、補助 ASR はロードしない。付属音声コーデックを含む2モデルの実測は Torch 約9100MiB。商用利用可能な構成としては扱わない。
 
 ```mermaid
 flowchart LR
-  pcm[発話 PCM] --> asr[local ASR faster-whisper]
+  pcm[発話 PCM] --> asr[local ASR Gemma 4 E2B]
   asr --> text[原文]
-  text --> mt[local MT MADLAD-400]
+  text --> mt[local MT 同じ Gemma を再利用]
   mt --> sub[翻訳字幕]
   mt --> broker[VRAM Broker 排他]
   broker --> tts[local TTS VoxCPM2]
@@ -188,32 +193,45 @@ flowchart LR
 
 ```text
 Mic → LiveKit → Segment
-              ├─ ASR: faster-whisper-medium（INT8）
-              ├─ MT:  MADLAD-400 単一モデル（<2ja>/<2en>/<2zh>/<2vi>）
+              ├─ ASR: Gemma 4 E2B（原文・言語検出）
+              ├─ MT:  同じ Gemma 4 E2B（ターゲット言語のテキスト）
               └─ TTS: VoxCPM2（8GB 級・他モデルと同時常駐不可）
                     失敗時 → 翻訳音声のみ停止、字幕は継続
 ```
 
-#### ローカル GPU（8GB）の準備
+#### ローカル GPU の準備（RTX 3060 12GB で検証中）
 
 ```powershell
 # GPU + local 依存込みで起動
 $env:INSTALL_LOCAL = "1"
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 
-# モデル取得・MADLAD CT2 変換（永続ボリューム /models）
+# Gemma 4 E2B と VoxCPM2 の2モデルを取得（永続ボリューム /models）
 docker compose exec backend python /app/scripts/prepare_local_models.py --output-dir /models
+docker compose exec backend alembic upgrade head
 ```
+
+OmniVoice の検証用構成（既存 DB・モデルを保持し、`.env` は変更しない）:
+
+```powershell
+$env:INSTALL_LOCAL = "1"
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.local-small.yml build backend
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.local-small.yml run --rm --no-deps backend python /app/scripts/prepare_local_models.py --output-dir /models --tts-model k2-fsa/OmniVoice
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.local-small.yml up -d
+```
+
+追加 Compose は TTS モデルと VRAM 予算10000MiBを指定する。管理設定で3段階が `local` の場合、起動時に両モデルをロードして初回推論を準備する。モデル欠損時はログに失敗を残し、クラウドへ切り替えない。取得後のロードは固定 revision のローカルキャッシュのみを使用する。製品イメージでの LiveKit 全文受信・再起動は確認済み。ベトナム語の追加品質評価と Testing Kit 総合認証が残るため、公開判定は保留する。
 
 推奨 env（`.env` はユーザー管理。例のみ）:
 
-- `LOCAL_MT_MODEL_DIR=/models/madlad400-3b-mt-int8`
-- `LOCAL_ASR_MODEL=Systran/faster-whisper-medium`
 - `LOCAL_TTS_MODEL=openbmb/VoxCPM2`
 - `VRAM_BUDGET_MB=7500`
-- `GEMINI_API_KEY=...`（方式2の LLM 補正用。未設定時は警告のみで保存可）
 
-制約: VoxCPM2 単体で約 8GB のため ASR/MT/TTS 同時常駐はできない。VRAM Broker が排他し、TTS 失敗時は字幕継続。`max_latency_ms=1200` はローカル翻訳音声の達成保証ではなく、超過時は聞く主線縮退→字幕フォールバックが合格条件。
+制約: 現行の VRAM 予算では Gemma と VoxCPM2 を切り替えて実行する。TTS 失敗時は字幕を継続する。`max_latency_ms=1200` はローカル翻訳音声の達成保証ではない。字幕への縮退は異常時の動作であり、正常系の公開合格には翻訳音声の生成・受信が必要。
+
+Gemma の E2B は実効2.3B・総5.1B、VoxCPM2 は2B。Gemma の音声入力は30秒以下。音声エンコーダーの量子化は認識品質を壊すため禁止し、モデル取得は準備スクリプトで事前に完了させる。VoxCPM2 はコンパイルを無効にして起動時の障害を避ける。
+
+旧 Whisper/MADLAD 構成の比較用モデル準備は `--legacy-three-models` で明示指定する。既存キャッシュは保持するが、標準の local ASR/MT ではロードしない。実機検証用は `scripts/verify_local_pipeline.py` と `scripts/verify_local_livekit.py`。正常系の公開判定には、字幕に加えて翻訳音声の生成・受信も必要。現在の判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
 
 ---
 

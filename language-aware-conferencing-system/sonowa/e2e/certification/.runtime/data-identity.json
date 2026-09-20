@@ -1,0 +1,1 @@
+{"kind": "jdbc", "environment": "e2e", "expected_name": "sonowa_cert_e2e", "engine": "postgresql", "locator_sha256": "14cc7e78b3417459987ef19fd12644ed053fafeae64ac5874eb1293656c8bfbe"}

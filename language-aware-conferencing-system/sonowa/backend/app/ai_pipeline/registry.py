@@ -141,7 +141,8 @@ class CompositeAIProvider(AIProvider):
         返り値 (実体, experiment_key|None, variant名|None)。experiment_key が None なら
         実験非適用（既定実体）を意味する。
         """
-        if self._selector is None:
+        # local は送信先の明示指定であり、実験によるクラウド候補の選択を許さない。
+        if self._selector is None or getattr(default, "name", None) == "local":
             return default, None, None
         return self._selector.select(stage, default)
 
@@ -261,30 +262,30 @@ def _make_google_asr() -> object:
     return AIProviderASRStage(GoogleProvider(), "google")
 
 
-# --- 本地スタック（faster-whisper / MADLAD-400 / VoxCPM2）。ランタイム未導入時は
-#     available() が False を返し、雲プロバイダーへ自動フォールバックする（§P1）。
+# --- 本地スタック（Gemma 4 E2B の ASR/MT 共有 + VoxCPM2）。ランタイム未導入時は
+#     明示した local が利用不可でもクラウドへ送信しない。TTS は字幕のみへ縮退する。
 def _local_asr_available() -> bool:
-    from app.ai_pipeline.providers import local_asr
+    from app.ai_pipeline.providers import local_multimodal
 
-    return local_asr.available()
+    return local_multimodal.available()
 
 
 def _make_local_asr() -> object:
-    from app.ai_pipeline.providers.local_asr import FasterWhisperASRStage
+    from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
 
-    return FasterWhisperASRStage()
+    return LocalMultimodalStage()
 
 
 def _local_mt_available() -> bool:
-    from app.ai_pipeline.providers import local_mt
+    from app.ai_pipeline.providers import local_multimodal
 
-    return local_mt.available()
+    return local_multimodal.available()
 
 
 def _make_local_mt() -> object:
-    from app.ai_pipeline.providers.local_mt import LocalMTStage
+    from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
 
-    return LocalMTStage()
+    return LocalMultimodalStage()
 
 
 def _local_tts_available() -> bool:
@@ -294,9 +295,9 @@ def _local_tts_available() -> bool:
 
 
 def _make_local_tts() -> object:
-    from app.ai_pipeline.providers.local_tts import LocalTTSStage
+    from app.ai_pipeline.providers.local_tts import create_stage
 
-    return LocalTTSStage()
+    return create_stage()
 
 
 def _build_default_registry() -> ProviderRegistry:
@@ -346,7 +347,6 @@ def _build_default_registry() -> ProviderRegistry:
             factory=_make_local_asr,
             required_env=[],
             available=_local_asr_available,
-            fallback="gpt4o",
         )
     )
     # --- MT ---
@@ -376,7 +376,6 @@ def _build_default_registry() -> ProviderRegistry:
             factory=_make_local_mt,
             required_env=["LOCAL_MT_MODEL_DIR"],
             available=_local_mt_available,
-            fallback="openai",
         )
     )
     # --- TTS ---
@@ -397,7 +396,7 @@ def _build_default_registry() -> ProviderRegistry:
             factory=_make_local_tts,
             required_env=[],
             available=_local_tts_available,
-            fallback="openai",
+            fallback="none",
         )
     )
     reg.register(ProviderSpec(name="none", stage=STAGE_TTS, factory=NullTTSStage))
@@ -513,7 +512,8 @@ def build_composite_provider() -> AIProvider:
         raise APIKeyError(
             "Composite 構成を解決できません"
             f"（asr解決={asr is not None}, mt解決={mt is not None}）。"
-            "OPENAI_API_KEY 等、各スロットの必要な環境変数を設定してください。"
+            "各スロットの依存・モデル・必要な設定を確認してください。"
+            "local 指定時はクラウドへ切り替えません。"
         )
     if tts is None:
         from app.ai_pipeline.providers.stages import NullTTSStage

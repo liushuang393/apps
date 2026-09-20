@@ -1,0 +1,65 @@
+[app]
+name = "sonowa"
+display_name = "Sonowa isolated Docker certification"
+kind = "ui"
+target_dir = "e2e/certification"
+kit_version = "0.3.0"
+
+[adapter]
+name = "python-react-fastapi"
+
+[auth]
+mode = "login"
+
+[browser]
+surface = "browser"
+base_url = "http://127.0.0.1:15273"
+entry_routes = [
+  "/", "/login", "/register", "/forgot-password", "/reset-password",
+  "/menu", "/profile", "/history", "/rooms", "/admin",
+  "/admin/languages", "/admin/ai-pipeline", "/admin/experiments", "/admin/glossary",
+]
+discovery_safe_routes = []
+sensitive_env = []
+allowed_origins = ["http://127.0.0.1:15273", "http://127.0.0.1:18090"]
+media_capture = true
+participants = 2
+
+[browser.identity_probe]
+kind = "health_json"
+path = "/api/__testing_kit_identity"
+
+[[browser.identity_probe.checks]]
+purpose = "app"
+field = "app"
+expected = "sonowa"
+
+[[browser.identity_probe.checks]]
+purpose = "environment"
+field = "environment"
+expected = "e2e"
+
+[[browser.identity_probe.checks]]
+purpose = "seed"
+field = "seed_marker"
+expected = "certification"
+
+[browser.limits]
+max_routes = 80
+max_depth = 2
+max_interactions_per_route = 10
+max_seconds = 120
+
+[data]
+seed_mode = "fixture"
+requires_db = true
+
+[ports]
+frontend = 15273
+api = 18090
+
+[paths]
+app_root = "."
+frontend_root = "frontend"
+backend_root = "backend"
+app_config = "app_config.json"

@@ -1,0 +1,296 @@
+{
+  "config": {
+    "configFile": "/mnt/d/apps/language-aware-conferencing-system/sonowa/e2e/playwright.certification.config.ts",
+    "rootDir": "/mnt/d/apps/language-aware-conferencing-system/sonowa/e2e/certification",
+    "forbidOnly": true,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "report/certification-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/mnt/d/apps/language-aware-conferencing-system/sonowa/e2e/test-results/certification",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/mnt/d/apps/language-aware-conferencing-system/sonowa/e2e/certification",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "auth.spec.ts",
+      "file": "auth.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "実ログインした従業員",
+          "file": "auth.spec.ts",
+          "line": 20,
+          "column": 6,
+          "specs": [
+            {
+              "title": "[CERT-AUTH-USER] 従業員の画面と管理API拒否",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2650,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "[TK-EVIDENCE:CERT-AUTH-USER] 管理APIは403",
+                          "duration": 5
+                        }
+                      ],
+                      "startTime": "2026-09-20T10:28:10.619Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/mnt/d/apps/language-aware-conferencing-system/sonowa/e2e/test-results/certification/auth-実ログインした従業員-CERT-AUTH-USER-従業員の画面と管理API拒否/test-finished-1.png"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d748ac400d08b85935ef-667250ed83788b25f3d3",
+              "file": "auth.spec.ts",
+              "line": 22,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "実ログインした管理者",
+          "file": "auth.spec.ts",
+          "line": 37,
+          "column": 6,
+          "specs": [
+            {
+              "title": "[CERT-AUTH-ADMIN] 管理者の画面と完全ローカル設定",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1011,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "[TK-EVIDENCE:CERT-AUTH-ADMIN] 全段階がlocal",
+                          "duration": 2
+                        }
+                      ],
+                      "startTime": "2026-09-20T10:28:10.735Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/mnt/d/apps/language-aware-conferencing-system/sonowa/e2e/test-results/certification/auth-実ログインした管理者-CERT-AUTH-ADMIN-管理者の画面と完全ローカル設定/test-finished-1.png"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d748ac400d08b85935ef-a08bebef0188697e1f3c",
+              "file": "auth.spec.ts",
+              "line": 39,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "実ログインしたモデレーター",
+          "file": "auth.spec.ts",
+          "line": 56,
+          "column": 6,
+          "specs": [
+            {
+              "title": "[CERT-AUTH-MODERATOR] モデレーターの管理API拒否",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 779,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "[TK-EVIDENCE:CERT-AUTH-MODERATOR] 管理APIは403",
+                          "duration": 1
+                        }
+                      ],
+                      "startTime": "2026-09-20T10:28:11.764Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/mnt/d/apps/language-aware-conferencing-system/sonowa/e2e/test-results/certification/auth-実ログインしたモデレーター-CERT-AUTH-MODERATOR-モデレーターの管理API拒否/test-finished-1.png"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d748ac400d08b85935ef-82b5e3abdc4244346bc4",
+              "file": "auth.spec.ts",
+              "line": 58,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "room.spec.ts",
+      "file": "room.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "[CERT-ROOM-CREATE] 会議室作成が画面とAPIへ反映される",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1760,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "steps": [
+                    {
+                      "title": "[TK-EVIDENCE:CERT-ROOM-CREATE] 同じ会議室をAPIで確認",
+                      "duration": 2
+                    }
+                  ],
+                  "startTime": "2026-09-20T10:28:12.586Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/mnt/d/apps/language-aware-conferencing-system/sonowa/e2e/test-results/certification/room--CERT-ROOM-CREATE-会議室作成が画面とAPIへ反映される/test-finished-1.png"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "f8fc35f62e185ea9e471-faaac96c3b5d2850f21a",
+          "file": "room.spec.ts",
+          "line": 14,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-20T10:28:03.532Z",
+    "duration": 13663.697,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

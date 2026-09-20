@@ -4,12 +4,35 @@ in-memory sqlite（StaticPool で単一接続共有）へ実テーブルを作�
 実 DB で検証する。記録系は失敗時に None/False/[] を返しライブを壊さないことも確認する。
 """
 
+from collections.abc import AsyncIterator
+
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import StaticPool
 
 from app.db import replay
 from app.db.models import Base, PipelineEvent, RerunResult, RerunStatus
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _close_test_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[None]:
+    """差替え解除・イベントループ終了前に、テスト専用SQLite接続を閉じる。"""
+    del monkeypatch  # fixture の依存順により、差替え解除より先に後処理する。
+    yield
+    maker = replay.async_session
+    if not isinstance(maker, async_sessionmaker):
+        return
+    engine = maker.kw.get("bind")
+    if isinstance(engine, AsyncEngine) and engine.url.get_backend_name() == "sqlite":
+        await engine.dispose()
 
 
 async def _setup(monkeypatch) -> async_sessionmaker:

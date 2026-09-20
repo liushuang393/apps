@@ -1,11 +1,34 @@
 """A/B 実験指標の記録・集計（P4-C）の単体テスト：in-memory sqlite で永続層を検証。"""
 
+from collections.abc import AsyncIterator
+
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import StaticPool
 
 from app.db import experiments
 from app.db.models import Base
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _close_test_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[None]:
+    """差替え解除・イベントループ終了前に、テスト専用SQLite接続を閉じる。"""
+    del monkeypatch  # fixture の依存順により、差替え解除より先に後処理する。
+    yield
+    maker = experiments.async_session
+    if not isinstance(maker, async_sessionmaker):
+        return
+    engine = maker.kw.get("bind")
+    if isinstance(engine, AsyncEngine) and engine.url.get_backend_name() == "sqlite":
+        await engine.dispose()
 
 
 async def _setup(monkeypatch) -> async_sessionmaker:

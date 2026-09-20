@@ -20,6 +20,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from typing import TypeVar
 
 from app.config import settings
 
@@ -33,6 +34,32 @@ PRIORITY_LLM = 10  # 後編集 / 要約 LLM
 
 # 既定の GPU 予算（MB）。8GB カードのヘッドルーム込み。
 _DEFAULT_BUDGET_MB = 7500
+_Result = TypeVar("_Result")
+
+
+async def run_model_worker(function: Callable[..., _Result], *args: object) -> _Result:
+    """GPU ワーカー終了までキャンセルを遅延し、Broker の参照を保護する。
+
+    broker.use 内で呼ぶ。to_thread のキャンセルでは実スレッドは止まらないため、
+    実推論が終了するまでモデルを release しない。複数回のキャンセルにも対応する。
+    """
+    task = asyncio.create_task(asyncio.to_thread(function, *args))
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(task)
+            break
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise
+            cancelled = True
+        except Exception:
+            if cancelled:
+                raise asyncio.CancelledError from None
+            raise
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
 
 
 class VRAMCapacityError(RuntimeError):
@@ -58,8 +85,12 @@ class VRAMBroker:
 
     budget_mb: int = _DEFAULT_BUDGET_MB
     clock: Callable[[], float] = time.monotonic
+    # 逐次ローカル構成では、優先度は idle の退避順序として使う。
+    # 汎用利用の既存「高優先度キャッシュを維持する」契約は既定 False で保持する。
+    allow_idle_preemption: bool = False
     _entries: dict[str, _Entry] = field(default_factory=dict)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _capacity_changed: asyncio.Event = field(default_factory=asyncio.Event)
 
     @property
     def used_mb(self) -> int:
@@ -71,6 +102,47 @@ class VRAMBroker:
         return list(self._entries.keys())
 
     async def get_or_load(
+        self,
+        key: str,
+        *,
+        loader: Callable[[], object],
+        size_mb: int,
+        priority: int,
+        version: str,
+        wait_timeout: float = 0,
+    ) -> object:
+        """モデルを取得する。任意の待機上限内で使用中モデルの解放を待つ。"""
+        deadline = asyncio.get_running_loop().time() + wait_timeout
+        while True:
+            changed = self._capacity_changed
+            try:
+                return await self._get_or_load_now(
+                    key,
+                    loader=loader,
+                    size_mb=size_mb,
+                    priority=priority,
+                    version=version,
+                )
+            except VRAMCapacityError:
+                if (
+                    wait_timeout <= 0
+                    or size_mb > self.budget_mb
+                    or not any(entry.refs > 0 for entry in self._entries.values())
+                ):
+                    raise
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    raise VRAMCapacityError(
+                        "モデル解放の待機上限を超過しました"
+                    ) from None
+                try:
+                    await asyncio.wait_for(changed.wait(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    raise VRAMCapacityError(
+                        "モデル解放の待機上限を超過しました"
+                    ) from None
+
+    async def _get_or_load_now(
         self,
         key: str,
         *,
@@ -106,7 +178,28 @@ class VRAMBroker:
             # loader は数秒かかる GPU ロードを含むためスレッドへ退避し、イベント
             # ループ（全 room・LiveKit ハートビート）の凍結を防ぐ。lock は await を
             # またいで保持され、同一/他キーの並行ロードは直列化されたまま。
-            model = await asyncio.to_thread(loader)
+            loaded: list[object] = []
+
+            def load() -> object:
+                """取消後も生成実体を回収できるよう、結果を保存する。"""
+                result = loader()
+                loaded.append(result)
+                return result
+
+            try:
+                model = await run_model_worker(load)
+            except asyncio.CancelledError:
+                if loaded:
+                    self._entries[key] = _Entry(
+                        key=key,
+                        model=loaded[0],
+                        size_mb=size_mb,
+                        priority=priority,
+                        version=version,
+                        last_used=self.clock(),
+                        refs=0,
+                    )
+                raise
             entry = _Entry(
                 key=key,
                 model=model,
@@ -130,7 +223,8 @@ class VRAMBroker:
         """予算内に size_mb を収めるため、退避可能な低優先度モデルを LRU で卸す。
 
         退避対象は「参照カウント 0（使用中でない）かつ優先度 <= 要求優先度」の
-        モデルのみ。優先度昇順→last_used 昇順（古い順）に卸し、それでも入らなければ
+        モデルのみ。allow_idle_preemption 時は高優先度 idle も候補とする。
+        優先度昇順→last_used 昇順（古い順）に卸し、それでも入らなければ
         VRAMCapacityError を送出する。
         """
         if size_mb > self.budget_mb:
@@ -147,11 +241,12 @@ class VRAMBroker:
             self._evict(victim)
 
     def _pick_victim(self, incoming_priority: int) -> _Entry | None:
-        """退避候補（refs==0 かつ priority<=incoming）を優先度→古さ順で 1 件選ぶ。"""
+        """未使用モデルから優先度・退避ポリシーに従って候補を 1 件選ぶ。"""
         candidates = [
             e
             for e in self._entries.values()
-            if e.refs == 0 and e.priority <= incoming_priority
+            if e.refs == 0
+            and (self.allow_idle_preemption or e.priority <= incoming_priority)
         ]
         if not candidates:
             return None
@@ -186,6 +281,8 @@ class VRAMBroker:
                 return
             entry.refs = max(0, entry.refs - 1)
             entry.last_used = self.clock()
+            changed, self._capacity_changed = self._capacity_changed, asyncio.Event()
+            changed.set()
 
     @contextlib.asynccontextmanager
     async def use(
@@ -196,6 +293,7 @@ class VRAMBroker:
         size_mb: int,
         priority: int,
         version: str,
+        wait_timeout: float = 0,
     ) -> AsyncIterator[object]:
         """acquire→release を保証する async コンテキスト（推奨経路）。"""
         model = await self.get_or_load(
@@ -204,6 +302,7 @@ class VRAMBroker:
             size_mb=size_mb,
             priority=priority,
             version=version,
+            wait_timeout=wait_timeout,
         )
         try:
             yield model
@@ -245,4 +344,4 @@ class VRAMBroker:
 
 # モジュール唯一の既定ブローカー（stage アダプターはこれを共有する）。
 # 予算は Settings.vram_budget_mb（8GB 想定の既定 7500）に追従する。
-broker = VRAMBroker(budget_mb=settings.vram_budget_mb)
+broker = VRAMBroker(budget_mb=settings.vram_budget_mb, allow_idle_preemption=True)

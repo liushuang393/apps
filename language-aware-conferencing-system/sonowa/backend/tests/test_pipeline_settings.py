@@ -123,6 +123,24 @@ def test_local_mt_warns_glossary_unsupported(monkeypatch: pytest.MonkeyPatch) ->
     assert any("用語集" in w for w in warnings)
 
 
+def test_fully_local_hybrid_does_not_require_cloud_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """全段階 local の方式2では未使用クラウド資格の警告を出さない。"""
+    monkeypatch.setattr(ec.settings, "openai_api_key", "")
+    values = ec.PipelineSettingsValues(
+        ai_provider="gpt4o_transcribe",
+        asr_provider="local",
+        mt_provider="local",
+        tts_provider="local",
+        default_mode="hybrid",
+        llm_correction_enabled=False,
+    )
+    assert not any(
+        "OPENAI_API_KEY" in w for w in ec.collect_availability_warnings(values)
+    )
+
+
 def test_set_cached_bumps_revision() -> None:
     """キャッシュ更新で revision が増える。"""
     before = ec.get_revision()

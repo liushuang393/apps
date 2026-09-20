@@ -1,0 +1,105 @@
+# owned_runtime.py専用。通常のComposeや既存DBには重ねない。
+services:
+  backend:
+    image: ${SONOWA_CERT_BACKEND_IMAGE:?owned runtime required}
+    entrypoint: [uvicorn, certification_app:app, --host, 0.0.0.0, --port, "8000"]
+    environment:
+      ENV: production
+      DATABASE_URL: ${SONOWA_CERT_DATABASE_URL:?owned database required}
+      JWT_SECRET: ${SONOWA_CERT_JWT_SECRET:?generated secret required}
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: http://127.0.0.1:15273
+      AI_PROVIDER: gpt4o_transcribe
+      ASR_PROVIDER: local
+      MT_PROVIDER: local
+      TTS_PROVIDER: local
+      LOCAL_TTS_MODEL: k2-fsa/OmniVoice
+      VRAM_BUDGET_MB: "10000"
+      HF_HOME: /models/hf
+      HF_HUB_OFFLINE: "1"
+      ENABLE_PARTIAL_SUBTITLES: "false"
+      ENABLE_DIARIZATION: "false"
+      LLM_CORRECTION_PROVIDER: "off"
+      VAD_BACKEND: energy
+      OPENAI_API_KEY: ""
+      GEMINI_API_KEY: ""
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_WS_URL: ws://127.0.0.1:17880
+      LIVEKIT_API_KEY: ${SONOWA_CERT_LIVEKIT_KEY:?generated key required}
+      LIVEKIT_API_SECRET: ${SONOWA_CERT_LIVEKIT_SECRET:?generated secret required}
+      LIVEKIT_AGENT_AUTOSTART: "true"
+      SONOWA_CERT_OWNER: ${SONOWA_CERT_OWNER:?owned runtime required}
+      PYTHONPATH: /app:/certification
+    volumes:
+      - models:/models:ro
+      - ${SONOWA_CERT_SCRIPTS:?owned scripts required}:/certification:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    labels:
+      sonowa.certification.owner: ${SONOWA_CERT_OWNER}
+      sonowa.certification.role: backend
+      sonowa.certification.runtime: "true"
+    networks: [owned]
+  frontend:
+    image: ${SONOWA_CERT_FRONTEND_IMAGE:?owned runtime required}
+    environment:
+      VITE_API_URL: http://127.0.0.1:18090
+      VITE_WS_URL: ws://127.0.0.1:18090
+      VITE_PROXY_TARGET: http://backend:8000
+      VITE_PORT: "5173"
+    labels:
+      sonowa.certification.owner: ${SONOWA_CERT_OWNER}
+      sonowa.certification.role: frontend
+      sonowa.certification.runtime: "true"
+    networks: [owned]
+  redis:
+    image: ${SONOWA_CERT_REDIS_IMAGE:?owned runtime required}
+    command: [redis-server, --save, "", --appendonly, "no"]
+    tmpfs: [/data]
+    labels:
+      sonowa.certification.owner: ${SONOWA_CERT_OWNER}
+      sonowa.certification.role: redis
+      sonowa.certification.runtime: "true"
+    networks: [owned]
+  livekit:
+    image: ${SONOWA_CERT_LIVEKIT_IMAGE:?owned runtime required}
+    command: [--config, /etc/livekit.yaml]
+    volumes:
+      - ${SONOWA_CERT_LIVEKIT_CONFIG:?generated config required}:/etc/livekit.yaml:ro
+    labels:
+      sonowa.certification.owner: ${SONOWA_CERT_OWNER}
+      sonowa.certification.role: livekit
+      sonowa.certification.runtime: "true"
+    networks: [owned]
+  gateway:
+    image: ${SONOWA_CERT_GATEWAY_IMAGE:?owned runtime required}
+    ports:
+      - "127.0.0.1:15273:15273"
+      - "127.0.0.1:18090:18090"
+      - "127.0.0.1:17880:17880"
+      - "127.0.0.1:17881:17881"
+      - "127.0.0.1:17882:17882/udp"
+    volumes:
+      - ./e2e/certification-nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [backend, frontend, livekit]
+    labels:
+      sonowa.certification.owner: ${SONOWA_CERT_OWNER}
+      sonowa.certification.role: gateway
+      sonowa.certification.runtime: "true"
+    networks: [owned, ingress]
+networks:
+  owned:
+    external: true
+    name: ${SONOWA_CERT_NETWORK:?owned network required}
+  ingress:
+    external: true
+    name: ${SONOWA_CERT_INGRESS_NETWORK:?owned ingress required}
+volumes:
+  models:
+    external: true
+    name: sonowa_models

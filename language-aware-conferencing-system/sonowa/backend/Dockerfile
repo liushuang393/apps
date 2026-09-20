@@ -16,18 +16,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/pyproject.toml .
+COPY backend/app/__init__.py ./app/__init__.py
+
+# INSTALL_LOCAL=1 のときだけ .[local] を導入（GPU イメージ向け）。
+ARG INSTALL_LOCAL=0
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip==26.2.1
+RUN --mount=type=cache,target=/root/.cache/pip \
+    if [ "$INSTALL_LOCAL" = "1" ]; then \
+      pip install ".[local]"; \
+    else \
+      pip install .; \
+    fi
+
+# 重量依存のレイヤーをアプリ修正で再生成しない。
 COPY backend/app/ ./app/
 COPY backend/alembic.ini .
 COPY backend/alembic/ ./alembic/
 COPY scripts/prepare_local_models.py ./scripts/prepare_local_models.py
 
-# INSTALL_LOCAL=1 のときだけ .[local] を導入（GPU イメージ向け）。
-ARG INSTALL_LOCAL=0
-RUN if [ "$INSTALL_LOCAL" = "1" ]; then \
-      pip install --no-cache-dir ".[local]"; \
-    else \
-      pip install --no-cache-dir .; \
-    fi
+# CTranslate2 は CUDA 12 の共有ライブラリを動的に開く。
+# PyTorch の wheel が同梱するライブラリを検索パスに追加する。
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.10/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.10/site-packages/nvidia/cudnn/lib
 
 EXPOSE 8000
 

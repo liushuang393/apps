@@ -1,0 +1,5659 @@
+schema_version: 1
+app: sonowa
+outcome: observed
+run:
+  id: 20260920T112807Z
+  observed_at: '2026-09-20T11:28:57+00:00'
+  base_url: http://127.0.0.1:15273
+  browser:
+    name: chromium
+    version: 143.0.7499.4
+  source_map_sha256: 71a3082037d70d520ffd387008eee5791754389d7710b3e6e4a64df3f922ff57
+  app_config_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+  kernel_sha256: 79dadfe61138419909f67281db4185fabfdfdd757894b48e14c1d374806c623e
+limits:
+  max_routes: 80
+  max_depth: 2
+  max_interactions_per_route: 10
+  max_seconds: 120
+roles:
+- anonymous
+- admin
+- moderator
+- user
+routes:
+- path: /login
+  requested_path: /
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /login
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /register
+  requested_path: /register
+  final_url: http://127.0.0.1:15273/register
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: 8文字以上
+    safe: false
+  - kind: textbox
+    name: 会議で表示される名前
+    safe: false
+  - kind: combobox
+    name: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    safe: false
+  - kind: button
+    name: 登録
+    safe: false
+  - kind: link
+    name: ログイン
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    strategy: text
+    value: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    unique: true
+  - target: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    strategy: test_id
+    value: register-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: 8文字以上
+    strategy: role
+    value: textbox:8文字以上
+    unique: true
+  - target: 8文字以上
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: 会議で表示される名前
+    strategy: role
+    value: textbox:会議で表示される名前
+    unique: true
+  - target: 会議で表示される名前
+    strategy: label
+    value: 表示名
+    unique: true
+  - target: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    strategy: role
+    value: combobox:英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    unique: true
+  - target: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    strategy: label
+    value: 母語
+    unique: true
+  - target: 登録
+    strategy: role
+    value: button:登録
+    unique: true
+  - target: 登録
+    strategy: test_id
+    value: register-submit
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: link:ログイン
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /forgot-password
+  requested_path: /forgot-password
+  final_url: http://127.0.0.1:15273/forgot-password
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🔑 パスワードリセット
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: heading
+    name: 🔑 パスワードリセット
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: button
+    name: リセットリンクを送信
+    safe: false
+  - kind: link
+    name: ログインに戻る
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🔑 パスワードリセット
+    strategy: role
+    value: heading:🔑 パスワードリセット
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: リセットリンクを送信
+    strategy: role
+    value: button:リセットリンクを送信
+    unique: true
+  - target: ログインに戻る
+    strategy: role
+    value: link:ログインに戻る
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /reset-password
+  requested_path: /reset-password
+  final_url: http://127.0.0.1:15273/reset-password
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🔐 パスワードリセット
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: heading
+    name: 🔐 パスワードリセット
+    safe: false
+  - kind: textbox
+    name: メールで受け取ったトークンを入力
+    safe: false
+  - kind: textbox
+    name: 8文字以上
+    safe: false
+  - kind: textbox
+    name: パスワード確認
+    safe: false
+  - kind: button
+    name: パスワードを更新
+    safe: false
+  - kind: link
+    name: ログインに戻る
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🔐 パスワードリセット
+    strategy: role
+    value: heading:🔐 パスワードリセット
+    unique: true
+  - target: メールで受け取ったトークンを入力
+    strategy: role
+    value: textbox:メールで受け取ったトークンを入力
+    unique: true
+  - target: メールで受け取ったトークンを入力
+    strategy: label
+    value: リセットトークン
+    unique: true
+  - target: 8文字以上
+    strategy: role
+    value: textbox:8文字以上
+    unique: true
+  - target: 8文字以上
+    strategy: label
+    value: 新しいパスワード
+    unique: true
+  - target: パスワード確認
+    strategy: role
+    value: textbox:パスワード確認
+    unique: true
+  - target: パスワード確認
+    strategy: label
+    value: パスワード確認
+    unique: true
+  - target: パスワードを更新
+    strategy: role
+    value: button:パスワードを更新
+    unique: true
+  - target: ログインに戻る
+    strategy: role
+    value: link:ログインに戻る
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /menu
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /profile
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /history
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /rooms
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /admin
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /admin/languages
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /admin/ai-pipeline
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /admin/experiments
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /login
+  requested_path: /admin/glossary
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: anonymous
+  depth: 0
+  state_preconditions:
+  - anonymous
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls: []
+  observation_channels:
+  - ui
+- path: /menu
+  requested_path: /
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  - 管理者パネル
+  - 対応言語設定
+  - AIパイプライン設定
+  - A/B実験
+  - 用語集
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification admin管理者ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→🔧管
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification admin
+    safe: false
+  - kind: span
+    name: 管理者
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification admin管理者ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→🔧管
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification admin管理者ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→🔧管
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification admin管理者ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→🔧管
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification admin
+    strategy: text
+    value: Certification admin
+    unique: true
+  - target: Certification admin
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 管理者
+    strategy: text
+    value: 管理者
+    unique: true
+  - target: 管理者
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /login
+  requested_path: /login
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /register
+  requested_path: /register
+  final_url: http://127.0.0.1:15273/register
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: 8文字以上
+    safe: false
+  - kind: textbox
+    name: 会議で表示される名前
+    safe: false
+  - kind: combobox
+    name: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    safe: false
+  - kind: button
+    name: 登録
+    safe: false
+  - kind: link
+    name: ログイン
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    strategy: text
+    value: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    unique: true
+  - target: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    strategy: test_id
+    value: register-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: 8文字以上
+    strategy: role
+    value: textbox:8文字以上
+    unique: true
+  - target: 8文字以上
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: 会議で表示される名前
+    strategy: role
+    value: textbox:会議で表示される名前
+    unique: true
+  - target: 会議で表示される名前
+    strategy: label
+    value: 表示名
+    unique: true
+  - target: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    strategy: role
+    value: combobox:英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    unique: true
+  - target: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    strategy: label
+    value: 母語
+    unique: true
+  - target: 登録
+    strategy: role
+    value: button:登録
+    unique: true
+  - target: 登録
+    strategy: test_id
+    value: register-submit
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: link:ログイン
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /forgot-password
+  requested_path: /forgot-password
+  final_url: http://127.0.0.1:15273/forgot-password
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 🔑 パスワードリセット
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: heading
+    name: 🔑 パスワードリセット
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: button
+    name: リセットリンクを送信
+    safe: false
+  - kind: link
+    name: ログインに戻る
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🔑 パスワードリセット
+    strategy: role
+    value: heading:🔑 パスワードリセット
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: リセットリンクを送信
+    strategy: role
+    value: button:リセットリンクを送信
+    unique: true
+  - target: ログインに戻る
+    strategy: role
+    value: link:ログインに戻る
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /reset-password
+  requested_path: /reset-password
+  final_url: http://127.0.0.1:15273/reset-password
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 🔐 パスワードリセット
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: heading
+    name: 🔐 パスワードリセット
+    safe: false
+  - kind: textbox
+    name: メールで受け取ったトークンを入力
+    safe: false
+  - kind: textbox
+    name: 8文字以上
+    safe: false
+  - kind: textbox
+    name: パスワード確認
+    safe: false
+  - kind: button
+    name: パスワードを更新
+    safe: false
+  - kind: link
+    name: ログインに戻る
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🔐 パスワードリセット
+    strategy: role
+    value: heading:🔐 パスワードリセット
+    unique: true
+  - target: メールで受け取ったトークンを入力
+    strategy: role
+    value: textbox:メールで受け取ったトークンを入力
+    unique: true
+  - target: メールで受け取ったトークンを入力
+    strategy: label
+    value: リセットトークン
+    unique: true
+  - target: 8文字以上
+    strategy: role
+    value: textbox:8文字以上
+    unique: true
+  - target: 8文字以上
+    strategy: label
+    value: 新しいパスワード
+    unique: true
+  - target: パスワード確認
+    strategy: role
+    value: textbox:パスワード確認
+    unique: true
+  - target: パスワード確認
+    strategy: label
+    value: パスワード確認
+    unique: true
+  - target: パスワードを更新
+    strategy: role
+    value: button:パスワードを更新
+    unique: true
+  - target: ログインに戻る
+    strategy: role
+    value: link:ログインに戻る
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /menu
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  - 管理者パネル
+  - 対応言語設定
+  - AIパイプライン設定
+  - A/B実験
+  - 用語集
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification admin管理者ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→🔧管
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification admin
+    safe: false
+  - kind: span
+    name: 管理者
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification admin管理者ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→🔧管
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification admin管理者ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→🔧管
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification admin管理者ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→🔧管
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification admin
+    strategy: text
+    value: Certification admin
+    unique: true
+  - target: Certification admin
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 管理者
+    strategy: text
+    value: 管理者
+    unique: true
+  - target: 管理者
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /profile
+  requested_path: /profile
+  final_url: http://127.0.0.1:15273/profile
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 👤 プロフィール設定
+  interactions:
+  - kind: div
+    name: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    safe: false
+  - kind: button
+    name: ← 戻る
+    safe: false
+  - kind: form
+    name: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    safe: false
+  - kind: heading
+    name: 👤 プロフィール設定
+    safe: false
+  - kind: textbox
+    name: ''
+    safe: false
+  - kind: combobox
+    name: 日本語英語中国語ベトナム語
+    safe: false
+  - kind: button
+    name: 保存
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: text
+    value: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    unique: true
+  - target: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: test_id
+    value: profile-page
+    unique: true
+  - target: ← 戻る
+    strategy: role
+    value: button:← 戻る
+    unique: true
+  - target: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: text
+    value: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    unique: true
+  - target: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: test_id
+    value: profile-form
+    unique: true
+  - target: 👤 プロフィール設定
+    strategy: role
+    value: heading:👤 プロフィール設定
+    unique: true
+  - target: input
+    strategy: role
+    value: textbox:input
+    unique: false
+  - target: input
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: input
+    strategy: label
+    value: 権限
+    unique: true
+  - target: input
+    strategy: test_id
+    value: profile-role
+    unique: true
+  - target: input
+    strategy: label
+    value: 表示名
+    unique: true
+  - target: input
+    strategy: test_id
+    value: profile-display-name
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: role
+    value: combobox:日本語英語中国語ベトナム語
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: label
+    value: 母語
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: test_id
+    value: profile-native-language
+    unique: true
+  - target: 保存
+    strategy: role
+    value: button:保存
+    unique: true
+  - target: 保存
+    strategy: test_id
+    value: profile-save
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/languages
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /history
+  requested_path: /history
+  final_url: http://127.0.0.1:15273/history
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 📊 利用履歴
+  interactions:
+  - kind: div
+    name: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    safe: false
+  - kind: button
+    name: 戻る
+    safe: false
+  - kind: heading
+    name: 📊 利用履歴
+    safe: false
+  - kind: div
+    name: 参加した会議はまだありません会議室に入室するとここに表示されます
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: text
+    value: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    unique: true
+  - target: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: test_id
+    value: history-page
+    unique: true
+  - target: 戻る
+    strategy: role
+    value: button:戻る
+    unique: true
+  - target: 📊 利用履歴
+    strategy: role
+    value: heading:📊 利用履歴
+    unique: true
+  - target: 参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: text
+    value: 参加した会議はまだありません会議室に入室するとここに表示されます
+    unique: true
+  - target: 参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: test_id
+    value: history-empty
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/auth/history
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /rooms
+  requested_path: /rooms
+  final_url: http://127.0.0.1:15273/rooms
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 🌐 Sonowa 会議室
+  - 会議室がありません
+  interactions:
+  - kind: div
+    name: ← 戻る🌐 Sonowa 会議室Certification adminログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    safe: false
+  - kind: button
+    name: ← 戻る
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa 会議室
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: button
+    name: 新規会議室作成
+    safe: false
+  - kind: heading
+    name: 会議室がありません
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: ← 戻る🌐 Sonowa 会議室Certification adminログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    strategy: text
+    value: ← 戻る🌐 Sonowa 会議室Certification adminログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    unique: true
+  - target: ← 戻る🌐 Sonowa 会議室Certification adminログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    strategy: test_id
+    value: room-list-page
+    unique: true
+  - target: ← 戻る
+    strategy: role
+    value: button:← 戻る
+    unique: true
+  - target: 🌐 Sonowa 会議室
+    strategy: role
+    value: heading:🌐 Sonowa 会議室
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: 新規会議室作成
+    strategy: role
+    value: button:新規会議室作成
+    unique: true
+  - target: 新規会議室作成
+    strategy: test_id
+    value: room-create-open
+    unique: true
+  - target: 会議室がありません
+    strategy: role
+    value: heading:会議室がありません
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/rooms
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/languages
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /admin
+  requested_path: /admin
+  final_url: http://127.0.0.1:15273/admin
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 管理者パネル
+  - システム統計
+  - ユーザー管理
+  interactions:
+  - kind: div
+    name: 戻る管理者パネルCertification admin管理者システム統計3総ユーザー数3アクティブユーザー0総会議室数0アクティブ会議室0総発言記録数ユーザー管理表示名メールアドレス言語ロール状態登録日操作Certification
+      [REDACTED:email]日本語従業員有効2026/9/20編集Certific
+    safe: false
+  - kind: button
+    name: 戻る
+    safe: false
+  - kind: heading
+    name: 管理者パネル
+    safe: false
+  - kind: span
+    name: 管理者
+    safe: false
+  - kind: heading
+    name: システム統計
+    safe: false
+  - kind: heading
+    name: ユーザー管理
+    safe: false
+  - kind: button
+    name: 編集
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 戻る管理者パネルCertification admin管理者システム統計3総ユーザー数3アクティブユーザー0総会議室数0アクティブ会議室0総発言記録数ユーザー管理表示名メールアドレス言語ロール状態登録日操作Certification
+      [REDACTED:email]日本語従業員有効2026/9/20編集Certific
+    strategy: text
+    value: 戻る管理者パネルCertification admin管理者システム統計3総ユーザー数3アクティブユーザー0総会議室数0アクティブ会議室0総発言記録数ユーザー管理表示名メールアドレス言語ロール状態登録日操作Certification
+      [REDACTED:email]日本語従業員有効2026/9/20編集Certific
+    unique: true
+  - target: 戻る管理者パネルCertification admin管理者システム統計3総ユーザー数3アクティブユーザー0総会議室数0アクティブ会議室0総発言記録数ユーザー管理表示名メールアドレス言語ロール状態登録日操作Certification
+      [REDACTED:email]日本語従業員有効2026/9/20編集Certific
+    strategy: test_id
+    value: admin-page
+    unique: true
+  - target: 戻る
+    strategy: role
+    value: button:戻る
+    unique: true
+  - target: 管理者パネル
+    strategy: role
+    value: heading:管理者パネル
+    unique: true
+  - target: 管理者
+    strategy: text
+    value: 管理者
+    unique: true
+  - target: 管理者
+    strategy: test_id
+    value: admin-user-role
+    unique: true
+  - target: システム統計
+    strategy: role
+    value: heading:システム統計
+    unique: true
+  - target: ユーザー管理
+    strategy: role
+    value: heading:ユーザー管理
+    unique: true
+  - target: 編集
+    strategy: role
+    value: button:編集
+    unique: false
+  - target: 編集
+    strategy: test_id
+    value: '[REDACTED:email]'
+    unique: true
+  - target: 編集
+    strategy: test_id
+    value: '[REDACTED:email]'
+    unique: true
+  - target: 編集
+    strategy: test_id
+    value: '[REDACTED:email]'
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/users
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/stats
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /admin/languages
+  requested_path: /admin/languages
+  final_url: http://127.0.0.1:15273/admin/languages
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 🌐 対応言語設定
+  interactions:
+  - kind: div
+    name: '← 戻る🌐 対応言語設定システムで使用する言語を選択してください。選択した言語は新規作成される会議室で利用可能になります。選択中: 4 / 4言語EnglishEN★★★
+      (95%+)有効日本語JA★★☆ (85-94%)有効中文ZH★★☆ (85-94%)有効한국어KO★★☆ (85-94%)無効Tiếng Việ'
+    safe: false
+  - kind: button
+    name: ← 戻る
+    safe: false
+  - kind: heading
+    name: 🌐 対応言語設定
+    safe: false
+  - kind: button
+    name: EnglishEN★★★ (95%+)有効
+    safe: false
+  - kind: button
+    name: 日本語JA★★☆ (85-94%)有効
+    safe: false
+  - kind: button
+    name: 中文ZH★★☆ (85-94%)有効
+    safe: false
+  - kind: button
+    name: 한국어KO★★☆ (85-94%)無効
+    safe: false
+  - kind: button
+    name: Tiếng ViệtVI★☆☆ (75-84%)有効
+    safe: false
+  - kind: button
+    name: FrançaisFR★★★ (95%+)無効
+    safe: false
+  - kind: button
+    name: DeutschDE★★★ (95%+)無効
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: '← 戻る🌐 対応言語設定システムで使用する言語を選択してください。選択した言語は新規作成される会議室で利用可能になります。選択中: 4 /
+      4言語EnglishEN★★★ (95%+)有効日本語JA★★☆ (85-94%)有効中文ZH★★☆ (85-94%)有効한국어KO★★☆ (85-94%)無効Tiếng
+      Việ'
+    strategy: text
+    value: '← 戻る🌐 対応言語設定システムで使用する言語を選択してください。選択した言語は新規作成される会議室で利用可能になります。選択中: 4 /
+      4言語EnglishEN★★★ (95%+)有効日本語JA★★☆ (85-94%)有効中文ZH★★☆ (85-94%)有効한국어KO★★☆ (85-94%)無効Tiếng
+      Việ'
+    unique: true
+  - target: '← 戻る🌐 対応言語設定システムで使用する言語を選択してください。選択した言語は新規作成される会議室で利用可能になります。選択中: 4 /
+      4言語EnglishEN★★★ (95%+)有効日本語JA★★☆ (85-94%)有効中文ZH★★☆ (85-94%)有効한국어KO★★☆ (85-94%)無効Tiếng
+      Việ'
+    strategy: test_id
+    value: language-settings-page
+    unique: true
+  - target: ← 戻る
+    strategy: role
+    value: button:← 戻る
+    unique: true
+  - target: 🌐 対応言語設定
+    strategy: role
+    value: heading:🌐 対応言語設定
+    unique: true
+  - target: EnglishEN★★★ (95%+)有効
+    strategy: role
+    value: button:EnglishEN★★★ (95%+)有効
+    unique: true
+  - target: 日本語JA★★☆ (85-94%)有効
+    strategy: role
+    value: button:日本語JA★★☆ (85-94%)有効
+    unique: true
+  - target: 中文ZH★★☆ (85-94%)有効
+    strategy: role
+    value: button:中文ZH★★☆ (85-94%)有効
+    unique: true
+  - target: 한국어KO★★☆ (85-94%)無効
+    strategy: role
+    value: button:한국어KO★★☆ (85-94%)無効
+    unique: true
+  - target: Tiếng ViệtVI★☆☆ (75-84%)有効
+    strategy: role
+    value: button:Tiếng ViệtVI★☆☆ (75-84%)有効
+    unique: true
+  - target: FrançaisFR★★★ (95%+)無効
+    strategy: role
+    value: button:FrançaisFR★★★ (95%+)無効
+    unique: true
+  - target: DeutschDE★★★ (95%+)無効
+    strategy: role
+    value: button:DeutschDE★★★ (95%+)無効
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/languages
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /admin/ai-pipeline
+  requested_path: /admin/ai-pipeline
+  final_url: http://127.0.0.1:15273/admin/ai-pipeline
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - AIパイプライン設定
+  - 方式プリセット
+  interactions:
+  - kind: div
+    name: '← 戻るAIパイプライン設定.env の値を既定として表示します。ここで保存すると再デプロイなしで有効になります（APIキー等の秘密情報は変更できません）。設定リビジョン:
+      3注意local MT は用語集（Sonowa glossary）非対応です。 方式2の品質経路では mt_provider=openai（または'
+    safe: false
+  - kind: button
+    name: ← 戻る
+    safe: false
+  - kind: heading
+    name: AIパイプライン設定
+    safe: false
+  - kind: heading
+    name: 方式プリセット
+    safe: false
+  - kind: button
+    name: '方式1: 純リアルタイム音声 APIOpenAI Realtime 等の S2S。低遅延の翻訳音声向け。'
+    safe: false
+  - kind: button
+    name: '方式2: 品質カスケード（用語集）ASR→MT→TTS。最良クラウド LLM・用語集・並列・字幕最適化。'
+    safe: false
+  - kind: combobox
+    name: a（聞く主線 / S2S）b（読む主線 / 字幕）hybrid（両主線）
+    safe: false
+  - kind: textbox
+    name: ''
+    safe: false
+  - kind: button
+    name: 上級設定を表示
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: '← 戻るAIパイプライン設定.env の値を既定として表示します。ここで保存すると再デプロイなしで有効になります（APIキー等の秘密情報は変更できません）。設定リビジョン:
+      3注意local MT は用語集（Sonowa glossary）非対応です。 方式2の品質経路では mt_provider=openai（または'
+    strategy: text
+    value: '← 戻るAIパイプライン設定.env の値を既定として表示します。ここで保存すると再デプロイなしで有効になります（APIキー等の秘密情報は変更できません）。設定リビジョン:
+      3注意local MT は用語集（Sonowa glossary）非対応です。 方式2の品質経路では mt_provider=openai（または'
+    unique: true
+  - target: '← 戻るAIパイプライン設定.env の値を既定として表示します。ここで保存すると再デプロイなしで有効になります（APIキー等の秘密情報は変更できません）。設定リビジョン:
+      3注意local MT は用語集（Sonowa glossary）非対応です。 方式2の品質経路では mt_provider=openai（または'
+    strategy: test_id
+    value: ai-pipeline-page
+    unique: true
+  - target: ← 戻る
+    strategy: role
+    value: button:← 戻る
+    unique: true
+  - target: AIパイプライン設定
+    strategy: role
+    value: heading:AIパイプライン設定
+    unique: true
+  - target: 方式プリセット
+    strategy: role
+    value: heading:方式プリセット
+    unique: true
+  - target: '方式1: 純リアルタイム音声 APIOpenAI Realtime 等の S2S。低遅延の翻訳音声向け。'
+    strategy: role
+    value: 'button:方式1: 純リアルタイム音声 APIOpenAI Realtime 等の S2S。低遅延の翻訳音声向け。'
+    unique: true
+  - target: '方式2: 品質カスケード（用語集）ASR→MT→TTS。最良クラウド LLM・用語集・並列・字幕最適化。'
+    strategy: role
+    value: 'button:方式2: 品質カスケード（用語集）ASR→MT→TTS。最良クラウド LLM・用語集・並列・字幕最適化。'
+    unique: true
+  - target: a（聞く主線 / S2S）b（読む主線 / 字幕）hybrid（両主線）
+    strategy: role
+    value: combobox:a（聞く主線 / S2S）b（読む主線 / 字幕）hybrid（両主線）
+    unique: true
+  - target: a（聞く主線 / S2S）b（読む主線 / 字幕）hybrid（両主線）
+    strategy: label
+    value: '新規会議室の既定モードa（聞く主線 / S2S）b（読む主線 / 字幕）hybrid（両主線）env 既定: a'
+    unique: true
+  - target: input
+    strategy: role
+    value: textbox:input
+    unique: false
+  - target: input
+    strategy: label
+    value: 暫定（partial）字幕を有効化（方式2推奨）
+    unique: true
+  - target: input
+    strategy: label
+    value: LLM 補正を有効化（方式2推奨・GEMINI_API_KEY 必要）
+    unique: true
+  - target: 上級設定を表示
+    strategy: role
+    value: button:上級設定を表示
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/ai-pipeline
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /admin/experiments
+  requested_path: /admin/experiments
+  final_url: http://127.0.0.1:15273/admin/experiments
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - A/B 実験
+  interactions:
+  - kind: div
+    name: 戻るA/B 実験Certification admin設定済みの A/B 実験がありません（ENABLE_AB_TESTING と EXPERIMENTS_CONFIG
+      を 設定してください）。
+    safe: false
+  - kind: button
+    name: 戻る
+    safe: false
+  - kind: heading
+    name: A/B 実験
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 戻るA/B 実験Certification admin設定済みの A/B 実験がありません（ENABLE_AB_TESTING と EXPERIMENTS_CONFIG
+      を 設定してください）。
+    strategy: text
+    value: 戻るA/B 実験Certification admin設定済みの A/B 実験がありません（ENABLE_AB_TESTING と EXPERIMENTS_CONFIG
+      を 設定してください）。
+    unique: true
+  - target: 戻るA/B 実験Certification admin設定済みの A/B 実験がありません（ENABLE_AB_TESTING と EXPERIMENTS_CONFIG
+      を 設定してください）。
+    strategy: test_id
+    value: experiments-page
+    unique: true
+  - target: 戻る
+    strategy: role
+    value: button:戻る
+    unique: true
+  - target: A/B 実験
+    strategy: role
+    value: heading:A/B 実験
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/experiments
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /admin/glossary
+  requested_path: /admin/glossary
+  final_url: http://127.0.0.1:15273/admin/glossary
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: admin
+  depth: 0
+  state_preconditions:
+  - authenticated:admin
+  headings:
+  - 📖 用語集
+  interactions:
+  - kind: div
+    name: 戻る📖 用語集用語を追加方式2の翻訳品質パックで使う企業用語です。変更は翻訳パイプラインへ即時反映されます。用語はまだありませんAIパイプライン設定へ
+    safe: false
+  - kind: button
+    name: 戻る
+    safe: false
+  - kind: heading
+    name: 📖 用語集
+    safe: false
+  - kind: button
+    name: 用語を追加
+    safe: false
+  - kind: p
+    name: 用語はまだありません
+    safe: false
+  - kind: link
+    name: AIパイプライン設定へ
+    href: /admin/ai-pipeline
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 戻る📖 用語集用語を追加方式2の翻訳品質パックで使う企業用語です。変更は翻訳パイプラインへ即時反映されます。用語はまだありませんAIパイプライン設定へ
+    strategy: text
+    value: 戻る📖 用語集用語を追加方式2の翻訳品質パックで使う企業用語です。変更は翻訳パイプラインへ即時反映されます。用語はまだありませんAIパイプライン設定へ
+    unique: true
+  - target: 戻る📖 用語集用語を追加方式2の翻訳品質パックで使う企業用語です。変更は翻訳パイプラインへ即時反映されます。用語はまだありませんAIパイプライン設定へ
+    strategy: test_id
+    value: glossary-page
+    unique: true
+  - target: 戻る
+    strategy: role
+    value: button:戻る
+    unique: true
+  - target: 📖 用語集
+    strategy: role
+    value: heading:📖 用語集
+    unique: true
+  - target: 用語を追加
+    strategy: role
+    value: button:用語を追加
+    unique: true
+  - target: 用語を追加
+    strategy: test_id
+    value: glossary-add
+    unique: true
+  - target: 用語はまだありません
+    strategy: text
+    value: 用語はまだありません
+    unique: true
+  - target: 用語はまだありません
+    strategy: test_id
+    value: glossary-empty
+    unique: true
+  - target: AIパイプライン設定へ
+    strategy: role
+    value: link:AIパイプライン設定へ
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/languages
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/glossaries/terms
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification moderator
+    safe: false
+  - kind: span
+    name: モデレーター
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification moderator
+    strategy: text
+    value: Certification moderator
+    unique: true
+  - target: Certification moderator
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: モデレーター
+    strategy: text
+    value: モデレーター
+    unique: true
+  - target: モデレーター
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /login
+  requested_path: /login
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /register
+  requested_path: /register
+  final_url: http://127.0.0.1:15273/register
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: 8文字以上
+    safe: false
+  - kind: textbox
+    name: 会議で表示される名前
+    safe: false
+  - kind: combobox
+    name: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    safe: false
+  - kind: button
+    name: 登録
+    safe: false
+  - kind: link
+    name: ログイン
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    strategy: text
+    value: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    unique: true
+  - target: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    strategy: test_id
+    value: register-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: 8文字以上
+    strategy: role
+    value: textbox:8文字以上
+    unique: true
+  - target: 8文字以上
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: 会議で表示される名前
+    strategy: role
+    value: textbox:会議で表示される名前
+    unique: true
+  - target: 会議で表示される名前
+    strategy: label
+    value: 表示名
+    unique: true
+  - target: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    strategy: role
+    value: combobox:英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    unique: true
+  - target: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    strategy: label
+    value: 母語
+    unique: true
+  - target: 登録
+    strategy: role
+    value: button:登録
+    unique: true
+  - target: 登録
+    strategy: test_id
+    value: register-submit
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: link:ログイン
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /forgot-password
+  requested_path: /forgot-password
+  final_url: http://127.0.0.1:15273/forgot-password
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🔑 パスワードリセット
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: heading
+    name: 🔑 パスワードリセット
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: button
+    name: リセットリンクを送信
+    safe: false
+  - kind: link
+    name: ログインに戻る
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🔑 パスワードリセット
+    strategy: role
+    value: heading:🔑 パスワードリセット
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: リセットリンクを送信
+    strategy: role
+    value: button:リセットリンクを送信
+    unique: true
+  - target: ログインに戻る
+    strategy: role
+    value: link:ログインに戻る
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /reset-password
+  requested_path: /reset-password
+  final_url: http://127.0.0.1:15273/reset-password
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🔐 パスワードリセット
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: heading
+    name: 🔐 パスワードリセット
+    safe: false
+  - kind: textbox
+    name: メールで受け取ったトークンを入力
+    safe: false
+  - kind: textbox
+    name: 8文字以上
+    safe: false
+  - kind: textbox
+    name: パスワード確認
+    safe: false
+  - kind: button
+    name: パスワードを更新
+    safe: false
+  - kind: link
+    name: ログインに戻る
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🔐 パスワードリセット
+    strategy: role
+    value: heading:🔐 パスワードリセット
+    unique: true
+  - target: メールで受け取ったトークンを入力
+    strategy: role
+    value: textbox:メールで受け取ったトークンを入力
+    unique: true
+  - target: メールで受け取ったトークンを入力
+    strategy: label
+    value: リセットトークン
+    unique: true
+  - target: 8文字以上
+    strategy: role
+    value: textbox:8文字以上
+    unique: true
+  - target: 8文字以上
+    strategy: label
+    value: 新しいパスワード
+    unique: true
+  - target: パスワード確認
+    strategy: role
+    value: textbox:パスワード確認
+    unique: true
+  - target: パスワード確認
+    strategy: label
+    value: パスワード確認
+    unique: true
+  - target: パスワードを更新
+    strategy: role
+    value: button:パスワードを更新
+    unique: true
+  - target: ログインに戻る
+    strategy: role
+    value: link:ログインに戻る
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /menu
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification moderator
+    safe: false
+  - kind: span
+    name: モデレーター
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification moderator
+    strategy: text
+    value: Certification moderator
+    unique: true
+  - target: Certification moderator
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: モデレーター
+    strategy: text
+    value: モデレーター
+    unique: true
+  - target: モデレーター
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /profile
+  requested_path: /profile
+  final_url: http://127.0.0.1:15273/profile
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 👤 プロフィール設定
+  interactions:
+  - kind: div
+    name: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    safe: false
+  - kind: button
+    name: ← 戻る
+    safe: false
+  - kind: form
+    name: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    safe: false
+  - kind: heading
+    name: 👤 プロフィール設定
+    safe: false
+  - kind: textbox
+    name: ''
+    safe: false
+  - kind: combobox
+    name: 日本語英語中国語ベトナム語
+    safe: false
+  - kind: button
+    name: 保存
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: text
+    value: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    unique: true
+  - target: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: test_id
+    value: profile-page
+    unique: true
+  - target: ← 戻る
+    strategy: role
+    value: button:← 戻る
+    unique: true
+  - target: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: text
+    value: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    unique: true
+  - target: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: test_id
+    value: profile-form
+    unique: true
+  - target: 👤 プロフィール設定
+    strategy: role
+    value: heading:👤 プロフィール設定
+    unique: true
+  - target: input
+    strategy: role
+    value: textbox:input
+    unique: false
+  - target: input
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: input
+    strategy: label
+    value: 権限
+    unique: true
+  - target: input
+    strategy: test_id
+    value: profile-role
+    unique: true
+  - target: input
+    strategy: label
+    value: 表示名
+    unique: true
+  - target: input
+    strategy: test_id
+    value: profile-display-name
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: role
+    value: combobox:日本語英語中国語ベトナム語
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: label
+    value: 母語
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: test_id
+    value: profile-native-language
+    unique: true
+  - target: 保存
+    strategy: role
+    value: button:保存
+    unique: true
+  - target: 保存
+    strategy: test_id
+    value: profile-save
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/languages
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /history
+  requested_path: /history
+  final_url: http://127.0.0.1:15273/history
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 📊 利用履歴
+  interactions:
+  - kind: div
+    name: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    safe: false
+  - kind: button
+    name: 戻る
+    safe: false
+  - kind: heading
+    name: 📊 利用履歴
+    safe: false
+  - kind: div
+    name: 参加した会議はまだありません会議室に入室するとここに表示されます
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: text
+    value: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    unique: true
+  - target: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: test_id
+    value: history-page
+    unique: true
+  - target: 戻る
+    strategy: role
+    value: button:戻る
+    unique: true
+  - target: 📊 利用履歴
+    strategy: role
+    value: heading:📊 利用履歴
+    unique: true
+  - target: 参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: text
+    value: 参加した会議はまだありません会議室に入室するとここに表示されます
+    unique: true
+  - target: 参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: test_id
+    value: history-empty
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/auth/history
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /rooms
+  requested_path: /rooms
+  final_url: http://127.0.0.1:15273/rooms
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa 会議室
+  - 会議室がありません
+  interactions:
+  - kind: div
+    name: ← 戻る🌐 Sonowa 会議室Certification moderatorログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    safe: false
+  - kind: button
+    name: ← 戻る
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa 会議室
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: button
+    name: 新規会議室作成
+    safe: false
+  - kind: heading
+    name: 会議室がありません
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: ← 戻る🌐 Sonowa 会議室Certification moderatorログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    strategy: text
+    value: ← 戻る🌐 Sonowa 会議室Certification moderatorログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    unique: true
+  - target: ← 戻る🌐 Sonowa 会議室Certification moderatorログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    strategy: test_id
+    value: room-list-page
+    unique: true
+  - target: ← 戻る
+    strategy: role
+    value: button:← 戻る
+    unique: true
+  - target: 🌐 Sonowa 会議室
+    strategy: role
+    value: heading:🌐 Sonowa 会議室
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: 新規会議室作成
+    strategy: role
+    value: button:新規会議室作成
+    unique: true
+  - target: 新規会議室作成
+    strategy: test_id
+    value: room-create-open
+    unique: true
+  - target: 会議室がありません
+    strategy: role
+    value: heading:会議室がありません
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/languages
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/rooms
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification moderator
+    safe: false
+  - kind: span
+    name: モデレーター
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification moderator
+    strategy: text
+    value: Certification moderator
+    unique: true
+  - target: Certification moderator
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: モデレーター
+    strategy: text
+    value: モデレーター
+    unique: true
+  - target: モデレーター
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin/languages
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification moderator
+    safe: false
+  - kind: span
+    name: モデレーター
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification moderator
+    strategy: text
+    value: Certification moderator
+    unique: true
+  - target: Certification moderator
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: モデレーター
+    strategy: text
+    value: モデレーター
+    unique: true
+  - target: モデレーター
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin/ai-pipeline
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification moderator
+    safe: false
+  - kind: span
+    name: モデレーター
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification moderator
+    strategy: text
+    value: Certification moderator
+    unique: true
+  - target: Certification moderator
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: モデレーター
+    strategy: text
+    value: モデレーター
+    unique: true
+  - target: モデレーター
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin/experiments
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification moderator
+    safe: false
+  - kind: span
+    name: モデレーター
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification moderator
+    strategy: text
+    value: Certification moderator
+    unique: true
+  - target: Certification moderator
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: モデレーター
+    strategy: text
+    value: モデレーター
+    unique: true
+  - target: モデレーター
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin/glossary
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: moderator
+  depth: 0
+  state_preconditions:
+  - authenticated:moderator
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification moderator
+    safe: false
+  - kind: span
+    name: モデレーター
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification moderatorモデレーターログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification moderator
+    strategy: text
+    value: Certification moderator
+    unique: true
+  - target: Certification moderator
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: モデレーター
+    strategy: text
+    value: モデレーター
+    unique: true
+  - target: モデレーター
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification user
+    safe: false
+  - kind: span
+    name: 従業員
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification user
+    strategy: text
+    value: Certification user
+    unique: true
+  - target: Certification user
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 従業員
+    strategy: text
+    value: 従業員
+    unique: true
+  - target: 従業員
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /login
+  requested_path: /login
+  final_url: http://127.0.0.1:15273/login
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: ••••••••
+    safe: false
+  - kind: button
+    name: ログイン
+    safe: false
+  - kind: link
+    name: パスワードをお忘れですか？
+    href: /forgot-password
+    safe: false
+  - kind: link
+    name: 新規登録
+    href: /register
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: text
+    value: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    unique: true
+  - target: 🌐 Sonowa言語対応会議システムメールアドレスパスワードログインパスワードをお忘れですか？
+    strategy: test_id
+    value: login-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: test_id
+    value: login-email
+    unique: true
+  - target: ••••••••
+    strategy: role
+    value: textbox:••••••••
+    unique: true
+  - target: ••••••••
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: ••••••••
+    strategy: test_id
+    value: login-password
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: button:ログイン
+    unique: true
+  - target: ログイン
+    strategy: test_id
+    value: login-submit
+    unique: true
+  - target: パスワードをお忘れですか？
+    strategy: role
+    value: link:パスワードをお忘れですか？
+    unique: true
+  - target: 新規登録
+    strategy: role
+    value: link:新規登録
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /register
+  requested_path: /register
+  final_url: http://127.0.0.1:15273/register
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: form
+    name: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: textbox
+    name: 8文字以上
+    safe: false
+  - kind: textbox
+    name: 会議で表示される名前
+    safe: false
+  - kind: combobox
+    name: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    safe: false
+  - kind: button
+    name: 登録
+    safe: false
+  - kind: link
+    name: ログイン
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    strategy: text
+    value: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    unique: true
+  - target: 🌐 Sonowa新規登録メールアドレスパスワード表示名母語英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語登録
+    strategy: test_id
+    value: register-form
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: 8文字以上
+    strategy: role
+    value: textbox:8文字以上
+    unique: true
+  - target: 8文字以上
+    strategy: label
+    value: パスワード
+    unique: true
+  - target: 会議で表示される名前
+    strategy: role
+    value: textbox:会議で表示される名前
+    unique: true
+  - target: 会議で表示される名前
+    strategy: label
+    value: 表示名
+    unique: true
+  - target: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    strategy: role
+    value: combobox:英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    unique: true
+  - target: 英語日本語中国語韓国語ベトナム語フランス語ドイツ語ロシア語スペイン語ポルトガル語
+    strategy: label
+    value: 母語
+    unique: true
+  - target: 登録
+    strategy: role
+    value: button:登録
+    unique: true
+  - target: 登録
+    strategy: test_id
+    value: register-submit
+    unique: true
+  - target: ログイン
+    strategy: role
+    value: link:ログイン
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /forgot-password
+  requested_path: /forgot-password
+  final_url: http://127.0.0.1:15273/forgot-password
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🔑 パスワードリセット
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: heading
+    name: 🔑 パスワードリセット
+    safe: false
+  - kind: textbox
+    name: '[REDACTED:email]'
+    safe: false
+  - kind: button
+    name: リセットリンクを送信
+    safe: false
+  - kind: link
+    name: ログインに戻る
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🔑 パスワードリセット
+    strategy: role
+    value: heading:🔑 パスワードリセット
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: role
+    value: textbox:[REDACTED:email]
+    unique: true
+  - target: '[REDACTED:email]'
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: リセットリンクを送信
+    strategy: role
+    value: button:リセットリンクを送信
+    unique: true
+  - target: ログインに戻る
+    strategy: role
+    value: link:ログインに戻る
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /reset-password
+  requested_path: /reset-password
+  final_url: http://127.0.0.1:15273/reset-password
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🔐 パスワードリセット
+  interactions:
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: heading
+    name: 🔐 パスワードリセット
+    safe: false
+  - kind: textbox
+    name: メールで受け取ったトークンを入力
+    safe: false
+  - kind: textbox
+    name: 8文字以上
+    safe: false
+  - kind: textbox
+    name: パスワード確認
+    safe: false
+  - kind: button
+    name: パスワードを更新
+    safe: false
+  - kind: link
+    name: ログインに戻る
+    href: /login
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: 🔐 パスワードリセット
+    strategy: role
+    value: heading:🔐 パスワードリセット
+    unique: true
+  - target: メールで受け取ったトークンを入力
+    strategy: role
+    value: textbox:メールで受け取ったトークンを入力
+    unique: true
+  - target: メールで受け取ったトークンを入力
+    strategy: label
+    value: リセットトークン
+    unique: true
+  - target: 8文字以上
+    strategy: role
+    value: textbox:8文字以上
+    unique: true
+  - target: 8文字以上
+    strategy: label
+    value: 新しいパスワード
+    unique: true
+  - target: パスワード確認
+    strategy: role
+    value: textbox:パスワード確認
+    unique: true
+  - target: パスワード確認
+    strategy: label
+    value: パスワード確認
+    unique: true
+  - target: パスワードを更新
+    strategy: role
+    value: button:パスワードを更新
+    unique: true
+  - target: ログインに戻る
+    strategy: role
+    value: link:ログインに戻る
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /menu
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification user
+    safe: false
+  - kind: span
+    name: 従業員
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification user
+    strategy: text
+    value: Certification user
+    unique: true
+  - target: Certification user
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 従業員
+    strategy: text
+    value: 従業員
+    unique: true
+  - target: 従業員
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /profile
+  requested_path: /profile
+  final_url: http://127.0.0.1:15273/profile
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 👤 プロフィール設定
+  interactions:
+  - kind: div
+    name: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    safe: false
+  - kind: button
+    name: ← 戻る
+    safe: false
+  - kind: form
+    name: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    safe: false
+  - kind: heading
+    name: 👤 プロフィール設定
+    safe: false
+  - kind: textbox
+    name: ''
+    safe: false
+  - kind: combobox
+    name: 日本語英語中国語ベトナム語
+    safe: false
+  - kind: button
+    name: 保存
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: text
+    value: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    unique: true
+  - target: ← 戻る👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: test_id
+    value: profile-page
+    unique: true
+  - target: ← 戻る
+    strategy: role
+    value: button:← 戻る
+    unique: true
+  - target: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: text
+    value: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    unique: true
+  - target: 👤 プロフィール設定表示名と母語を変更できますメールアドレス権限表示名母語日本語英語中国語ベトナム語保存
+    strategy: test_id
+    value: profile-form
+    unique: true
+  - target: 👤 プロフィール設定
+    strategy: role
+    value: heading:👤 プロフィール設定
+    unique: true
+  - target: input
+    strategy: role
+    value: textbox:input
+    unique: false
+  - target: input
+    strategy: label
+    value: メールアドレス
+    unique: true
+  - target: input
+    strategy: label
+    value: 権限
+    unique: true
+  - target: input
+    strategy: test_id
+    value: profile-role
+    unique: true
+  - target: input
+    strategy: label
+    value: 表示名
+    unique: true
+  - target: input
+    strategy: test_id
+    value: profile-display-name
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: role
+    value: combobox:日本語英語中国語ベトナム語
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: label
+    value: 母語
+    unique: true
+  - target: 日本語英語中国語ベトナム語
+    strategy: test_id
+    value: profile-native-language
+    unique: true
+  - target: 保存
+    strategy: role
+    value: button:保存
+    unique: true
+  - target: 保存
+    strategy: test_id
+    value: profile-save
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/languages
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /history
+  requested_path: /history
+  final_url: http://127.0.0.1:15273/history
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 📊 利用履歴
+  interactions:
+  - kind: div
+    name: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    safe: false
+  - kind: button
+    name: 戻る
+    safe: false
+  - kind: heading
+    name: 📊 利用履歴
+    safe: false
+  - kind: div
+    name: 参加した会議はまだありません会議室に入室するとここに表示されます
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: text
+    value: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    unique: true
+  - target: 戻る📊 利用履歴参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: test_id
+    value: history-page
+    unique: true
+  - target: 戻る
+    strategy: role
+    value: button:戻る
+    unique: true
+  - target: 📊 利用履歴
+    strategy: role
+    value: heading:📊 利用履歴
+    unique: true
+  - target: 参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: text
+    value: 参加した会議はまだありません会議室に入室するとここに表示されます
+    unique: true
+  - target: 参加した会議はまだありません会議室に入室するとここに表示されます
+    strategy: test_id
+    value: history-empty
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/auth/history
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /rooms
+  requested_path: /rooms
+  final_url: http://127.0.0.1:15273/rooms
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa 会議室
+  - 会議室がありません
+  interactions:
+  - kind: div
+    name: ← 戻る🌐 Sonowa 会議室Certification userログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    safe: false
+  - kind: button
+    name: ← 戻る
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa 会議室
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: button
+    name: 新規会議室作成
+    safe: false
+  - kind: heading
+    name: 会議室がありません
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: ← 戻る🌐 Sonowa 会議室Certification userログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    strategy: text
+    value: ← 戻る🌐 Sonowa 会議室Certification userログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    unique: true
+  - target: ← 戻る🌐 Sonowa 会議室Certification userログアウト新規会議室作成🏢会議室がありませんまだ会議室が作成されていません上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう
+    strategy: test_id
+    value: room-list-page
+    unique: true
+  - target: ← 戻る
+    strategy: role
+    value: button:← 戻る
+    unique: true
+  - target: 🌐 Sonowa 会議室
+    strategy: role
+    value: heading:🌐 Sonowa 会議室
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: 新規会議室作成
+    strategy: role
+    value: button:新規会議室作成
+    unique: true
+  - target: 新規会議室作成
+    strategy: test_id
+    value: room-create-open
+    unique: true
+  - target: 会議室がありません
+    strategy: role
+    value: heading:会議室がありません
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/rooms
+    status: 200
+    content_type: application/json
+  - method: GET
+    path: /api/admin/settings/languages
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification user
+    safe: false
+  - kind: span
+    name: 従業員
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification user
+    strategy: text
+    value: Certification user
+    unique: true
+  - target: Certification user
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 従業員
+    strategy: text
+    value: 従業員
+    unique: true
+  - target: 従業員
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin/languages
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification user
+    safe: false
+  - kind: span
+    name: 従業員
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification user
+    strategy: text
+    value: Certification user
+    unique: true
+  - target: Certification user
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 従業員
+    strategy: text
+    value: 従業員
+    unique: true
+  - target: 従業員
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin/ai-pipeline
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification user
+    safe: false
+  - kind: span
+    name: 従業員
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification user
+    strategy: text
+    value: Certification user
+    unique: true
+  - target: Certification user
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 従業員
+    strategy: text
+    value: 従業員
+    unique: true
+  - target: 従業員
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin/experiments
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification user
+    safe: false
+  - kind: span
+    name: 従業員
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification user
+    strategy: text
+    value: Certification user
+    unique: true
+  - target: Certification user
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 従業員
+    strategy: text
+    value: 従業員
+    unique: true
+  - target: 従業員
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+- path: /menu
+  requested_path: /admin/glossary
+  final_url: http://127.0.0.1:15273/menu
+  http_status: 200
+  title: Sonowa - 言語感知型会議システム
+  role: user
+  depth: 0
+  state_preconditions:
+  - authenticated:user
+  headings:
+  - 🌐 Sonowa
+  - 💬コミュニケーション
+  - 多言語会議Sonowa
+  - ⚙️管理・設定
+  - プロフィール設定
+  - 利用履歴
+  interactions:
+  - kind: div
+    name: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    safe: false
+  - kind: heading
+    name: 🌐 Sonowa
+    safe: false
+  - kind: combobox
+    name: 日本語English中文Tiếng Việt
+    safe: false
+  - kind: span
+    name: Certification user
+    safe: false
+  - kind: span
+    name: 従業員
+    safe: false
+  - kind: button
+    name: ログアウト
+    safe: false
+  - kind: heading
+    name: 💬コミュニケーション
+    safe: false
+  - kind: link
+    name: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    href: /rooms
+    safe: false
+  - kind: heading
+    name: 多言語会議Sonowa
+    safe: false
+  - kind: heading
+    name: ⚙️管理・設定
+    safe: false
+  safe_action_results: []
+  locator_candidates:
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: text
+    value: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    unique: true
+  - target: 🌐 Sonowa社内コミュニケーションポータル日本語English中文Tiếng ViệtCertification user従業員ログアウト💬コミュニケーション🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→⚙️管理・設定👤プロフィール設定表示名・言語設定の変更→📊利用履歴会議参加履歴の確認→©
+      20
+    strategy: test_id
+    value: menu-page
+    unique: true
+  - target: 🌐 Sonowa
+    strategy: role
+    value: heading:🌐 Sonowa
+    unique: true
+  - target: 日本語English中文Tiếng Việt
+    strategy: role
+    value: combobox:日本語English中文Tiếng Việt
+    unique: true
+  - target: Certification user
+    strategy: text
+    value: Certification user
+    unique: true
+  - target: Certification user
+    strategy: test_id
+    value: menu-user-name
+    unique: true
+  - target: 従業員
+    strategy: text
+    value: 従業員
+    unique: true
+  - target: 従業員
+    strategy: test_id
+    value: menu-user-role
+    unique: true
+  - target: ログアウト
+    strategy: role
+    value: button:ログアウト
+    unique: true
+  - target: ログアウト
+    strategy: test_id
+    value: menu-logout
+    unique: true
+  - target: 💬コミュニケーション
+    strategy: role
+    value: heading:💬コミュニケーション
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: role
+    value: link:🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    unique: true
+  - target: 🌐多言語会議Sonowaリアルタイム翻訳付き音声会議→
+    strategy: test_id
+    value: menu-item-rooms
+    unique: true
+  - target: 多言語会議Sonowa
+    strategy: role
+    value: heading:多言語会議Sonowa
+    unique: true
+  - target: ⚙️管理・設定
+    strategy: role
+    value: heading:⚙️管理・設定
+    unique: true
+  api_calls:
+  - method: GET
+    path: /api/auth/me
+    status: 200
+    content_type: application/json
+  observation_channels:
+  - ui
+  - api
+unvisited:
+- role: admin
+  path: /
+  reason: max_interactions reached
+- role: admin
+  path: /menu
+  reason: max_interactions reached
+- role: admin
+  path: /admin/languages
+  reason: max_interactions reached
+- role: admin
+  path: /admin/ai-pipeline
+  reason: max_interactions reached
+- role: moderator
+  path: /
+  reason: max_interactions reached
+- role: moderator
+  path: /menu
+  reason: max_interactions reached
+- role: moderator
+  path: /admin
+  reason: max_interactions reached
+- role: moderator
+  path: /admin/languages
+  reason: max_interactions reached
+- role: moderator
+  path: /admin/ai-pipeline
+  reason: max_interactions reached
+- role: moderator
+  path: /admin/experiments
+  reason: max_interactions reached
+- role: moderator
+  path: /admin/glossary
+  reason: max_interactions reached
+- role: user
+  path: /
+  reason: max_interactions reached
+- role: user
+  path: /menu
+  reason: max_interactions reached
+- role: user
+  path: /admin
+  reason: max_interactions reached
+- role: user
+  path: /admin/languages
+  reason: max_interactions reached
+- role: user
+  path: /admin/ai-pipeline
+  reason: max_interactions reached
+- role: user
+  path: /admin/experiments
+  reason: max_interactions reached
+- role: user
+  path: /admin/glossary
+  reason: max_interactions reached
+redactions:
+  contract: testing-kit-sensitive-evidence-v1
+  sanitizer_applied: true
+  fields_scanned: 3872
+  values_redacted: 3
+  residual_sensitive_values: 0
+  secrets_removed: true
+  response_bodies_stored: false

@@ -12,6 +12,7 @@ import logging
 import redis.asyncio as aioredis
 from fastapi import HTTPException, status
 
+from app.ai_pipeline.effective_config import get_cached_pipeline_settings
 from app.ai_pipeline.providers.base import dynamic_max_tokens
 from app.ai_pipeline.providers.correction import (
     CorrectionRequest,
@@ -250,6 +251,21 @@ async def translate_text(
         return text
     if not text.strip():
         return text
+
+    # local 指定は読む主線にも適用する。クラウド由来の共有キャッシュ・TM・
+    # 補正経路を通さず、依存不足や推論失敗でも外部送信へ切り替えない。
+    if get_cached_pipeline_settings().mt_provider == "local":
+        from app.ai_pipeline.registry import STAGE_MT, registry
+
+        try:
+            stage = registry.resolve(STAGE_MT, "local")
+            if stage is None:
+                logger.warning("[Translate] local MT が利用できません")
+                return ""
+            return await stage.translate_text(text, source_language, target_language)
+        except Exception as exc:
+            logger.warning("[Translate] local MT 失敗: %s", exc)
+            return ""
 
     glossary_version = await _glossary_version()
     cache_key = _cache_key(text, source_language, target_language, glossary_version)
