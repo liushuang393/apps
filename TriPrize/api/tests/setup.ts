@@ -363,6 +363,23 @@ jest.mock('../src/config/redis.config', () => {
   };
 });
 
+// レート制限カウンタをテストごとに初期化する
+// 目的: 同一 IP から連続してリクエストする統合テストが 429 で失敗しないようにする
+// 注意点: レート制限そのものを検証するテストは、テスト内で明示的に連続呼び出しすること
+beforeEach(async () => {
+  const { getRedisClient } = jest.requireMock('../src/config/redis.config') as {
+    getRedisClient: () => Promise<{
+      keys: (pattern: string) => Promise<string[]>;
+      del: (key: string | string[]) => Promise<number>;
+    }>;
+  };
+  const redis = await getRedisClient();
+  const keys = await redis.keys('ratelimit:*');
+  if (keys.length > 0) {
+    await redis.del(keys);
+  }
+});
+
 // NOTE: database.config.ts is NOT mocked - tests connect to real Docker PostgreSQL
 // 目的: 統合テストは実際のDocker DBに接続する
 // 注意点: docker-compose up で PostgreSQL を起動してからテストを実行すること

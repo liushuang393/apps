@@ -106,8 +106,9 @@ describe('Payment Webhook Integration Tests', () => {
 
   beforeEach(async () => {
     // 创建测试用户 (使用唯一email避免冲突)
-    const firebaseUid = `test-webhook-${Date.now()}`;
-    const uniqueEmail = `${firebaseUid}@example.com`;
+    // users.user_id は UUID 型のため UUID を採番する（firebase_uid も同じ値を使う）
+    const firebaseUid = crypto.randomUUID();
+    const uniqueEmail = `test-webhook-${firebaseUid}@example.com`;
 	    // user_id must match firebase_uid for role.middleware to find the user
 	    const { rows: userRows } = await pool.query(
 	      `INSERT INTO users (user_id, firebase_uid, email, display_name, role)

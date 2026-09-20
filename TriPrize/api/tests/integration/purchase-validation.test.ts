@@ -20,6 +20,15 @@ import crypto from 'node:crypto';
 // 设置测试超时为60秒
 jest.setTimeout(60000);
 
+/**
+ * email から auth middleware と同じ決定的 UUID を生成する
+ * 注意点: mock トークン利用時、user_id は email の MD5 から導出される
+ */
+function deterministicUserId(email: string): string {
+  const hash = crypto.createHash('md5').update(email).digest('hex');
+  return `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+}
+
 	describe('Purchase Validation Integration Tests', () => {
 	  let app: Application;
   let testCampaignId: string;
@@ -54,8 +63,7 @@ jest.setTimeout(60000);
 	    // Mock token格式: mock_email@example.com
 	    // auth middleware会从email生成确定性的UUID，所以这里也要使用相同的算法
 	    const email = 'test-validation@example.com';
-	    const hash = crypto.createHash('md5').update(email).digest('hex');
-	    const userId = `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}`;
+	    const userId = deterministicUserId(email);
 
 	    // 先删除可能存在的用户（因为email是唯一的）
 	    await pool.query('DELETE FROM users WHERE email = $1', [email]);
@@ -329,7 +337,19 @@ jest.setTimeout(60000);
 
   describe('Concurrent Purchase Conflict', () => {
     it('should handle concurrent purchases for same position correctly', async () => {
-      // 模拟两个用户同时购买同一个位置
+      // 别の利用者を用意する
+      // 注意点: 同一利用者の同一ボディは冪等機構が重複扱いするため、競合検証には別利用者が必要
+      const secondEmail = 'test-validation-second@example.com';
+      const secondUserId = deterministicUserId(secondEmail);
+      await pool.query('DELETE FROM users WHERE email = $1', [secondEmail]);
+      await pool.query(
+        `INSERT INTO users (user_id, firebase_uid, email, display_name, role, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+        [secondUserId, secondUserId, secondEmail, 'Test Validation User 2', UserRole.CUSTOMER]
+      );
+      const secondAuthToken = `Bearer mock_${secondEmail}`;
+
+      // 二人の利用者が同じ位置を同時に購入する
       const promises = [
         request(app)
           .post('/api/purchases')
@@ -341,7 +361,7 @@ jest.setTimeout(60000);
           }),
         request(app)
           .post('/api/purchases')
-          .set('Authorization', authToken)
+          .set('Authorization', secondAuthToken)
           .send({
             campaign_id: testCampaignId,
             position_ids: [testPositionIds[0]],
@@ -424,7 +444,7 @@ jest.setTimeout(60000);
         });
 
       expect(response.status).toBe(400);
-      expect(response.body.message).toContain('not available');
+      expect(response.body.message).toContain('no longer available');
     });
   });
 });
