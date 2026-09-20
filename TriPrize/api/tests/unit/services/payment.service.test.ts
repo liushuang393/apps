@@ -436,13 +436,27 @@ describe('PaymentService', () => {
       } as unknown as Stripe.PaymentIntent;
 
       (stripe!.paymentIntents.confirm as jest.Mock).mockResolvedValueOnce(mockPaymentIntent);
+      (pool.query as jest.Mock).mockResolvedValueOnce({
+        rows: [{ user_id: 'user-123' }],
+      });
 
-      const result = await service.confirmPayment('pi_123', 'pm_card_123');
+      const result = await service.confirmPayment('pi_123', 'pm_card_123', 'user-123');
 
       expect(result.status).toBe('succeeded');
       expect(stripe!.paymentIntents.confirm).toHaveBeenCalledWith('pi_123', {
         payment_method: 'pm_card_123',
       });
+    });
+
+    it('should reject payment confirmation owned by another user', async () => {
+      (pool.query as jest.Mock).mockResolvedValueOnce({
+        rows: [{ user_id: 'other-user' }],
+      });
+
+      await expect(
+        service.confirmPayment('pi_123', 'pm_card_123', 'user-123')
+      ).rejects.toThrow('You do not own this payment');
+      expect(stripe!.paymentIntents.confirm).not.toHaveBeenCalled();
     });
   });
 });

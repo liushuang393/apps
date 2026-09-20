@@ -171,6 +171,8 @@ describe('PaymentController', () => {
           amount: 1000,
           currency: 'jpy',
           status: 'requires_payment_method',
+          konbini_reference: null,
+          konbini_expires_at: null,
         },
       });
     });
@@ -213,7 +215,11 @@ describe('PaymentController', () => {
         mockResponse as Response,
       );
 
-      expect(paymentService.confirmPayment).toHaveBeenCalledWith('pi_1', 'pm_1');
+      expect(paymentService.confirmPayment).toHaveBeenCalledWith(
+        'pi_1',
+        'pm_1',
+        'user-1'
+      );
       expect(responseBody).toEqual({
         success: true,
         data: {
@@ -246,7 +252,10 @@ describe('PaymentController', () => {
         mockResponse as Response,
       );
 
-      expect(paymentService.getKonbiniPaymentInfo).toHaveBeenCalledWith('pi_1');
+      expect(paymentService.getKonbiniPaymentInfo).toHaveBeenCalledWith(
+        'pi_1',
+        'user-1'
+      );
       expect(responseBody).toEqual({
         success: true,
         data: konbiniInfo,

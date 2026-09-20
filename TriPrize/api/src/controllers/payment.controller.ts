@@ -107,7 +107,8 @@ export class PaymentController {
 
     const paymentIntent = await paymentService.confirmPayment(
       paymentIntentId,
-      paymentMethodId
+      paymentMethodId,
+      req.dbUser.user_id
     );
 
     res.json({
@@ -168,7 +169,8 @@ export class PaymentController {
         exp_month: body.card.exp_month,
         exp_year: body.card.exp_year,
         cvc: body.card.cvc,
-      }
+      },
+      req.dbUser.user_id
     );
 
     res.json({
@@ -192,7 +194,10 @@ export class PaymentController {
 
     const { paymentIntentId } = req.params;
 
-    const konbiniInfo = await paymentService.getKonbiniPaymentInfo(paymentIntentId);
+    const konbiniInfo = await paymentService.getKonbiniPaymentInfo(
+      paymentIntentId,
+      req.dbUser.user_id
+    );
 
     if (!konbiniInfo) {
       throw errors.notFound('Konbini payment information');

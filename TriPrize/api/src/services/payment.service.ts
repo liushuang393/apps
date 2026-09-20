@@ -22,6 +22,26 @@ import { errors } from '../middleware/error.middleware';
  */
 export class PaymentService {
   /**
+   * PaymentIntent が認証ユーザーに属することを検証する。
+   */
+  private async assertPaymentIntentOwnership(
+    paymentIntentId: string,
+    userId: string
+  ): Promise<void> {
+    const { rows } = await pool.query<Pick<PaymentTransaction, 'user_id'>>(
+      'SELECT user_id FROM payment_transactions WHERE stripe_payment_intent_id = $1',
+      [paymentIntentId]
+    );
+
+    if (rows.length === 0) {
+      throw errors.notFound('Payment transaction');
+    }
+    if (rows[0].user_id !== userId) {
+      throw errors.forbidden('You do not own this payment');
+    }
+  }
+
+  /**
    * Create a payment intent for a purchase
    */
   async createPaymentIntent(
@@ -180,8 +200,13 @@ export class PaymentService {
    * I/O: 调用 Stripe API 或假支付服务确认支付
    * 注意点: 根据环境自动切换使用真实或假支付。Mock モードでは DB も更新する。
    */
-  async confirmPayment(paymentIntentId: string, paymentMethodId: string): Promise<Stripe.PaymentIntent> {
+  async confirmPayment(
+    paymentIntentId: string,
+    paymentMethodId: string,
+    userId: string
+  ): Promise<Stripe.PaymentIntent> {
     try {
+      await this.assertPaymentIntentOwnership(paymentIntentId, userId);
       let paymentIntent: Stripe.PaymentIntent;
 
       // 根据环境选择使用真实 Stripe 或假支付
@@ -234,13 +259,15 @@ export class PaymentService {
       exp_month: number;
       exp_year: number;
       cvc: string;
-    }
+    },
+    userId: string
   ): Promise<Stripe.PaymentIntent> {
     try {
+      await this.assertPaymentIntentOwnership(paymentIntentId, userId);
       // Mock モードの場合は既存のロジックを使用
       if (PAYMENT_CONFIG.useMockPayment) {
         logger.info('Confirming payment with card (mock)', { paymentIntentId });
-        return this.confirmPayment(paymentIntentId, 'pm_mock_card');
+        return this.confirmPayment(paymentIntentId, 'pm_mock_card', userId);
       }
 
       if (!stripe) {
@@ -440,8 +467,12 @@ export class PaymentService {
    * I/O: 从 Stripe 或假支付服务获取支付信息
    * 注意点: 根据环境自动切换使用真实或假支付
    */
-  async getKonbiniPaymentInfo(paymentIntentId: string): Promise<KonbiniPaymentInfo | null> {
+  async getKonbiniPaymentInfo(
+    paymentIntentId: string,
+    userId: string
+  ): Promise<KonbiniPaymentInfo | null> {
     try {
+      await this.assertPaymentIntentOwnership(paymentIntentId, userId);
       let paymentIntent: Stripe.PaymentIntent;
       let paymentMethod: Stripe.PaymentMethod | null = null;
 
