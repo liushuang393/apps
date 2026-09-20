@@ -32,4 +32,34 @@
 
 ## 検証結果
 
-作業完了時に、工程ごとの実行コマンド、成功・失敗、環境制約、残存リスクを追記する。
+| 工程 | 実行結果 |
+| --- | --- |
+| ForgePay | 対象 Jest 66件成功。本番変更箇所の ESLint 成功。全体 TypeScript ビルドは変更外の既存型エラー2件で失敗 |
+| TriPrize | 追加テスト成功、TypeScript ビルド成功。互換範囲の依存更新後、高・重大 npm 脆弱性は0件 |
+| language-aware-conferencing-system | 追加テスト2件成功。変更3ファイルの Ruff lint・format 成功 |
+| simultaneous_interpretation | チェックアウトテスト10件成功、本番変更ファイルの ESLint 成功。全体品質ゲートは変更外ファイルの既存 Prettier 違反1件で失敗 |
+| aws-voc-cdk-python | ユニットテスト18件成功 |
+| gcal_twilio_reminder | Python 構文検査と内部テスト成功 |
+| liteflow-rule-db-validation-platform-v1.1.0 | preflight 18項目中16件成功。既存コーパスの `output/` 欠損1件で失敗、Docker 検査はツール不在でスキップ |
+| AiToEarn | 取得先のない Gitlink のため検証不能 |
+| sokuji | 管理対象ソースが存在しないため検証不能 |
+
+## 実施した是正
+
+- ForgePay の GET 検証を読み取り専用にし、ブラウザの再試行や先読みでトークンを消費しないようにした。
+- TriPrize は本番で `USE_MOCK_AUTH=true` を拒否し、互換範囲内の依存更新で高・重大脆弱性を解消した。
+- Sonowa は本番 JWT シークレットを起動時検証し、本番のパスワードリセット応答からトークンを除外した。
+- 同時通訳の決済商品とリダイレクト先をサーバ設定だけから決定するようにした。
+- AWS VOC の同名 Lambda ハンドラーをテストごとに分離し、一括実行時の衝突を解消した。
+- Google Calendar リマインダーは TwiML を XML エスケープし、送信成功後だけ送信済みを記録するようにした。
+- Liteflow のヘルス詳細を認証時だけに制限し、Compose 公開ポートを loopback に限定した。
+- Git 管理されていた Python キャッシュを削除し、再混入を防止した。
+
+## 残存リスク
+
+- ForgePay の管理 Webhook・Entitlement API には、テナント所有権の検証不足が残る。DB クエリとデータモデルをまたぐ変更が必要であり、局所修正では安全性を保証できない。
+- ForgePay の本番依存には破壊的メジャー更新が必要な高・重大脆弱性が残る。`bcrypt` と `uuid` の更新には認証・移行・実行環境の互換試験が必要。
+- TriPrize には `firebase-admin` のメジャー更新が必要な中重要度脆弱性8件が残る。既存ユニット全体は変更外の20件が失敗している。
+- Sonowa の公開会議アクセス制御、同時通訳の無認証サブスクリプション照会とクライアント API キー保存は、認証・データモデルを含む設計変更が必要。
+- Liteflow の実行 API 無認証は既存 validator 契約で明示的に維持されている。本番投入時は validator・スクリプトと同時に認証化する必要がある。
+- AiToEarn は `.gitmodules` に取得先を登録しない限りレビューできない。
