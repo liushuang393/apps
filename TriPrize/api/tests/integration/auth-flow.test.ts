@@ -85,7 +85,8 @@ describe('Authentication Flow Integration Tests', () => {
           display_name: 'Test Auth User 003',
         });
 
-      expect(response.status).toBe(400);
+      // 既存メールとの競合は 409 Conflict を返す
+      expect(response.status).toBe(409);
       // APIは "An account with this email already exists" を返す
       expect(response.body.success).toBe(false);
     });

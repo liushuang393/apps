@@ -366,14 +366,22 @@ jest.mock('../src/config/redis.config', () => {
 // レート制限カウンタをテストごとに初期化する
 // 目的: 同一 IP から連続してリクエストする統合テストが 429 で失敗しないようにする
 // 注意点: レート制限そのものを検証するテストは、テスト内で明示的に連続呼び出しすること
+// 注意点: テストファイル側が redis.config を独自にモックする場合もあるため、
+//         keys/del を備えたクライアントが得られないときは何もしない
 beforeEach(async () => {
-  const { getRedisClient } = jest.requireMock('../src/config/redis.config') as {
-    getRedisClient: () => Promise<{
-      keys: (pattern: string) => Promise<string[]>;
-      del: (key: string | string[]) => Promise<number>;
-    }>;
+  type MinimalRedis = {
+    keys?: (pattern: string) => Promise<string[]>;
+    del?: (key: string | string[]) => Promise<number>;
   };
-  const redis = await getRedisClient();
+  const mocked = jest.requireMock('../src/config/redis.config') as {
+    getRedisClient?: () => Promise<MinimalRedis | undefined>;
+  };
+
+  const redis = await mocked.getRedisClient?.();
+  if (!redis?.keys || !redis.del) {
+    return;
+  }
+
   const keys = await redis.keys('ratelimit:*');
   if (keys.length > 0) {
     await redis.del(keys);

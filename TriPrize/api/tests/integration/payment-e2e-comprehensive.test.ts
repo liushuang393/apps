@@ -196,8 +196,17 @@ describe('Payment E2E Comprehensive Tests', () => {
 
   beforeEach(async () => {
     // 既存のテストデータをクリーンアップ（前のテスト失敗時のデータ残りを防ぐ）
-    await pool.query("DELETE FROM payment_transactions WHERE purchase_id IN (SELECT purchase_id FROM purchases WHERE user_id LIKE 'test-payment-e2e%')");
-    await pool.query("DELETE FROM purchases WHERE user_id LIKE 'test-payment-e2e%'");
+    // user_id は UUID 型なので、テストデータの特定は email で行う
+    await pool.query(
+      `DELETE FROM payment_transactions
+       WHERE purchase_id IN (
+         SELECT purchase_id FROM purchases
+         WHERE user_id IN (SELECT user_id FROM users WHERE email LIKE 'test-payment-e2e%')
+       )`
+    );
+    await pool.query(
+      "DELETE FROM purchases WHERE user_id IN (SELECT user_id FROM users WHERE email LIKE 'test-payment-e2e%')"
+    );
 
     // 创建测试用户
     const { userId, authToken: token } = await createTestUser();
@@ -437,7 +446,8 @@ describe('Payment E2E Comprehensive Tests', () => {
 
       expect(paymentIntentResponse.status).toBe(201);
       expect(paymentIntentResponse.body.data.payment_intent_id).toBeDefined();
-      expect(paymentIntentResponse.body.data.status).toBe('requires_payment_method');
+      // コンビニ決済は支払番号の発行待ちとなるため requires_action を返す
+      expect(paymentIntentResponse.body.data.status).toBe('requires_action');
 
       testPaymentIntentId = paymentIntentResponse.body.data.payment_intent_id;
     });

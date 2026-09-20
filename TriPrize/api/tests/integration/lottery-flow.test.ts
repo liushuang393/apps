@@ -84,6 +84,8 @@ import { UserRole } from '../../src/models/user.entity';
           layer_prices: { '1': 100, '2': 200, '3': 300 },
           profit_margin_percent: 10,
           purchase_limit: 3,
+          // 手動開獎のフローを検証するため自動開獎を無効化する
+          auto_draw: false,
           prizes: [
             { name: 'Grand Prize', rank: 1, quantity: 1, value: 10000, description: 'Test grand prize', image_url: 'https://example.com/prize1.jpg' },
             { name: 'Second Prize', rank: 2, quantity: 1, value: 5000, description: 'Test second prize', image_url: 'https://example.com/prize2.jpg' },
@@ -193,8 +195,10 @@ import { UserRole } from '../../src/models/user.entity';
 
       // Step 9: 获取抽奖结果
       // 注意：lottery results的路由是 /api/lottery/results/:campaignId
+      // 抽選結果の参照は認証必須（管理者は全当選者の詳細を取得できる）
       const resultsResponse = await request(app)
-        .get(`/api/lottery/results/${testCampaignId}`);
+        .get(`/api/lottery/results/${testCampaignId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
 
       expect(resultsResponse.status).toBe(200);
       // API返回的是winners数组
