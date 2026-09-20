@@ -672,7 +672,7 @@ export class WebhookProcessor {
     });
 
     let customerEmail = paymentIntent.receipt_email;
-    const stripeCustomerId = typeof paymentIntent.customer === 'string'
+    let stripeCustomerId = typeof paymentIntent.customer === 'string'
       ? paymentIntent.customer
       : paymentIntent.customer?.id;
 
@@ -683,12 +683,10 @@ export class WebhookProcessor {
       return;
     }
 
-    // Email がない場合は Stripe から取得を試みる
+    // Email がない場合は Stripe の顧客情報から取得を試みる
     if (stripeCustomerId && !customerEmail) {
       try {
         const stripe = await this.getStripeClientForDeveloper(developer_id);
-        // findOrCreateCustomer は email 必須だが、Stripe SDK で直接取得できるか？
-        // StripeClient に getCustomer はないが rawStripe がある
         const customer = await stripe.rawStripe.customers.retrieve(stripeCustomerId);
         if (!customer.deleted && customer.email) {
           customerEmail = customer.email;
@@ -708,10 +706,19 @@ export class WebhookProcessor {
 
     const email = customerEmail;
 
+    // customers.stripe_customer_id は NOT NULL のため、未特定なら Stripe 側で顧客を確定させる
+    if (!stripeCustomerId) {
+      const stripe = await this.getStripeClientForDeveloper(developer_id);
+      const stripeCustomer = await stripe.findOrCreateCustomer(email, undefined, {
+        developer_id,
+      });
+      stripeCustomerId = stripeCustomer.id;
+    }
+
     // 顧客を検索/作成
     const { customer } = await this.customerRepo.findOrCreate({
       developerId: developer_id,
-      stripeCustomerId: stripeCustomerId || undefined,
+      stripeCustomerId,
       email: email,
     });
 

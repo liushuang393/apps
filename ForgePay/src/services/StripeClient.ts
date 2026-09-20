@@ -40,6 +40,25 @@ export interface CreateCheckoutSessionParams {
 }
 
 /**
+ * 商品登録なしで決済する場合の Checkout Session parameters
+ */
+export interface CreateAdHocCheckoutSessionParams {
+  /** Checkout 画面に表示する商品名 */
+  name: string;
+  /** 金額（最小通貨単位） */
+  amount: number;
+  /** 通貨コード（ISO 4217、小文字） */
+  currency: string;
+  purchaseIntentId: string;
+  customerEmail?: string;
+  successUrl: string;
+  cancelUrl: string;
+  metadata?: Record<string, string>;
+  paymentMethodTypes?: PaymentMethodType[];
+  locale?: CheckoutLocale;
+}
+
+/**
  * Stripe Checkout Session result
  */
 export interface CheckoutSessionResult {
@@ -238,6 +257,78 @@ export class StripeClient {
       };
     } catch (error) {
       logger.error('Error creating Stripe checkout session', {
+        error,
+        params: { ...params, customerEmail: '***' },
+      });
+      throw this.handleStripeError(error);
+    }
+  }
+
+  /**
+   * 商品登録なしで Checkout Session を作成する（アドホック決済）
+   *
+   * Stripe 上に Product / Price を事前登録せず、price_data を直接指定する。
+   *
+   * @param params - アドホック決済パラメータ
+   * @returns Checkout session result with URL
+   */
+  async createAdHocCheckoutSession(
+    params: CreateAdHocCheckoutSessionParams
+  ): Promise<CheckoutSessionResult> {
+    try {
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
+        mode: 'payment',
+        line_items: [
+          {
+            price_data: {
+              currency: params.currency,
+              unit_amount: params.amount,
+              product_data: {
+                name: params.name,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${params.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: params.cancelUrl,
+        client_reference_id: params.purchaseIntentId,
+        metadata: {
+          purchase_intent_id: params.purchaseIntentId,
+          ...params.metadata,
+        },
+        expires_at: Math.floor(Date.now() / 1000) + 86400, // 24 hours
+      };
+
+      if (params.paymentMethodTypes && params.paymentMethodTypes.length > 0) {
+        sessionParams.payment_method_types = params.paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[];
+      }
+
+      if (params.locale && params.locale !== 'auto') {
+        sessionParams.locale = params.locale as Stripe.Checkout.SessionCreateParams.Locale;
+      }
+
+      if (params.customerEmail) {
+        sessionParams.customer_email = params.customerEmail;
+        sessionParams.customer_creation = 'always';
+      } else {
+        sessionParams.customer_creation = 'always';
+      }
+
+      const session = await this.stripe.checkout.sessions.create(sessionParams);
+
+      logger.info('Stripe ad-hoc checkout session created', {
+        sessionId: session.id,
+        purchaseIntentId: params.purchaseIntentId,
+      });
+
+      return {
+        sessionId: session.id,
+        url: session.url!,
+        expiresAt: new Date(session.expires_at * 1000),
+      };
+    } catch (error) {
+      logger.error('Error creating Stripe ad-hoc checkout session', {
         error,
         params: { ...params, customerEmail: '***' },
       });

@@ -353,6 +353,97 @@ describe('StripeClient', () => {
     });
   });
 
+  describe('createAdHocCheckoutSession', () => {
+    const mockAdHocParams = {
+      name: 'サポート料金',
+      amount: 1200,
+      currency: 'jpy',
+      purchaseIntentId: 'pi-adhoc-1',
+      customerEmail: 'adhoc@example.com',
+      successUrl: 'https://example.com/success',
+      cancelUrl: 'https://example.com/cancel',
+      metadata: { custom_key: 'custom_value' },
+    };
+
+    beforeEach(() => {
+      mockCheckoutSessionsCreate.mockResolvedValue({
+        id: 'cs_adhoc_123',
+        url: 'https://checkout.stripe.com/pay/cs_adhoc_123',
+        expires_at: Math.floor(Date.now() / 1000) + 86400,
+      });
+    });
+
+    it('should create a session with inline price_data', async () => {
+      const result = await client.createAdHocCheckoutSession(mockAdHocParams);
+
+      expect(result).toEqual({
+        sessionId: 'cs_adhoc_123',
+        url: 'https://checkout.stripe.com/pay/cs_adhoc_123',
+        expiresAt: expect.any(Date),
+      });
+
+      expect(mockCheckoutSessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'payment',
+          line_items: [
+            {
+              price_data: {
+                currency: 'jpy',
+                unit_amount: 1200,
+                product_data: { name: 'サポート料金' },
+              },
+              quantity: 1,
+            },
+          ],
+          success_url: 'https://example.com/success?session_id={CHECKOUT_SESSION_ID}',
+          cancel_url: 'https://example.com/cancel',
+          client_reference_id: 'pi-adhoc-1',
+          customer_email: 'adhoc@example.com',
+          customer_creation: 'always',
+          metadata: expect.objectContaining({
+            purchase_intent_id: 'pi-adhoc-1',
+            custom_key: 'custom_value',
+          }),
+        })
+      );
+    });
+
+    it('should set customer_creation to always when email is omitted', async () => {
+      await client.createAdHocCheckoutSession({
+        ...mockAdHocParams,
+        customerEmail: undefined,
+      });
+
+      const sessionParams = mockCheckoutSessionsCreate.mock.calls[0][0];
+      expect(sessionParams.customer_creation).toBe('always');
+      expect(sessionParams.customer_email).toBeUndefined();
+    });
+
+    it('should apply payment methods and locale when provided', async () => {
+      await client.createAdHocCheckoutSession({
+        ...mockAdHocParams,
+        paymentMethodTypes: ['card', 'konbini'],
+        locale: 'ja',
+      });
+
+      expect(mockCheckoutSessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payment_method_types: ['card', 'konbini'],
+          locale: 'ja',
+        })
+      );
+    });
+
+    it('should convert Stripe errors', async () => {
+      mockCheckoutSessionsCreate.mockRejectedValue(new MockStripeInvalidRequestError('Invalid amount'));
+
+      await expect(client.createAdHocCheckoutSession(mockAdHocParams)).rejects.toThrow(
+        'Invalid request: Invalid amount'
+      );
+      expect(logger.error).toHaveBeenCalled();
+    });
+  });
+
   describe('getCheckoutSession', () => {
     const mockSession = {
       id: 'cs_test_123',
