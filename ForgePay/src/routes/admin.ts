@@ -37,10 +37,16 @@ const router = Router();
  * 所有者を特定できないイベントは情報漏洩を防ぐため拒否する。
  */
 function isWebhookOwnedByDeveloper(
-  payload: Record<string, any>,
+  payload: Record<string, unknown> | null | undefined,
   developerId: string
 ): boolean {
-  const metadata = payload?.data?.object?.metadata;
+  const metadata = (
+    payload as
+      | { data?: { object?: { metadata?: Record<string, unknown> } } }
+      | null
+      | undefined
+  )?.data?.object?.metadata;
+
   return (
     metadata?.developer_id === developerId ||
     metadata?.developerId === developerId
