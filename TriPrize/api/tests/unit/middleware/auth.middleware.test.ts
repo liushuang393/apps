@@ -35,6 +35,7 @@ describe('auth.middleware', () => {
 
 	      expect(res.status).toHaveBeenCalledWith(401);
 	      expect(res.json).toHaveBeenCalledWith({
+	        success: false,
 	        error: 'UNAUTHORIZED',
 	        message: 'Missing or invalid authorization header',
 	      });

@@ -40,6 +40,7 @@ describe('role.middleware', () => {
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
+        success: false,
         error: 'UNAUTHORIZED',
         message: 'Authentication required',
       });
@@ -58,6 +59,7 @@ describe('role.middleware', () => {
       expect(mockPool.query).toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(404);
       expect(res.json).toHaveBeenCalledWith({
+        success: false,
         error: 'USER_NOT_FOUND',
         message: 'User not found in database',
       });
@@ -103,6 +105,7 @@ describe('role.middleware', () => {
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
+        success: false,
         error: 'UNAUTHORIZED',
         message: 'User information not loaded',
       });
@@ -126,6 +129,7 @@ describe('role.middleware', () => {
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
+        success: false,
         error: 'FORBIDDEN',
         message: 'Insufficient permissions',
       });
@@ -219,6 +223,7 @@ describe('role.middleware', () => {
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
+        success: false,
         error: 'UNAUTHORIZED',
         message: 'User information not loaded',
       });
@@ -243,6 +248,7 @@ describe('role.middleware', () => {
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
+        success: false,
         error: 'FORBIDDEN',
         message: 'You can only access your own resources',
       });

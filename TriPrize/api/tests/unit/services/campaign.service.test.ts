@@ -435,7 +435,7 @@ describe('CampaignService', () => {
     it('should throw error if campaign not found', async () => {
       (pool.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
 
-      await expect(service.getCampaignStats('non-existent')).rejects.toThrow('CAMPAIGN_NOT_FOUND');
+      await expect(service.getCampaignStats('non-existent')).rejects.toThrow('Campaign not found');
     });
   });
 });

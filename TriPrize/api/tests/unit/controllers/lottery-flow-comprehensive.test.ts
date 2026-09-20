@@ -171,7 +171,7 @@ describe('抽選フロー包括的テスト', () => {
   });
 
   describe('キャンペーン抽選結果取得', () => {
-    it('誰でもキャンペーンの抽選結果を取得できる', async () => {
+    it('管理者は全当選者の詳細を取得できる', async () => {
       const mockWinners = [
         {
           user_id: 'user-1',
@@ -202,6 +202,13 @@ describe('抽選フロー包括的テスト', () => {
       ];
 
       mockRequest.params = { campaignId: 'campaign-123' };
+      // 抽選結果の参照は認証必須で、管理者のみ全当選者の詳細を取得できる
+      mockRequest.dbUser = {
+        user_id: 'admin-uid-123',
+        email: 'admin@example.com',
+        display_name: 'Test Admin',
+        role: UserRole.ADMIN,
+      };
 
       (lotteryService.getCampaignResults as jest.Mock).mockResolvedValue(mockWinners);
 
@@ -214,8 +221,63 @@ describe('抽選フロー包括的テスト', () => {
       expect(responseObject).toMatchObject({
         success: true,
         data: mockWinners,
+        isAdmin: true,
       });
       expect(lotteryService.getCampaignResults).toHaveBeenCalledWith('campaign-123');
+    });
+
+    it('顧客には自分の当選情報と当選者数のみを返す', async () => {
+      const myWin = {
+        user_id: 'user-1',
+        user_email: 'user1@example.com',
+        user_display_name: 'User One',
+        position_row: 1,
+        position_col: 1,
+        position_layer: 1,
+        prize_id: 'prize-1',
+        prize_name: 'First Prize',
+        prize_rank: 1,
+        prize_image_url: null,
+        drawn_at: new Date(),
+      };
+
+      mockRequest.params = { campaignId: 'campaign-123' };
+      mockRequest.dbUser = {
+        user_id: 'user-1',
+        email: 'user1@example.com',
+        display_name: 'User One',
+        role: UserRole.CUSTOMER,
+      };
+
+      (lotteryService.checkUserWin as jest.Mock).mockResolvedValue(myWin);
+      (lotteryService.getCampaignResults as jest.Mock).mockResolvedValue([myWin, { ...myWin, user_id: 'user-2' }]);
+
+      await runHandler(
+        lotteryController.getCampaignResults,
+        mockRequest as Request,
+        mockResponse as Response,
+      );
+
+      expect(responseObject).toMatchObject({
+        success: true,
+        data: [myWin],
+        winnersCount: 2,
+        isAdmin: false,
+      });
+      expect(lotteryService.checkUserWin).toHaveBeenCalledWith('user-1', 'campaign-123');
+    });
+
+    it('未認証では 401 になる', async () => {
+      mockRequest.params = { campaignId: 'campaign-123' };
+      mockRequest.dbUser = undefined;
+
+      await expect(
+        runHandler(
+          lotteryController.getCampaignResults,
+          mockRequest as Request,
+          mockResponse as Response,
+        )
+      ).rejects.toHaveProperty('statusCode', 401);
     });
   });
 

@@ -74,15 +74,19 @@ describe('LotteryService', () => {
       mockClient.query.mockImplementation(async (query: string) => {
         if (query.includes('pg_try_advisory_xact_lock')) return { rows: [{ locked: true }] };
         if (query.includes('SELECT COUNT(*) as count FROM lottery_results')) return { rows: [{ count: 0 }] };
+        // 販売済みポジション総数（layer ごとの抽選クエリより前に判定する）
+        if (query.includes('COUNT(*) as count FROM positions')) return { rows: [{ count: '2' }] };
         if (query.includes('ORDER BY RANDOM()')) return { rows: mockSoldPositions };
         if (query.includes('SELECT user_id, email')) return { rows: [{ user_id: 'user-1', email: 'u1@test.com', display_name: 'User One' }] };
         return { rows: [] }; // Default for BEGIN, COMMIT, SET, INSERTs, UPDATEs
       });
-      
+
       const result = await service.drawLottery('campaign-123');
 
       expect(result).toBeDefined();
-      expect(result.winners_count).toBe(2);
+      // layer_prices に価値が設定された 3 層からそれぞれ 1 名を抽選する
+      expect(result.winners_count).toBe(3);
+      expect(result.sold_positions).toBe(2);
       expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
       expect(mockClient.query).toHaveBeenCalledWith(expect.stringContaining('pg_try_advisory_xact_lock'), expect.any(Array));
       expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
@@ -96,7 +100,7 @@ describe('LotteryService', () => {
         return { rows: [] };
       });
 
-      await expect(service.drawLottery('non-existent')).rejects.toThrow('CAMPAIGN_NOT_FOUND');
+      await expect(service.drawLottery('non-existent')).rejects.toThrow('Campaign not found');
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     });

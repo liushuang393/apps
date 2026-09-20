@@ -30,16 +30,17 @@ describe('Position Calculator Utils', () => {
   });
 
   describe('calculateLayerPositions', () => {
-    it('should calculate positions for bottom layer', () => {
-      expect(calculateLayerPositions(5, 1)).toBe(5);
+    // 層番号 = その層の格子数（Layer 1 = 頂点 = 1等 = 1 マス）
+    it('should calculate positions for top layer', () => {
+      expect(calculateLayerPositions(5, 1)).toBe(1);
     });
 
     it('should calculate positions for middle layer', () => {
       expect(calculateLayerPositions(5, 3)).toBe(3);
     });
 
-    it('should calculate positions for top layer', () => {
-      expect(calculateLayerPositions(5, 5)).toBe(1);
+    it('should calculate positions for bottom layer', () => {
+      expect(calculateLayerPositions(5, 5)).toBe(5);
     });
 
     it('should throw error for invalid layer number', () => {
@@ -53,17 +54,17 @@ describe('Position Calculator Utils', () => {
       const positions = generatePositions(3);
       expect(positions).toHaveLength(6);
 
-      // Layer 1 should have 3 positions
+      // Layer 1 (頂点/1等) should have 1 position
       const layer1 = positions.filter(p => p.layerNumber === 1);
-      expect(layer1).toHaveLength(3);
+      expect(layer1).toHaveLength(1);
 
       // Layer 2 should have 2 positions
       const layer2 = positions.filter(p => p.layerNumber === 2);
       expect(layer2).toHaveLength(2);
 
-      // Layer 3 should have 1 position
+      // Layer 3 (底辺) should have 3 positions
       const layer3 = positions.filter(p => p.layerNumber === 3);
-      expect(layer3).toHaveLength(1);
+      expect(layer3).toHaveLength(3);
     });
 
     it('should generate positions with correct coordinates', () => {
@@ -76,9 +77,9 @@ describe('Position Calculator Utils', () => {
         colNumber: 0,
       });
 
-      // Check last position (top)
-      const topPosition = positions.find(p => p.layerNumber === 3);
-      expect(topPosition).toEqual({
+      // Check first position of the bottom layer
+      const bottomPosition = positions.find(p => p.layerNumber === 3);
+      expect(bottomPosition).toEqual({
         layerNumber: 3,
         rowNumber: 2,
         colNumber: 0,
@@ -122,11 +123,11 @@ describe('Position Calculator Utils', () => {
         '2': 400,
         '3': 300,
       };
-      // Layer 1: 3 positions * 500 = 1500
+      // Layer 1: 1 position * 500 = 500
       // Layer 2: 2 positions * 400 = 800
-      // Layer 3: 1 position * 300 = 300
-      // Total: 2600
-      expect(calculateMaxRevenue(layerPrices, 3)).toBe(2600);
+      // Layer 3: 3 positions * 300 = 900
+      // Total: 2200
+      expect(calculateMaxRevenue(layerPrices, 3)).toBe(2200);
     });
 
     it('should return 0 for missing prices', () => {

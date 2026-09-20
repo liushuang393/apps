@@ -262,6 +262,11 @@ describe('管理者管理画面包括的テスト', () => {
 
       mockRequest.params = { campaignId: 'campaign-123' };
 
+      // 統計取得前に draft 判定のためキャンペーン本体を参照する
+      (campaignService.getCampaignDetail as jest.Mock).mockResolvedValue({
+        campaign_id: 'campaign-123',
+        status: 'published',
+      });
       (campaignService.getCampaignStats as jest.Mock).mockResolvedValue(mockStats);
 
       await runHandler(

@@ -101,7 +101,7 @@ describe('PurchaseService', () => {
         .mockResolvedValueOnce({ rows: [] }) // SET TRANSACTION ISOLATION LEVEL
         .mockResolvedValueOnce({ rows: [] }); // SELECT campaign - empty
 
-      await expect(service.createPurchase(validDto, 'user-123')).rejects.toThrow('CAMPAIGN_NOT_FOUND');
+      await expect(service.createPurchase(validDto, 'user-123')).rejects.toThrow('Campaign not found');
 
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
       expect(mockClient.release).toHaveBeenCalled();

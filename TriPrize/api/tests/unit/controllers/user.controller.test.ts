@@ -278,7 +278,8 @@ describe('UserController', () => {
       expect(responseObject).toEqual({
         success: true,
         message: 'User registered successfully',
-        data: mockUser,
+        // 登録直後にクライアントが利用する JWT を同時に返す
+        data: { ...mockUser, token: expect.any(String) },
       });
     });
 
@@ -401,6 +402,7 @@ describe('UserController', () => {
           display_name: mockUser.display_name,
           role: mockUser.role,
           avatar_url: mockUser.avatar_url,
+          token: expect.any(String),
         },
       });
       expect(userService.updateLastLogin).toHaveBeenCalledWith('login-token');
