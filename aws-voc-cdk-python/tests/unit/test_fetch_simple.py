@@ -17,10 +17,12 @@ FETCH_HANDLER_PATH = os.path.join(
 @pytest.fixture(autouse=True)
 def isolate_fetch_handler_module():
     """同名の別 Lambda ハンドラーがモジュールキャッシュへ混入することを防ぐ。"""
-    sys.modules.pop("handler", None)
+    previous_handler = sys.modules.pop("handler", None)
     sys.path.insert(0, FETCH_HANDLER_PATH)
     yield
     sys.modules.pop("handler", None)
+    if previous_handler is not None:
+        sys.modules["handler"] = previous_handler
     if FETCH_HANDLER_PATH in sys.path:
         sys.path.remove(FETCH_HANDLER_PATH)
 
