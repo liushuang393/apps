@@ -44,6 +44,7 @@ jest.mock('../../../services/TokenService', () => ({
   tokenService: {
     generateUnlockToken: jest.fn(),
     verifyUnlockToken: jest.fn(),
+    verifyUnlockTokenReadOnly: jest.fn(),
   },
 }));
 
@@ -62,7 +63,9 @@ import { auditLogRepository } from '../../../repositories/AuditLogRepository';
 import { tokenService } from '../../../services/TokenService';
 
 const mockPool = pool as jest.Mocked<typeof pool>;
-const mockEntitlementRepository = entitlementRepository as jest.Mocked<typeof entitlementRepository>;
+const mockEntitlementRepository = entitlementRepository as jest.Mocked<
+  typeof entitlementRepository
+>;
 const mockAuditLogRepository = auditLogRepository as jest.Mocked<typeof auditLogRepository>;
 const mockTokenService = tokenService as jest.Mocked<typeof tokenService>;
 
@@ -86,7 +89,7 @@ describe('EntitlementService', () => {
   beforeEach(() => {
     service = new EntitlementService();
     jest.clearAllMocks();
-    
+
     // Setup mock client
     (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
     mockClient.query.mockResolvedValue({ rows: [] });
@@ -292,6 +295,28 @@ describe('EntitlementService', () => {
     });
   });
 
+  describe('verifyUnlockTokenReadOnly', () => {
+    it('should verify status without consuming the token', async () => {
+      mockTokenService.verifyUnlockTokenReadOnly.mockResolvedValue({
+        valid: true,
+        payload: {
+          entitlementId: 'ent-123',
+          purchaseIntentId: 'pi_123',
+          iat: Date.now() / 1000,
+          exp: Date.now() / 1000 + 300,
+          jti: 'token-jti',
+        },
+      });
+      mockEntitlementRepository.findByPurchaseIntentId.mockResolvedValue(mockEntitlement);
+
+      const result = await service.verifyUnlockTokenReadOnly('valid-token');
+
+      expect(result.valid).toBe(true);
+      expect(result.status?.hasAccess).toBe(true);
+      expect(mockTokenService.verifyUnlockToken).not.toHaveBeenCalled();
+    });
+  });
+
   describe('suspendEntitlement', () => {
     it('should suspend entitlement successfully', async () => {
       const suspendedEntitlement = {
@@ -382,7 +407,9 @@ describe('EntitlementService', () => {
       mockEntitlementRepository.findById.mockResolvedValue(mockEntitlement);
       mockEntitlementRepository.extendExpiration.mockRejectedValue(new Error('Database error'));
 
-      await expect(service.renewEntitlement('ent-123', newExpiryDate)).rejects.toThrow('Database error');
+      await expect(service.renewEntitlement('ent-123', newExpiryDate)).rejects.toThrow(
+        'Database error'
+      );
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     });
   });
@@ -392,7 +419,9 @@ describe('EntitlementService', () => {
       mockEntitlementRepository.findById.mockResolvedValue(mockEntitlement);
       mockEntitlementRepository.suspend.mockRejectedValue(new Error('Database error'));
 
-      await expect(service.suspendEntitlement('ent-123', 'Test reason')).rejects.toThrow('Database error');
+      await expect(service.suspendEntitlement('ent-123', 'Test reason')).rejects.toThrow(
+        'Database error'
+      );
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     });
   });
@@ -411,7 +440,9 @@ describe('EntitlementService', () => {
       mockEntitlementRepository.findById.mockResolvedValue(mockEntitlement);
       mockEntitlementRepository.revoke.mockRejectedValue(new Error('Database error'));
 
-      await expect(service.revokeEntitlement('ent-123', 'Refund')).rejects.toThrow('Database error');
+      await expect(service.revokeEntitlement('ent-123', 'Refund')).rejects.toThrow(
+        'Database error'
+      );
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     });
   });

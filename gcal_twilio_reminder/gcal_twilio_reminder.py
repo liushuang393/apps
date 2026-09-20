@@ -36,9 +36,11 @@ import sqlite3
 import sys
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
+from xml.sax.saxutils import escape
 
 import pytz
 from dateutil.parser import isoparse
+from dotenv import load_dotenv
 
 try:
     from googleapiclient.discovery import build  # type: ignore[import]
@@ -128,7 +130,11 @@ class Event:
 
 
 def fetch_events(
-    service, *, start_time: _dt.datetime, end_time: _dt.datetime, calendar_id: str = "primary"
+    service,
+    *,
+    start_time: _dt.datetime,
+    end_time: _dt.datetime,
+    calendar_id: str = "primary",
 ) -> List[Event]:
     """Fetch events from Google Calendar between `start_time` and `end_time`.
 
@@ -210,25 +216,32 @@ def format_line(event: Event, to_number: Optional[str]) -> str:
     )
 
 
+def build_twiml(text: str) -> str:
+    """音声読み上げ用の文字列を安全な TwiML に変換する。"""
+    return f"<Response><Say>{escape(text)}</Say></Response>"
+
+
 def send_sms_and_call(
     lines: Iterable[str], *, from_number: str, to_number: str, dry_run: bool = False
-) -> None:
+) -> bool:
     """Send SMS and make a call via Twilio.  Merges lines into a single SMS.
 
     Only the first line will be spoken on the call.  If dry_run is True,
     just log the messages.
     """
+    line_list = list(lines)
     if not Client or dry_run:
-        for line in lines:
+        for line in line_list:
             logging.info(f"[DRY] Would send: {line}")
-        return
+        return False
     try:
         client = Client(os.environ.get("TWILIO_ACCOUNT_SID"), os.environ.get("TWILIO_AUTH_TOKEN"))  # type: ignore[arg-type]
     except Exception as exc:
         logging.error(f"Twilio client initialisation failed: {exc}")
-        return
+        return False
 
-    body = "\n\n".join(lines)
+    body = "\n\n".join(line_list)
+    sms_sent = False
     try:
         message = client.messages.create(
             body=body,
@@ -236,20 +249,24 @@ def send_sms_and_call(
             to=to_number,
         )
         logging.info(f"Sent SMS: {message.sid}")
+        sms_sent = True
     except Exception as exc:
         logging.error(f"SMS sending failed: {exc}")
     # Only speak the first line for brevity
-    first_line = next(iter(lines), "")
+    first_line = next(iter(line_list), "")
+    call_placed = False
     if first_line:
         try:
             call = client.calls.create(
-                twiml=f"<Response><Say>{first_line}</Say></Response>",
+                twiml=build_twiml(first_line),
                 from_=from_number,
                 to=to_number,
             )
             logging.info(f"Placed call: {call.sid}")
+            call_placed = True
         except Exception as exc:
             logging.error(f"Call initiation failed: {exc}")
+    return sms_sent or call_placed
 
 
 def process_reminders(
@@ -276,7 +293,7 @@ def process_reminders(
         service, start_time=start_time, end_time=end_time, calendar_id=calendar_id
     )
     lines: List[str] = []
-    sent_count = 0
+    pending_events: List[Event] = []
     for ev in events:
         # Skip all-day events (no time)
         if ev.start.tzinfo is None:
@@ -285,11 +302,19 @@ def process_reminders(
         if has_been_sent(db_conn, ev):
             continue
         lines.append(format_line(ev, to_number))
-        record_sent(db_conn, ev)
-        sent_count += 1
-    if lines:
-        send_sms_and_call(lines, from_number=from_number, to_number=to_number, dry_run=dry_run)
-    return sent_count
+        pending_events.append(ev)
+    if not lines:
+        return 0
+
+    delivered = send_sms_and_call(
+        lines, from_number=from_number, to_number=to_number, dry_run=dry_run
+    )
+    if not delivered:
+        return 0
+
+    for event in pending_events:
+        record_sent(db_conn, event)
+    return len(pending_events)
 
 
 def run_tests() -> int:
@@ -307,29 +332,57 @@ def run_tests() -> int:
         record_sent(conn, ev)
         assert has_been_sent(conn, ev)
     # Test formatting
-    sample = Event("ev2", "Title", _dt.datetime(2025, 1, 1, 12, 0, tzinfo=pytz.utc), "http://link")
+    sample = Event(
+        "ev2", "Title", _dt.datetime(2025, 1, 1, 12, 0, tzinfo=pytz.utc), "http://link"
+    )
     line = format_line(sample, "+819000000000")
     assert "12:00" in line and "Title" in line and "+819000000000" in line
+    assert build_twiml("A & B < C") == (
+        "<Response><Say>A &amp; B &lt; C</Say></Response>"
+    )
     print("TESTS_PASS")
     return 0
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--window-min", type=int, default=55, help="Minimum minutes ahead to check events")
-    parser.add_argument("--window-max", type=int, default=65, help="Maximum minutes ahead to check events")
-    parser.add_argument("--from-number", dest="from_number", help="Twilio from number (overrides env)")
-    parser.add_argument("--to-number", dest="to_number", help="Recipient number (overrides env)")
-    parser.add_argument("--calendar-id", default=None, help="Google Calendar ID (default primary)")
-    parser.add_argument("--db", default=DEFAULT_DB_PATH, help="SQLite DB file to store sent events")
+    parser.add_argument(
+        "--window-min",
+        type=int,
+        default=55,
+        help="Minimum minutes ahead to check events",
+    )
+    parser.add_argument(
+        "--window-max",
+        type=int,
+        default=65,
+        help="Maximum minutes ahead to check events",
+    )
+    parser.add_argument(
+        "--from-number", dest="from_number", help="Twilio from number (overrides env)"
+    )
+    parser.add_argument(
+        "--to-number", dest="to_number", help="Recipient number (overrides env)"
+    )
+    parser.add_argument(
+        "--calendar-id", default=None, help="Google Calendar ID (default primary)"
+    )
+    parser.add_argument(
+        "--db", default=DEFAULT_DB_PATH, help="SQLite DB file to store sent events"
+    )
     parser.add_argument("--tz", default=None, help="Timezone (e.g. Asia/Tokyo)")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
-    parser.add_argument("--dry-run", action="store_true", help="Print reminders but do not send")
-    parser.add_argument("--run-tests", action="store_true", help="Run internal tests and exit")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print reminders but do not send"
+    )
+    parser.add_argument(
+        "--run-tests", action="store_true", help="Run internal tests and exit"
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    load_dotenv()
     args = parse_args(argv)
     if args.run_tests:
         return run_tests()
@@ -338,7 +391,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     from_num = args.from_number or load_env_var("TWILIO_FROM_NUMBER") or ""
     to_num = args.to_number or load_env_var("TWILIO_TO_NUMBER") or from_num
     if not from_num:
-        logging.error("Twilio from number is required. Set via --from-number or TWILIO_FROM_NUMBER.")
+        logging.error(
+            "Twilio from number is required. Set via --from-number or TWILIO_FROM_NUMBER."
+        )
         return 1
     if not is_valid_e164(from_num):
         logging.error(f"Invalid from number: {from_num}")

@@ -16,6 +16,7 @@ os.environ['PROCESSED_BUCKET'] = 'test-bucket'
 os.environ['TARGET_LANG'] = 'ja'
 os.environ['BEDROCK_MODEL_ID'] = 'test-model'
 os.environ['ETL_MODE'] = 'lambda'
+os.environ.setdefault('AWS_DEFAULT_REGION', 'ap-northeast-1')
 
 from handler import handler, _bedrock_summarize
 

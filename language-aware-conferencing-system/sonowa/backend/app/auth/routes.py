@@ -18,6 +18,7 @@ from app.auth.jwt_handler import (
     hash_password,
     verify_password,
 )
+from app.config import settings
 from app.db.database import get_db
 from app.db.models import Participant, PasswordResetToken, Room, User
 from app.languages import ALL_SUPPORTED_LANGUAGES
@@ -299,10 +300,10 @@ async def request_password_reset(
     db.add(reset_token)
     await db.commit()
 
-    # MVP版：トークンを直接返す
+    # 開発環境だけは手動検証用に返す。本番では応答へ秘密値を含めない。
     return PasswordResetResponse(
-        message="パスワードリセットトークンを発行しました（MVP版）",
-        reset_token=token,
+        message="メールアドレスが登録されている場合、リセットリンクを送信しました",
+        reset_token=token if settings.env.lower() in {"development", "test"} else None,
     )
 
 

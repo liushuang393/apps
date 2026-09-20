@@ -79,6 +79,62 @@ describe('api/create-checkout-session', () => {
         expect(body.metadata.plan).toBe('subscription');
     });
 
+    test('クライアント指定の商品IDを無視して設定済み商品を使用する', async () => {
+        global.fetch = makeForgePayFetch({
+            verify: { status: 404, body: {} },
+            quickpay: {
+                status: 201,
+                body: { session_id: 'cs_safe', checkout_url: 'https://x', expires_at: null }
+            }
+        });
+
+        const res = createRes();
+        await handler(
+            createReq('POST', {
+                purchase_intent_id: 'vt_safe',
+                plan: 'subscription',
+                productId: 'attacker-product',
+                priceId: 'attacker-price'
+            }),
+            res
+        );
+
+        const quickpayCall = global.fetch.mock.calls.find((call) =>
+            String(call[0]).includes('/quickpay')
+        );
+        const body = JSON.parse(quickpayCall[1].body);
+        expect(body.product_id).toBe('sub-prod-uuid');
+        expect(body.price_id).toBeUndefined();
+    });
+
+    test('遷移先URLは APP_PUBLIC_URL 配下の固定パスを使用する', async () => {
+        process.env.APP_PUBLIC_URL = 'https://app.example.com/';
+        global.fetch = makeForgePayFetch({
+            verify: { status: 404, body: {} },
+            quickpay: {
+                status: 201,
+                body: { session_id: 'cs_redirect', checkout_url: 'https://x', expires_at: null }
+            }
+        });
+
+        const res = createRes();
+        await handler(
+            createReq('POST', {
+                purchase_intent_id: 'vt_redirect',
+                successUrl: 'https://attacker.example/success',
+                cancelUrl: 'https://attacker.example/cancel'
+            }),
+            res
+        );
+
+        const quickpayCall = global.fetch.mock.calls.find((call) =>
+            String(call[0]).includes('/quickpay')
+        );
+        const body = JSON.parse(quickpayCall[1].body);
+        expect(body.success_url).toBe('https://app.example.com/success.html');
+        expect(body.cancel_url).toBe('https://app.example.com/subscription.html');
+    });
+
     test('買い切り: 商品未設定ならアドホック金額で checkout を作る', async () => {
         global.fetch = makeForgePayFetch({
             verify: { status: 404, body: {} },

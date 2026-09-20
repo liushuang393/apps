@@ -23,8 +23,7 @@ export const APP_CONFIG = {
   displayName: process.env.APP_DISPLAY_NAME || 'TriPrize',
 
   // アプリケーションの説明
-  description:
-    process.env.APP_DESCRIPTION || 'Triangle lottery campaign sales platform',
+  description: process.env.APP_DESCRIPTION || 'Triangle lottery campaign sales platform',
 
   // APIバージョン
   version: process.env.APP_VERSION || '1.0.0',
@@ -45,6 +44,10 @@ export const SERVER_CONFIG = {
   isTest: process.env.NODE_ENV === 'test',
 } as const;
 
+if (SERVER_CONFIG.isProduction && process.env.USE_MOCK_AUTH === 'true') {
+  throw new Error('USE_MOCK_AUTHは本番環境で有効化できません');
+}
+
 /**
  * JWT Secret 検証
  * 目的: 本番環境で弱いシークレットを使用しないことを保証
@@ -62,7 +65,9 @@ function getJwtSecret(): string {
     if (isProduction) {
       throw new Error('JWT_SECRETは32文字以上必要です（セキュリティ要件）');
     }
-    console.warn('警告: JWT_SECRETが32文字未満です。本番環境では32文字以上のシークレットを使用してください');
+    console.warn(
+      '警告: JWT_SECRETが32文字未満です。本番環境では32文字以上のシークレットを使用してください'
+    );
   }
 
   return secret || 'development-secret-key-for-local-dev-only';
@@ -104,4 +109,3 @@ export default {
   SECURITY_CONFIG,
   FEATURE_FLAGS,
 };
-

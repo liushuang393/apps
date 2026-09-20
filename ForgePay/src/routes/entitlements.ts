@@ -8,7 +8,7 @@ const router = Router();
 /**
  * GET /api/v1/entitlements/verify
  * Verify entitlement by unlock token or purchase_intent_id
- * 
+ *
  * Requirements: 4.5, 10.2, 10.3
  */
 router.get('/verify', optionalApiKeyAuth, async (req: Request, res: Response) => {
@@ -28,7 +28,7 @@ router.get('/verify', optionalApiKeyAuth, async (req: Request, res: Response) =>
 
     // Verify by unlock token
     if (unlock_token) {
-      const result = await entitlementService.verifyUnlockToken(unlock_token as string);
+      const result = await entitlementService.verifyUnlockTokenReadOnly(unlock_token as string);
 
       if (!result.valid) {
         res.status(401).json({
@@ -52,9 +52,7 @@ router.get('/verify', optionalApiKeyAuth, async (req: Request, res: Response) =>
     }
 
     // Verify by purchase_intent_id
-    const status = await entitlementService.checkEntitlementStatus(
-      purchase_intent_id as string
-    );
+    const status = await entitlementService.checkEntitlementStatus(purchase_intent_id as string);
 
     if (!status.entitlementId) {
       res.status(404).json({
@@ -147,9 +145,7 @@ router.get(
           req.params.customerId
         );
       } else {
-        entitlements = await entitlementService.getEntitlementsByCustomerId(
-          req.params.customerId
-        );
+        entitlements = await entitlementService.getEntitlementsByCustomerId(req.params.customerId);
       }
 
       res.json({

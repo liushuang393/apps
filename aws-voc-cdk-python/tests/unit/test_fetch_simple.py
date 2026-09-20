@@ -9,7 +9,20 @@ from moto import mock_aws
 import boto3
 
 # Lambda関数のパスを追加
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../lambda/fetch_s3text'))
+FETCH_HANDLER_PATH = os.path.join(
+    os.path.dirname(__file__), "../../lambda/fetch_s3text"
+)
+
+
+@pytest.fixture(autouse=True)
+def isolate_fetch_handler_module():
+    """同名の別 Lambda ハンドラーがモジュールキャッシュへ混入することを防ぐ。"""
+    sys.modules.pop("handler", None)
+    sys.path.insert(0, FETCH_HANDLER_PATH)
+    yield
+    sys.modules.pop("handler", None)
+    if FETCH_HANDLER_PATH in sys.path:
+        sys.path.remove(FETCH_HANDLER_PATH)
 
 @mock_aws
 def test_handler_with_s3_event():

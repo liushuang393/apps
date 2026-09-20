@@ -5,10 +5,7 @@ import {
   Entitlement,
   CreateEntitlementParams,
 } from '../repositories/EntitlementRepository';
-import {
-  AuditLogRepository,
-  auditLogRepository,
-} from '../repositories/AuditLogRepository';
+import { AuditLogRepository, auditLogRepository } from '../repositories/AuditLogRepository';
 import { TokenService, tokenService } from './TokenService';
 import { EntitlementStatus } from '../types';
 import { logger } from '../utils/logger';
@@ -38,13 +35,13 @@ export interface EntitlementStatusResult {
 
 /**
  * EntitlementService manages entitlement lifecycle
- * 
+ *
  * Responsibilities:
  * - Grant entitlements on successful payment
  * - Check entitlement status
  * - Renew, suspend, and revoke entitlements
  * - Generate unlock tokens
- * 
+ *
  * Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7
  */
 export class EntitlementService {
@@ -64,7 +61,7 @@ export class EntitlementService {
 
   /**
    * Grant an entitlement to a customer
-   * 
+   *
    * @param params - Grant parameters
    * @returns Created entitlement and unlock token
    */
@@ -158,16 +155,12 @@ export class EntitlementService {
 
   /**
    * Check entitlement status by purchase intent ID
-   * 
+   *
    * @param purchaseIntentId - OpenAI purchase intent ID
    * @returns Entitlement status
    */
-  async checkEntitlementStatus(
-    purchaseIntentId: string
-  ): Promise<EntitlementStatusResult> {
-    const entitlement = await this.entitlementRepo.findByPurchaseIntentId(
-      purchaseIntentId
-    );
+  async checkEntitlementStatus(purchaseIntentId: string): Promise<EntitlementStatusResult> {
+    const entitlement = await this.entitlementRepo.findByPurchaseIntentId(purchaseIntentId);
 
     if (!entitlement) {
       return {
@@ -180,17 +173,13 @@ export class EntitlementService {
     }
 
     // Check if expired
-    const isExpired =
-      entitlement.expiresAt !== null && entitlement.expiresAt < new Date();
+    const isExpired = entitlement.expiresAt !== null && entitlement.expiresAt < new Date();
 
-    const hasAccess =
-      entitlement.status === 'active' && !isExpired;
+    const hasAccess = entitlement.status === 'active' && !isExpired;
 
     return {
       hasAccess,
-      status: isExpired && entitlement.status === 'active' 
-        ? 'expired' 
-        : entitlement.status,
+      status: isExpired && entitlement.status === 'active' ? 'expired' : entitlement.status,
       entitlementId: entitlement.id,
       productId: entitlement.productId,
       expiresAt: entitlement.expiresAt,
@@ -199,7 +188,7 @@ export class EntitlementService {
 
   /**
    * Verify unlock token and return entitlement status
-   * 
+   *
    * @param unlockToken - JWT unlock token
    * @returns Entitlement status or error
    */
@@ -217,9 +206,35 @@ export class EntitlementService {
       };
     }
 
-    const status = await this.checkEntitlementStatus(
-      verification.payload.purchaseIntentId
-    );
+    const status = await this.checkEntitlementStatus(verification.payload.purchaseIntentId);
+
+    return {
+      valid: true,
+      status,
+    };
+  }
+
+  /**
+   * トークンを消費せず、権限状態を確認する。
+   *
+   * @param unlockToken - JWT アンロックトークン
+   * @returns 権限状態または検証エラー
+   */
+  async verifyUnlockTokenReadOnly(unlockToken: string): Promise<{
+    valid: boolean;
+    status?: EntitlementStatusResult;
+    error?: string;
+  }> {
+    const verification = await this.tokenSvc.verifyUnlockTokenReadOnly(unlockToken);
+
+    if (!verification.valid || !verification.payload) {
+      return {
+        valid: false,
+        error: verification.error,
+      };
+    }
+
+    const status = await this.checkEntitlementStatus(verification.payload.purchaseIntentId);
 
     return {
       valid: true,
@@ -229,15 +244,12 @@ export class EntitlementService {
 
   /**
    * Renew an entitlement (extend expiration)
-   * 
+   *
    * @param entitlementId - Entitlement ID
    * @param newExpiresAt - New expiration date
    * @returns Updated entitlement
    */
-  async renewEntitlement(
-    entitlementId: string,
-    newExpiresAt: Date
-  ): Promise<Entitlement | null> {
+  async renewEntitlement(entitlementId: string, newExpiresAt: Date): Promise<Entitlement | null> {
     const client = await pool.connect();
 
     try {
@@ -296,15 +308,12 @@ export class EntitlementService {
 
   /**
    * Suspend an entitlement (payment failure)
-   * 
+   *
    * @param entitlementId - Entitlement ID
    * @param reason - Suspension reason
    * @returns Updated entitlement
    */
-  async suspendEntitlement(
-    entitlementId: string,
-    reason: string
-  ): Promise<Entitlement | null> {
+  async suspendEntitlement(entitlementId: string, reason: string): Promise<Entitlement | null> {
     const client = await pool.connect();
 
     try {
@@ -319,11 +328,7 @@ export class EntitlementService {
 
       const oldStatus = entitlement.status;
 
-      const updated = await this.entitlementRepo.suspend(
-        entitlementId,
-        reason,
-        client
-      );
+      const updated = await this.entitlementRepo.suspend(entitlementId, reason, client);
 
       // Log audit entry
       await this.auditLogRepo.create(
@@ -363,15 +368,12 @@ export class EntitlementService {
 
   /**
    * Revoke an entitlement (refund or chargeback)
-   * 
+   *
    * @param entitlementId - Entitlement ID
    * @param reason - Revocation reason
    * @returns Updated entitlement
    */
-  async revokeEntitlement(
-    entitlementId: string,
-    reason: string
-  ): Promise<Entitlement | null> {
+  async revokeEntitlement(entitlementId: string, reason: string): Promise<Entitlement | null> {
     const client = await pool.connect();
 
     try {
@@ -386,11 +388,7 @@ export class EntitlementService {
 
       const oldStatus = entitlement.status;
 
-      const updated = await this.entitlementRepo.revoke(
-        entitlementId,
-        reason,
-        client
-      );
+      const updated = await this.entitlementRepo.revoke(entitlementId, reason, client);
 
       // Log audit entry
       await this.auditLogRepo.create(
@@ -430,13 +428,11 @@ export class EntitlementService {
 
   /**
    * Reactivate an entitlement (won chargeback)
-   * 
+   *
    * @param entitlementId - Entitlement ID
    * @returns Updated entitlement
    */
-  async reactivateEntitlement(
-    entitlementId: string
-  ): Promise<Entitlement | null> {
+  async reactivateEntitlement(entitlementId: string): Promise<Entitlement | null> {
     const client = await pool.connect();
 
     try {
@@ -488,7 +484,7 @@ export class EntitlementService {
 
   /**
    * Get entitlement by ID
-   * 
+   *
    * @param entitlementId - Entitlement ID
    * @returns Entitlement or null
    */
@@ -498,31 +494,27 @@ export class EntitlementService {
 
   /**
    * Get entitlement by purchase intent ID
-   * 
+   *
    * @param purchaseIntentId - Purchase intent ID
    * @returns Entitlement or null
    */
-  async getEntitlementByPurchaseIntentId(
-    purchaseIntentId: string
-  ): Promise<Entitlement | null> {
+  async getEntitlementByPurchaseIntentId(purchaseIntentId: string): Promise<Entitlement | null> {
     return this.entitlementRepo.findByPurchaseIntentId(purchaseIntentId);
   }
 
   /**
    * Get entitlement by subscription ID
-   * 
+   *
    * @param subscriptionId - Stripe subscription ID
    * @returns Entitlement or null
    */
-  async getEntitlementBySubscriptionId(
-    subscriptionId: string
-  ): Promise<Entitlement | null> {
+  async getEntitlementBySubscriptionId(subscriptionId: string): Promise<Entitlement | null> {
     return this.entitlementRepo.findBySubscriptionId(subscriptionId);
   }
 
   /**
    * Get all entitlements for a customer
-   * 
+   *
    * @param customerId - Customer ID
    * @returns Array of entitlements
    */
@@ -532,13 +524,11 @@ export class EntitlementService {
 
   /**
    * Get active entitlements for a customer
-   * 
+   *
    * @param customerId - Customer ID
    * @returns Array of active entitlements
    */
-  async getActiveEntitlementsByCustomerId(
-    customerId: string
-  ): Promise<Entitlement[]> {
+  async getActiveEntitlementsByCustomerId(customerId: string): Promise<Entitlement[]> {
     return this.entitlementRepo.findActiveByCustomerId(customerId);
   }
 }

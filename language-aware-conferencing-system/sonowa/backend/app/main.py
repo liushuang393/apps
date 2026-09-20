@@ -24,6 +24,18 @@ from app.translate.subtitle_routes import router as subtitle_router
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_JWT_SECRET = "change-me-in-production"
+
+
+def _validate_security_settings() -> None:
+    """本番環境で危険な認証設定を起動前に拒否する。"""
+    if settings.env.lower() == "production" and (
+        settings.jwt_secret == DEFAULT_JWT_SECRET or len(settings.jwt_secret) < 32
+    ):
+        raise RuntimeError(
+            "本番環境の JWT_SECRET には既定値以外の32文字以上の値が必要です"
+        )
+
 
 def _validate_api_keys() -> None:
     """
@@ -39,8 +51,7 @@ def _validate_api_keys() -> None:
             "[FATAL] OPENAI_API_KEY が設定されていません！\n"
             "音声認識(ASR)、翻訳、音声合成(TTS)が動作しません。\n"
             "環境変数（推奨）または .env に OPENAI_API_KEY を設定してください。\n"
-            + "="
-            * 60
+            + "=" * 60
         )
     else:
         # APIキーの形式チェック（sk-で始まるか）
@@ -70,6 +81,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     終了時: クリーンアップ
     """
     # APIキー検証
+    _validate_security_settings()
     _validate_api_keys()
     # データベース初期化
     await init_db()

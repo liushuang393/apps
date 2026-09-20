@@ -7,7 +7,7 @@ import { AuthenticatedRequest } from '../../../middleware';
 // Mock the services
 jest.mock('../../../services', () => ({
   entitlementService: {
-    verifyUnlockToken: jest.fn(),
+    verifyUnlockTokenReadOnly: jest.fn(),
     checkEntitlementStatus: jest.fn(),
     getEntitlement: jest.fn(),
     getEntitlementsByCustomerId: jest.fn(),
@@ -47,8 +47,8 @@ jest.mock('../../../middleware', () => ({
       testMode: true,
       defaultSuccessUrl: null,
       defaultCancelUrl: null,
-defaultLocale: 'auto',
-    defaultCurrency: 'usd',
+      defaultLocale: 'auto',
+      defaultCurrency: 'usd',
       defaultPaymentMethods: ['card'],
       callbackUrl: null,
       callbackSecret: null,
@@ -73,8 +73,8 @@ defaultLocale: 'auto',
         testMode: true,
         defaultSuccessUrl: null,
         defaultCancelUrl: null,
-defaultLocale: 'auto',
-    defaultCurrency: 'usd',
+        defaultLocale: 'auto',
+        defaultCurrency: 'usd',
         defaultPaymentMethods: ['card'],
         callbackUrl: null,
         callbackSecret: null,
@@ -115,9 +115,7 @@ describe('Entitlements Routes', () => {
   describe('GET /api/v1/entitlements/verify', () => {
     describe('validation errors', () => {
       it('should return 400 when neither unlock_token nor purchase_intent_id is provided', async () => {
-        const response = await request(app)
-          .get('/api/v1/entitlements/verify')
-          .expect(400);
+        const response = await request(app).get('/api/v1/entitlements/verify').expect(400);
 
         expect(response.body).toEqual({
           error: {
@@ -131,7 +129,7 @@ describe('Entitlements Routes', () => {
 
     describe('verify by unlock_token', () => {
       it('should return 401 when unlock_token is invalid', async () => {
-        (entitlementService.verifyUnlockToken as jest.Mock).mockResolvedValue({
+        (entitlementService.verifyUnlockTokenReadOnly as jest.Mock).mockResolvedValue({
           valid: false,
           error: 'Token has expired',
         });
@@ -148,11 +146,11 @@ describe('Entitlements Routes', () => {
             type: 'authentication_error',
           },
         });
-        expect(entitlementService.verifyUnlockToken).toHaveBeenCalledWith('invalid-token');
+        expect(entitlementService.verifyUnlockTokenReadOnly).toHaveBeenCalledWith('invalid-token');
       });
 
       it('should return 401 with default message when error is not provided', async () => {
-        (entitlementService.verifyUnlockToken as jest.Mock).mockResolvedValue({
+        (entitlementService.verifyUnlockTokenReadOnly as jest.Mock).mockResolvedValue({
           valid: false,
         });
 
@@ -172,7 +170,7 @@ describe('Entitlements Routes', () => {
 
       it('should return entitlement status when unlock_token is valid', async () => {
         const expiresAt = new Date('2025-12-31T23:59:59.000Z');
-        (entitlementService.verifyUnlockToken as jest.Mock).mockResolvedValue({
+        (entitlementService.verifyUnlockTokenReadOnly as jest.Mock).mockResolvedValue({
           valid: true,
           status: {
             status: 'active',
@@ -198,7 +196,7 @@ describe('Entitlements Routes', () => {
       });
 
       it('should return null expires_at when entitlement has no expiration', async () => {
-        (entitlementService.verifyUnlockToken as jest.Mock).mockResolvedValue({
+        (entitlementService.verifyUnlockTokenReadOnly as jest.Mock).mockResolvedValue({
           valid: true,
           status: {
             status: 'active',
@@ -309,8 +307,8 @@ describe('Entitlements Routes', () => {
     });
 
     describe('error handling', () => {
-      it('should return 500 when verifyUnlockToken throws an error', async () => {
-        (entitlementService.verifyUnlockToken as jest.Mock).mockRejectedValue(
+      it('should return 500 when verifyUnlockTokenReadOnly throws an error', async () => {
+        (entitlementService.verifyUnlockTokenReadOnly as jest.Mock).mockRejectedValue(
           new Error('Database connection failed')
         );
 
@@ -389,9 +387,7 @@ describe('Entitlements Routes', () => {
   describe('GET /api/v1/entitlements/:id', () => {
     describe('authentication', () => {
       it('should return 401 when API key is missing', async () => {
-        const response = await request(app)
-          .get('/api/v1/entitlements/ent-123')
-          .expect(401);
+        const response = await request(app).get('/api/v1/entitlements/ent-123').expect(401);
 
         expect(response.body).toEqual({
           error: {

@@ -9,7 +9,7 @@
  *
  * エンドポイント: POST /api/create-checkout-session
  * リクエスト: { purchase_intent_id: string, plan?: "subscription"|"onetime",
- *               productId?, priceId?, customerEmail?, successUrl?, cancelUrl? }
+ *               customerEmail? }
  * レスポンス（201）: { checkout_url, session_id, expires_at, sessionId }
  *
  * 環境変数: FORGEPAY_API_URL, FORGEPAY_API_KEY,
@@ -35,7 +35,7 @@ function setCors(res) {
 /**
  * プランとリクエストから ForgePay createPayment 用パラメータを組み立てる。
  *
- * @param {{purchaseIntentId:string, plan:string, productId?:string, priceId?:string, customerEmail?:string, successUrl?:string, cancelUrl?:string}} input
+ * @param {{purchaseIntentId:string, plan:string, customerEmail?:string}} input
  * @returns {object} createPayment 引数
  * @throws {ForgePayError} 商品/価格の解決ができない場合（設定不足）
  */
@@ -49,12 +49,10 @@ function buildPaymentParams(input) {
         params.customerEmail = input.customerEmail;
     }
 
-    // success/cancel: リクエスト > 環境変数 > ForgePay ダッシュボード既定（未指定）
+    // 遷移先は信頼済みの公開URLからのみ構築する。
     const appUrl = process.env.APP_PUBLIC_URL;
-    const successUrl =
-        input.successUrl || (appUrl ? `${appUrl.replace(/\/+$/, '')}/success.html` : undefined);
-    const cancelUrl =
-        input.cancelUrl || (appUrl ? `${appUrl.replace(/\/+$/, '')}/subscription.html` : undefined);
+    const successUrl = appUrl ? `${appUrl.replace(/\/+$/, '')}/success.html` : undefined;
+    const cancelUrl = appUrl ? `${appUrl.replace(/\/+$/, '')}/subscription.html` : undefined;
     if (successUrl != null) {
         params.successUrl = successUrl;
     }
@@ -62,16 +60,7 @@ function buildPaymentParams(input) {
         params.cancelUrl = cancelUrl;
     }
 
-    // 商品の解決優先順位: productId > priceId > プラン別の環境変数 > アドホック
-    if (input.productId != null) {
-        params.productId = input.productId;
-        return params;
-    }
-    if (input.priceId != null) {
-        params.priceId = input.priceId;
-        return params;
-    }
-
+    // 商品はサーバ設定だけから解決し、クライアント入力を信頼しない。
     if (input.plan === 'subscription') {
         const productId = process.env.FORGEPAY_SUBSCRIPTION_PRODUCT_ID;
         if (productId == null || productId === '') {
@@ -164,11 +153,7 @@ module.exports = async function handler(req, res) {
         const params = buildPaymentParams({
             purchaseIntentId,
             plan,
-            productId: body.productId,
-            priceId: body.priceId,
-            customerEmail: body.customerEmail,
-            successUrl: body.successUrl,
-            cancelUrl: body.cancelUrl
+            customerEmail: body.customerEmail
         });
 
         const result = await createPayment(params);
