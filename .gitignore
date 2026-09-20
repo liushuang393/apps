@@ -12,3 +12,6 @@ language-aware-conferencing-system/sonowa/.tmp/*
 **/*.py[cod]
 simultaneous_interpretation/db/conversations.db
 sokuji
+
+# Python virtualenvs (install スクリプトで生成)
+**/.venv/
