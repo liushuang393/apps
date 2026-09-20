@@ -51,7 +51,8 @@ def _validate_api_keys() -> None:
             "[FATAL] OPENAI_API_KEY が設定されていません！\n"
             "音声認識(ASR)、翻訳、音声合成(TTS)が動作しません。\n"
             "環境変数（推奨）または .env に OPENAI_API_KEY を設定してください。\n"
-            + "=" * 60
+            + "="
+            * 60
         )
     else:
         # APIキーの形式チェック（sk-で始まるか）
