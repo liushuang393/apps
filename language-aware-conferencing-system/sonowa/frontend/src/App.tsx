@@ -5,7 +5,7 @@ import './styles/main.css';
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
-import { authApi } from './api/client';
+import { ApiError, authApi } from './api/client';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -50,7 +50,12 @@ function AuthValidator({ children }: { children: React.ReactNode }) {
       .then(() => {
         setTokenChecked(true);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // ネットワーク断・5xx はセッションを保持する（backend 再起動中の誤ログアウト防止）
+        if (!(err instanceof ApiError && err.status === 401)) {
+          setTokenChecked(true);
+          return;
+        }
         // 期限切れ・無効トークン: 認証状態をクリアしてログイン画面へ
         logout();
         setTokenChecked(true);
