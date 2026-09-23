@@ -291,11 +291,19 @@ export async function loginAs(
   const payload = buildSonowaAuthStorage(token, user);
 
   await page.goto(baseUrl() + "/", { waitUntil: "domcontentloaded" });
-  await page.evaluate((raw) => {
-    localStorage.setItem("sonowa-auth", JSON.stringify(raw));
-  }, payload);
-
-  return { token, user };
+  // 既にログイン済みの page では、起動中のアプリ（zustand persist）が旧状態を
+  // 書き戻して注入値を上書きすることがある。再読込後も残ることを確認する。
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.evaluate((raw) => {
+      localStorage.setItem("sonowa-auth", JSON.stringify(raw));
+    }, payload);
+    await page.reload({ waitUntil: "networkidle" });
+    const stored = await page.evaluate(() => localStorage.getItem("sonowa-auth"));
+    if (stored?.includes(token)) {
+      return { token, user };
+    }
+  }
+  throw new Error("[sonowa/auth] 認証状態の注入が保持されません");
 }
 
 /**
