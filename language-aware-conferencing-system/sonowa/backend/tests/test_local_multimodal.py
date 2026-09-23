@@ -203,3 +203,19 @@ async def test_cancellation_waits_for_gpu_worker_before_releasing_model() -> Non
     finally:
         finish.set()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_chinese_asr_prompt_names_simplified_mandarin() -> None:
+    """zh 認識は字体と口語を明示し、「文件」→「文献」の誤認を防ぐ。"""
+    prompts: list[str] = []
+
+    def infer(prompt: str, _audio: object) -> str:
+        prompts.append(prompt)
+        return "请不要发送文件"
+
+    stage = LocalMultimodalStage(
+        engine=LocalInferenceEngine(infer, lambda: None), broker=VRAMBroker(7500)
+    )
+    await stage.transcribe_audio(wrap_wav16(b"\x00\x01" * 16000, 16000), "zh")
+    assert "Simplified Chinese (Mandarin)" in prompts[0]

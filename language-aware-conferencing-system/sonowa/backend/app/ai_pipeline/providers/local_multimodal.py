@@ -31,6 +31,9 @@ SAMPLE_RATE = 16000
 MAX_AUDIO_SECONDS = 30
 MAX_NEW_TOKENS = 256
 LANGUAGES = {"ja": "Japanese", "en": "English", "zh": "Chinese", "vi": "Vietnamese"}
+# 認識専用の言語名。"Chinese" だけでは「文件」を「文献」と誤認する例を実測したため、
+# 字体と口語を明示する（2026-09-23・4言語で退行なしを確認）。
+ASR_LANGUAGE_NAMES = {**LANGUAGES, "zh": "Simplified Chinese (Mandarin)"}
 QUANTIZATION_EXCLUSIONS = (
     "model.audio_tower",
     "model.vision_tower",
@@ -232,7 +235,7 @@ class LocalMultimodalStage:
         audio = self._audio(audio_data)
         if audio is None:
             return ""
-        name = LANGUAGES[language]
+        name = ASR_LANGUAGE_NAMES[language]
         return await self._run(
             f"Transcribe the following speech segment in {name} into {name} text. "
             "Only output the transcription, with no newlines. Write numbers as digits.",
