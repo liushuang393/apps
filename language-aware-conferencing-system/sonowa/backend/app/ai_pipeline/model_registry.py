@@ -51,7 +51,6 @@ STATUSES: frozenset[str] = frozenset(
 
 # ランタイム（実行基盤。cloud も 1 ランタイムとして扱う）
 RUNTIME_CT2 = "ct2"
-RUNTIME_FASTER_WHISPER = "faster_whisper"
 RUNTIME_LLAMA_CPP = "llama_cpp"
 RUNTIME_ONNX = "onnx"
 RUNTIME_CLOUD = "cloud"
@@ -60,7 +59,6 @@ RUNTIME_TORCH = "torch"
 RUNTIMES: frozenset[str] = frozenset(
     {
         RUNTIME_CT2,
-        RUNTIME_FASTER_WHISPER,
         RUNTIME_LLAMA_CPP,
         RUNTIME_ONNX,
         RUNTIME_CLOUD,
@@ -290,11 +288,10 @@ def _card(
 def _build_default_catalog() -> ModelCatalog:
     """config の既存モデル名から既定カードを seed する。"""
     from app.ai_pipeline.providers.local_multimodal import MODEL_ID as GEMMA_MODEL_ID
-    from app.ai_pipeline.providers.local_tts import OMNIVOICE_MODEL_ID
+    from app.ai_pipeline.providers.local_tts import MODEL_ID as TTS_MODEL_ID
 
     langs = list(settings.supported_languages)  # ["ja", "en", "zh", "vi"]
     catalog = ModelCatalog()
-    omnivoice_selected = settings.local_tts_model == OMNIVOICE_MODEL_ID
 
     catalog.register(
         _card(
@@ -406,13 +403,13 @@ def _build_default_catalog() -> ModelCatalog:
     )
     catalog.register(
         _card(
-            "tts-omnivoice" if omnivoice_selected else "tts-voxcpm2",
+            "tts-omnivoice",
             STAGE_TTS,
-            settings.local_tts_model,
-            RUNTIME_TRANSFORMERS if omnivoice_selected else RUNTIME_TORCH,
+            TTS_MODEL_ID,
+            RUNTIME_TRANSFORMERS,
             quantization=None,
             languages=langs,
-            license="cc-by-nc-4.0" if omnivoice_selected else "apache-2.0",
+            license="cc-by-nc-4.0",
             hardware_profile="gpu-12gb",
             metrics={},
             status=STATUS_STAGING,

@@ -266,26 +266,22 @@ class OfflineReranker:
 
 
 def build_default_reranker() -> OfflineReranker | None:
-    """実ステージを配線した既定 reranker を構築する（両段とも不可なら None）。
+    """実ステージを配線した既定 reranker を構築する（ランタイム不可なら None）。
 
     入力: なし（プロバイダ可用性と settings を参照）。
-    出力: 少なくとも一方の段が使える OfflineReranker、両段とも不可なら None。
-    注意点: faster_whisper 未導入なら asr_fn は配線しない（MT のみ）。同様に
-        ctranslate2 / model_dir 未設定なら mt_fn を配線しない（再 ASR のみ）。
+    出力: ASR/MT を同じ Gemma 4 E2B で担う OfflineReranker、未導入なら None。
+    注意点: 会議中の local ASR/MT と同一モデル・同一 Broker キーを共有し、
+        再処理のために別モデルを追加ロードしない。
     """
-    from app.ai_pipeline.providers import local_asr, local_mt
+    from app.ai_pipeline.providers import local_multimodal
     from app.audio.archive import build_audio_archive
 
-    asr_fn: ASRFn | None = None
-    mt_fn: MTFn | None = None
-    if local_asr.available():
-        asr_fn = local_asr.FasterWhisperASRStage().transcribe_audio
-    if local_mt.available():
-        mt_fn = local_mt.LocalMTStage().translate_text
-
-    if asr_fn is None and mt_fn is None:
-        logger.warning("[RERUN] ASR/MT ともに不可のため reranker を構築できない")
+    if not local_multimodal.available():
+        logger.warning("[RERUN] Gemma ランタイム未導入のため reranker を構築できない")
         return None
+    stage = local_multimodal.LocalMultimodalStage()
+    asr_fn: ASRFn = stage.transcribe_audio
+    mt_fn: MTFn = stage.translate_text
 
     return OfflineReranker(
         asr_fn=asr_fn,

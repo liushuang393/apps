@@ -35,10 +35,6 @@ COPY backend/alembic.ini .
 COPY backend/alembic/ ./alembic/
 COPY scripts/prepare_local_models.py ./scripts/prepare_local_models.py
 
-# CTranslate2 は CUDA 12 の共有ライブラリを動的に開く。
-# PyTorch の wheel が同梱するライブラリを検索パスに追加する。
-ENV LD_LIBRARY_PATH=/usr/local/lib/python3.10/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.10/site-packages/nvidia/cudnn/lib
-
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -35,7 +35,10 @@ validate_provider_key
 export HOST_IP="${explicit_ip:-$(detect_lan_ip)}"
 validate_ipv4 "$HOST_IP"
 
-args=(compose up)
+args=(compose)
+# ローカル GPU 2モデル構成は GPU オーバーライドが無いと CUDA を使えない。
+[[ "${INSTALL_LOCAL:-0}" == "1" ]] && args+=(-f docker-compose.yml -f docker-compose.gpu.yml)
+args+=(up)
 $detach && args+=(-d)
 $build && args+=(--build)
 
@@ -45,7 +48,8 @@ docker "${args[@]}"
 
 if $detach; then
     info "サービスの準備完了を確認しています。"
-    for _ in {1..30}; do
+    # local 構成は起動時に2モデルをロードするため最大3分待つ。
+    for _ in {1..90}; do
         if curl -fsS "http://localhost:${BACKEND_PORT}/health" >/dev/null 2>&1; then
             show_access_urls "$HOST_IP"
             exit 0
@@ -53,5 +57,5 @@ if $detach; then
         sleep 2
     done
     docker compose ps
-    die "60 秒以内に backend が準備完了になりませんでした。docker compose logs backend を確認してください。"
+    die "180 秒以内に backend が準備完了になりませんでした。docker compose logs backend を確認してください。"
 fi

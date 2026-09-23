@@ -7,9 +7,7 @@ import pytest
 
 from app.ai_pipeline import local_warmup
 from app.ai_pipeline.effective_config import env_pipeline_defaults
-from app.ai_pipeline.providers.local_omnivoice import MODEL_ID
 from app.ai_pipeline.vram_broker import VRAMBroker
-from app.config import settings
 
 
 @pytest.mark.asyncio
@@ -29,7 +27,6 @@ async def test_insufficient_joint_budget_does_not_thrash_models(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """2モデルの合計を収容できない予算で、ロードと退避を繰り返さない。"""
-    monkeypatch.setattr(settings, "local_tts_model", MODEL_ID)
     monkeypatch.setattr(local_warmup, "broker", VRAMBroker(7500))
     factory = Mock()
     monkeypatch.setattr(local_warmup, "LocalMultimodalStage", factory)
@@ -48,7 +45,6 @@ async def test_preparation_loads_two_models_then_primes_inference(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """HTTP受付前にモデル読込と初回推論を終え、音声を配信しない。"""
-    monkeypatch.setattr(settings, "local_tts_model", MODEL_ID)
     monkeypatch.setattr(local_warmup, "broker", VRAMBroker(10000))
     asr = Mock(prepare=AsyncMock(), transcribe_audio=AsyncMock(return_value=""))
     tts = Mock(prepare=AsyncMock(), synthesize=AsyncMock(return_value=b"warmup-wave"))
@@ -72,7 +68,6 @@ async def test_missing_model_reports_unready_without_cloud_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """欠損時にサーバーを管理可能に保ち、準備成功と誤認しない。"""
-    monkeypatch.setattr(settings, "local_tts_model", MODEL_ID)
     monkeypatch.setattr(local_warmup, "broker", VRAMBroker(10000))
     asr = Mock(prepare=AsyncMock(side_effect=FileNotFoundError("model")))
     tts_factory = Mock()

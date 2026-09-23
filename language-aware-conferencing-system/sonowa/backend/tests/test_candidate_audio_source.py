@@ -36,11 +36,10 @@ def test_observer_requires_completed_source(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("observer", ["whisper", "gemma"])
-async def test_selected_observer_receives_no_reference_text(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, observer: str
+async def test_observer_receives_no_reference_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """指定したASRだけを使い、正解文を認識プロンプトへ漏らさない。"""
+    """Gemma ASR だけを使い、正解文を認識プロンプトへ漏らさない。"""
     path = Path(__file__).resolve().parents[2] / "scripts/verify_candidate_audio.py"
     spec = importlib.util.spec_from_file_location("candidate_observer", path)
     assert spec and spec.loader
@@ -70,19 +69,12 @@ async def test_selected_observer_receives_no_reference_text(
     recognizer = Mock(
         transcribe_audio=AsyncMock(return_value="independent observation")
     )
-    chosen = Mock(return_value=recognizer)
-    other = Mock(side_effect=AssertionError("unselected observer must not load"))
-    monkeypatch.setattr(
-        module, "FasterWhisperASRStage", chosen if observer == "whisper" else other
-    )
-    monkeypatch.setattr(
-        module, "LocalMultimodalStage", chosen if observer == "gemma" else other
-    )
+    monkeypatch.setattr(module, "LocalMultimodalStage", Mock(return_value=recognizer))
     output = tmp_path / "observation.json"
-    assert await module.verify(source, output, "cases", observer=observer) == 0
+    assert await module.verify(source, output, "cases") == 0
     recognizer.transcribe_audio.assert_awaited_once_with(audio, "vi")
     observed = json.loads(output.read_text())
     assert observed["execution_complete"] is True
     assert observed["quality_verdict"] == "unreviewed"
-    assert observed["observer"].startswith(observer)
+    assert observed["observer"].startswith("gemma")
     assert observed["cases"][0]["observed"] == "independent observation"

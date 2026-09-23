@@ -214,7 +214,7 @@ def prepare() -> dict:
     if STATE.exists():
         raise ValueError("owned runtime already exists")
     db = postgres()
-    db_state = db.create("postgres:16-alpine", "sonowa-backend:local-small")
+    db_state = db.create("postgres:16-alpine", "sonowa-backend:latest")
     os.environ["E2E_DB_URL"] = db.jdbc_url(db_state)
     owner = db_state["owner_id"]
     images = {"backend": db_state["backend_image"]}

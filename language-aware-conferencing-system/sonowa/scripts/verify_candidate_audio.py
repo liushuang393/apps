@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """比較モデルが生成した全区間の音声を、別のASRで再認識する。
 
-WhisperまたはGemmaを選び、TTSから独立した認識結果を比較する。
+Gemmaで、TTSから独立した認識結果を比較する。
 Gemmaは製品ASR/MTと同系列のため、翻訳自体の独立評価とはしない。
-Whisperは比較専用であり、本番の2モデル構成には追加しない。
 元レポートのWAVハッシュを照合し、認識結果を品質レビュー用に保存する。
 """
 
@@ -16,7 +15,6 @@ import json
 import logging
 from pathlib import Path
 
-from app.ai_pipeline.providers.local_asr import FasterWhisperASRStage
 from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
 
 logger = logging.getLogger(__name__)
@@ -38,26 +36,20 @@ def source_is_complete(report: dict[str, object], cases_key: str) -> bool:
     )
 
 
-async def verify(
-    path: Path, output: Path, cases_key: str, *, observer: str = "whisper"
-) -> int:
+async def verify(path: Path, output: Path, cases_key: str) -> int:
     """元の全ケースを順番に認識し、空結果やハッシュ不一致は失敗にする。"""
     original = json.loads(path.read_text(encoding="utf-8"))
     report = {
         "source_report_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "observer": (
-            "whisper: faster-whisper-medium; evaluation only"
-            if observer == "whisper"
-            else "gemma: Gemma4 E2B; independent of TTS, same family as product ASR/MT"
+            "gemma: Gemma4 E2B; independent of TTS, same family as product ASR/MT"
         ),
         "execution_complete": False,
         "quality_verdict": "unreviewed",
         "cases": [],
         "source_cases_key": cases_key,
     }
-    if observer not in {"whisper", "gemma"}:
-        raise ValueError("unknown audio observer")
-    asr = FasterWhisperASRStage() if observer == "whisper" else LocalMultimodalStage()
+    asr = LocalMultimodalStage()
     try:
         assert source_is_complete(original, cases_key), "元の音声生成試験が未完了"
         for case in original[cases_key]:
@@ -93,11 +85,8 @@ def main() -> int:
     parser.add_argument(
         "--cases-key", choices=("cases", "pipeline_cases"), default="cases"
     )
-    parser.add_argument("--observer", choices=("whisper", "gemma"), default="whisper")
     args = parser.parse_args()
-    return asyncio.run(
-        verify(args.input, args.output, args.cases_key, observer=args.observer)
-    )
+    return asyncio.run(verify(args.input, args.output, args.cases_key))
 
 
 if __name__ == "__main__":

@@ -13,14 +13,15 @@ import json
 import logging
 from pathlib import Path
 
-from app.ai_pipeline.providers import local_omnivoice
+from verify_local_pipeline import inspect_audio
+
+from app.ai_pipeline.providers import local_tts
 from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
-from app.ai_pipeline.providers.local_tts import OMNIVOICE_MODEL_ID, create_stage
+from app.ai_pipeline.providers.local_tts import create_stage
 from app.ai_pipeline.registry import CompositeAIProvider
 from app.ai_pipeline.vram_broker import VRAMBroker
 from app.audio.pcm import wrap_wav16
 from app.config import settings
-from verify_local_pipeline import inspect_audio
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +56,10 @@ async def verify(empty_cache: bool, input_dir: Path | None = None) -> dict[str, 
         cases.append(
             {"case": "parallel_mt", "translations": translations, "passed": True}
         )
-        old_model = settings.local_tts_model
-        old_revision = local_omnivoice.MODEL_REVISION
+        old_revision = local_tts.MODEL_REVISION
         try:
-            if old_model == OMNIVOICE_MODEL_ID:
-                local_omnivoice.MODEL_REVISION = "0" * 40
-            else:
-                settings.local_tts_model = "/models/intentionally-absent-tts"
+            # 存在しない revision を指定し、TTS 欠損時の字幕継続を観測する。
+            local_tts.MODEL_REVISION = "0" * 40
             pipeline = CompositeAIProvider(stage, stage, create_stage(broker=shared))
             result = await pipeline.translate_audio(
                 b"", "ja", "en", original_text="会議は10時です。送信しないでください。"
@@ -77,8 +75,7 @@ async def verify(empty_cache: bool, input_dir: Path | None = None) -> dict[str, 
                 }
             )
         finally:
-            settings.local_tts_model = old_model
-            local_omnivoice.MODEL_REVISION = old_revision
+            local_tts.MODEL_REVISION = old_revision
         if input_dir is not None:
             pipeline = CompositeAIProvider(stage, stage, create_stage(broker=shared))
             directions = (("ja", "en"), ("en", "ja"))
@@ -127,7 +124,7 @@ async def verify(empty_cache: bool, input_dir: Path | None = None) -> dict[str, 
     return {
         "passed": True,
         "empty_cache": empty_cache,
-        "tts_model": settings.local_tts_model,
+        "tts_model": local_tts.MODEL_ID,
         "configured_budget_mb": settings.vram_budget_mb,
         "cases": cases,
         "torch_peak_allocated_mb": torch.cuda.max_memory_allocated() / 1024**2,

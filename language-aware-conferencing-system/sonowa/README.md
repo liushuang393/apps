@@ -172,9 +172,11 @@ Mic → LiveKit → Segment → 上流 ASR（1回）
 | ステージ | モデル | ライセンス | 概算 VRAM |
 |---|---|---|---|
 | ASR + MT | `google/gemma-4-E2B-it` テキスト側 NF4、音声側 BF16 | Apache-2.0 | ~7.3GB |
-| TTS | `openbmb/VoxCPM2`（`load_denoiser=False`, `optimize=False`） | Apache-2.0 | ~7.5GB |
+| TTS | `k2-fsa/OmniVoice`（0.6B、付属音声コーデック込み、補助 ASR なし） | **CC-BY-NC（非商用）** | ~2.4GB |
 
-低遅延の検証用構成では、TTS を `k2-fsa/OmniVoice`（0.6B、重み CC-BY-NC）へ変更できる。Gemma と同時常駐し、補助 ASR はロードしない。付属音声コーデックを含む2モデルの実測は Torch 約9100MiB。商用利用可能な構成としては扱わない。
+2モデルは同時常駐する（実測 Torch 約9100MiB、`VRAM_BUDGET_MB=10000`）。モデルは両方とも固定 revision のローカルキャッシュのみから読む。OmniVoice の重みは非商用ライセンスのため、商用利用可能な構成としては扱わない。
+
+> VoxCPM2（Apache-2.0）は RTX 3060 12GB で Gemma と同時常駐できず（合計約12.1GB）、交互ロードでは1発話あたり約50秒かかったため削除した（2026-09-23 実測）。
 
 ```mermaid
 flowchart LR
@@ -182,8 +184,7 @@ flowchart LR
   asr --> text[原文]
   text --> mt[local MT 同じ Gemma を再利用]
   mt --> sub[翻訳字幕]
-  mt --> broker[VRAM Broker 排他]
-  broker --> tts[local TTS VoxCPM2]
+  mt --> tts[local TTS OmniVoice]
   tts -->|成功| ta[翻訳音声]
   tts -->|VRAM不足/失敗| none[音声なし]
   sub --> om[OutputManager]
@@ -195,43 +196,26 @@ flowchart LR
 Mic → LiveKit → Segment
               ├─ ASR: Gemma 4 E2B（原文・言語検出）
               ├─ MT:  同じ Gemma 4 E2B（ターゲット言語のテキスト）
-              └─ TTS: VoxCPM2（8GB 級・他モデルと同時常駐不可）
+              └─ TTS: OmniVoice（Gemma と同時常駐）
                     失敗時 → 翻訳音声のみ停止、字幕は継続
 ```
 
 #### ローカル GPU の準備（RTX 3060 12GB で検証中）
 
 ```powershell
-# GPU + local 依存込みで起動
+# GPU + local 依存込みでビルド・起動
 $env:INSTALL_LOCAL = "1"
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 
-# Gemma 4 E2B と VoxCPM2 の2モデルを取得（永続ボリューム /models）
+# Gemma 4 E2B と OmniVoice の2モデルを取得（永続ボリューム /models・初回のみ）
 docker compose exec backend python /app/scripts/prepare_local_models.py --output-dir /models
 docker compose exec backend alembic upgrade head
+docker compose restart backend
 ```
 
-OmniVoice の検証用構成（既存 DB・モデルを保持し、`.env` は変更しない）:
+管理設定で3段階が `local` の場合、起動時に両モデルをロードして初回推論を準備する。モデル欠損時はログに失敗を残し、クラウドへ切り替えない。`max_latency_ms=1200` はローカル翻訳音声の達成保証ではない。字幕への縮退は異常時の動作であり、正常系の公開合格には翻訳音声の生成・受信が必要。
 
-```powershell
-$env:INSTALL_LOCAL = "1"
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.local-small.yml build backend
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.local-small.yml run --rm --no-deps backend python /app/scripts/prepare_local_models.py --output-dir /models --tts-model k2-fsa/OmniVoice
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.local-small.yml up -d
-```
-
-追加 Compose は TTS モデルと VRAM 予算10000MiBを指定する。管理設定で3段階が `local` の場合、起動時に両モデルをロードして初回推論を準備する。モデル欠損時はログに失敗を残し、クラウドへ切り替えない。取得後のロードは固定 revision のローカルキャッシュのみを使用する。製品イメージでの LiveKit 全文受信・再起動は確認済み。ベトナム語の追加品質評価と Testing Kit 総合認証が残るため、公開判定は保留する。
-
-推奨 env（`.env` はユーザー管理。例のみ）:
-
-- `LOCAL_TTS_MODEL=openbmb/VoxCPM2`
-- `VRAM_BUDGET_MB=7500`
-
-制約: 現行の VRAM 予算では Gemma と VoxCPM2 を切り替えて実行する。TTS 失敗時は字幕を継続する。`max_latency_ms=1200` はローカル翻訳音声の達成保証ではない。字幕への縮退は異常時の動作であり、正常系の公開合格には翻訳音声の生成・受信が必要。
-
-Gemma の E2B は実効2.3B・総5.1B、VoxCPM2 は2B。Gemma の音声入力は30秒以下。音声エンコーダーの量子化は認識品質を壊すため禁止し、モデル取得は準備スクリプトで事前に完了させる。VoxCPM2 はコンパイルを無効にして起動時の障害を避ける。
-
-旧 Whisper/MADLAD 構成の比較用モデル準備は `--legacy-three-models` で明示指定する。既存キャッシュは保持するが、標準の local ASR/MT ではロードしない。実機検証用は `scripts/verify_local_pipeline.py` と `scripts/verify_local_livekit.py`。正常系の公開判定には、字幕に加えて翻訳音声の生成・受信も必要。現在の判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
+Gemma の E2B は実効2.3B・総5.1B。音声入力は30秒以下。音声エンコーダーの量子化は認識品質を壊すため禁止する。オフライン再処理（`POST /api/admin/sessions/{id}/rerun`）も同じ Gemma を使い、別モデルを追加しない。実機検証用は `scripts/verify_local_pipeline.py` と `scripts/verify_local_livekit.py`。現在の判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
 
 ---
 
@@ -604,7 +588,7 @@ Sonowa は以下のオープンソースプロジェクトとサービスの上�
 | リアルタイム基盤 | [LiveKit](https://github.com/livekit/livekit)（SFU・Agent SDK・クライアント SDK / Apache-2.0）、[coturn](https://github.com/coturn/coturn) |
 | バックエンド | [FastAPI](https://github.com/fastapi/fastapi)、[Uvicorn](https://github.com/encode/uvicorn)、[SQLAlchemy](https://github.com/sqlalchemy/sqlalchemy)、[Alembic](https://github.com/sqlalchemy/alembic)、[Pydantic](https://github.com/pydantic/pydantic)、[asyncpg](https://github.com/MagicStack/asyncpg)、[redis-py](https://github.com/redis/redis-py)、[python-jose](https://github.com/mpdavis/python-jose)、[cryptography](https://github.com/pyca/cryptography)、[httpx](https://github.com/encode/httpx)、[NumPy](https://github.com/numpy/numpy)、[Ruff](https://github.com/astral-sh/ruff) |
 | フロントエンド | [React](https://github.com/facebook/react)、[Vite](https://github.com/vitejs/vite)、[TypeScript](https://github.com/microsoft/TypeScript)、[Zustand](https://github.com/pmndrs/zustand)、[React Router](https://github.com/remix-run/react-router)、[i18next](https://github.com/i18next/i18next) / [react-i18next](https://github.com/i18next/react-i18next)、[ESLint](https://github.com/eslint/eslint) |
-| ローカル GPU（任意） | [faster-whisper](https://github.com/SYSTRAN/faster-whisper)、[CTranslate2](https://github.com/OpenNMT/CTranslate2)、[Silero VAD](https://github.com/snakers4/silero-vad)、[PyTorch](https://github.com/pytorch/pytorch)、[Transformers](https://github.com/huggingface/transformers)、[SentencePiece](https://github.com/google/sentencepiece)、[Resemblyzer](https://github.com/resemble-ai/Resemblyzer)、[VoxCPM2](https://huggingface.co/openbmb/VoxCPM2)（Apache-2.0）、[MADLAD-400](https://huggingface.co/google/madlad400-3b-mt)（Apache-2.0） |
+| ローカル GPU（任意） | [Gemma 4](https://huggingface.co/google/gemma-4-E2B-it)（Apache-2.0）、[Silero VAD](https://github.com/snakers4/silero-vad)、[PyTorch](https://github.com/pytorch/pytorch)、[Transformers](https://github.com/huggingface/transformers)、[SentencePiece](https://github.com/google/sentencepiece)、[Resemblyzer](https://github.com/resemble-ai/Resemblyzer)、[OmniVoice](https://huggingface.co/k2-fsa/OmniVoice)（CC-BY-NC） |
 | インフラ / テスト | [PostgreSQL](https://www.postgresql.org/)、[Redis](https://github.com/redis/redis)、[Docker](https://www.docker.com/)、[Nginx](https://github.com/nginx/nginx)、[Playwright](https://github.com/microsoft/playwright) |
 | クラウド AI | OpenAI（Realtime / GPT-4o-transcribe / GPT-4o-mini / TTS）、Google（Chirp 3 / Cloud Translation / Gemini）、Deepgram（Nova-3） |
 

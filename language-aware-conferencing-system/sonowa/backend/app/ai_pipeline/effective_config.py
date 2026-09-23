@@ -279,14 +279,13 @@ def collect_availability_warnings(values: PipelineSettingsValues) -> list[str]:
 
             if not local_tts.available():
                 warnings.append(
-                    f"依存未導入のため local TTS（{local_tts.model_label()}）は無効です。"
+                    f"依存未導入のため local TTS（{local_tts.MODEL_LABEL}）は無効です。"
                     " pip install '.[local]' 後に再起動してください。"
                 )
-            if settings.vram_budget_mb < local_tts.model_size_mb():
+            if settings.vram_budget_mb < local_tts.MODEL_SIZE_MB:
                 warnings.append(
                     f"VRAM 予算 {settings.vram_budget_mb}MB が "
-                    f"{local_tts.model_label()} 概算 "
-                    f"{local_tts.model_size_mb()}MB 未満のため、"
+                    f"{local_tts.MODEL_LABEL} 概算 {local_tts.MODEL_SIZE_MB}MB 未満のため、"
                     "TTS は VRAMCapacityError 時に字幕のみへ縮退します。"
                 )
         except Exception:  # noqa: BLE001

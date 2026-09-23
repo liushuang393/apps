@@ -161,41 +161,23 @@ class Settings(BaseSettings):
     #   - asr_provider: auto / gpt4o / deepgram / google / local
     #   - mt_provider : auto / openai / google / local
     #   - tts_provider: auto / openai / none / local
-    # "local" は本地スタック（faster-whisper / MADLAD-400 CT2 / VoxCPM2）。ランタイム
-    # 未導入時は registry の available() が False を返し雲へ自動フォールバックする。
+    # "local" は本地2モデル（Gemma 4 E2B が ASR/MT を共有 + OmniVoice TTS）。
+    # ランタイム未導入でもクラウドへは切り替えない（ASR/MT 不可・TTS は字幕のみ）。
     asr_provider: Literal["auto", "gpt4o", "deepgram", "google", "local"] = "auto"
     mt_provider: Literal["auto", "openai", "google", "local"] = "auto"
     tts_provider: Literal["auto", "openai", "none", "local"] = "auto"
 
     # -------------------------------------------
-    # Lite 本地モデル設定（faster-whisper / MADLAD-400 / VoxCPM2・8GB GPU）
+    # 本地2モデル設定（Gemma 4 E2B + OmniVoice・RTX 3060 12GB で実測）
     # -------------------------------------------
-    # GPU 予算（MB）。8GB カードではヘッドルームを残し VoxCPM2 と排他調停する。
-    vram_budget_mb: int = 7500
+    # GPU 予算（MB）。Gemma(7300)+OmniVoice(2400) の同時常駐に必要な値。
+    vram_budget_mb: int = 10000
     # VAD バックエンド: energy（既定・CPU エネルギー閾値）/ silero（Silero VAD）。
     # silero 指定時にランタイム未導入なら energy へ自動フォールバックする。
     vad_backend: Literal["energy", "silero"] = "energy"
 
-    # 本地 ASR（faster-whisper / CTranslate2・4言語対応 medium INT8）
-    local_asr_model: str = "Systran/faster-whisper-medium"
-    local_asr_device: str = "cuda"  # cuda / cpu
-    local_asr_compute_type: str = "int8"  # int8 / int8_float16 / float16
-    local_asr_size_mb: int = 1500  # VRAM Broker 会計用の概算常駐サイズ
-
-    # 本地 MT（MADLAD-400 単一多言語 + CTranslate2）。
-    # model_dir は CT2 変換済みディレクトリ。未設定なら local MT は利用不可。
-    local_mt_model_dir: str | None = None
-    local_mt_model_id: str = "google/madlad400-3b-mt"
-    local_mt_tokenizer_id: str = "jbochi/madlad400-3b-mt"
-    local_mt_device: str = "cuda"
-    local_mt_compute_type: str = "int8"
-    local_mt_size_mb: int = 2500  # INT8 換算の概算常駐サイズ
-
-    # 本地 TTS（VoxCPM2・ja/en/zh/vi 単一モデル）。約 8GB のため他モデルと排他。
-    local_tts_model: str = "openbmb/VoxCPM2"
-    local_tts_voice: str = "default"  # VoxCPM2 は言語タグ不要（互換フィールド）
+    # 本地 TTS の実行デバイス（モデルは local_tts.MODEL_ID に固定 revision で固定）。
     local_tts_device: str = "cuda"
-    local_tts_size_mb: int = 7500
 
     # -------------------------------------------
     # ストリーミング字幕（P2：partial/final 事件協議）
@@ -247,7 +229,7 @@ class Settings(BaseSettings):
     # {"key","stage","unit","enabled","variants":[{"name","model_id","weight"}]}。
     # 例: '[{"key":"asr_ab","stage":"asr","unit":"session","enabled":true,
     #   "variants":[{"name":"control","model_id":"asr-openai-transcribe","weight":50},
-    #   {"name":"treatment","model_id":"asr-faster-whisper","weight":50}]}]'
+    #   {"name":"treatment","model_id":"asr-gemma4-e2b","weight":50}]}]'
     # JSON 不正・個別実験不正は fail-safe で空/当該のみスキップ（ライブを壊さない）。
     experiments_config: str | None = None
 

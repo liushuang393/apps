@@ -54,18 +54,14 @@ dependencies = [
 dev = [
     "ruff==0.8.4",
 ]
-# Lite 本地スタック（8GB GPU）。既定では導入しない。
-# 有効化する環境でのみ `pip install .[local]` で追加する（未導入時は雲へ縮退）。
-#   - faster-whisper/ctranslate2: 本地 ASR・MADLAD MT（CTranslate2 int8）
+# 本地2モデルスタック（12GB GPU）。既定では導入しない。
+# 有効化する環境でのみ `pip install .[local]` で追加する（未導入時は local 段が無効）。
+#   - transformers/bitsandbytes/accelerate: Gemma 4 E2B（ASR/MT 共有・テキスト側 NF4）
+#   - omnivoice/soundfile: 本地 TTS（OmniVoice・ja/en/zh/vi）
 #   - torch/silero-vad: Silero VAD
-#   - voxcpm/soundfile: 本地 TTS（VoxCPM2・ja/en/zh/vi）
-#   - transformers/sentencepiece: MADLAD トークナイズ
 local = [
-    "faster-whisper>=1.0",
-    "ctranslate2>=4.0",
     "torch==2.9.1",
     "silero-vad>=5.1",
-    "voxcpm==2.0.3",
     "soundfile>=0.12",
     "transformers==5.17.0",
     "sentencepiece>=0.2",

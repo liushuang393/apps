@@ -262,7 +262,7 @@ def _make_google_asr() -> object:
     return AIProviderASRStage(GoogleProvider(), "google")
 
 
-# --- 本地スタック（Gemma 4 E2B の ASR/MT 共有 + VoxCPM2）。ランタイム未導入時は
+# --- 本地スタック（Gemma 4 E2B の ASR/MT 共有 + OmniVoice）。ランタイム未導入時は
 #     明示した local が利用不可でもクラウドへ送信しない。TTS は字幕のみへ縮退する。
 def _local_asr_available() -> bool:
     from app.ai_pipeline.providers import local_multimodal

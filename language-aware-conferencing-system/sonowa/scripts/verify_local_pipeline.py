@@ -22,6 +22,7 @@ import wave
 from pathlib import Path
 
 import numpy as np
+
 from app.ai_pipeline.effective_config import (
     PipelineSettingsValues,
     set_cached_pipeline_settings,
@@ -209,7 +210,7 @@ async def verify(
         "stage": stage,
         "gpu": torch.cuda.get_device_name(),
         "torch_peak_allocated_mb": torch.cuda.max_memory_allocated() / 1024**2,
-        "note": "PyTorch peak excludes CTranslate2 allocations; semantic review required",
+        "note": "PyTorch peak only; semantic review required",
         "cases": cases,
         "quality_verdict": "unreviewed",
         "passed": bool(cases) and all(c["status"] == "passed" for c in cases),

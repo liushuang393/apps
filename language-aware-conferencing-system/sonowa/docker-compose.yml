@@ -75,7 +75,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        # ローカル GPU スタックを同梱する場合は 1（VRAM 8GB 想定）。
+        # ローカル GPU スタックを同梱する場合は 1（VRAM 12GB 想定）。
         INSTALL_LOCAL: ${INSTALL_LOCAL:-0}
     # .env を唯一の正として直接注入する。これによりシェルの無効 OPENAI_API_KEY(~/.bashrc) や
     # 未配線の設定（LANGUAGE_DETECTION_MODE 等）に左右されない。CORS_ORIGINS/SUPPORTED_LANGUAGES は
@@ -117,13 +117,8 @@ services:
       - HOST_IP=${HOST_IP:-localhost}
       # フロントエンドポート（CORS許可オリジン自動生成用。.envのFRONTEND_PORTから注入）
       - FRONTEND_PORT=${FRONTEND_PORT:-5273}
-      # ローカル GPU モデル（8GB 想定）。準備後に LOCAL_MT_MODEL_DIR を設定する。
-      - LOCAL_MT_MODEL_DIR=${LOCAL_MT_MODEL_DIR:-/models/madlad400-3b-mt-int8}
-      - LOCAL_ASR_MODEL=${LOCAL_ASR_MODEL:-Systran/faster-whisper-medium}
-      - LOCAL_TTS_MODEL=${LOCAL_TTS_MODEL:-openbmb/VoxCPM2}
-      - VRAM_BUDGET_MB=${VRAM_BUDGET_MB:-7500}
-      - LOCAL_ASR_DEVICE=${LOCAL_ASR_DEVICE:-cuda}
-      - LOCAL_MT_DEVICE=${LOCAL_MT_DEVICE:-cuda}
+      # ローカル GPU 2モデル（Gemma 4 E2B + OmniVoice・12GB 想定）。モデルは固定 revision。
+      - VRAM_BUDGET_MB=${VRAM_BUDGET_MB:-10000}
       - LOCAL_TTS_DEVICE=${LOCAL_TTS_DEVICE:-cuda}
       - HF_HOME=${HF_HOME:-/models/hf}
     ports:

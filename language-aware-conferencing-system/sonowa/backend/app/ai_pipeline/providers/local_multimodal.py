@@ -2,7 +2,7 @@
 
 入力: 16-bit WAV または原文・言語。出力: 原文、検出言語、訳文。
 モデルは取得済みキャッシュからのみ読み、失敗時は空値へ縮退する。
-VoxCPM2 と合わせて2モデル構成とし、音声エンコーダーは量子化しない。
+OmniVoice と合わせて2モデル構成とし、音声エンコーダーは量子化しない。
 """
 
 from __future__ import annotations
@@ -10,16 +10,18 @@ from __future__ import annotations
 import asyncio
 import gc
 import importlib.util
+import io
 import json
 import logging
 import threading
+import wave
 from collections.abc import Callable
 
 import numpy as np
 
-from app.ai_pipeline.providers.local_asr import _decode_wav
 from app.ai_pipeline.vram_broker import PRIORITY_ASR, VRAMBroker, run_model_worker
 from app.ai_pipeline.vram_broker import broker as default_broker
+from app.audio.pcm import resample16
 
 MODEL_ID = "google/gemma-4-E2B-it"
 MODEL_REVISION = "3e22461f65e89153144f8adb70e3b8c2cc9845a7"
@@ -37,6 +39,35 @@ QUANTIZATION_EXCLUSIONS = (
     "lm_head",
 )
 logger = logging.getLogger(__name__)
+
+
+def _decode_wav(audio_data: bytes) -> np.ndarray:
+    """16bit WAV を 16kHz mono float32（[-1,1]）へ変換する。空・不正は空配列。"""
+    empty = np.empty(0, dtype=np.float32)
+    if not audio_data:
+        return empty
+    try:
+        with wave.open(io.BytesIO(audio_data), "rb") as wav:
+            if wav.getsampwidth() != 2:  # int16 以外は扱わない
+                return empty
+            channels = wav.getnchannels()
+            sample_rate = wav.getframerate()
+            frames = wav.readframes(wav.getnframes())
+    except (wave.Error, EOFError, OSError):
+        return empty
+    pcm = np.frombuffer(frames, dtype=np.int16)
+    if channels > 1:
+        usable = (len(pcm) // channels) * channels
+        pcm = pcm[:usable].reshape(-1, channels).mean(axis=1).astype(np.int16)
+    if not pcm.size:
+        return empty
+    if sample_rate != SAMPLE_RATE:
+        pcm = np.frombuffer(
+            resample16(pcm.tobytes(), sample_rate, SAMPLE_RATE), dtype=np.int16
+        )
+    return pcm.astype(np.float32) / 32768.0
+
+
 Inference = Callable[[str, np.ndarray | None], str]
 TranslationKey = tuple[asyncio.AbstractEventLoop, int, int, str]
 _pending_translations: dict[TranslationKey, asyncio.Task[str]] = {}

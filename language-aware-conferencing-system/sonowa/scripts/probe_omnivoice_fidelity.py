@@ -17,12 +17,12 @@ import time
 from pathlib import Path
 
 import torch
-from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
-from app.ai_pipeline.providers.local_omnivoice import MODEL_REVISION
-from app.ai_pipeline.providers.local_tts import _to_wav_bytes
 from omnivoice import OmniVoice
 from omnivoice.utils.text import normalize_text
 from verify_local_pipeline import inspect_audio
+
+from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
+from app.ai_pipeline.providers.local_tts import MODEL_REVISION, _to_wav_bytes
 
 logger = logging.getLogger(__name__)
 SEEDS = (0, 1, 2)

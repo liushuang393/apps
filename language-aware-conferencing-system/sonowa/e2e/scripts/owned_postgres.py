@@ -380,7 +380,7 @@ def main() -> int:
         choices=["create", "identity", "reset", "snapshot", "restore", "destroy"],
     )
     parser.add_argument("--postgres-image", default="postgres:16-alpine")
-    parser.add_argument("--backend-image", default="sonowa-backend:local-small")
+    parser.add_argument("--backend-image", default="sonowa-backend:latest")
     args = parser.parse_args()
     try:
         if args.action == "create":

@@ -13,7 +13,6 @@ services:
       ASR_PROVIDER: local
       MT_PROVIDER: local
       TTS_PROVIDER: local
-      LOCAL_TTS_MODEL: k2-fsa/OmniVoice
       VRAM_BUDGET_MB: "10000"
       HF_HOME: /models/hf
       HF_HUB_OFFLINE: "1"

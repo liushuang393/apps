@@ -1,151 +1,164 @@
-"""
-ローカル TTS ステージ（VoxCPM2 単一多言語）の単体テスト
-
-対象: app.ai_pipeline.providers.local_tts
-方針:
-    - GPU / voxcpm 非依存。fake engine を注入して合成経路を検証する。
-    - ja/en/zh/vi を同一エンジンで合成し、失敗時は字幕継続のため None を返す。
-"""
+"""ローカル TTS（OmniVoice）のオフラインロード・言語指定・字幕縮退・共有推論を検証する。"""
 
 import asyncio
+import io
 import sys
+import threading
 import time
+import wave
+from pathlib import Path
 from types import ModuleType
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from app.ai_pipeline.providers.local_tts import (
-    VOXCPM_SAMPLE_RATE,
-    LocalTTSStage,
-    available,
-)
+
+from app.ai_pipeline.providers import local_tts
+from app.ai_pipeline.registry import _make_local_tts
 from app.ai_pipeline.vram_broker import VRAMBroker
 
 
-def _fresh_broker() -> VRAMBroker:
-    """テストごとに独立した Broker（既定共有 broker のキャッシュ汚染を避ける）。"""
-    return VRAMBroker(budget_mb=8000)
-
-
-class _FakeEngine:
-    """VoxCPM 互換ダミー: float32[-1,1] の 1 次元波形を返す。"""
-
-    def __init__(self) -> None:
-        self.calls: list[dict[str, str]] = []
-
-    def generate(self, text: str, **_kwargs: object) -> np.ndarray:
-        self.calls.append({"text": text})
-        return np.linspace(-0.5, 0.5, num=VOXCPM_SAMPLE_RATE // 10, dtype=np.float32)
-
-
-class _RaisingEngine:
-    """合成時に例外を送出するダミー（None 契約の検証用）。"""
-
-    def generate(self, text: str, **_kwargs: object) -> np.ndarray:  # noqa: ARG002
-        raise RuntimeError("合成失敗（テスト）")
-
-
-def test_import_module_succeeds() -> None:
-    import app.ai_pipeline.providers.local_tts as mod
-
-    assert mod.LocalTTSStage.name == "local"
-
-
-def test_available_returns_bool() -> None:
-    assert isinstance(available(), bool)
-
-
 @pytest.mark.asyncio
-async def test_synthesize_returns_wav_bytes() -> None:
-    engine = _FakeEngine()
-    stage = LocalTTSStage(engine=engine, broker=_fresh_broker())
-    audio = await stage.synthesize("こんにちは", "ja")
-    assert isinstance(audio, bytes)
-    assert audio[:4] == b"RIFF"
-    assert engine.calls[0]["text"] == "こんにちは"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("language", ["ja", "en", "zh", "vi"])
-async def test_synthesize_supports_four_languages(language: str) -> None:
-    """4言語を同一エンジンで合成できる（言語別 voice 切替不要）。"""
-    engine = _FakeEngine()
-    stage = LocalTTSStage(engine=engine, broker=_fresh_broker())
-    audio = await stage.synthesize(f"hello-{language}", language)
-    assert audio is not None
-    assert audio[:4] == b"RIFF"
-    assert engine.calls[-1]["text"] == f"hello-{language}"
-
-
-@pytest.mark.asyncio
-async def test_synthesize_empty_text_returns_none() -> None:
-    stage = LocalTTSStage(engine=_FakeEngine(), broker=_fresh_broker())
-    assert await stage.synthesize("", "en") is None
-    assert await stage.synthesize("   ", "en") is None
-
-
-@pytest.mark.asyncio
-async def test_synthesize_swallows_exception_returns_none() -> None:
-    stage = LocalTTSStage(engine=_RaisingEngine(), broker=_fresh_broker())
-    assert await stage.synthesize("hello", "en") is None
-
-
-@pytest.mark.asyncio
-async def test_vram_capacity_error_returns_none_for_subtitle_fallback() -> None:
-    """VRAM 逼迫時は音声のみ落とし、呼び出し側が字幕継続できるよう None を返す。"""
-    # local_tts_size_mb（既定 7500）より小さい予算で VRAMCapacityError を起こす。
-    stage = LocalTTSStage(engine=_FakeEngine(), broker=VRAMBroker(budget_mb=100))
-    assert await stage.synthesize("hello", "ja") is None
-
-
-def test_loader_uses_configured_device_without_compile_workers(
+async def test_fixed_offline_model_has_no_auxiliary_asr(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    """少容量 GPU のロードは追加コンパイルと意図しない device 選択を避ける。"""
-    from app.ai_pipeline.providers import local_tts
-
-    factory = Mock(return_value=_FakeEngine())
-    module = ModuleType("voxcpm")
-    module.VoxCPM = Mock(from_pretrained=factory)
-    monkeypatch.setitem(sys.modules, "voxcpm", module)
+    """固定キャッシュだけを読み、補助ASRなしで言語指定して24kHz WAVを返す。"""
+    (tmp_path / "audio_tokenizer").mkdir()
+    download = Mock(return_value=str(tmp_path))
     hub = ModuleType("huggingface_hub")
-    hub.snapshot_download = Mock(return_value="/cached/voxcpm2")
+    hub.snapshot_download = download
+    model = Mock()
+    model._asr_pipe = None
+    model.generate.return_value = [np.ones(2400, dtype=np.float32) * 0.1]
+    factory = Mock(return_value=model)
+    module = ModuleType("omnivoice")
+    module.OmniVoice = Mock(from_pretrained=factory)
     monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
-    monkeypatch.setattr(local_tts.settings, "local_tts_device", "cuda")
-    LocalTTSStage()._load_engine()
-    factory.assert_called_once_with(
-        "/cached/voxcpm2",
-        load_denoiser=False,
-        optimize=False,
-        device="cuda",
+    monkeypatch.setitem(sys.modules, "omnivoice", module)
+    torch_module = ModuleType("torch")
+    torch_module.float16 = "float16"
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
+    stage = local_tts.LocalTTSStage(broker=VRAMBroker(3000))
+
+    data = await stage.synthesize("会議は10時です。", "ja")
+
+    assert data is not None
+    with wave.open(io.BytesIO(data)) as audio:
+        assert audio.getframerate() == 24000
+        assert audio.getnchannels() == 1
+        assert audio.getsampwidth() == 2
+    download.assert_called_once_with(
+        local_tts.MODEL_ID,
+        revision=local_tts.MODEL_REVISION,
+        local_files_only=True,
     )
-    hub.snapshot_download.assert_called_once_with(
-        local_tts.settings.local_tts_model, local_files_only=True
-    )
+    assert factory.call_args.kwargs["load_asr"] is False
+    assert factory.call_args.kwargs["local_files_only"] is True
+    model.generate.assert_called_once_with(text="会議は10時です。", language="ja")
 
 
 @pytest.mark.asyncio
-async def test_shared_tts_model_does_not_generate_concurrently() -> None:
-    """複数ステージが共有する VoxCPM の内部状態を並行推論で競合させない。"""
+@pytest.mark.parametrize(
+    "bad", [[], [np.array([])], [np.zeros(2400)], [np.array([np.nan])]]
+)
+async def test_invalid_audio_degrades_to_subtitles(bad: object) -> None:
+    """空・無音・非有限音声を成功WAVへ変換しない。"""
+    model = Mock()
+    model._asr_pipe = None
+    model.generate.return_value = bad
+    stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
+    assert await stage.synthesize("Hello", "en") is None
 
-    class Engine(_FakeEngine):
-        active = 0
-        peak = 0
 
-        def generate(self, text: str, **kwargs: object) -> np.ndarray:
-            self.active += 1
-            self.peak = max(self.peak, self.active)
-            time.sleep(0.02)
-            result = super().generate(text, **kwargs)
-            self.active -= 1
-            return result
+@pytest.mark.asyncio
+async def test_unknown_language_does_not_generate() -> None:
+    """未対応言語を別言語の音声に置換しない。"""
+    model = Mock()
+    stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
+    assert await stage.synthesize("Bonjour", "fr") is None
+    model.generate.assert_not_called()
 
-    engine = Engine()
-    broker = _fresh_broker()
-    stages = [LocalTTSStage(engine=engine, broker=broker) for _ in range(3)]
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_share_one_serial_engine() -> None:
+    """複数部屋からの呼び出しでも同一GPUモデルの生成を重ねない。"""
+    active = 0
+    peak = 0
+    lock = threading.Lock()
+
+    def generate(**_kwargs: object) -> list[np.ndarray]:
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return [np.ones(2400, dtype=np.float32) * 0.1]
+
+    model = Mock()
+    model._asr_pipe = None
+    model.generate.side_effect = generate
+    broker = VRAMBroker(3000)
+    stage = local_tts.LocalTTSStage(engine=model, broker=broker)
     results = await asyncio.gather(
-        *(stage.synthesize("hello", "en") for stage in stages)
+        stage.synthesize("Hello", "en"), stage.synthesize("こんにちは", "ja")
     )
     assert all(results)
-    assert engine.peak == 1
+    assert peak == 1
+    assert broker.resident_keys() == [local_tts.ENGINE_CACHE_KEY]
+
+
+def test_local_factory_returns_omnivoice_stage() -> None:
+    """local TTS スロットは OmniVoice ステージを返す。"""
+    assert isinstance(_make_local_tts(), local_tts.LocalTTSStage)
+
+
+@pytest.mark.asyncio
+async def test_missing_bundled_codec_cannot_select_another_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """付属コーデック欠損時にOmniVoiceの別モデル取得経路へ入らない。"""
+    hub = ModuleType("huggingface_hub")
+    hub.snapshot_download = Mock(return_value=str(tmp_path))
+    module = ModuleType("omnivoice")
+    module.OmniVoice = Mock()
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setitem(sys.modules, "omnivoice", module)
+    torch_module = ModuleType("torch")
+    torch_module.float16 = "float16"
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
+    stage = local_tts.LocalTTSStage(broker=VRAMBroker(3000))
+    assert await stage.synthesize("Hello", "en") is None
+    module.OmniVoice.from_pretrained.assert_not_called()
+
+
+def test_catalog_matches_runtime_and_marks_noncommercial() -> None:
+    """選択モデルと異なる名称・ライセンス・架空の測定値を表示しない。"""
+    from app.ai_pipeline.model_registry import _build_default_catalog
+    from app.ai_pipeline.providers.local_multimodal import MODEL_ID as GEMMA_ID
+
+    catalog = _build_default_catalog()
+    asr = catalog.get("asr-gemma4-e2b")
+    mt = catalog.get("t2t-gemma4-e2b")
+    tts = catalog.get("tts-omnivoice")
+    assert asr and mt and tts
+    assert asr.base_model == mt.base_model == GEMMA_ID
+    assert tts.base_model == local_tts.MODEL_ID
+    assert tts.runtime == "transformers"
+    assert tts.metrics == {}
+    assert catalog.is_commercial_allowed(tts) is False
+
+
+@pytest.mark.asyncio
+async def test_empty_text_failure_and_low_budget_return_none() -> None:
+    """空文・合成例外・VRAM 不足はいずれも字幕継続のため None を返す。"""
+    model = Mock()
+    model._asr_pipe = None
+    model.generate.side_effect = RuntimeError("合成失敗（テスト）")
+    stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
+    assert await stage.synthesize("  ", "en") is None
+    assert await stage.synthesize("Hello", "en") is None
+    tiny = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(100))
+    assert await tiny.synthesize("Hello", "en") is None

@@ -11,14 +11,10 @@ from app.ai_pipeline.providers.local_multimodal import (
     MODEL_SIZE_MB,
     LocalMultimodalStage,
 )
-from app.ai_pipeline.providers.local_tts import (
-    OMNIVOICE_MODEL_ID,
-    OMNIVOICE_SIZE_MB,
-    create_stage,
-)
+from app.ai_pipeline.providers.local_tts import MODEL_SIZE_MB as TTS_SIZE_MB
+from app.ai_pipeline.providers.local_tts import create_stage
 from app.ai_pipeline.vram_broker import broker
 from app.audio.pcm import wrap_wav16
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 WARMUP_SAMPLE_RATE = 16000
@@ -27,12 +23,12 @@ WARMUP_SAMPLE_WIDTH = 2
 
 async def prepare_local_pipeline(values: PipelineSettingsValues) -> bool:
     """選択された2モデルだけを事前ロードし、初回推論を温める。"""
-    if settings.local_tts_model != OMNIVOICE_MODEL_ID or any(
+    if any(
         provider != "local"
         for provider in (values.asr_provider, values.mt_provider, values.tts_provider)
     ):
         return False
-    required = MODEL_SIZE_MB + OMNIVOICE_SIZE_MB
+    required = MODEL_SIZE_MB + TTS_SIZE_MB
     if broker.budget_mb < required:
         logger.warning(
             "[LOCAL] 同時常駐の予算不足: required=%sMB budget=%sMB",

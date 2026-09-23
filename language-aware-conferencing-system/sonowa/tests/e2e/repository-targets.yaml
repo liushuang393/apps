@@ -9,11 +9,10 @@ targets:
       publish_target: sonowa-local
       wave: local
       runtime_kind: service
-      profile: local-small
+      profile: local-gpu
       compose_files:
         - docker-compose.yml
         - docker-compose.gpu.yml
-        - docker-compose.local-small.yml
       services: [backend, postgres, redis, livekit, coturn]
       healthcheck_urls: [http://127.0.0.1:8090/health]
       probe_argv: []
@@ -27,11 +26,10 @@ targets:
       publish_target: sonowa-local
       wave: local
       runtime_kind: service
-      profile: local-small
+      profile: local-gpu
       compose_files:
         - docker-compose.yml
         - docker-compose.gpu.yml
-        - docker-compose.local-small.yml
       services: [frontend]
       healthcheck_urls: [http://127.0.0.1:5273/]
       probe_argv: []
