@@ -108,7 +108,7 @@ flowchart LR
 | 用語集 | 非対象（S2S のまま） | **必須**（読む主線・Composite OpenAI MT） | 非対応（警告表示） |
 | 並列・字幕最適化 | 弱め | 言語グループ並列 + キャッシュ/TM + partial + LLM 補正 | 同一翻訳の共有のみ |
 | 典型出力 | 翻訳音声 + transcript delta | 字幕中心、TTS 任意 | **字幕のみ**（翻訳音声なし） |
-| 遅延 | 最も低い想定 | 中（REST/セグメント単位） | 字幕 約5〜7秒（RTX 3060 実測） |
+| 遅延 | 最も低い想定 | 中（REST/セグメント単位） | 1区間の処理 約5〜7秒（RTX 3060・FLEURS 実測） |
 | 秘密・コスト | クラウド API キー必須 | クラウド API キー必須（補正は `GEMINI_API_KEY`） | キー不要・12GB GPU 必須 |
 | 適合 | 低遅延の同通・軽会議 | **既定・正式記録・業界用語** | 社外通信不可の会議・機密会議 |
 
@@ -195,6 +195,8 @@ flowchart LR
 | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` / `FunAudioLLM/Fun-CosyVoice3-0.5B` | Apache-2.0 | ベトナム語非対応 |
 | `ResembleAI/chatterbox` | MIT | ベトナム語非対応 |
 
+**方式3 のライセンス（すべて商用利用可）**: Gemma 4 E2B（Apache-2.0）、Silero VAD（MIT）、PyTorch / torchaudio / soundfile（BSD）、Transformers / Accelerate / SentencePiece / Resemblyzer / LiveKit（Apache-2.0）、bitsandbytes / webrtcvad（MIT）。検証用音声の FLEURS（CC-BY-4.0）は製品に同梱しない。イメージ内の OS パッケージ `ffmpeg`（Debian 版は GPL/LGPL）は別プロセスで呼び出しているだけだが、イメージを第三者へ配布する場合はソースの提供義務を確認すること。
+
 #### 方式3 の準備（RTX 3060 12GB で検証）
 
 ```powershell
@@ -206,9 +208,11 @@ docker compose exec backend python /app/scripts/prepare_local_models.py --output
 docker compose restart backend
 ```
 
+GPU オーバーライド（`docker-compose.gpu.yml`）は `VAD_BACKEND=silero` を既定にする。エネルギー VAD では、背景雑音のある録音で 8 秒の強制切断と断片の誤認識（入力にない文の生成）が起き、小音量の録音では発話が丸ごと欠落した（FLEURS 実測）。`.env` かシェルで `VAD_BACKEND` を指定すれば上書きできる。
+
 管理設定で ASR/MT が `local` の場合、起動時に Gemma をロードして初回推論を準備する。モデル欠損時はログに失敗を残し、クラウドへ切り替えない。音声入力は30秒以下。音声エンコーダーの量子化は認識品質を壊すため禁止する。オフライン再処理（`POST /api/admin/sessions/{id}/rerun`）も同じ Gemma を使い、別モデルを追加しない。
 
-実機検証は `scripts/verify_local_pipeline.py`（12方向）と `scripts/verify_local_livekit.py`（LiveKit 2クライアント）を使う。入力は `scripts/prepare_local_speech_fixtures.py` で取得する FLEURS の自然発話（CC-BY-4.0）とする。過去の判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
+実機検証は `scripts/verify_local_pipeline.py`（12方向）と `scripts/verify_local_livekit.py`（LiveKit 2クライアント、`--source` / `--target` で言語を指定）を使う。入力は `scripts/prepare_local_speech_fixtures.py` で取得する FLEURS の自然発話（CC-BY-4.0）とする。過去の判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
 
 ---
 

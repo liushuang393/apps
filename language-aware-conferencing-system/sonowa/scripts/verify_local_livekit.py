@@ -171,7 +171,7 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
     try:
         async with httpx.AsyncClient(base_url=args.api, timeout=30) as client:
             actors = []
-            for language in ("ja", "en", "ja"):
+            for language in (args.source, args.target, args.source):
                 credentials = {
                     "email": f"local-{uuid.uuid4().hex}@example.com",
                     "password": secrets.token_urlsafe(24),
@@ -222,7 +222,7 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
                 headers=headers[0],
                 json={
                     "name": "Local verification",
-                    "allowed_languages": ["ja", "en"],
+                    "allowed_languages": [args.source, args.target],
                     "default_mode": "hybrid",
                 },
             )
@@ -233,8 +233,8 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
                 json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             for room, header, language, mode in [
-                (speaker_room, headers[0], "ja", "original"),
-                (listener_room, headers[1], "en", "translated"),
+                (speaker_room, headers[0], args.source, "original"),
+                (listener_room, headers[1], args.target, "translated"),
             ]:
                 response = await client.post(
                     f"/api/rooms/{room_id}/token", headers=header
@@ -332,13 +332,17 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
         captured = bytes(audio)
         report["audio_bytes"] = len(captured)
         if captured:
-            with wave.open(str(args.output_dir / "livekit-en.wav"), "wb") as wav:
+            with wave.open(
+                str(args.output_dir / f"livekit-{args.target}.wav"), "wb"
+            ) as wav:
                 wav.setnchannels(1)
                 wav.setsampwidth(2)
                 wav.setframerate(rate)
                 wav.writeframes(captured)
             try:
-                report["audio"] = inspect_audio(args.output_dir / "livekit-en.wav")
+                report["audio"] = inspect_audio(
+                    args.output_dir / f"livekit-{args.target}.wav"
+                )
             except ValueError as exc:
                 report.update(error=str(exc), passed=False)
         await speaker_room.disconnect()
@@ -362,6 +366,9 @@ def main() -> int:
     parser.add_argument("--api", default="http://localhost:8090")
     parser.add_argument("--livekit", default="ws://localhost:7880")
     parser.add_argument("--wav", type=Path, required=True)
+    # 話者（入力 WAV の言語）と聞き手（翻訳字幕の言語）。既定は従来の ja→en。
+    parser.add_argument("--source", choices=("ja", "en", "zh", "vi"), default="ja")
+    parser.add_argument("--target", choices=("ja", "en", "zh", "vi"), default="en")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--configure-only", action="store_true")
     parser.add_argument("--connection-only", action="store_true")

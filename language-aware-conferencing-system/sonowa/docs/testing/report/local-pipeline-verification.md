@@ -406,3 +406,15 @@ $env:HOST_IP = "192.168.210.27"
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.local-small.yml up -d --no-build
 docker compose exec backend alembic current
 ```
+
+## 2026-09-24 方式3（Gemma のみ・字幕のみ）への移行
+
+商用利用可の条件を満たさないため OmniVoice（CC-BY-NC）を削除した。VoxCPM2（Apache-2.0）は Gemma と同時常駐で約12.1GB、交互ロードで1発話あたり約50秒のため不採用。ja/en/zh/vi を1モデルで合成でき、商用可で、Gemma と 12GB に同居できる TTS は見つからなかった（Qwen3-TTS / Fun-CosyVoice3 / Chatterbox はベトナム語非対応）。local TTS は差し替え口（`local_tts.py`、モデル未結線）として残し、方式3 は字幕のみとする。**本記録の上記の `docker-compose.local-small.yml` を使う手順と OmniVoice 前提の判定は無効。**
+
+実機結果（RTX 3060 12GB、入力は FLEURS 自然発話 CC-BY-4.0、合成音声は不使用）:
+
+- `verify_local_pipeline.py --stage asr`: 4言語とも成功（類似度 0.96〜0.99）。VRAM ピーク 7169MiB。
+- `--stage pipeline`: 12方向とも成功。1件あたり約5〜7秒（初回ロード時のみ約28秒）。
+- VAD: エネルギー VAD は背景雑音（RMS 約0.035 ＞ しきい値 0.015）で ja を 8.0秒 + 2.94秒へ強制切断し、断片から入力にない「お疲れ様です。」を生成した。en / zh は小音量のため区間0件（発話欠落）。Silero では ja 7.1秒の1区間、en / zh / vi も全区間を検出。GPU オーバーライドの既定を `VAD_BACKEND=silero` に変更。
+- `verify_local_livekit.py`（字幕のみ、`tts=none`、`default_mode=b`）: ja→en、en→ja、zh→ja、vi→ja の4本とも、2クライアントでの受信・DB 記録との一致・後片付けに成功。字幕到着は発話開始から約5〜18秒（入力発話は約10秒）。
+- 残る認識誤り: ja「敵対的」→「適待的」、zh「篇章」→「偏强」（Silero の短い区間で文脈が減った影響の可能性）、zh の短区間が繁体字で出力された例あり。vi「con vật」は正しく認識された。品質の合格判定は保留。

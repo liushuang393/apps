@@ -7,6 +7,10 @@
 services:
   backend:
     gpus: all
+    environment:
+      # エネルギー VAD は背景雑音で 8 秒強制切断・小音量で発話欠落を起こす（FLEURS 実測）。
+      # ローカル構成は torch 同梱のため Silero を既定にする（.env / シェルで上書き可）。
+      VAD_BACKEND: ${VAD_BACKEND:-silero}
     build:
       args:
         INSTALL_LOCAL: ${INSTALL_LOCAL:-1}
