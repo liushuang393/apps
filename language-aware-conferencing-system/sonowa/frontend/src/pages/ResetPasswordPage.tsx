@@ -3,7 +3,7 @@
  * トークンと新しいパスワードを入力してリセット実行
  */
 import { useState, type FormEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { authApi } from '../api/client';
 import { LANGUAGE_DISPLAY_NAMES, SUPPORTED_LANGUAGES, type UILanguage } from '../i18n';
@@ -12,7 +12,9 @@ import '../styles/pages/auth.css';
 export function ResetPasswordPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const [token, setToken] = useState('');
+  // 再設定リンク（/reset-password?token=...）から来た場合はトークンを自動入力する。
+  const [searchParams] = useSearchParams();
+  const [token, setToken] = useState(() => searchParams.get('token') ?? '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);

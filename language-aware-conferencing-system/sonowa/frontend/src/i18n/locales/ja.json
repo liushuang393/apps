@@ -57,7 +57,8 @@
     "resetSuccess": "パスワードが正常に更新されました",
     "resetting": "更新中...",
     "resetButton": "パスワードを更新",
-    "passwordMismatch": "パスワードが一致しません"
+    "passwordMismatch": "パスワードが一致しません",
+    "askAdminForReset": "本番環境ではメールを送信しません。管理者に「パスワード再設定リンク」の発行を依頼してください。"
   },
   "menu": {
     "communication": "コミュニケーション",

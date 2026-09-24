@@ -57,7 +57,8 @@
     "resetSuccess": "Password updated successfully",
     "resetting": "Updating...",
     "resetButton": "Update Password",
-    "passwordMismatch": "Passwords do not match"
+    "passwordMismatch": "Passwords do not match",
+    "askAdminForReset": "Email is not sent in production. Ask an administrator to issue a password reset link."
   },
   "menu": {
     "communication": "Communication",

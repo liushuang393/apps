@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_admin
+from app.auth.routes import RESET_TOKEN_TTL, issue_reset_token
 from app.db.database import get_db
 from app.db.models import (
     Room,
@@ -115,6 +116,40 @@ async def get_user(
         role=user.role,
         is_active=user.is_active,
         created_at=user.created_at.isoformat(),
+    )
+
+
+class AdminPasswordResetResponse(BaseModel):
+    """管理者が発行したパスワード再設定トークン（利用者へ渡す再設定リンク用）"""
+
+    reset_token: str
+    expires_in_minutes: int
+
+
+@router.post(
+    "/users/{user_id}/password-reset", response_model=AdminPasswordResetResponse
+)
+async def issue_user_password_reset(
+    user_id: str,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminPasswordResetResponse:
+    """
+    パスワード再設定トークンを発行する（管理者のみ）。
+
+    本番はメール送信が無いため、管理者が再設定リンクを作って本人へ渡す。
+    以前の未使用トークンは無効になり、新しいトークンは1時間有効。
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="ユーザーが見つかりません"
+        )
+    token = await issue_reset_token(db, user)
+    return AdminPasswordResetResponse(
+        reset_token=token,
+        expires_in_minutes=int(RESET_TOKEN_TTL.total_seconds() // 60),
     )
 
 

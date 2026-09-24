@@ -71,9 +71,20 @@ export function ForgotPasswordPage() {
                 </p>
               </div>
             )}
-            <Link to="/reset-password" className="btn-link">
-              {t('auth.resetPassword')}へ進む
-            </Link>
+            {resetToken ? (
+              <Link
+                to={`/reset-password?token=${encodeURIComponent(resetToken)}`}
+                className="btn-link"
+                data-testid="reset-password-link"
+              >
+                {t('auth.resetPassword')}へ進む
+              </Link>
+            ) : (
+              // 本番はメール送信が無いため、管理者が発行した再設定リンクを使う。
+              <p className="token-hint" data-testid="reset-ask-admin">
+                {t('auth.askAdminForReset')}
+              </p>
+            )}
           </div>
         ) : (
           <>

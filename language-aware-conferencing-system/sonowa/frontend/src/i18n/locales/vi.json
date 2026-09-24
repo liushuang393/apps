@@ -57,7 +57,8 @@
     "resetSuccess": "Cập nhật mật khẩu thành công",
     "resetting": "Đang cập nhật...",
     "resetButton": "Cập nhật mật khẩu",
-    "passwordMismatch": "Mật khẩu không khớp"
+    "passwordMismatch": "Mật khẩu không khớp",
+    "askAdminForReset": "Môi trường chính thức không gửi email. Hãy nhờ quản trị viên cấp liên kết đặt lại mật khẩu."
   },
   "menu": {
     "communication": "Giao tiếp",

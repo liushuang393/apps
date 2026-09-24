@@ -25,6 +25,7 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [saving, setSaving] = useState(false);
+  const [resetLink, setResetLink] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
 
@@ -73,6 +74,18 @@ export function AdminPage() {
   /**
    * ユーザー更新
    */
+  /** パスワード再設定リンクを発行し、本人へ渡す URL を表示する */
+  const handleIssueResetLink = async (userId: string) => {
+    try {
+      const { resetToken } = await adminApi.issuePasswordReset(userId);
+      setResetLink(
+        `${window.location.origin}/reset-password?token=${encodeURIComponent(resetToken)}`
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '再設定リンクの発行に失敗しました');
+    }
+  };
+
   const handleUpdateUser = async () => {
     if (!editingUser) return;
 
@@ -204,7 +217,10 @@ export function AdminPage() {
                     <button
                       className="edit-btn"
                       data-testid={`admin-edit-${u.email}`}
-                      onClick={() => setEditingUser(u)}
+                      onClick={() => {
+                        setEditingUser(u);
+                        setResetLink(null);
+                      }}
                       disabled={u.id === user?.id}
                     >
                       編集
@@ -270,6 +286,31 @@ export function AdminPage() {
                 <option value="active">有効</option>
                 <option value="inactive">無効</option>
               </select>
+            </div>
+            <div className="form-group">
+              <label>パスワード再設定</label>
+              <button
+                type="button"
+                className="btn-secondary"
+                data-testid="admin-issue-reset-link"
+                onClick={() => void handleIssueResetLink(editingUser.id)}
+              >
+                再設定リンクを発行
+              </button>
+              {resetLink && (
+                <>
+                  <input
+                    type="text"
+                    readOnly
+                    value={resetLink}
+                    data-testid="admin-reset-link"
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <p className="hint-text">
+                    このリンクを本人に渡してください（1時間有効・1回のみ使用可）。
+                  </p>
+                </>
+              )}
             </div>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setEditingUser(null)}>

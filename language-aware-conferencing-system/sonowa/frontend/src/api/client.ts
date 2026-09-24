@@ -583,6 +583,17 @@ export const adminApi = {
     return convertAdminUser(res);
   },
 
+  /** パスワード再設定リンク用トークン発行（本番はメールが無いため管理者が本人へ渡す） */
+  issuePasswordReset: async (
+    userId: string
+  ): Promise<{ resetToken: string; expiresInMinutes: number }> => {
+    const res = await apiFetch<{ reset_token: string; expires_in_minutes: number }>(
+      `/admin/users/${userId}/password-reset`,
+      { method: 'POST' }
+    );
+    return { resetToken: res.reset_token, expiresInMinutes: res.expires_in_minutes };
+  },
+
   /** システム統計取得 */
   getStats: async (): Promise<SystemStats> => {
     const res = await apiFetch<SystemStatsApiResponse>('/admin/stats');

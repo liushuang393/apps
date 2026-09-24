@@ -259,6 +259,34 @@ class PasswordResetResponse(BaseModel):
     reset_token: str | None = None  # MVP用：実際はメールで送信
 
 
+RESET_TOKEN_TTL = timedelta(hours=1)
+
+
+async def issue_reset_token(db: AsyncSession, user: User) -> str:
+    """ユーザーの未使用トークンを無効化し、1時間有効な新しいリセットトークンを発行する。
+
+    パスワード忘れ（開発環境）と管理者によるリセットリンク発行（本番）の共通処理。
+    """
+    token = secrets.token_urlsafe(48)  # 64文字のランダム文字列
+    existing_tokens = await db.execute(
+        select(PasswordResetToken).where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used.is_(False),
+        )
+    )
+    for old_token in existing_tokens.scalars():
+        old_token.used = True
+    db.add(
+        PasswordResetToken(
+            user_id=user.id,
+            token=token,
+            expires_at=datetime.now(timezone.utc) + RESET_TOKEN_TTL,
+        )
+    )
+    await db.commit()
+    return token
+
+
 @router.post("/password-reset/request", response_model=PasswordResetResponse)
 async def request_password_reset(
     data: PasswordResetRequest, db: AsyncSession = Depends(get_db)
@@ -277,28 +305,7 @@ async def request_password_reset(
             message="メールアドレスが登録されている場合、リセットリンクを送信しました"
         )
 
-    # トークン生成（64文字のランダム文字列）
-    token = secrets.token_urlsafe(48)
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-
-    # 既存の未使用トークンを無効化
-    existing_tokens = await db.execute(
-        select(PasswordResetToken).where(
-            PasswordResetToken.user_id == user.id,
-            PasswordResetToken.used.is_(False),
-        )
-    )
-    for old_token in existing_tokens.scalars():
-        old_token.used = True
-
-    # 新しいトークン作成
-    reset_token = PasswordResetToken(
-        user_id=user.id,
-        token=token,
-        expires_at=expires_at,
-    )
-    db.add(reset_token)
-    await db.commit()
+    token = await issue_reset_token(db, user)
 
     # 開発環境だけは手動検証用に返す。本番では応答へ秘密値を含めない。
     return PasswordResetResponse(
