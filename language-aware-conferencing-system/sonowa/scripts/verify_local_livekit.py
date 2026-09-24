@@ -37,8 +37,8 @@ PRESETS: dict[str, dict[str, object]] = {
         "ai_provider": "gpt4o_transcribe",
         "asr_provider": "local",
         "mt_provider": "local",
-        "tts_provider": "none",
-        "default_mode": "b",
+        "tts_provider": "local",
+        "default_mode": "hybrid",
         "enable_partial_subtitles": False,
         "llm_correction_enabled": False,
     },
@@ -180,10 +180,10 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
         publication: rtc.RemoteTrackPublication,
         participant: rtc.RemoteParticipant,
     ) -> None:
-        """翻訳 Agent の英語音声だけを受信する。"""
+        """翻訳 Agent の --target 言語の音声だけを受信する。"""
         if (
             track.kind == rtc.TrackKind.KIND_AUDIO
-            and publication.name.startswith("translation-en-")
+            and publication.name.startswith(f"translation-{args.target}-")
             and participant.identity.startswith("sonowa-agent")
         ):
             task = asyncio.create_task(consume(track))
@@ -299,8 +299,10 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
                     rtc.AudioFrame(frame, SAMPLE_RATE, 1, len(frame) // 2)
                 )
             await source.wait_for_playout()
-            # 字幕のみ構成（tts=none）では翻訳音声を待たない。
-            need_audio = PRESETS[args.preset]["tts_provider"] != "none"
+            # 字幕のみ構成（tts=none）と、ローカル TTS 非対応の vi では翻訳音声を待たない。
+            need_audio = PRESETS[args.preset]["tts_provider"] != "none" and not (
+                PRESETS[args.preset]["tts_provider"] == "local" and args.target == "vi"
+            )
             while (need_audio and not has_voice(audio)) or not any(
                 s.get("translated_text") for s in subtitles
             ):

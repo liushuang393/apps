@@ -1,10 +1,12 @@
-"""ローカル TTS 差し替え口の契約（未結線・注入モデルの合成・字幕縮退・直列化）を検証する。"""
+"""ローカル TTS（Qwen3-TTS）の契約: 結線・言語別音声・vi の字幕縮退・直列化を検証する。"""
 
 import asyncio
 import io
+import sys
 import threading
 import time
 import wave
+from types import ModuleType
 from unittest.mock import Mock
 
 import numpy as np
@@ -22,18 +24,65 @@ def _model(waveform: object) -> Mock:
     return model
 
 
-def test_unwired_slot_is_unavailable_and_factory_still_builds() -> None:
-    """モデル未結線の間は利用不可を返し、差し替え口のステージは生成できる。"""
-    assert local_tts.MODEL_ID is None
+def test_missing_runtime_is_unavailable_and_factory_still_builds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ランタイム未導入なら利用不可を返し、差し替え口のステージは生成できる。"""
+    monkeypatch.setattr(local_tts.importlib.util, "find_spec", lambda _name: None)
+    assert local_tts.MODEL_ID and local_tts.MODEL_REVISION
     assert local_tts.available() is False
     assert isinstance(_make_local_tts(), local_tts.LocalTTSStage)
 
 
 @pytest.mark.asyncio
-async def test_unwired_model_degrades_to_subtitles() -> None:
-    """未結線のまま呼ばれても例外を出さず None（字幕のみ）を返す。"""
+async def test_missing_runtime_degrades_to_subtitles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ランタイム未導入のまま呼ばれても例外を出さず None（字幕のみ）を返す。"""
+    monkeypatch.setitem(sys.modules, "faster_qwen3_tts", None)
     stage = local_tts.LocalTTSStage(broker=VRAMBroker(3000))
     assert await stage.synthesize("Hello", "en") is None
+
+
+@pytest.mark.asyncio
+async def test_vietnamese_is_subtitle_only_without_generation() -> None:
+    """商用可のローカル TTS が無い vi は合成せず None（字幕のみ）を返す。"""
+    model = _model(np.ones(10))
+    stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
+    assert await stage.synthesize("Xin chào", "vi") is None
+    model.synthesize.assert_not_called()
+
+
+def test_loader_uses_pinned_offline_weights_and_native_voices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """固定 revision をキャッシュだけから読み、言語ごとの母語話者で合成する。"""
+    hub = ModuleType("huggingface_hub")
+    hub.snapshot_download = Mock(return_value="/cached/qwen3-tts")
+    backend = Mock()
+    backend.generate_custom_voice.return_value = ([np.ones((1, 2400)) * 0.1], 24000)
+    runtime = ModuleType("faster_qwen3_tts")
+    runtime.FasterQwen3TTS = Mock(from_pretrained=Mock(return_value=backend))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setitem(sys.modules, "faster_qwen3_tts", runtime)
+
+    voice = local_tts._load_model()
+    wave_out = voice.synthesize("会議は10時です。", "ja")
+
+    hub.snapshot_download.assert_called_once_with(
+        local_tts.MODEL_ID, revision=local_tts.MODEL_REVISION, local_files_only=True
+    )
+    assert (
+        runtime.FasterQwen3TTS.from_pretrained.call_args.kwargs["local_files_only"]
+        is True
+    )
+    backend.generate_custom_voice.assert_called_once_with(
+        text="会議は10時です。", speaker="Ono_Anna", language="Japanese"
+    )
+    assert wave_out.ndim == 1
+    backend.generate_custom_voice.return_value = ([np.ones(10)], 16000)
+    with pytest.raises(ValueError, match="サンプルレート"):
+        voice.synthesize("Hello", "en")
 
 
 @pytest.mark.asyncio
@@ -66,6 +115,7 @@ async def test_unknown_language_empty_text_and_failure_return_none() -> None:
     model = _model(np.ones(10))
     stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
     assert await stage.synthesize("Bonjour", "fr") is None
+    assert await stage.synthesize("Xin chào", "vi") is None
     assert await stage.synthesize("  ", "en") is None
     model.synthesize.assert_not_called()
     model.synthesize.side_effect = RuntimeError("合成失敗（テスト）")
@@ -101,10 +151,14 @@ async def test_concurrent_requests_share_one_serial_engine() -> None:
     assert broker.resident_keys() == [local_tts.ENGINE_CACHE_KEY]
 
 
-def test_catalog_lists_no_unwired_local_tts() -> None:
-    """未結線のローカル TTS をモデルカタログに載せない。"""
+def test_catalog_lists_commercial_local_tts() -> None:
+    """結線したローカル TTS を商用可のライセンスでカタログに載せる。"""
     from app.ai_pipeline.model_registry import _build_default_catalog
 
     catalog = _build_default_catalog()
     assert catalog.get("asr-gemma4-e2b") and catalog.get("t2t-gemma4-e2b")
     assert catalog.get("tts-omnivoice") is None
+    tts = catalog.get("tts-qwen3-0.6b")
+    assert tts and tts.base_model == local_tts.MODEL_ID
+    assert tts.languages == ["ja", "en", "zh"]
+    assert catalog.is_commercial_allowed(tts) is True

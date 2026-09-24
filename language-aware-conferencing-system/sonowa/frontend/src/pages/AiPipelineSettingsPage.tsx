@@ -47,13 +47,13 @@ const PRESET_VALUES: Record<PipelinePreset, FormState> = {
     enablePartialSubtitles: true,
     llmCorrectionEnabled: true,
   },
-  // 方式3: 完全ローカル（Gemma ASR/MT・字幕のみ）。local TTS は差し替え口のみで未結線。
+  // 方式3: 完全ローカル（Gemma ASR/MT + Qwen3-TTS）。vi は翻訳音声なし（字幕のみ）。
   local_gemma: {
     aiProvider: 'gpt4o_transcribe',
     asrProvider: 'local',
     mtProvider: 'local',
-    ttsProvider: 'none',
-    defaultMode: 'b',
+    ttsProvider: 'local',
+    defaultMode: 'hybrid',
     enablePartialSubtitles: false,
     llmCorrectionEnabled: false,
   },

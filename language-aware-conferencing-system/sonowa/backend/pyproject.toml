@@ -57,13 +57,21 @@ dev = [
 # 本地スタック（方式3・12GB GPU）。既定では導入しない。
 # 有効化する環境でのみ `pip install .[local]` で追加する（未導入時は local 段が無効）。
 #   - transformers/bitsandbytes/accelerate: Gemma 4 E2B（ASR/MT 共有・テキスト側 NF4）
-#   - soundfile: 音声ファイル入出力（local TTS は差し替え口のみ・モデル未結線）
+#     transformers は qwen-tts-hf の互換層が 5.15 系前提のため 5.15.1 に固定（5.17 は非互換）
+#   - librosa/sox/einops/onnxruntime: Qwen3-TTS の実行依存。本体 faster-qwen3-tts / qwen-tts-hf は
+#     gradio 等の不要依存を避けるため Dockerfile で --no-deps 導入する
+#   - soundfile: 音声ファイル入出力
 #   - torch/silero-vad: Silero VAD
 local = [
     "torch==2.9.1",
     "silero-vad>=5.1",
     "soundfile>=0.12",
-    "transformers==5.17.0",
+    "transformers==5.15.1",
+    "tokenizers==0.22.2",
+    "librosa>=0.10",
+    "sox>=1.5",
+    "einops>=0.8",
+    "onnxruntime>=1.20",
     "sentencepiece>=0.2",
     # 話者分離 diarization（P4-A）: 声紋 embedding
     "resemblyzer>=0.1.4",

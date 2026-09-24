@@ -30,6 +30,7 @@ from app.ai_pipeline.effective_config import (
     set_cached_pipeline_settings,
 )
 from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
+from app.ai_pipeline.providers.local_tts import LANGUAGES as TTS_LANGUAGES
 from app.ai_pipeline.providers.local_tts import available as tts_available
 from app.ai_pipeline.providers.local_tts import create_stage
 from app.ai_pipeline.registry import CompositeAIProvider
@@ -175,7 +176,12 @@ async def verify(
                     )
                     if not result.original_text or not result.translated_text:
                         raise RuntimeError("連結処理で認識・翻訳のいずれかが欠落")
-                    if tts_available() and not result.audio_data:
+                    # vi など local TTS 非対応言語は字幕のみが正常。
+                    if (
+                        tts_available()
+                        and target in TTS_LANGUAGES
+                        and not result.audio_data
+                    ):
                         raise RuntimeError("結線済み local TTS が音声を返しません")
                     if result.audio_data:
                         prefix = (

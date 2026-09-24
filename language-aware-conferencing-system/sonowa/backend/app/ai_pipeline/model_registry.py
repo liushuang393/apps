@@ -400,6 +400,24 @@ def _build_default_catalog() -> ModelCatalog:
             provider_name="openai",
         )
     )
+    from app.ai_pipeline.providers import local_tts
+
+    catalog.register(
+        _card(
+            "tts-qwen3-0.6b",
+            STAGE_TTS,
+            local_tts.MODEL_ID,
+            RUNTIME_TORCH,
+            quantization=None,
+            # vi は商用可のローカル TTS が無く非対応（字幕のみ）。
+            languages=[lang for lang in langs if lang in local_tts.LANGUAGES],
+            license="apache-2.0",
+            hardware_profile="gpu-12gb",
+            metrics={},
+            status=STATUS_STAGING,
+            provider_name="local",
+        )
+    )
     return catalog
 
 

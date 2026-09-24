@@ -204,13 +204,13 @@
     "description": "Hiển thị giá trị .env làm mặc định. Lưu tại đây có hiệu lực không cần triển khai lại (không đổi secret).",
     "revision": "Phiên bản cấu hình: {{revision}}",
     "presetsTitle": "Preset cách",
-    "presetsHint": "Chọn Phương thức 1 (Realtime S2S), Phương thức 2 (ASR→MT→TTS + gói chất lượng thuật ngữ) hoặc Phương thức 3 (hoàn toàn cục bộ, chỉ phụ đề).",
+    "presetsHint": "Chọn Phương thức 1 (Realtime S2S), Phương thức 2 (ASR→MT→TTS + gói chất lượng thuật ngữ) hoặc Phương thức 3 (hoàn toàn cục bộ).",
     "customPreset": "Khe/cờ chất lượng hiện tại khác preset có tên (tùy chỉnh).",
     "s2sSlotIgnored": "Khi chọn Cách 1 (Realtime S2S), khe ASR/MT/TTS bị bỏ qua và giữ đường speech-to-speech.",
     "qualityPackHint": "Cách 2 bật thuật ngữ, song song nhóm ngôn ngữ, cache/TM phụ đề, partial subtitle và hiệu chỉnh LLM.",
-    "localHint": "Phương thức 3 dùng Gemma 4 E2B để nhận dạng và dịch trên GPU cục bộ, chỉ xuất phụ đề (chưa có giọng dịch cho đến khi tích hợp mô hình được phép dùng thương mại; không hỗ trợ thuật ngữ và hiệu chỉnh LLM).",
+    "localHint": "Phương thức 3 nhận dạng và dịch bằng Gemma 4 E2B, tổng hợp giọng dịch bằng Qwen3-TTS, tất cả trên GPU cục bộ và không kết nối ngoài. Đích tiếng Việt chỉ có phụ đề. Không hỗ trợ thuật ngữ và hiệu chỉnh LLM.",
     "glossaryLink": "Quản lý thuật ngữ",
-    "advancedLocalHint": "Nâng cao: asr/mt=local dùng cùng Gemma cục bộ như Phương thức 3. tts=local chỉ là khe thay thế (chưa gắn mô hình; chỉ phụ đề).",
+    "advancedLocalHint": "Nâng cao: asr/mt=local dùng cùng Gemma cục bộ như Phương thức 3; tts=local dùng Qwen3-TTS (ja/en/zh; tiếng Việt chỉ phụ đề).",
     "showAdvanced": "Hiện cài đặt nâng cao",
     "hideAdvanced": "Ẩn cài đặt nâng cao",
     "preset": {
@@ -223,8 +223,8 @@
         "desc": "ASR→MT→TTS với LLM cloud tốt nhất, thuật ngữ, song song, tối ưu phụ đề."
       },
       "local_gemma": {
-        "label": "Phương thức 3: Hoàn toàn cục bộ (chỉ phụ đề)",
-        "desc": "ASR/MT bằng Gemma 4 E2B. Không kết nối ngoài, không có giọng dịch."
+        "label": "Phương thức 3: Hoàn toàn cục bộ",
+        "desc": "ASR/MT bằng Gemma 4 E2B, giọng nói bằng Qwen3-TTS. Không kết nối ngoài (vi chỉ phụ đề)."
       }
     },
     "aiProvider": "Nhà cung cấp AI (preset)",

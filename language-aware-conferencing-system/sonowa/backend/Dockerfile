@@ -24,7 +24,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip==26.2.1
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [ "$INSTALL_LOCAL" = "1" ]; then \
-      pip install ".[local]"; \
+      pip install ".[local]" \
+      && pip install --no-deps "faster-qwen3-tts==0.4.0" "qwen-tts-hf==0.1.1.post1"; \
     else \
       pip install .; \
     fi

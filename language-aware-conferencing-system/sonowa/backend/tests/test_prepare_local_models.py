@@ -22,8 +22,8 @@ def _script() -> ModuleType:
 def test_preparation_downloads_runtime_models_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Gemma を実行時と同じ revision で取得し、他モデルを追加しない。"""
-    from app.ai_pipeline.providers import local_multimodal
+    """Gemma と Qwen3-TTS を実行時と同じ revision で取得し、他モデルを追加しない。"""
+    from app.ai_pipeline.providers import local_multimodal, local_tts
 
     script = _script()
     hub = ModuleType("huggingface_hub")
@@ -34,7 +34,10 @@ def test_preparation_downloads_runtime_models_only(
     calls = [
         (c.args[0], c.kwargs["revision"]) for c in hub.snapshot_download.call_args_list
     ]
-    assert calls == [(local_multimodal.MODEL_ID, local_multimodal.MODEL_REVISION)]
+    assert calls == [
+        (local_multimodal.MODEL_ID, local_multimodal.MODEL_REVISION),
+        (local_tts.MODEL_ID, local_tts.MODEL_REVISION),
+    ]
 
 
 def test_download_failure_returns_nonzero(

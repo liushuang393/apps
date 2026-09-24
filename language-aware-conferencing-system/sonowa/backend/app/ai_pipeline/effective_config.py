@@ -279,9 +279,13 @@ def collect_availability_warnings(values: PipelineSettingsValues) -> list[str]:
 
             if not local_tts.available():
                 warnings.append(
-                    "local TTS は差し替え口のみでモデル未結線です。"
-                    "翻訳音声は出力せず字幕のみとなります（tts=none を推奨）。"
+                    f"local TTS（{local_tts.MODEL_LABEL}）のランタイムが未導入です。"
+                    "翻訳音声は出力せず字幕のみとなります。"
                 )
+            warnings.append(
+                "local TTS はベトナム語非対応です（商用可のローカルモデルが無いため）。"
+                "vi 向けは字幕のみとなります。"
+            )
         except Exception:  # noqa: BLE001
             warnings.append("local TTS の可用性判定に失敗しました。")
     if values.asr_provider == "local" or values.mt_provider == "local":

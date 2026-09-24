@@ -50,7 +50,7 @@
 | 運用 | A/B テスト | プロバイダー・設定の実験メトリクスを収集し比較 |
 | 学習 | 学習データ収集 | ASR / 翻訳の修正履歴、話者登録、TTS 同意、評価サンプルを蓄積 |
 | 基盤 | WebRTC（LiveKit） | 音声・字幕・制御を LiveKit に一本化 |
-| 基盤 | ローカル GPU 実行（方式3） | ASR / MT を Gemma 4 E2B で自ホスト（12GB GPU・字幕のみ。TTS は差し替え口のみ） |
+| 基盤 | ローカル GPU 実行（方式3） | ASR / MT を Gemma 4 E2B、TTS を Qwen3-TTS で自ホスト（12GB GPU。vi 向けは字幕のみ） |
 
 **AIプロバイダー**（`AI_PROVIDER` で選択。モデル名は `backend/app/config.py` の既定値）:
 
@@ -78,7 +78,7 @@
 | **受聴設定** | `original` / `translated` | 参加者 PreferencePanel | 原音を聴くか翻訳音声を聴くか |
 
 共通の入口〜出口は同一。差分は Provider Registry 配下の実装だけに閉じる。
-方式3（完全ローカル）は、ASR/MT のスロットを `local`（Gemma 4 E2B）にした構成である。外部通信なしで字幕のみを出力する。
+方式3（完全ローカル）は、ASR/MT/TTS のスロットを `local`（Gemma 4 E2B + Qwen3-TTS）にした構成である。外部通信なしで字幕と翻訳音声を出力する（vi 向けは字幕のみ）。
 
 ```mermaid
 flowchart LR
@@ -87,7 +87,7 @@ flowchart LR
   ingress --> orch[HybridOrchestrator]
   orch --> m1[方式1 S2S]
   orch --> m2[方式2 ASR_MT_TTS]
-  orch --> m3[方式3 local Gemma 字幕のみ]
+  orch --> m3[方式3 local Gemma + Qwen3-TTS]
   m2 --> gloss[用語集 hint]
   m2 --> parallel[言語グループ並列]
   m2 --> subopt[字幕キャッシュ_TM_補正_partial]
@@ -102,12 +102,12 @@ flowchart LR
 
 | 観点 | 方式1: 純リアルタイム音声 API | 方式2: 品質カスケード（用語集） | 方式3: 完全ローカル |
 |---|---|---|---|
-| 管理者プリセット | `realtime_s2s` → `ai_provider=gpt_realtime`、`default_mode=a` | `quality_cascade` → `gpt4o_transcribe` + スロット `auto` + `default_mode=hybrid` + 品質パック ON | `local_gemma` → `asr/mt=local`、`tts=none`、`default_mode=b`、補正 OFF |
-| 処理形 | Speech→Speech（一体） | ASR → MT → TTS（分離） | ASR → MT（同じ Gemma）→ 字幕 |
-| ASR/MT/TTS スロット | **無視**（S2S 維持） | クラウド各社を選択可 | ASR/MT=`local`、TTS=差し替え口（未結線） |
+| 管理者プリセット | `realtime_s2s` → `ai_provider=gpt_realtime`、`default_mode=a` | `quality_cascade` → `gpt4o_transcribe` + スロット `auto` + `default_mode=hybrid` + 品質パック ON | `local_gemma` → `asr/mt/tts=local`、`default_mode=hybrid`、補正 OFF |
+| 処理形 | Speech→Speech（一体） | ASR → MT → TTS（分離） | ASR → MT（同じ Gemma）→ TTS（Qwen3-TTS） |
+| ASR/MT/TTS スロット | **無視**（S2S 維持） | クラウド各社を選択可 | ASR/MT/TTS=`local`（TTS は差し替え口の契約で結線） |
 | 用語集 | 非対象（S2S のまま） | **必須**（読む主線・Composite OpenAI MT） | 非対応（警告表示） |
 | 並列・字幕最適化 | 弱め | 言語グループ並列 + キャッシュ/TM + partial + LLM 補正 | 同一翻訳の共有のみ |
-| 典型出力 | 翻訳音声 + transcript delta | 字幕中心、TTS 任意 | **字幕のみ**（翻訳音声なし） |
+| 典型出力 | 翻訳音声 + transcript delta | 字幕中心、TTS 任意 | 字幕 + 翻訳音声（ja/en/zh。vi 向けは字幕のみ） |
 | 遅延 | 最も低い想定 | 中（REST/セグメント単位） | 1区間の処理 約5〜7秒（RTX 3060・FLEURS 実測） |
 | 秘密・コスト | クラウド API キー必須 | クラウド API キー必須（補正は `GEMINI_API_KEY`） | キー不要・12GB GPU 必須 |
 | 適合 | 低遅延の同通・軽会議 | **既定・正式記録・業界用語** | 社外通信不可の会議・機密会議 |
@@ -161,14 +161,16 @@ Mic → LiveKit → Segment → 上流 ASR（1回）
 
 会議中の **a / b / hybrid**（聞く・読む・両方）は部屋作成者またはモデレーターが会議室サイドバーから切替可能（参加者の原音/翻訳受聴とは別概念）。
 
-#### 方式3: 完全ローカル（Gemma 4 E2B・字幕のみ）
+#### 方式3: 完全ローカル（Gemma 4 E2B + Qwen3-TTS）
 
-管理画面 `/admin/ai-pipeline` のプリセット「方式3」を選ぶ（`asr/mt=local`、`tts=none`、`default_mode=b`、LLM 補正 OFF）。認識・翻訳ともローカル GPU で行い、外部へ音声・テキストを送らない。local のロード・推論に失敗してもクラウドへ自動切替しない（ASR/MT 失敗は翻訳不可）。用語集はクラウド MT 経路向けで、方式3 では非対応（警告表示）。
+管理画面 `/admin/ai-pipeline` のプリセット「方式3」を選ぶ（`asr/mt/tts=local`、`default_mode=hybrid`、LLM 補正 OFF）。認識・翻訳・音声合成をすべてローカル GPU で行い、外部へ音声・テキストを送らない。local のロード・推論に失敗してもクラウドへ自動切替しない（ASR/MT 失敗は翻訳不可、TTS 失敗は字幕継続）。用語集はクラウド MT 経路向けで、方式3 では非対応（警告表示）。
 
 | ステージ | モデル | ライセンス | 概算 VRAM |
 |---|---|---|---|
 | ASR + MT | `google/gemma-4-E2B-it` テキスト側 NF4、音声側 BF16（同じモデルを共有） | Apache-2.0 | ~7.3GB |
-| TTS | **差し替え口のみ（モデル未結線）** → 翻訳音声は出さず字幕のみ | — | — |
+| TTS | `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice`（ja: Ono_Anna / en: Ryan / zh: Vivian）。実行は `faster-qwen3-tts`（MIT、CUDA グラフ） | Apache-2.0 | ~2.4GB |
+
+2モデルは同時常駐する（実測 Torch ピーク約9.7GB、`VRAM_BUDGET_MB=10000`）。**vi 向けの翻訳音声は出さない**（商用可でベトナム語を合成できるローカル TTS が無いため。vi の話者の発話を他言語へ訳した音声は出る）。
 
 ```mermaid
 flowchart LR
@@ -176,26 +178,30 @@ flowchart LR
   asr --> text[原文・言語検出]
   text --> mt[local MT 同じ Gemma を再利用]
   mt --> sub[翻訳字幕]
+  mt --> tts[local TTS Qwen3-TTS]
+  tts -->|ja/en/zh| ta[翻訳音声]
+  tts -->|vi・失敗| none[音声なし・字幕継続]
   sub --> om[OutputManager]
-  mt -.->|将来: 適合モデル結線時のみ| tts[local TTS 差し替え口]
+  ta --> om
 ```
 
-**local TTS の差し替え口**: `backend/app/ai_pipeline/providers/local_tts.py` は `synthesize(text, language) -> WAV | None` 契約、VRAM Broker 調停、生成の直列化、空・無音波形の拒否を保持したまま、モデルを結線していない（`available()` は False）。次の条件をすべて満たすモデルが出たら、`MODEL_ID` / `MODEL_REVISION` / `MODEL_SIZE_MB` / `_load_model()` と `scripts/prepare_local_models.py` の取得対象を差し替え、方式3 の `tts` を `local` にする。
+**local TTS の差し替え口**: `backend/app/ai_pipeline/providers/local_tts.py` は `synthesize(text, language) -> WAV | None` 契約、VRAM Broker 調停、生成の直列化、空・無音波形の拒否を持ち、モデルは `MODEL_ID` / `MODEL_REVISION` / `MODEL_SIZE_MB` / `VOICES` / `_load_model()` と `scripts/prepare_local_models.py` の取得対象だけで差し替えられる。ベトナム語に対応した商用可のモデルが出たら、ここへ結線する。採用条件は、商用利用可・Gemma（約7.3GB）と 12GB GPU に同時常駐・実時間より速い合成の3つ。
 
-1. 商用利用可のライセンス
-2. ja/en/zh/vi の4言語を1モデルで合成できる
-3. Gemma（約7.3GB）と 12GB GPU に同時常駐できる
+**依存の固定**: `qwen-tts-hf` の互換層が transformers 5.15 系前提のため、`transformers==5.15.1` / `tokenizers==0.22.2` に固定する（5.17 は `rope_theta` で失敗。Gemma の認識結果は 5.15.1 でも同一を確認）。`faster-qwen3-tts` / `qwen-tts-hf` は gradio 等の不要依存を避けるため Dockerfile で `--no-deps` 導入する。
 
-2026-09-24 時点の評価（いずれも不採用）:
+2026-09-24 時点の TTS 評価:
 
 | モデル | ライセンス | 不採用理由 |
 |---|---|---|
 | `openbmb/VoxCPM2`（2B） | Apache-2.0 | Gemma と同時常駐で約12.1GB。交互ロードでは1発話あたり約50秒 |
 | `k2-fsa/OmniVoice`（0.6B） | CC-BY-NC | 非商用ライセンス |
-| `Qwen/Qwen3-TTS-12Hz-0.6B-Base` / `FunAudioLLM/Fun-CosyVoice3-0.5B` | Apache-2.0 | ベトナム語非対応 |
+| `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | Apache-2.0 | **採用**（ja/en/zh）。公式 `qwen-tts` は実時間の3〜4倍かかるため `faster-qwen3-tts` で実時間の約0.25〜0.5倍 |
+| `FunAudioLLM/Fun-CosyVoice3-0.5B` | Apache-2.0 | ベトナム語非対応 |
+| Piper `vi_VN` 音声（vais1000 / 25hours / vivos） | MIT（コード） | 学習元データが商用不可（Blizzard 2013 lessac）・不明・CC-BY-NC-SA |
+| `pnnbao-ump/VieNeu-TTS` / `facebook/mms-tts-vie` | Apache-2.0 / CC-BY-NC | 学習データが CC-BY-NC / 非商用ライセンス |
 | `ResembleAI/chatterbox` | MIT | ベトナム語非対応 |
 
-**方式3 のライセンス（すべて商用利用可）**: Gemma 4 E2B（Apache-2.0）、Silero VAD（MIT）、PyTorch / torchaudio / soundfile（BSD）、Transformers / Accelerate / SentencePiece / Resemblyzer / LiveKit（Apache-2.0）、bitsandbytes / webrtcvad（MIT）。検証用音声の FLEURS（CC-BY-4.0）は製品に同梱しない。イメージ内の OS パッケージ `ffmpeg`（Debian 版は GPL/LGPL）は別プロセスで呼び出しているだけだが、イメージを第三者へ配布する場合はソースの提供義務を確認すること。
+**方式3 のライセンス（すべて商用利用可）**: Gemma 4 E2B（Apache-2.0）、Qwen3-TTS 0.6B CustomVoice / qwen-tts-hf（Apache-2.0）、faster-qwen3-tts（MIT）、librosa（ISC）、einops / onnxruntime（MIT）、Silero VAD（MIT）、PyTorch / torchaudio / soundfile（BSD）、Transformers / Accelerate / SentencePiece / Resemblyzer / LiveKit（Apache-2.0）、bitsandbytes / webrtcvad（MIT）。検証用音声の FLEURS（CC-BY-4.0）は製品に同梱しない。イメージ内の OS パッケージ `ffmpeg`（Debian 版は GPL/LGPL）は別プロセスで呼び出しているだけだが、イメージを第三者へ配布する場合はソースの提供義務を確認すること。
 
 #### 方式3 の準備（RTX 3060 12GB で検証）
 
@@ -203,12 +209,14 @@ flowchart LR
 # INSTALL_LOCAL=1 を .env に設定すると入口スクリプトが GPU オーバーライドを自動で付ける
 ./start-with-keys.sh --build
 
-# Gemma 4 E2B を取得（永続ボリューム /models・初回のみ）
+# Gemma 4 E2B と Qwen3-TTS を取得（永続ボリューム /models・初回のみ）
 docker compose exec backend python /app/scripts/prepare_local_models.py --output-dir /models
 docker compose restart backend
 ```
 
-GPU オーバーライド（`docker-compose.gpu.yml`）は `VAD_BACKEND=silero` を既定にする。エネルギー VAD では、背景雑音のある録音で 8 秒の強制切断と断片の誤認識（入力にない文の生成）が起き、小音量の録音では発話が丸ごと欠落した（FLEURS 実測）。`.env` かシェルで `VAD_BACKEND` を指定すれば上書きできる。
+**翻訳音声の品質ゲート**: 方式1 / 2 の聞く主線は P95 5秒を超えると字幕のみへ縮退する。方式3（`tts=local`）はローカル GPU の ASR→MT→TTS が常に5秒を超え、同じ目標では翻訳音声が一度も流れないため、聞く主線だけ目標を **15秒**（`LOCAL_HEARING_P95_TARGET_MS`、逐次通訳相当）に緩めている。15秒を超えれば方式3 でも字幕のみへ縮退する。
+
+GPU オーバーライド（`docker-compose.gpu.yml`）は `VAD_BACKEND=silero` を既定にする。Silero のモデルは pip パッケージ `silero-vad` 同梱の重みを読む（`torch.hub` による GitHub からの取得・実行はしない。通信遮断環境でも動く）。エネルギー VAD では、背景雑音のある録音で 8 秒の強制切断と断片の誤認識（入力にない文の生成）が起き、小音量の録音では発話が丸ごと欠落した（FLEURS 実測）。`.env` かシェルで `VAD_BACKEND` を指定すれば上書きできる。
 
 管理設定で ASR/MT が `local` の場合、起動時に Gemma をロードして初回推論を準備する。モデル欠損時はログに失敗を残し、クラウドへ切り替えない。音声入力は30秒以下。音声エンコーダーの量子化は認識品質を壊すため禁止する。オフライン再処理（`POST /api/admin/sessions/{id}/rerun`）も同じ Gemma を使い、別モデルを追加しない。
 
@@ -489,6 +497,29 @@ docker compose down
 > ブラウザが直接叩くのは 5273 のみ（API は Vite が `/api` を backend へプロキシするため、CORS・LAN 公開時のポート問題を回避できる）。
 
 ---
+
+## 本番デプロイ（社内 LAN・HTTPS）
+
+`.env` で `ENV=production` にすると、入口スクリプトが本番構成（`docker-compose.prod.yml`）を重ねる。ブラウザがマイクを使うには HTTPS が必須で、HTTPS ページからは `ws://` の LiveKit に接続できないため、nginx が TLS を終端して `/`・`/api`・LiveKit シグナリング `/rtc` を 443 番で中継する。
+
+| 項目 | 本番構成 |
+|---|---|
+| 入口 | `https://<HOST_IP>`（HTTP 80 は HTTPS へ転送） |
+| フロント | 本番ビルド（Vite 開発サーバーは使わない） |
+| 非公開 | backend 8090・PostgreSQL・Redis・LiveKit シグナリング 7880 は `127.0.0.1` のみ |
+| LAN 公開のまま | LiveKit メディア UDP 50000-50019 / TCP 7881、TURN 3478（WebRTC に必要） |
+| 証明書 | `scripts/generate-tls-cert.sh` が社内ローカル CA（`certs/ca.crt`）と、それが署名したサーバー証明書（SAN に HOST_IP）を作る |
+| 起動時検査 | 既知の開発用・32文字未満の `JWT_SECRET` / `LIVEKIT_API_SECRET` なら backend が起動を拒否する |
+
+`.env` に必要な本番値（値はランダムに生成し、ファイルを共有しない）:
+
+- `ENV=production`
+- `JWT_SECRET`（32文字以上）、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`（32文字以上）
+- `DB_PASSWORD`（既存 DB では先に `ALTER USER sonowa PASSWORD '...'` を実行してから変える）と、ホスト側ツール用の `DATABASE_URL=postgresql://sonowa:<同じ値>@localhost:5433/sonowa`
+- 方式1 を使う場合は `OPENAI_REALTIME_MODEL` に OpenAI のモデル名（例 `gpt-realtime-2025-08-28`）
+- 方式2 の LLM 補正を使う場合は有効な `GEMINI_API_KEY`
+
+参加端末の初回設定: `certs/ca.crt` を各端末の「信頼されたルート証明機関」に一度だけ登録する（Windows: ダブルクリック →「証明書のインストール」→ ローカルコンピューター →「信頼されたルート証明機関」）。HOST_IP が変わってもサーバー証明書だけが作り直されるため、再登録は不要。Windows Firewall は TCP 443 / 7881、UDP 50000-50039 / 3478 を開ける。
 
 ## 複数マシンでの LAN 連動テスト
 

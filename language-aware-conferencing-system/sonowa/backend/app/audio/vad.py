@@ -29,9 +29,6 @@ _DEFAULT_WINDOW_SAMPLES = 512
 SILERO_FRAME_MS = 32
 # int16 PCM を float32 [-1,1] へ正規化する係数（フルスケール 32768）。
 _INT16_FULL_SCALE = 32768.0
-# torch.hub から取得する Silero VAD のリポジトリ・モデル名。
-_SILERO_REPO = "snakers4/silero-vad"
-_SILERO_MODEL = "silero_vad"
 
 
 class SileroVAD:
@@ -69,8 +66,11 @@ class SileroVAD:
             return
         try:
             import torch  # 遅延 import：未導入環境でも本モジュールは import 可能。
+            from silero_vad import load_silero_vad
 
-            model, _ = torch.hub.load(repo_or_dir=_SILERO_REPO, model=_SILERO_MODEL)
+            # pip パッケージ同梱の重みを読む。torch.hub は起動のたびに GitHub から
+            # コードを取得・実行し、通信遮断環境では失敗して発話を全て取りこぼすため使わない。
+            model = load_silero_vad()
             self._torch = torch
             self._model = model
         except Exception:  # noqa: BLE001 - 取得失敗の原因を問わず安全側に倒す。

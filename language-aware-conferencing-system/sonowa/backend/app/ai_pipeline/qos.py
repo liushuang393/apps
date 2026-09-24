@@ -19,6 +19,9 @@ from decimal import Decimal, InvalidOperation
 # 主線1（音声翻訳/聞く）と主線2（翻訳字幕/読む）で P95 遅延の上限が異なる。
 HEARING_P95_TARGET_MS = 5000.0  # 主線1: 音声翻訳 P95 ≤ 5 秒
 READING_P95_TARGET_MS = 4000.0  # 主線2: 翻訳字幕 P95 ≤ 4 秒
+# 方式3（local TTS）の聞く主線。ローカル GPU の ASR→MT→TTS は 5 秒を常に超え、
+# 同じ目標では翻訳音声が一度も流れないため、逐次通訳相当の目標へ緩める（2026-09-24 判断）。
+LOCAL_HEARING_P95_TARGET_MS = 15000.0
 GLOSSARY_HIT_RATE_TARGET = 0.95  # 用語命中率 ≥ 95%
 NUMBER_RETENTION_TARGET = 0.98  # 数字・日付・金額の保持率 ≥ 98%（改善.md §15）
 _QOS_WINDOW = 200  # P95 算出に用いる直近サンプル数（主線ごと）
@@ -181,6 +184,8 @@ class HybridQoSMonitor:
         self._targets_ms = dict(
             _MAINLINE_TARGETS_MS if targets_ms is None else targets_ms
         )
+        # 既定目標のときだけ、方式3（local TTS）の聞く主線目標へ切り替える。
+        self._method_aware = targets_ms is None
         self._glossary_target = glossary_target
         self._number_target = number_target
         self._pct = percentile_pct
@@ -240,6 +245,18 @@ class HybridQoSMonitor:
         self._number_kept += kept
         self._number_total += len(src)
 
+    def _target(self, mainline: str) -> float | None:
+        """主線の P95 目標（ms）。方式3 の聞く主線は緩和目標を返す。"""
+        target = self._targets_ms.get(mainline)
+        if target is None or mainline != "hearing" or not self._method_aware:
+            return target
+        # 循環 import を避けるため遅延 import（設定は実行時に切り替わりうる）。
+        from app.ai_pipeline.effective_config import get_cached_pipeline_settings
+
+        if get_cached_pipeline_settings().tts_provider == "local":
+            return LOCAL_HEARING_P95_TARGET_MS
+        return target
+
     def p95(self, mainline: str) -> float | None:
         """指定主線の P95 遅延（ms）。有効期間内のサンプルが無ければ None。"""
         return percentile(self._fresh_samples(mainline), self._pct)
@@ -262,7 +279,7 @@ class HybridQoSMonitor:
 
     def evaluate_latency(self, mainline: str) -> dict | None:
         """P95 が §9 目標を超過していれば qos_warning を返す（正常時 None）。"""
-        target = self._targets_ms.get(mainline)
+        target = self._target(mainline)
         value = self.p95(mainline)
         if target is None or value is None or value <= target:
             return None
@@ -287,7 +304,7 @@ class HybridQoSMonitor:
             hearing 停止の最終判断は行わない（QoE authority が決定する）。
             測定窓の破棄による独自復帰もしない。
         """
-        target = self._targets_ms.get("hearing")
+        target = self._target("hearing")
         value = self.p95("hearing")
         if target is None or value is None:
             return None

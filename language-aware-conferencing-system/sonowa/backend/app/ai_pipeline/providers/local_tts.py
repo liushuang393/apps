@@ -1,22 +1,24 @@
 """
-ローカル TTS ステージの差し替え口（現在モデル未結線・字幕のみ運用）
+ローカル TTS ステージ（方式3・Qwen3-TTS 0.6B CustomVoice・ja/en/zh）
 
 目的:
     方式3（ローカル）の翻訳音声スロット。OpenAITTSStage と同じ
-    `synthesize(text, language) -> bytes | None` 契約と VRAM Broker 調停を保持し、
-    適合モデルが出たら `_load_model` と定数だけを差し替えて結線する。
-採用条件（2026-09-24 時点で該当なし）:
-    - 商用利用可のライセンス
-    - ja/en/zh/vi の 4 言語を 1 モデルで合成
-    - Gemma 4 E2B（約7.3GB）と 12GB GPU に同時常駐（VoxCPM2 は約12.1GB で不可）
+    `synthesize(text, language) -> bytes | None` 契約と VRAM Broker 調停を持ち、
+    モデルは `_load_model` と定数だけで差し替えられる（差し替え口）。
+採用モデル: Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice（Apache-2.0）を faster-qwen3-tts（MIT、
+    CUDA グラフ）で実行。RTX 3060 で実時間の約0.25〜0.5倍、Gemma と同時常駐で約9.6GB。
+    vi は商用可のローカル TTS が無いため対象外（None を返し字幕のみ）。
 入力 / 出力:
-    text・language → int16 WAV(RIFF) バイト列 or None（未結線・失敗・未対応言語）。
+    text・language → 24kHz mono int16 WAV(RIFF) バイト列 or None（未導入・失敗・未対応言語）。
 注意点:
-    - 未結線の間は available() が False。registry はクラウドへ切り替えず字幕のみとなる。
+    - faster_qwen3_tts / torch は遅延 import（未導入環境でもモジュール import 可）。
+    - 固定 revision のキャッシュのみを読む。クラウドへは切り替えない。
     - 生成は1モデルを直列化し、空・無音・非有限の波形は成功扱いにしない。
+    - 初回生成は CUDA グラフの記録で約9秒かかるため、起動時のウォームアップで済ませる。
 """
 
 import gc
+import importlib.util
 import logging
 import sys
 import threading
@@ -30,17 +32,25 @@ from app.ai_pipeline.vram_broker import (
 )
 from app.ai_pipeline.vram_broker import broker as default_broker
 from app.audio.pcm import wrap_wav16
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# 結線するモデル（未結線時は None）。revision は取得スクリプトと一致させる。
-MODEL_ID: str | None = None
-MODEL_REVISION: str | None = None
-MODEL_LABEL = "未結線"
-MODEL_SIZE_MB = 0
+# 結線するモデル。revision は scripts/prepare_local_models.py と一致させる。
+MODEL_ID: str | None = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+MODEL_REVISION: str | None = "85e237c12c027371202489a0ec509ded67b5e4b5"
+MODEL_LABEL = "Qwen3-TTS 0.6B"
+# 音声コーデック・CUDA グラフ込みの実測（Gemma 常駐時の増分 約2.4GB）+ 余裕。
+MODEL_SIZE_MB = 2500
 ENGINE_CACHE_KEY = "tts:local"
 SAMPLE_RATE = 24000
-LANGUAGES = frozenset({"ja", "en", "zh", "vi"})
+# 言語コード → (モデルの言語名, 母語話者のプリセット音声)。vi は非対応（字幕のみ）。
+VOICES = {
+    "ja": ("Japanese", "Ono_Anna"),
+    "en": ("English", "Ryan"),
+    "zh": ("Chinese", "Vivian"),
+}
+LANGUAGES = frozenset(VOICES)
 
 _INT16_MAX = 32767
 _INT16_MIN = -32768
@@ -52,13 +62,41 @@ def create_stage(broker: object | None = None) -> "LocalTTSStage":
 
 
 def available() -> bool:
-    """モデルが結線済みかを返す（未結線の間は常に False）。"""
-    return MODEL_ID is not None
+    """モデルが結線済みで、実行ランタイムが導入済みかを返す。"""
+    return (
+        MODEL_ID is not None
+        and importlib.util.find_spec("faster_qwen3_tts") is not None
+    )
+
+
+class _QwenVoice:
+    """faster-qwen3-tts を `synthesize(text, language) -> 波形` 契約へ合わせる。"""
+
+    def __init__(self, model: object) -> None:
+        self._model = model
+
+    def synthesize(self, text: str, language: str) -> np.ndarray:
+        """言語ごとの母語話者で合成し、1次元 float 波形を返す。"""
+        name, speaker = VOICES[language]
+        wavs, rate = self._model.generate_custom_voice(
+            text=text, speaker=speaker, language=name
+        )
+        if rate != SAMPLE_RATE:
+            raise ValueError(f"想定外のサンプルレート: {rate}")
+        return np.asarray(wavs[0]).reshape(-1)
 
 
 def _load_model() -> object:
-    """`synthesize(text, language) -> 波形` を持つモデルを返す。結線時に実装する。"""
-    raise RuntimeError("ローカル TTS モデルは未結線です（字幕のみ）")
+    """固定 revision のキャッシュから Qwen3-TTS を読み込む（ネットワークに出ない）。"""
+    from faster_qwen3_tts import FasterQwen3TTS
+    from huggingface_hub import snapshot_download
+
+    path = snapshot_download(MODEL_ID, revision=MODEL_REVISION, local_files_only=True)
+    return _QwenVoice(
+        FasterQwen3TTS.from_pretrained(
+            path, device=settings.local_tts_device, local_files_only=True
+        )
+    )
 
 
 def _to_wav_bytes(waveform: object, sample_rate: int) -> bytes:

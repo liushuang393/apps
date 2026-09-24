@@ -4,7 +4,7 @@
 目的:
     Docker / ホスト上で 4言語ローカルパイプライン用モデルを永続キャッシュへ準備する。
     - ASR/MT: google/gemma-4-E2B-it（Apache-2.0）
-    - TTS: 差し替え口のみ（商用可・4言語対応の適合モデル結線時にここへ追加）
+    - TTS: Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice（Apache-2.0、ja/en/zh）
 
 使い方:
     python scripts/prepare_local_models.py --output-dir /models
@@ -28,8 +28,14 @@ import os
 from pathlib import Path
 
 DEFAULT_DIR = os.environ.get("SONOWA_MODEL_DIR", "/models")
-# 実行時ステージ（local_multimodal）と同じ固定 revision。
-MODELS = (("google/gemma-4-E2B-it", "3e22461f65e89153144f8adb70e3b8c2cc9845a7"),)
+# 実行時ステージ（local_multimodal / local_tts）と同じ固定 revision。
+MODELS = (
+    ("google/gemma-4-E2B-it", "3e22461f65e89153144f8adb70e3b8c2cc9845a7"),
+    (
+        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        "85e237c12c027371202489a0ec509ded67b5e4b5",
+    ),
+)
 logger = logging.getLogger(__name__)
 
 

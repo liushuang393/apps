@@ -10,6 +10,7 @@ app.audio.vad の単体テスト（torch / silero 未導入環境で緑になる
 """
 
 import numpy as np
+import pytest
 
 from app.audio import vad
 from app.webrtc.segmenter import energy_is_speech
@@ -122,3 +123,26 @@ def test_silero_vad_inference_error_returns_false() -> None:
 
     detector = vad.SileroVAD(model=_BrokenModel())
     assert detector.is_speech(_loud_frame()) is False
+
+
+def test_silero_loads_bundled_model_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同梱モデル（silero-vad パッケージ）を読み、torch.hub で外部取得しない。"""
+    import sys
+    from types import ModuleType
+    from unittest.mock import Mock
+
+    torch_module = ModuleType("torch")
+    torch_module.hub = Mock(load=Mock(side_effect=AssertionError("torch.hub 禁止")))
+    package = ModuleType("silero_vad")
+    package.load_silero_vad = Mock(return_value=object())
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
+    monkeypatch.setitem(sys.modules, "silero_vad", package)
+
+    detector = vad.SileroVAD()
+    detector._load_model()
+
+    package.load_silero_vad.assert_called_once_with()
+    assert detector._model is package.load_silero_vad.return_value
+    assert detector._load_failed is False
