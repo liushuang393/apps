@@ -204,12 +204,13 @@
     "description": "以 .env 值为默认显示。在此保存后无需重新部署即可生效（密钥不可在此修改）。",
     "revision": "配置修订号: {{revision}}",
     "presetsTitle": "方式预设",
-    "presetsHint": "选择方式1（Realtime S2S）或方式2（ASR→MT→TTS＋术语库质量包）。本地 GPU 仅在高级插槽指定。",
+    "presetsHint": "选择方式1（Realtime S2S）、方式2（ASR→MT→TTS＋术语库品质包）或方式3（完全本地・仅字幕）。",
     "customPreset": "当前插槽/质量标志与命名预设不同（自定义）。",
     "s2sSlotIgnored": "选择方式1（Realtime S2S）时将忽略 ASR/MT/TTS 插槽，保持语音到语音路径。",
     "qualityPackHint": "方式2启用术语库、语言组并行、字幕缓存/TM、partial 字幕与 LLM 校正。",
+    "localHint": "方式3 使用 Gemma 4 E2B 在本地 GPU 上完成识别与翻译，仅输出字幕（在接入可商用的合适模型之前不提供翻译语音；不支持术语库与 LLM 校正）。",
     "glossaryLink": "管理术语表",
-    "advancedLocalHint": "高级：asr/mt/tts=local 为本地 GPU 实现选项（不是产品方式；术语库建议云端 MT）。",
+    "advancedLocalHint": "高级：asr/mt=local 使用与方式3相同的本地 Gemma。tts=local 仅为替换接口（未接入模型・仅字幕）。",
     "showAdvanced": "显示高级设置",
     "hideAdvanced": "隐藏高级设置",
     "preset": {
@@ -220,6 +221,10 @@
       "quality_cascade": {
         "label": "方式2: 质量级联（术语库）",
         "desc": "ASR→MT→TTS。最佳云端 LLM、术语库、并行、字幕优化。"
+      },
+      "local_gemma": {
+        "label": "方式3：完全本地（仅字幕）",
+        "desc": "以 Gemma 4 E2B 进行 ASR/MT。无外部通信、无翻译语音。"
       }
     },
     "aiProvider": "AI 提供方（预设）",
@@ -248,4 +253,3 @@
     "saveError": "更新会议 AI 主线失败"
   }
 }
-

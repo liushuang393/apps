@@ -54,10 +54,10 @@ dependencies = [
 dev = [
     "ruff==0.8.4",
 ]
-# 本地2モデルスタック（12GB GPU）。既定では導入しない。
+# 本地スタック（方式3・12GB GPU）。既定では導入しない。
 # 有効化する環境でのみ `pip install .[local]` で追加する（未導入時は local 段が無効）。
 #   - transformers/bitsandbytes/accelerate: Gemma 4 E2B（ASR/MT 共有・テキスト側 NF4）
-#   - omnivoice/soundfile: 本地 TTS（OmniVoice・ja/en/zh/vi）
+#   - soundfile: 音声ファイル入出力（local TTS は差し替え口のみ・モデル未結線）
 #   - torch/silero-vad: Silero VAD
 local = [
     "torch==2.9.1",
@@ -72,7 +72,6 @@ local = [
     "torchcodec==0.9.1",
     "bitsandbytes==0.50.2",
     "accelerate==1.15.0",
-    "omnivoice==0.2.1",
 ]
 
 # ===========================================

@@ -22,44 +22,57 @@ async def test_cloud_startup_does_not_load_local_models(
     asr_factory.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_insufficient_joint_budget_does_not_thrash_models(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """2モデルの合計を収容できない予算で、ロードと退避を繰り返さない。"""
-    monkeypatch.setattr(local_warmup, "broker", VRAMBroker(7500))
-    factory = Mock()
-    monkeypatch.setattr(local_warmup, "LocalMultimodalStage", factory)
-    values = replace(
+def _local(tts: str = "none"):
+    """ASR/MT を local にした設定値。"""
+    return replace(
         env_pipeline_defaults(),
         asr_provider="local",
         mt_provider="local",
-        tts_provider="local",
+        tts_provider=tts,
     )
-    assert await local_warmup.prepare_local_pipeline(values) is False
+
+
+@pytest.mark.asyncio
+async def test_insufficient_budget_does_not_thrash_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gemma を収容できない予算で、ロードと退避を繰り返さない。"""
+    monkeypatch.setattr(local_warmup, "broker", VRAMBroker(1000))
+    factory = Mock()
+    monkeypatch.setattr(local_warmup, "LocalMultimodalStage", factory)
+    assert await local_warmup.prepare_local_pipeline(_local()) is False
     factory.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_preparation_loads_two_models_then_primes_inference(
+async def test_subtitle_only_preparation_loads_gemma_without_tts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """HTTP受付前にモデル読込と初回推論を終え、音声を配信しない。"""
+    """TTS 未結線（字幕のみ）でも Gemma を準備し、TTS はロードしない。"""
     monkeypatch.setattr(local_warmup, "broker", VRAMBroker(10000))
     asr = Mock(prepare=AsyncMock(), transcribe_audio=AsyncMock(return_value=""))
-    tts = Mock(prepare=AsyncMock(), synthesize=AsyncMock(return_value=b"warmup-wave"))
     monkeypatch.setattr(local_warmup, "LocalMultimodalStage", Mock(return_value=asr))
-    monkeypatch.setattr(local_warmup, "create_stage", Mock(return_value=tts))
-    values = replace(
-        env_pipeline_defaults(),
-        asr_provider="local",
-        mt_provider="local",
-        tts_provider="local",
-    )
-    assert await local_warmup.prepare_local_pipeline(values) is True
-    asr.prepare.assert_awaited_once()
+    tts_factory = Mock()
+    monkeypatch.setattr(local_warmup.local_tts, "create_stage", tts_factory)
+    for tts in ("none", "local"):
+        assert await local_warmup.prepare_local_pipeline(_local(tts)) is True
+    assert asr.prepare.await_count == 2
+    tts_factory.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_wired_tts_is_prepared_and_primed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """local TTS が結線済みなら両モデルを準備し、初回合成まで温める。"""
+    monkeypatch.setattr(local_warmup, "broker", VRAMBroker(10000))
+    monkeypatch.setattr(local_warmup.local_tts, "available", lambda: True)
+    asr = Mock(prepare=AsyncMock(), transcribe_audio=AsyncMock(return_value=""))
+    tts = Mock(prepare=AsyncMock(), synthesize=AsyncMock(return_value=b"wave"))
+    monkeypatch.setattr(local_warmup, "LocalMultimodalStage", Mock(return_value=asr))
+    monkeypatch.setattr(local_warmup.local_tts, "create_stage", Mock(return_value=tts))
+    assert await local_warmup.prepare_local_pipeline(_local("local")) is True
     tts.prepare.assert_awaited_once()
-    asr.transcribe_audio.assert_awaited_once()
     tts.synthesize.assert_awaited_once()
 
 
@@ -70,14 +83,5 @@ async def test_missing_model_reports_unready_without_cloud_retry(
     """欠損時にサーバーを管理可能に保ち、準備成功と誤認しない。"""
     monkeypatch.setattr(local_warmup, "broker", VRAMBroker(10000))
     asr = Mock(prepare=AsyncMock(side_effect=FileNotFoundError("model")))
-    tts_factory = Mock()
     monkeypatch.setattr(local_warmup, "LocalMultimodalStage", Mock(return_value=asr))
-    monkeypatch.setattr(local_warmup, "create_stage", tts_factory)
-    values = replace(
-        env_pipeline_defaults(),
-        asr_provider="local",
-        mt_provider="local",
-        tts_provider="local",
-    )
-    assert await local_warmup.prepare_local_pipeline(values) is False
-    tts_factory.assert_not_called()
+    assert await local_warmup.prepare_local_pipeline(_local()) is False

@@ -204,12 +204,13 @@
     "description": ".env の値を既定として表示します。ここで保存すると再デプロイなしで有効になります（APIキー等の秘密情報は変更できません）。",
     "revision": "設定リビジョン: {{revision}}",
     "presetsTitle": "方式プリセット",
-    "presetsHint": "方式1（Realtime S2S）か方式2（ASR→MT→TTS＋用語集品質パック）を選びます。ローカル GPU は上級設定のスロット指定のみです。",
+    "presetsHint": "方式1（Realtime S2S）、方式2（ASR→MT→TTS＋用語集品質パック）、方式3（完全ローカル・字幕のみ）から選びます。",
     "customPreset": "詳細スロット／品質フラグがプリセットと異なるカスタム構成です。",
     "s2sSlotIgnored": "方式1（Realtime S2S）選択時は ASR/MT/TTS スロットは無視され、音声対音声経路が維持されます。",
     "qualityPackHint": "方式2は用語集必須・言語グループ並列・字幕キャッシュ/TM・partial 字幕・LLM 補正を品質パックとして有効化します。",
+    "localHint": "方式3は Gemma 4 E2B で認識・翻訳をローカル GPU 上で行い、字幕のみを出力します（翻訳音声は商用可の適合モデル結線まで未提供。用語集・LLM 補正は非対応）。",
     "glossaryLink": "用語集を管理",
-    "advancedLocalHint": "上級: asr/mt/tts=local はローカル GPU 実装オプションです（方式ではありません。用語集はクラウド MT 推奨）。",
+    "advancedLocalHint": "上級: asr/mt=local は方式3と同じローカル Gemma を使います。tts=local は差し替え口のみ（モデル未結線・字幕のみ）です。",
     "showAdvanced": "上級設定を表示",
     "hideAdvanced": "上級設定を隠す",
     "preset": {
@@ -220,6 +221,10 @@
       "quality_cascade": {
         "label": "方式2: 品質カスケード（用語集）",
         "desc": "ASR→MT→TTS。最良クラウド LLM・用語集・並列・字幕最適化。"
+      },
+      "local_gemma": {
+        "label": "方式3: 完全ローカル（字幕のみ）",
+        "desc": "Gemma 4 E2B で ASR/MT。外部通信なし・翻訳音声なし。"
       }
     },
     "aiProvider": "AIプロバイダー（プリセット）",
@@ -248,4 +253,3 @@
     "saveError": "会議AI主線の更新に失敗しました"
   }
 }
-

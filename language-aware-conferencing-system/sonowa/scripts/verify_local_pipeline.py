@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Docker 内で実モデルを検証し、訳文・WAV・計測結果を証拠として保存する。
 
-入力: --stage と --output-dir。ASR/連結検証は TTS 検証が生成した既知文を利用する。
+入力: --stage と --output-dir。ASR/連結検証は output-dir の input-{言語}.wav を使う。
+    output-dir に manifest.json（prepare_local_speech_fixtures.py の FLEURS 自然発話）
+    があれば、その正解テキストを既知文として使う。
 出力: 段階別 JSON と WAV。失敗は終了コード 1 とし、スキップで成功させない。
 注意: HF_HUB_OFFLINE=1 と --network none を併用し、モデルは事前取得する。
-合成素材による技術検証であり、自然発話品質や LiveKit E2E の合格証拠ではない。
+local TTS 未結線（字幕のみ）の間、翻訳音声は必須にしない。LiveKit E2E の合格証拠ではない。
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from app.ai_pipeline.effective_config import (
     set_cached_pipeline_settings,
 )
 from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
+from app.ai_pipeline.providers.local_tts import available as tts_available
 from app.ai_pipeline.providers.local_tts import create_stage
 from app.ai_pipeline.registry import CompositeAIProvider
 from app.ai_pipeline.vram_broker import broker
@@ -97,6 +100,12 @@ async def verify(
     """指定段階を実モデルで実行し、全ケースと失敗理由を返す。"""
     import torch
 
+    texts = dict(TEXTS)
+    manifest = output / "manifest.json"
+    if manifest.is_file():
+        cases_in = json.loads(manifest.read_text(encoding="utf-8"))["cases"]
+        texts = {case["language"]: case["text"] for case in cases_in}
+
     set_cached_pipeline_settings(
         PipelineSettingsValues("gpt4o_transcribe", "local", "local", "local", "hybrid")
     )
@@ -106,12 +115,12 @@ async def verify(
     asr, mt, tts = LocalMultimodalStage(), LocalMultimodalStage(), create_stage()
     composite = CompositeAIProvider(asr, mt, tts)
     cases: list[dict[str, object]] = []
-    for source, expected in TEXTS.items():
+    for source, expected in texts.items():
         if source_filter and source != source_filter:
             continue
         targets = (
-            [t for t in TEXTS if t != source]
-            if stage in {"mt", "pipeline", "roundtrip", "text-pipeline"}
+            [t for t in texts if t != source]
+            if stage in {"mt", "pipeline", "text-pipeline"}
             else [source]
         )
         for target in targets:
@@ -124,25 +133,7 @@ async def verify(
             }
             started = time.monotonic()
             try:
-                if stage == "tts":
-                    audio = await tts.synthesize(expected, source)
-                    if not audio:
-                        raise RuntimeError("TTS が音声を生成しませんでした")
-                    path = output / f"input-{source}.wav"
-                    path.write_bytes(audio)
-                    item["audio"] = inspect_audio(path)
-                elif stage == "roundtrip":
-                    path = output / f"translated-{source}-{target}.wav"
-                    item["audio"] = inspect_audio(path)
-                    item["transcript"] = await asr.transcribe_audio(
-                        path.read_bytes(), target
-                    )
-                    if not item["transcript"]:
-                        raise RuntimeError("生成音声の再認識結果が空です")
-                    item["semantic_review"] = (
-                        "required: compare with pipeline translation"
-                    )
-                elif stage in {"asr", "detect"}:
+                if stage in {"asr", "detect"}:
                     path = output / f"input-{source}.wav"
                     item["audio"] = inspect_audio(path)
                     if stage == "detect":
@@ -182,18 +173,19 @@ async def verify(
                         transcript=result.original_text,
                         translation=result.translated_text,
                     )
-                    if (
-                        not result.original_text
-                        or not result.translated_text
-                        or not result.audio_data
-                    ):
-                        raise RuntimeError("連結処理で認識・翻訳・音声のいずれかが欠落")
-                    prefix = (
-                        "text-translated" if stage == "text-pipeline" else "translated"
-                    )
-                    path = output / f"{prefix}-{source}-{target}.wav"
-                    path.write_bytes(result.audio_data)
-                    item["audio"] = inspect_audio(path)
+                    if not result.original_text or not result.translated_text:
+                        raise RuntimeError("連結処理で認識・翻訳のいずれかが欠落")
+                    if tts_available() and not result.audio_data:
+                        raise RuntimeError("結線済み local TTS が音声を返しません")
+                    if result.audio_data:
+                        prefix = (
+                            "text-translated"
+                            if stage == "text-pipeline"
+                            else "translated"
+                        )
+                        path = output / f"{prefix}-{source}-{target}.wav"
+                        path.write_bytes(result.audio_data)
+                        item["audio"] = inspect_audio(path)
                     item["semantic_review"] = "required: meaning and negation"
                 item["status"] = "passed"
             except Exception as exc:
@@ -222,15 +214,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--stage",
-        choices=(
-            "tts",
-            "asr",
-            "detect",
-            "mt",
-            "pipeline",
-            "roundtrip",
-            "text-pipeline",
-        ),
+        choices=("asr", "detect", "mt", "pipeline", "text-pipeline"),
         required=True,
     )
     parser.add_argument("--output-dir", type=Path, required=True)

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""ローカル GPU 2モデル構成（Gemma 4 E2B + OmniVoice）を固定 revision で取得する。
+"""方式3（ローカル）の Gemma 4 E2B を固定 revision で取得する。
 
 目的:
     Docker / ホスト上で 4言語ローカルパイプライン用モデルを永続キャッシュへ準備する。
-    - ASR/MT: google/gemma-4-E2B-it
-    - TTS: k2-fsa/OmniVoice（重みは CC-BY-NC）
+    - ASR/MT: google/gemma-4-E2B-it（Apache-2.0）
+    - TTS: 差し替え口のみ（商用可・4言語対応の適合モデル結線時にここへ追加）
 
 使い方:
     python scripts/prepare_local_models.py --output-dir /models
@@ -28,16 +28,13 @@ import os
 from pathlib import Path
 
 DEFAULT_DIR = os.environ.get("SONOWA_MODEL_DIR", "/models")
-# 実行時ステージ（local_multimodal / local_tts）と同じ固定 revision。
-MODELS = (
-    ("google/gemma-4-E2B-it", "3e22461f65e89153144f8adb70e3b8c2cc9845a7"),
-    ("k2-fsa/OmniVoice", "c5fdb5ccb189668d56333f77ba2629f4cd7535f4"),
-)
+# 実行時ステージ（local_multimodal）と同じ固定 revision。
+MODELS = (("google/gemma-4-E2B-it", "3e22461f65e89153144f8adb70e3b8c2cc9845a7"),)
 logger = logging.getLogger(__name__)
 
 
 def main() -> int:
-    """2モデルを取得し、失敗は非ゼロで返す。"""
+    """ローカルモデルを取得し、失敗は非ゼロで返す。"""
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Prepare Sonowa local GPU models")
     parser.add_argument("--output-dir", default=DEFAULT_DIR)
@@ -52,9 +49,9 @@ def main() -> int:
             snapshot_download(model, revision=revision, cache_dir=hub)
             logger.info("モデル取得完了: %s@%s", model, revision[:8])
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
-        logger.error("2モデル準備失敗: %s", exc)
+        logger.error("モデル準備失敗: %s", exc)
         return 1
-    logger.info("2モデル準備完了。管理画面で ASR/MT/TTS=local を選択してください")
+    logger.info("準備完了。管理画面で「方式3 ローカル」を選択してください")
     return 0
 
 

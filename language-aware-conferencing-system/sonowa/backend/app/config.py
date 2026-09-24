@@ -161,22 +161,22 @@ class Settings(BaseSettings):
     #   - asr_provider: auto / gpt4o / deepgram / google / local
     #   - mt_provider : auto / openai / google / local
     #   - tts_provider: auto / openai / none / local
-    # "local" は本地2モデル（Gemma 4 E2B が ASR/MT を共有 + OmniVoice TTS）。
+    # "local" は方式3（Gemma 4 E2B が ASR/MT を共有。TTS は差し替え口のみ・未結線）。
     # ランタイム未導入でもクラウドへは切り替えない（ASR/MT 不可・TTS は字幕のみ）。
     asr_provider: Literal["auto", "gpt4o", "deepgram", "google", "local"] = "auto"
     mt_provider: Literal["auto", "openai", "google", "local"] = "auto"
     tts_provider: Literal["auto", "openai", "none", "local"] = "auto"
 
     # -------------------------------------------
-    # 本地2モデル設定（Gemma 4 E2B + OmniVoice・RTX 3060 12GB で実測）
+    # 方式3 ローカル設定（Gemma 4 E2B・RTX 3060 12GB で実測）
     # -------------------------------------------
-    # GPU 予算（MB）。Gemma(7300)+OmniVoice(2400) の同時常駐に必要な値。
+    # GPU 予算（MB）。Gemma(7300) と、将来結線する local TTS の同時常駐余地。
     vram_budget_mb: int = 10000
     # VAD バックエンド: energy（既定・CPU エネルギー閾値）/ silero（Silero VAD）。
     # silero 指定時にランタイム未導入なら energy へ自動フォールバックする。
     vad_backend: Literal["energy", "silero"] = "energy"
 
-    # 本地 TTS の実行デバイス（モデルは local_tts.MODEL_ID に固定 revision で固定）。
+    # 本地 TTS の実行デバイス（モデル結線時に local_tts が使用する）。
     local_tts_device: str = "cuda"
 
     # -------------------------------------------

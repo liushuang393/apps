@@ -204,12 +204,13 @@
     "description": "Shows .env values as defaults. Saving here applies without redeploy (secrets cannot be changed here).",
     "revision": "Config revision: {{revision}}",
     "presetsTitle": "Mode presets",
-    "presetsHint": "Choose Mode 1 (Realtime S2S) or Mode 2 (ASR→MT→TTS + glossary quality pack). Local GPU is advanced slots only.",
+    "presetsHint": "Choose Method 1 (Realtime S2S), Method 2 (ASR→MT→TTS + glossary quality pack), or Method 3 (fully local, subtitles only).",
     "customPreset": "Current slots/quality flags differ from the named presets (custom).",
     "s2sSlotIgnored": "With Mode 1 (Realtime S2S), ASR/MT/TTS slots are ignored and speech-to-speech is kept.",
     "qualityPackHint": "Mode 2 enables glossary, language-group parallelism, subtitle cache/TM, partial subtitles, and LLM correction.",
+    "localHint": "Method 3 runs recognition and translation on the local GPU with Gemma 4 E2B and outputs subtitles only (translated audio is unavailable until a commercially licensed model is wired; glossary and LLM correction are not supported).",
     "glossaryLink": "Manage glossary",
-    "advancedLocalHint": "Advanced: asr/mt/tts=local is a local GPU implementation option (not a product mode; cloud MT recommended for glossary).",
+    "advancedLocalHint": "Advanced: asr/mt=local uses the same local Gemma as Method 3. tts=local is only a plug-in slot (no model wired; subtitles only).",
     "showAdvanced": "Show advanced settings",
     "hideAdvanced": "Hide advanced settings",
     "preset": {
@@ -220,6 +221,10 @@
       "quality_cascade": {
         "label": "Mode 2: Quality cascade (glossary)",
         "desc": "ASR→MT→TTS with best cloud LLM, glossary, parallel, subtitle optimization."
+      },
+      "local_gemma": {
+        "label": "Method 3: Fully local (subtitles only)",
+        "desc": "ASR/MT with Gemma 4 E2B. No external traffic, no translated audio."
       }
     },
     "aiProvider": "AI provider (preset)",
@@ -248,4 +253,3 @@
     "saveError": "Failed to update meeting AI mainline"
   }
 }
-

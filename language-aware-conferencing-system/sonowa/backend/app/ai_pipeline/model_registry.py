@@ -288,7 +288,6 @@ def _card(
 def _build_default_catalog() -> ModelCatalog:
     """config の既存モデル名から既定カードを seed する。"""
     from app.ai_pipeline.providers.local_multimodal import MODEL_ID as GEMMA_MODEL_ID
-    from app.ai_pipeline.providers.local_tts import MODEL_ID as TTS_MODEL_ID
 
     langs = list(settings.supported_languages)  # ["ja", "en", "zh", "vi"]
     catalog = ModelCatalog()
@@ -399,21 +398,6 @@ def _build_default_catalog() -> ModelCatalog:
             metrics={"quality": 0.9, "latency_ms": 500.0},
             status=STATUS_PRODUCTION,
             provider_name="openai",
-        )
-    )
-    catalog.register(
-        _card(
-            "tts-omnivoice",
-            STAGE_TTS,
-            TTS_MODEL_ID,
-            RUNTIME_TRANSFORMERS,
-            quantization=None,
-            languages=langs,
-            license="cc-by-nc-4.0",
-            hardware_profile="gpu-12gb",
-            metrics={},
-            status=STATUS_STAGING,
-            provider_name="local",
         )
     )
     return catalog

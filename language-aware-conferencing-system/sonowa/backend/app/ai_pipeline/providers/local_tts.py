@@ -1,24 +1,25 @@
 """
-ローカル TTS ステージ（k2-fsa/OmniVoice・ja/en/zh/vi 単一モデル）
+ローカル TTS ステージの差し替え口（現在モデル未結線・字幕のみ運用）
 
 目的:
-    Gemma 4 E2B（ASR/MT）と同時常駐できる 0.6B の OmniVoice で翻訳音声を合成する。
-    OpenAITTSStage と同じ `synthesize(text, language) -> bytes | None` 契約に従う。
+    方式3（ローカル）の翻訳音声スロット。OpenAITTSStage と同じ
+    `synthesize(text, language) -> bytes | None` 契約と VRAM Broker 調停を保持し、
+    適合モデルが出たら `_load_model` と定数だけを差し替えて結線する。
+採用条件（2026-09-24 時点で該当なし）:
+    - 商用利用可のライセンス
+    - ja/en/zh/vi の 4 言語を 1 モデルで合成
+    - Gemma 4 E2B（約7.3GB）と 12GB GPU に同時常駐（VoxCPM2 は約12.1GB で不可）
 入力 / 出力:
-    text・language（ja/en/zh/vi）→ 24kHz mono int16 WAV(RIFF) バイト列 or None。
+    text・language → int16 WAV(RIFF) バイト列 or None（未結線・失敗・未対応言語）。
 注意点:
-    - omnivoice / torch は遅延 import（未導入環境でもモジュール import 可）。
-    - 固定 revision のキャッシュのみを読み、補助 ASR はロードしない。
-    - 合成失敗・VRAM 逼迫・未対応言語は None を返し、字幕継続を可能にする。
-    - モデル重みは CC-BY-NC。商用用途への採用には利用条件の確認が必要。
+    - 未結線の間は available() が False。registry はクラウドへ切り替えず字幕のみとなる。
+    - 生成は1モデルを直列化し、空・無音・非有限の波形は成功扱いにしない。
 """
 
 import gc
-import importlib.util
 import logging
 import sys
 import threading
-from pathlib import Path
 
 import numpy as np
 
@@ -29,16 +30,15 @@ from app.ai_pipeline.vram_broker import (
 )
 from app.ai_pipeline.vram_broker import broker as default_broker
 from app.audio.pcm import wrap_wav16
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-MODEL_ID = "k2-fsa/OmniVoice"
-MODEL_REVISION = "c5fdb5ccb189668d56333f77ba2629f4cd7535f4"
-MODEL_LABEL = "OmniVoice"
-# 付属音声コーデックを含む VRAM Broker 会計用サイズ（実測 Gemma と合計約 9100MiB）。
-MODEL_SIZE_MB = 2400
-ENGINE_CACHE_KEY = "tts:omnivoice"
+# 結線するモデル（未結線時は None）。revision は取得スクリプトと一致させる。
+MODEL_ID: str | None = None
+MODEL_REVISION: str | None = None
+MODEL_LABEL = "未結線"
+MODEL_SIZE_MB = 0
+ENGINE_CACHE_KEY = "tts:local"
 SAMPLE_RATE = 24000
 LANGUAGES = frozenset({"ja", "en", "zh", "vi"})
 
@@ -52,8 +52,13 @@ def create_stage(broker: object | None = None) -> "LocalTTSStage":
 
 
 def available() -> bool:
-    """omnivoice が導入済みかを返す。"""
-    return importlib.util.find_spec("omnivoice") is not None
+    """モデルが結線済みかを返す（未結線の間は常に False）。"""
+    return MODEL_ID is not None
+
+
+def _load_model() -> object:
+    """`synthesize(text, language) -> 波形` を持つモデルを返す。結線時に実装する。"""
+    raise RuntimeError("ローカル TTS モデルは未結線です（字幕のみ）")
 
 
 def _to_wav_bytes(waveform: object, sample_rate: int) -> bytes:
@@ -67,33 +72,26 @@ def _to_wav_bytes(waveform: object, sample_rate: int) -> bytes:
     return wrap_wav16(arr.tobytes(), sample_rate)
 
 
-class _OmniVoiceEngine:
-    """生成と解放を直列化し、言語指定と補助ASR禁止を検査する。"""
+class _SerializedEngine:
+    """1モデルの生成と解放を直列化し、異常な波形を上位の字幕縮退へ伝える。"""
 
     def __init__(self, model: object) -> None:
         self.model: object | None = model
         self.lock = threading.Lock()
 
-    def synthesize(self, text: str, voice: str) -> object:
-        """指定言語の有限・非無音波形を返す。異常は上位の字幕縮退へ伝える。"""
+    def synthesize(self, text: str, language: str) -> np.ndarray:
+        """指定言語の有限・非無音波形を返す。"""
         with self.lock:
             if self.model is None:
-                raise RuntimeError("OmniVoiceは解放済みです")
-            if self.model._asr_pipe is not None:
-                raise RuntimeError("補助ASRのロードは禁止されています")
-            results = self.model.generate(text=text, language=voice)
-            if self.model._asr_pipe is not None:
-                raise RuntimeError("生成中に補助ASRがロードされました")
-            if not isinstance(results, list) or len(results) != 1:
-                raise ValueError("OmniVoiceの出力波形数が不正です")
-            waveform = np.asarray(results[0])
+                raise RuntimeError("TTS モデルは解放済みです")
+            waveform = np.asarray(self.model.synthesize(text, language))
             if (
                 waveform.ndim != 1
                 or not waveform.size
                 or not np.isfinite(waveform).all()
                 or not np.any(waveform)
             ):
-                raise ValueError("OmniVoiceの音声が空・無音・非有限です")
+                raise ValueError("TTS の音声が空・無音・非有限です")
             return waveform
 
     def close(self) -> None:
@@ -107,7 +105,7 @@ class _OmniVoiceEngine:
 
 
 class LocalTTSStage:
-    """OmniVoice によるローカル多言語音声合成ステージ（VRAM Broker 調停下）。"""
+    """ローカル多言語音声合成ステージ（VRAM Broker 調停下）。"""
 
     name = "local"
     CAPACITY_WAIT_SECONDS = 120
@@ -117,11 +115,17 @@ class LocalTTSStage:
     ) -> None:
         """
         Args:
-            engine: 合成モデル（テスト用に注入可能）。未注入時は遅延ロードする。
+            engine: 合成モデル（テスト用に注入可能）。未注入時は _load_model を使う。
             broker: VRAM Broker（未指定時はモジュール既定 broker を共有）。
         """
         self._engine = engine
         self._broker = broker or default_broker
+
+    def _load_engine(self) -> _SerializedEngine:
+        """注入モデルまたは結線モデルを直列化ラッパーで包む（loader）。"""
+        return _SerializedEngine(
+            self._engine if self._engine is not None else _load_model()
+        )
 
     async def prepare(self) -> None:
         """発話受付前にモデルを事前ロードする。失敗は呼び出し元へ伝える。"""
@@ -130,37 +134,11 @@ class LocalTTSStage:
             loader=self._load_engine,
             size_mb=MODEL_SIZE_MB,
             priority=PRIORITY_TTS,
-            version=MODEL_REVISION,
+            version=MODEL_REVISION or "",
         )
-
-    def _load_engine(self) -> object:
-        """キャッシュのみから固定モデルを読み、追加ASRの自動取得を禁止する。"""
-        if self._engine is not None:
-            return _OmniVoiceEngine(self._engine)
-        import torch
-        from huggingface_hub import snapshot_download
-        from omnivoice import OmniVoice
-
-        path = snapshot_download(
-            MODEL_ID, revision=MODEL_REVISION, local_files_only=True
-        )
-        if not (Path(path) / "audio_tokenizer").is_dir():
-            raise FileNotFoundError("固定モデルに付属する音声コーデックがありません")
-        model = OmniVoice.from_pretrained(
-            path,
-            local_files_only=True,
-            load_asr=False,
-            device_map=settings.local_tts_device,
-            dtype=torch.float16,
-        )
-        engine = _OmniVoiceEngine(model)
-        if model._asr_pipe is not None:
-            engine.close()
-            raise RuntimeError("OmniVoiceが補助ASRをロードしました")
-        return engine
 
     async def synthesize(self, text: str, language: str) -> bytes | None:
-        """テキストを合成し WAV バイト列を返す（失敗・未対応言語は None）。"""
+        """テキストを合成し WAV バイト列を返す（未結線・失敗・未対応言語は None）。"""
         if not text or not text.strip():
             return None
         if language not in LANGUAGES:
@@ -172,7 +150,7 @@ class LocalTTSStage:
                 loader=self._load_engine,
                 size_mb=MODEL_SIZE_MB,
                 priority=PRIORITY_TTS,
-                version=MODEL_REVISION,
+                version=MODEL_REVISION or "",
                 wait_timeout=self.CAPACITY_WAIT_SECONDS,
             ) as engine:
                 waveform = await run_model_worker(engine.synthesize, text, language)

@@ -43,14 +43,14 @@
 | 品質 | 用語集（Glossary）管理 | 企業ごとの用語資産を CRUD し、翻訳の前後処理に適用 |
 | 品質 | LLM 補正 | 表記統一・文脈補正・数字/固有名詞の保持（既定 OFF） |
 | 品質 | 翻訳キャッシュ / TM | 同一表現の再翻訳を抑制し遅延とコストを削減 |
-| 運用 | AI パイプライン設定 | 管理画面で方式1 / 方式2 とステージ別プロバイダーを切替 |
+| 運用 | AI パイプライン設定 | 管理画面で方式1 / 方式2 / 方式3 とステージ別プロバイダーを切替 |
 | 運用 | 言語設定 | 利用可能言語の有効・無効を管理 |
 | 運用 | ユーザー管理・統計 | ユーザー一覧・権限変更・利用統計 |
 | 運用 | 離線重跑（オフライン再処理） | 記録済みパイプライン事件を高品質モデルで再処理し、実時出力との差分から訓練訂正候補を生成 |
 | 運用 | A/B テスト | プロバイダー・設定の実験メトリクスを収集し比較 |
 | 学習 | 学習データ収集 | ASR / 翻訳の修正履歴、話者登録、TTS 同意、評価サンプルを蓄積 |
 | 基盤 | WebRTC（LiveKit） | 音声・字幕・制御を LiveKit に一本化 |
-| 基盤 | ローカル GPU 実行（任意） | ASR / MT / TTS を OSS モデルで自ホスト（8GB GPU 対応） |
+| 基盤 | ローカル GPU 実行（方式3） | ASR / MT を Gemma 4 E2B で自ホスト（12GB GPU・字幕のみ。TTS は差し替え口のみ） |
 
 **AIプロバイダー**（`AI_PROVIDER` で選択。モデル名は `backend/app/config.py` の既定値）:
 
@@ -67,18 +67,18 @@
 > ASR / MT / TTS は `ASR_PROVIDER` / `MT_PROVIDER` / `TTS_PROVIDER` で独立に差し替え可能（Composite。既定 `auto`）。
 > 補正・議事録用 LLM はテキスト系モデル（GPT: gpt-4o-mini / Gemini: gemini-2.5-flash）を使用する。
 
-### 画面上の2方式（管理者 `/admin/ai-pipeline`）
+### 画面上の3方式（管理者 `/admin/ai-pipeline`）
 
 実装方式（どう翻訳するか）と会議主線（何を出すか）と受聴設定（何を聴くか）は **別レイヤ** である。
 
 | レイヤ | 値 | どこで切替 | 意味 |
 |---|---|---|---|
-| **実装方式** | 方式1 Realtime S2S / 方式2 品質カスケード | 管理者 `/admin/ai-pipeline` | Provider・品質パック・実行経路 |
+| **実装方式** | 方式1 Realtime S2S / 方式2 品質カスケード / 方式3 完全ローカル | 管理者 `/admin/ai-pipeline` | Provider・品質パック・実行経路 |
 | **会議主線** | `a` / `b` / `hybrid` | 部屋作成・会議室サイドバー（作成者/モデレーター） | 聞く主線・読む主線・両方 |
 | **受聴設定** | `original` / `translated` | 参加者 PreferencePanel | 原音を聴くか翻訳音声を聴くか |
 
 共通の入口〜出口は同一。差分は Provider Registry 配下の実装だけに閉じる。
-ローカル GPU（`asr/mt/tts=local`）は **方式ではなく**、方式2の上級実装オプションである。
+方式3（完全ローカル）は、ASR/MT のスロットを `local`（Gemma 4 E2B）にした構成である。外部通信なしで字幕のみを出力する。
 
 ```mermaid
 flowchart LR
@@ -87,28 +87,30 @@ flowchart LR
   ingress --> orch[HybridOrchestrator]
   orch --> m1[方式1 S2S]
   orch --> m2[方式2 ASR_MT_TTS]
+  orch --> m3[方式3 local Gemma 字幕のみ]
   m2 --> gloss[用語集 hint]
   m2 --> parallel[言語グループ並列]
   m2 --> subopt[字幕キャッシュ_TM_補正_partial]
   m1 --> om[OutputManager]
   m2 --> om
+  m3 --> om
   om --> audioOut[翻訳音声 track]
   om --> subOut[字幕 DataChannel]
 ```
 
 #### 方式比較（違いの要約）
 
-| 観点 | 方式1: 純リアルタイム音声 API | 方式2: 品質カスケード（用語集） |
-|---|---|---|
-| 管理者プリセット | `realtime_s2s` → `ai_provider=gpt_realtime`、`default_mode=a` | `quality_cascade` → `gpt4o_transcribe` + スロット `auto` + `default_mode=hybrid` + 品質パック ON |
-| 処理形 | Speech→Speech（一体） | ASR → MT → TTS（分離） |
-| ASR/MT/TTS スロット | **無視**（S2S 維持） | クラウド各社を選択可（上級で local 可） |
-| 用語集 | 非対象（S2S のまま） | **必須**（読む主線・Composite OpenAI MT） |
-| 並列・字幕最適化 | 弱め | 言語グループ並列 + キャッシュ/TM + partial + LLM 補正 |
-| 典型出力 | 翻訳音声 + transcript delta | 字幕中心、TTS 任意 |
-| 遅延 | 最も低い想定 | 中（REST/セグメント単位） |
-| 秘密・コスト | クラウド API キー必須 | クラウド API キー必須（補正は `GEMINI_API_KEY`） |
-| 適合 | 低遅延の同通・軽会議 | **既定・正式記録・業界用語** |
+| 観点 | 方式1: 純リアルタイム音声 API | 方式2: 品質カスケード（用語集） | 方式3: 完全ローカル |
+|---|---|---|---|
+| 管理者プリセット | `realtime_s2s` → `ai_provider=gpt_realtime`、`default_mode=a` | `quality_cascade` → `gpt4o_transcribe` + スロット `auto` + `default_mode=hybrid` + 品質パック ON | `local_gemma` → `asr/mt=local`、`tts=none`、`default_mode=b`、補正 OFF |
+| 処理形 | Speech→Speech（一体） | ASR → MT → TTS（分離） | ASR → MT（同じ Gemma）→ 字幕 |
+| ASR/MT/TTS スロット | **無視**（S2S 維持） | クラウド各社を選択可 | ASR/MT=`local`、TTS=差し替え口（未結線） |
+| 用語集 | 非対象（S2S のまま） | **必須**（読む主線・Composite OpenAI MT） | 非対応（警告表示） |
+| 並列・字幕最適化 | 弱め | 言語グループ並列 + キャッシュ/TM + partial + LLM 補正 | 同一翻訳の共有のみ |
+| 典型出力 | 翻訳音声 + transcript delta | 字幕中心、TTS 任意 | **字幕のみ**（翻訳音声なし） |
+| 遅延 | 最も低い想定 | 中（REST/セグメント単位） | 字幕 約5〜7秒（RTX 3060 実測） |
+| 秘密・コスト | クラウド API キー必須 | クラウド API キー必須（補正は `GEMINI_API_KEY`） | キー不要・12GB GPU 必須 |
+| 適合 | 低遅延の同通・軽会議 | **既定・正式記録・業界用語** | 社外通信不可の会議・機密会議 |
 
 #### 方式1: 純リアルタイム音声 API（S2S）
 
@@ -159,63 +161,54 @@ Mic → LiveKit → Segment → 上流 ASR（1回）
 
 会議中の **a / b / hybrid**（聞く・読む・両方）は部屋作成者またはモデレーターが会議室サイドバーから切替可能（参加者の原音/翻訳受聴とは別概念）。
 
-#### 方式2の上級実装オプション: ローカル GPU（4言語・2モデル）
+#### 方式3: 完全ローカル（Gemma 4 E2B・字幕のみ）
 
-トップレベル「方式」ではない。上級設定で `asr/mt/tts=local` を指定した場合のみ。用語集はクラウド MT 経路向け（local MT は非対応・警告表示）。
-
-完全ローカル運用では管理画面 `/admin/ai-pipeline` で3段階を `local` にし、LLM 補正も OFF にする。local のロード・推論に失敗してもクラウドへ自動切替しない。ASR/MT 失敗は翻訳不可、TTS 失敗は字幕継続となる。
-
-**合計2モデル** で `ja/en/zh/vi` を扱う。ASR と MT は同じ Gemma を共有し、言語対別モデルを追加しない。
-
-**検証中・公開未完了**: ベトナム語の音声品質の追加評価と Testing Kit 総合認証が残っている。起動成功や音声ファイル生成のみを品質合格とはしていない。後続発話の音声が配信されない世代管理の不具合は修正済み。実測と判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
+管理画面 `/admin/ai-pipeline` のプリセット「方式3」を選ぶ（`asr/mt=local`、`tts=none`、`default_mode=b`、LLM 補正 OFF）。認識・翻訳ともローカル GPU で行い、外部へ音声・テキストを送らない。local のロード・推論に失敗してもクラウドへ自動切替しない（ASR/MT 失敗は翻訳不可）。用語集はクラウド MT 経路向けで、方式3 では非対応（警告表示）。
 
 | ステージ | モデル | ライセンス | 概算 VRAM |
 |---|---|---|---|
-| ASR + MT | `google/gemma-4-E2B-it` テキスト側 NF4、音声側 BF16 | Apache-2.0 | ~7.3GB |
-| TTS | `k2-fsa/OmniVoice`（0.6B、付属音声コーデック込み、補助 ASR なし） | **CC-BY-NC（非商用）** | ~2.4GB |
-
-2モデルは同時常駐する（実測 Torch 約9100MiB、`VRAM_BUDGET_MB=10000`）。モデルは両方とも固定 revision のローカルキャッシュのみから読む。OmniVoice の重みは非商用ライセンスのため、商用利用可能な構成としては扱わない。
-
-> VoxCPM2（Apache-2.0）は RTX 3060 12GB で Gemma と同時常駐できず（合計約12.1GB）、交互ロードでは1発話あたり約50秒かかったため削除した（2026-09-23 実測）。
+| ASR + MT | `google/gemma-4-E2B-it` テキスト側 NF4、音声側 BF16（同じモデルを共有） | Apache-2.0 | ~7.3GB |
+| TTS | **差し替え口のみ（モデル未結線）** → 翻訳音声は出さず字幕のみ | — | — |
 
 ```mermaid
 flowchart LR
   pcm[発話 PCM] --> asr[local ASR Gemma 4 E2B]
-  asr --> text[原文]
+  asr --> text[原文・言語検出]
   text --> mt[local MT 同じ Gemma を再利用]
   mt --> sub[翻訳字幕]
-  mt --> tts[local TTS OmniVoice]
-  tts -->|成功| ta[翻訳音声]
-  tts -->|VRAM不足/失敗| none[音声なし]
   sub --> om[OutputManager]
-  ta --> om
-  none -.->|字幕は継続| om
+  mt -.->|将来: 適合モデル結線時のみ| tts[local TTS 差し替え口]
 ```
 
-```text
-Mic → LiveKit → Segment
-              ├─ ASR: Gemma 4 E2B（原文・言語検出）
-              ├─ MT:  同じ Gemma 4 E2B（ターゲット言語のテキスト）
-              └─ TTS: OmniVoice（Gemma と同時常駐）
-                    失敗時 → 翻訳音声のみ停止、字幕は継続
-```
+**local TTS の差し替え口**: `backend/app/ai_pipeline/providers/local_tts.py` は `synthesize(text, language) -> WAV | None` 契約、VRAM Broker 調停、生成の直列化、空・無音波形の拒否を保持したまま、モデルを結線していない（`available()` は False）。次の条件をすべて満たすモデルが出たら、`MODEL_ID` / `MODEL_REVISION` / `MODEL_SIZE_MB` / `_load_model()` と `scripts/prepare_local_models.py` の取得対象を差し替え、方式3 の `tts` を `local` にする。
 
-#### ローカル GPU の準備（RTX 3060 12GB で検証中）
+1. 商用利用可のライセンス
+2. ja/en/zh/vi の4言語を1モデルで合成できる
+3. Gemma（約7.3GB）と 12GB GPU に同時常駐できる
+
+2026-09-24 時点の評価（いずれも不採用）:
+
+| モデル | ライセンス | 不採用理由 |
+|---|---|---|
+| `openbmb/VoxCPM2`（2B） | Apache-2.0 | Gemma と同時常駐で約12.1GB。交互ロードでは1発話あたり約50秒 |
+| `k2-fsa/OmniVoice`（0.6B） | CC-BY-NC | 非商用ライセンス |
+| `Qwen/Qwen3-TTS-12Hz-0.6B-Base` / `FunAudioLLM/Fun-CosyVoice3-0.5B` | Apache-2.0 | ベトナム語非対応 |
+| `ResembleAI/chatterbox` | MIT | ベトナム語非対応 |
+
+#### 方式3 の準備（RTX 3060 12GB で検証）
 
 ```powershell
-# GPU + local 依存込みでビルド・起動
-$env:INSTALL_LOCAL = "1"
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# INSTALL_LOCAL=1 を .env に設定すると入口スクリプトが GPU オーバーライドを自動で付ける
+./start-with-keys.sh --build
 
-# Gemma 4 E2B と OmniVoice の2モデルを取得（永続ボリューム /models・初回のみ）
+# Gemma 4 E2B を取得（永続ボリューム /models・初回のみ）
 docker compose exec backend python /app/scripts/prepare_local_models.py --output-dir /models
-docker compose exec backend alembic upgrade head
 docker compose restart backend
 ```
 
-管理設定で3段階が `local` の場合、起動時に両モデルをロードして初回推論を準備する。モデル欠損時はログに失敗を残し、クラウドへ切り替えない。`max_latency_ms=1200` はローカル翻訳音声の達成保証ではない。字幕への縮退は異常時の動作であり、正常系の公開合格には翻訳音声の生成・受信が必要。
+管理設定で ASR/MT が `local` の場合、起動時に Gemma をロードして初回推論を準備する。モデル欠損時はログに失敗を残し、クラウドへ切り替えない。音声入力は30秒以下。音声エンコーダーの量子化は認識品質を壊すため禁止する。オフライン再処理（`POST /api/admin/sessions/{id}/rerun`）も同じ Gemma を使い、別モデルを追加しない。
 
-Gemma の E2B は実効2.3B・総5.1B。音声入力は30秒以下。音声エンコーダーの量子化は認識品質を壊すため禁止する。オフライン再処理（`POST /api/admin/sessions/{id}/rerun`）も同じ Gemma を使い、別モデルを追加しない。実機検証用は `scripts/verify_local_pipeline.py` と `scripts/verify_local_livekit.py`。現在の判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
+実機検証は `scripts/verify_local_pipeline.py`（12方向）と `scripts/verify_local_livekit.py`（LiveKit 2クライアント）を使う。入力は `scripts/prepare_local_speech_fixtures.py` で取得する FLEURS の自然発話（CC-BY-4.0）とする。過去の判定は [検証記録](docs/testing/report/local-pipeline-verification.md) を参照。
 
 ---
 
@@ -588,7 +581,7 @@ Sonowa は以下のオープンソースプロジェクトとサービスの上�
 | リアルタイム基盤 | [LiveKit](https://github.com/livekit/livekit)（SFU・Agent SDK・クライアント SDK / Apache-2.0）、[coturn](https://github.com/coturn/coturn) |
 | バックエンド | [FastAPI](https://github.com/fastapi/fastapi)、[Uvicorn](https://github.com/encode/uvicorn)、[SQLAlchemy](https://github.com/sqlalchemy/sqlalchemy)、[Alembic](https://github.com/sqlalchemy/alembic)、[Pydantic](https://github.com/pydantic/pydantic)、[asyncpg](https://github.com/MagicStack/asyncpg)、[redis-py](https://github.com/redis/redis-py)、[python-jose](https://github.com/mpdavis/python-jose)、[cryptography](https://github.com/pyca/cryptography)、[httpx](https://github.com/encode/httpx)、[NumPy](https://github.com/numpy/numpy)、[Ruff](https://github.com/astral-sh/ruff) |
 | フロントエンド | [React](https://github.com/facebook/react)、[Vite](https://github.com/vitejs/vite)、[TypeScript](https://github.com/microsoft/TypeScript)、[Zustand](https://github.com/pmndrs/zustand)、[React Router](https://github.com/remix-run/react-router)、[i18next](https://github.com/i18next/i18next) / [react-i18next](https://github.com/i18next/react-i18next)、[ESLint](https://github.com/eslint/eslint) |
-| ローカル GPU（任意） | [Gemma 4](https://huggingface.co/google/gemma-4-E2B-it)（Apache-2.0）、[Silero VAD](https://github.com/snakers4/silero-vad)、[PyTorch](https://github.com/pytorch/pytorch)、[Transformers](https://github.com/huggingface/transformers)、[SentencePiece](https://github.com/google/sentencepiece)、[Resemblyzer](https://github.com/resemble-ai/Resemblyzer)、[OmniVoice](https://huggingface.co/k2-fsa/OmniVoice)（CC-BY-NC） |
+| ローカル GPU（任意） | [Gemma 4](https://huggingface.co/google/gemma-4-E2B-it)（Apache-2.0）、[Silero VAD](https://github.com/snakers4/silero-vad)、[PyTorch](https://github.com/pytorch/pytorch)、[Transformers](https://github.com/huggingface/transformers)、[SentencePiece](https://github.com/google/sentencepiece)、[Resemblyzer](https://github.com/resemble-ai/Resemblyzer) |
 | インフラ / テスト | [PostgreSQL](https://www.postgresql.org/)、[Redis](https://github.com/redis/redis)、[Docker](https://www.docker.com/)、[Nginx](https://github.com/nginx/nginx)、[Playwright](https://github.com/microsoft/playwright) |
 | クラウド AI | OpenAI（Realtime / GPT-4o-transcribe / GPT-4o-mini / TTS）、Google（Chirp 3 / Cloud Translation / Gemini）、Deepgram（Nova-3） |
 

@@ -13,7 +13,6 @@ import argparse
 import asyncio
 import json
 import logging
-import re
 import secrets
 import subprocess
 import uuid
@@ -21,22 +20,23 @@ import wave
 from pathlib import Path
 
 import httpx
-from app.audio.pcm import chunk16, parse_wav16, resample16
+from livekit import rtc
 from verify_local_pipeline import has_voice, inspect_audio
 
-from livekit import rtc
+from app.audio.pcm import chunk16, parse_wav16, resample16
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_RATE = 16000
 FRAME_SAMPLES = 320
 WAIT_SECONDS = 300
+STABLE_SECONDS = 15
 LOCAL_SETTINGS = {
     "ai_provider": "gpt4o_transcribe",
     "asr_provider": "local",
     "mt_provider": "local",
-    "tts_provider": "local",
-    "default_mode": "hybrid",
+    "tts_provider": "none",
+    "default_mode": "b",
     "enable_partial_subtitles": False,
     "llm_correction_enabled": False,
 }
@@ -273,24 +273,27 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
                     rtc.AudioFrame(frame, SAMPLE_RATE, 1, len(frame) // 2)
                 )
             await source.wait_for_playout()
-            while not has_voice(audio) or not any(
+            # 字幕のみ構成（tts=none）では翻訳音声を待たない。
+            need_audio = LOCAL_SETTINGS["tts_provider"] == "local"
+            while (need_audio and not has_voice(audio)) or not any(
                 s.get("translated_text") for s in subtitles
             ):
                 if asyncio.get_running_loop().time() - started > WAIT_SECONDS:
                     raise TimeoutError("翻訳字幕または翻訳音声が届きません")
                 await asyncio.sleep(0.5)
+            # 入力音声の全区間が届くまで、DB 記録件数が STABLE_SECONDS 変化しないのを待つ。
+            last_count, stable_since = -1, asyncio.get_running_loop().time()
             while True:
                 report["db_translations"] = json.loads(
                     await asyncio.to_thread(database, "observe", room=room_id)
                 )
-                delivered = " ".join(
-                    str(s.get("translated_text", "")) for s in subtitles
-                )
-                recorded = " ".join(row[1] for row in report["db_translations"])
-                if complete_fixture(delivered) and complete_fixture(recorded):
+                now = asyncio.get_running_loop().time()
+                if len(report["db_translations"]) != last_count:
+                    last_count, stable_since = len(report["db_translations"]), now
+                elif last_count and now - stable_since >= STABLE_SECONDS:
                     break
-                if asyncio.get_running_loop().time() - started > WAIT_SECONDS:
-                    raise TimeoutError("会議時刻と否定文の両方を受信・永続化できません")
+                if now - started > WAIT_SECONDS:
+                    raise TimeoutError("翻訳記録が確定しません")
                 await asyncio.sleep(3)
             await asyncio.sleep(5)
             report["elapsed_s"] = asyncio.get_running_loop().time() - started
@@ -311,7 +314,9 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
                 row[1] for row in report["db_translations"]
             ), "受信字幕と DB の翻訳内容が一致しません"
             report["transport_complete"] = True
-            report["quality_verdict"] = "pending_received_audio_check"
+            report["quality_verdict"] = (
+                "pending_received_audio_check" if need_audio else "subtitle_only"
+            )
     finally:
         report["subtitles"] = subtitles
         report["qos_events"] = qos_events
@@ -349,17 +354,6 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
             except Exception as exc:
                 logger.exception("検証用データの後片付けに失敗")
                 report.update(cleanup=str(exc), passed=False)
-
-
-def complete_fixture(text: str) -> bool:
-    """既知文の時刻・会議・ファイル送信の否定が最後まで届いたかを確認する。"""
-    value = text.casefold().replace("’", "'")
-    return (
-        "meeting" in value
-        and "file" in value
-        and bool(re.search(r"\b(?:10|ten)\b", value))
-        and bool(re.search(r"\b(?:not|don't|never)\b", value))
-    )
 
 
 def main() -> int:

@@ -1,13 +1,10 @@
-"""ローカル TTS（OmniVoice）のオフラインロード・言語指定・字幕縮退・共有推論を検証する。"""
+"""ローカル TTS 差し替え口の契約（未結線・注入モデルの合成・字幕縮退・直列化）を検証する。"""
 
 import asyncio
 import io
-import sys
 import threading
 import time
 import wave
-from pathlib import Path
-from types import ModuleType
 from unittest.mock import Mock
 
 import numpy as np
@@ -18,76 +15,71 @@ from app.ai_pipeline.registry import _make_local_tts
 from app.ai_pipeline.vram_broker import VRAMBroker
 
 
-@pytest.mark.asyncio
-async def test_fixed_offline_model_has_no_auxiliary_asr(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """固定キャッシュだけを読み、補助ASRなしで言語指定して24kHz WAVを返す。"""
-    (tmp_path / "audio_tokenizer").mkdir()
-    download = Mock(return_value=str(tmp_path))
-    hub = ModuleType("huggingface_hub")
-    hub.snapshot_download = download
+def _model(waveform: object) -> Mock:
+    """`synthesize(text, language)` だけを持つダミーモデル。"""
     model = Mock()
-    model._asr_pipe = None
-    model.generate.return_value = [np.ones(2400, dtype=np.float32) * 0.1]
-    factory = Mock(return_value=model)
-    module = ModuleType("omnivoice")
-    module.OmniVoice = Mock(from_pretrained=factory)
-    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
-    monkeypatch.setitem(sys.modules, "omnivoice", module)
-    torch_module = ModuleType("torch")
-    torch_module.float16 = "float16"
-    monkeypatch.setitem(sys.modules, "torch", torch_module)
+    model.synthesize.return_value = waveform
+    return model
+
+
+def test_unwired_slot_is_unavailable_and_factory_still_builds() -> None:
+    """モデル未結線の間は利用不可を返し、差し替え口のステージは生成できる。"""
+    assert local_tts.MODEL_ID is None
+    assert local_tts.available() is False
+    assert isinstance(_make_local_tts(), local_tts.LocalTTSStage)
+
+
+@pytest.mark.asyncio
+async def test_unwired_model_degrades_to_subtitles() -> None:
+    """未結線のまま呼ばれても例外を出さず None（字幕のみ）を返す。"""
     stage = local_tts.LocalTTSStage(broker=VRAMBroker(3000))
-
-    data = await stage.synthesize("会議は10時です。", "ja")
-
-    assert data is not None
-    with wave.open(io.BytesIO(data)) as audio:
-        assert audio.getframerate() == 24000
-        assert audio.getnchannels() == 1
-        assert audio.getsampwidth() == 2
-    download.assert_called_once_with(
-        local_tts.MODEL_ID,
-        revision=local_tts.MODEL_REVISION,
-        local_files_only=True,
-    )
-    assert factory.call_args.kwargs["load_asr"] is False
-    assert factory.call_args.kwargs["local_files_only"] is True
-    model.generate.assert_called_once_with(text="会議は10時です。", language="ja")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "bad", [[], [np.array([])], [np.zeros(2400)], [np.array([np.nan])]]
-)
-async def test_invalid_audio_degrades_to_subtitles(bad: object) -> None:
-    """空・無音・非有限音声を成功WAVへ変換しない。"""
-    model = Mock()
-    model._asr_pipe = None
-    model.generate.return_value = bad
-    stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
     assert await stage.synthesize("Hello", "en") is None
 
 
 @pytest.mark.asyncio
-async def test_unknown_language_does_not_generate() -> None:
-    """未対応言語を別言語の音声に置換しない。"""
-    model = Mock()
+async def test_injected_model_returns_mono_int16_wav() -> None:
+    """結線モデルの波形を 24kHz mono int16 WAV に変換し、言語を渡す。"""
+    model = _model(np.ones(2400, dtype=np.float32) * 0.1)
+    stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
+    data = await stage.synthesize("会議は10時です。", "ja")
+    assert data is not None
+    with wave.open(io.BytesIO(data)) as audio:
+        assert audio.getframerate() == local_tts.SAMPLE_RATE
+        assert audio.getnchannels() == 1
+        assert audio.getsampwidth() == 2
+    model.synthesize.assert_called_once_with("会議は10時です。", "ja")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad", [np.array([]), np.zeros(2400), np.array([np.nan]), np.ones((2, 2))]
+)
+async def test_invalid_audio_degrades_to_subtitles(bad: object) -> None:
+    """空・無音・非有限・多次元の波形を成功 WAV へ変換しない。"""
+    stage = local_tts.LocalTTSStage(engine=_model(bad), broker=VRAMBroker(3000))
+    assert await stage.synthesize("Hello", "en") is None
+
+
+@pytest.mark.asyncio
+async def test_unknown_language_empty_text_and_failure_return_none() -> None:
+    """未対応言語・空文は生成せず、合成例外は字幕継続のため None を返す。"""
+    model = _model(np.ones(10))
     stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
     assert await stage.synthesize("Bonjour", "fr") is None
-    model.generate.assert_not_called()
+    assert await stage.synthesize("  ", "en") is None
+    model.synthesize.assert_not_called()
+    model.synthesize.side_effect = RuntimeError("合成失敗（テスト）")
+    assert await stage.synthesize("Hello", "en") is None
 
 
 @pytest.mark.asyncio
 async def test_concurrent_requests_share_one_serial_engine() -> None:
-    """複数部屋からの呼び出しでも同一GPUモデルの生成を重ねない。"""
+    """複数部屋からの呼び出しでも同一 GPU モデルの生成を重ねない。"""
     active = 0
     peak = 0
     lock = threading.Lock()
 
-    def generate(**_kwargs: object) -> list[np.ndarray]:
+    def synthesize(_text: str, _language: str) -> np.ndarray:
         nonlocal active, peak
         with lock:
             active += 1
@@ -95,11 +87,10 @@ async def test_concurrent_requests_share_one_serial_engine() -> None:
         time.sleep(0.02)
         with lock:
             active -= 1
-        return [np.ones(2400, dtype=np.float32) * 0.1]
+        return np.ones(2400, dtype=np.float32) * 0.1
 
     model = Mock()
-    model._asr_pipe = None
-    model.generate.side_effect = generate
+    model.synthesize.side_effect = synthesize
     broker = VRAMBroker(3000)
     stage = local_tts.LocalTTSStage(engine=model, broker=broker)
     results = await asyncio.gather(
@@ -110,55 +101,10 @@ async def test_concurrent_requests_share_one_serial_engine() -> None:
     assert broker.resident_keys() == [local_tts.ENGINE_CACHE_KEY]
 
 
-def test_local_factory_returns_omnivoice_stage() -> None:
-    """local TTS スロットは OmniVoice ステージを返す。"""
-    assert isinstance(_make_local_tts(), local_tts.LocalTTSStage)
-
-
-@pytest.mark.asyncio
-async def test_missing_bundled_codec_cannot_select_another_model(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """付属コーデック欠損時にOmniVoiceの別モデル取得経路へ入らない。"""
-    hub = ModuleType("huggingface_hub")
-    hub.snapshot_download = Mock(return_value=str(tmp_path))
-    module = ModuleType("omnivoice")
-    module.OmniVoice = Mock()
-    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
-    monkeypatch.setitem(sys.modules, "omnivoice", module)
-    torch_module = ModuleType("torch")
-    torch_module.float16 = "float16"
-    monkeypatch.setitem(sys.modules, "torch", torch_module)
-    stage = local_tts.LocalTTSStage(broker=VRAMBroker(3000))
-    assert await stage.synthesize("Hello", "en") is None
-    module.OmniVoice.from_pretrained.assert_not_called()
-
-
-def test_catalog_matches_runtime_and_marks_noncommercial() -> None:
-    """選択モデルと異なる名称・ライセンス・架空の測定値を表示しない。"""
+def test_catalog_lists_no_unwired_local_tts() -> None:
+    """未結線のローカル TTS をモデルカタログに載せない。"""
     from app.ai_pipeline.model_registry import _build_default_catalog
-    from app.ai_pipeline.providers.local_multimodal import MODEL_ID as GEMMA_ID
 
     catalog = _build_default_catalog()
-    asr = catalog.get("asr-gemma4-e2b")
-    mt = catalog.get("t2t-gemma4-e2b")
-    tts = catalog.get("tts-omnivoice")
-    assert asr and mt and tts
-    assert asr.base_model == mt.base_model == GEMMA_ID
-    assert tts.base_model == local_tts.MODEL_ID
-    assert tts.runtime == "transformers"
-    assert tts.metrics == {}
-    assert catalog.is_commercial_allowed(tts) is False
-
-
-@pytest.mark.asyncio
-async def test_empty_text_failure_and_low_budget_return_none() -> None:
-    """空文・合成例外・VRAM 不足はいずれも字幕継続のため None を返す。"""
-    model = Mock()
-    model._asr_pipe = None
-    model.generate.side_effect = RuntimeError("合成失敗（テスト）")
-    stage = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(3000))
-    assert await stage.synthesize("  ", "en") is None
-    assert await stage.synthesize("Hello", "en") is None
-    tiny = local_tts.LocalTTSStage(engine=model, broker=VRAMBroker(100))
-    assert await tiny.synthesize("Hello", "en") is None
+    assert catalog.get("asr-gemma4-e2b") and catalog.get("t2t-gemma4-e2b")
+    assert catalog.get("tts-omnivoice") is None

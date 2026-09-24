@@ -204,12 +204,13 @@
     "description": "Hiển thị giá trị .env làm mặc định. Lưu tại đây có hiệu lực không cần triển khai lại (không đổi secret).",
     "revision": "Phiên bản cấu hình: {{revision}}",
     "presetsTitle": "Preset cách",
-    "presetsHint": "Chọn Cách 1 (Realtime S2S) hoặc Cách 2 (ASR→MT→TTS + gói chất lượng thuật ngữ). GPU local chỉ ở khe nâng cao.",
+    "presetsHint": "Chọn Phương thức 1 (Realtime S2S), Phương thức 2 (ASR→MT→TTS + gói chất lượng thuật ngữ) hoặc Phương thức 3 (hoàn toàn cục bộ, chỉ phụ đề).",
     "customPreset": "Khe/cờ chất lượng hiện tại khác preset có tên (tùy chỉnh).",
     "s2sSlotIgnored": "Khi chọn Cách 1 (Realtime S2S), khe ASR/MT/TTS bị bỏ qua và giữ đường speech-to-speech.",
     "qualityPackHint": "Cách 2 bật thuật ngữ, song song nhóm ngôn ngữ, cache/TM phụ đề, partial subtitle và hiệu chỉnh LLM.",
+    "localHint": "Phương thức 3 dùng Gemma 4 E2B để nhận dạng và dịch trên GPU cục bộ, chỉ xuất phụ đề (chưa có giọng dịch cho đến khi tích hợp mô hình được phép dùng thương mại; không hỗ trợ thuật ngữ và hiệu chỉnh LLM).",
     "glossaryLink": "Quản lý thuật ngữ",
-    "advancedLocalHint": "Nâng cao: asr/mt/tts=local là tùy chọn GPU local (không phải cách sản phẩm; khuyến nghị MT cloud cho thuật ngữ).",
+    "advancedLocalHint": "Nâng cao: asr/mt=local dùng cùng Gemma cục bộ như Phương thức 3. tts=local chỉ là khe thay thế (chưa gắn mô hình; chỉ phụ đề).",
     "showAdvanced": "Hiện cài đặt nâng cao",
     "hideAdvanced": "Ẩn cài đặt nâng cao",
     "preset": {
@@ -220,6 +221,10 @@
       "quality_cascade": {
         "label": "Cách 2: Quality cascade (thuật ngữ)",
         "desc": "ASR→MT→TTS với LLM cloud tốt nhất, thuật ngữ, song song, tối ưu phụ đề."
+      },
+      "local_gemma": {
+        "label": "Phương thức 3: Hoàn toàn cục bộ (chỉ phụ đề)",
+        "desc": "ASR/MT bằng Gemma 4 E2B. Không kết nối ngoài, không có giọng dịch."
       }
     },
     "aiProvider": "Nhà cung cấp AI (preset)",
@@ -248,4 +253,3 @@
     "saveError": "Cập nhật luồng AI cuộc họp thất bại"
   }
 }
-

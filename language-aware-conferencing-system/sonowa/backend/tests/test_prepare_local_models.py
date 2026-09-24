@@ -1,4 +1,4 @@
-"""モデル準備スクリプトが実行時と同じ2モデル・固定 revision だけを取得することを検証する。"""
+"""モデル準備スクリプトが実行時と同じモデル・固定 revision だけを取得することを検証する。"""
 
 import importlib.util
 import sys
@@ -22,8 +22,8 @@ def _script() -> ModuleType:
 def test_preparation_downloads_runtime_models_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Gemma と OmniVoice を実行時と同じ revision で取得し、他モデルを追加しない。"""
-    from app.ai_pipeline.providers import local_multimodal, local_tts
+    """Gemma を実行時と同じ revision で取得し、他モデルを追加しない。"""
+    from app.ai_pipeline.providers import local_multimodal
 
     script = _script()
     hub = ModuleType("huggingface_hub")
@@ -34,10 +34,7 @@ def test_preparation_downloads_runtime_models_only(
     calls = [
         (c.args[0], c.kwargs["revision"]) for c in hub.snapshot_download.call_args_list
     ]
-    assert calls == [
-        (local_multimodal.MODEL_ID, local_multimodal.MODEL_REVISION),
-        (local_tts.MODEL_ID, local_tts.MODEL_REVISION),
-    ]
+    assert calls == [(local_multimodal.MODEL_ID, local_multimodal.MODEL_REVISION)]
 
 
 def test_download_failure_returns_nonzero(

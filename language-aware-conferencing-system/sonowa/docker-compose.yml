@@ -117,7 +117,7 @@ services:
       - HOST_IP=${HOST_IP:-localhost}
       # フロントエンドポート（CORS許可オリジン自動生成用。.envのFRONTEND_PORTから注入）
       - FRONTEND_PORT=${FRONTEND_PORT:-5273}
-      # ローカル GPU 2モデル（Gemma 4 E2B + OmniVoice・12GB 想定）。モデルは固定 revision。
+      # 方式3 ローカル（Gemma 4 E2B・12GB 想定）。モデルは固定 revision。
       - VRAM_BUDGET_MB=${VRAM_BUDGET_MB:-10000}
       - LOCAL_TTS_DEVICE=${LOCAL_TTS_DEVICE:-cuda}
       - HF_HOME=${HF_HOME:-/models/hf}

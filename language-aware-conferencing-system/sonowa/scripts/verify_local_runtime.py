@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""通信遮断 Docker で2モデル構成の異常系・並行要求を検証する。
+"""通信遮断 Docker で方式3（ローカル）の異常系・並行要求を検証する。
 
 入力: --empty-cache はモデルをマウントしない実行に使用する。
 出力: 実行条件、ケース結果、GPU 最大割当の JSON。正常系の品質判定とは別。
@@ -56,26 +56,21 @@ async def verify(empty_cache: bool, input_dir: Path | None = None) -> dict[str, 
         cases.append(
             {"case": "parallel_mt", "translations": translations, "passed": True}
         )
-        old_revision = local_tts.MODEL_REVISION
-        try:
-            # 存在しない revision を指定し、TTS 欠損時の字幕継続を観測する。
-            local_tts.MODEL_REVISION = "0" * 40
-            pipeline = CompositeAIProvider(stage, stage, create_stage(broker=shared))
-            result = await pipeline.translate_audio(
-                b"", "ja", "en", original_text="会議は10時です。送信しないでください。"
-            )
-            assert result.original_text and result.translated_text
-            assert result.audio_data is None
-            cases.append(
-                {
-                    "case": "missing_tts_preserves_text_input_translation",
-                    "translation": result.translated_text,
-                    "audio_absent": True,
-                    "passed": True,
-                }
-            )
-        finally:
-            local_tts.MODEL_REVISION = old_revision
+        # local TTS 未結線（字幕のみ）でも翻訳が継続することを観測する。
+        pipeline = CompositeAIProvider(stage, stage, create_stage(broker=shared))
+        result = await pipeline.translate_audio(
+            b"", "ja", "en", original_text="会議は10時です。送信しないでください。"
+        )
+        assert result.original_text and result.translated_text
+        assert local_tts.available() or result.audio_data is None
+        cases.append(
+            {
+                "case": "subtitle_only_text_input_translation",
+                "translation": result.translated_text,
+                "audio_absent": result.audio_data is None,
+                "passed": True,
+            }
+        )
         if input_dir is not None:
             pipeline = CompositeAIProvider(stage, stage, create_stage(broker=shared))
             directions = (("ja", "en"), ("en", "ja"))
@@ -89,28 +84,25 @@ async def verify(empty_cache: bool, input_dir: Path | None = None) -> dict[str, 
             )
             observations = []
             for (source, target), result in zip(directions, results, strict=True):
-                assert (
-                    result.original_text
-                    and result.translated_text
-                    and result.audio_data
-                )
-                path = input_dir / f"parallel-{source}-{target}.wav"
-                path.write_bytes(result.audio_data)
-                observations.append(
-                    {
-                        "source": source,
-                        "target": target,
-                        "transcript": result.original_text,
-                        "translation": result.translated_text,
-                        "audio": inspect_audio(path),
-                    }
-                )
+                assert result.original_text and result.translated_text
+                row: dict[str, object] = {
+                    "source": source,
+                    "target": target,
+                    "transcript": result.original_text,
+                    "translation": result.translated_text,
+                }
+                if result.audio_data:
+                    path = input_dir / f"parallel-{source}-{target}.wav"
+                    path.write_bytes(result.audio_data)
+                    row["audio"] = inspect_audio(path)
+                observations.append(row)
+            expected = 2 if local_tts.available() else 1
             assert (
-                len(shared.resident_keys()) == 2
+                len(shared.resident_keys()) == expected
             ), "並行処理中に常駐モデルが退避された"
             cases.append(
                 {
-                    "case": "parallel_audio_pipeline",
+                    "case": "parallel_pipeline",
                     "passed": True,
                     "results": observations,
                     "resident_models": shared.resident_keys(),

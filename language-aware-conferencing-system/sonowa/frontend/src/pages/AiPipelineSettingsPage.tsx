@@ -25,8 +25,8 @@ interface FormState {
   llmCorrectionEnabled: boolean;
 }
 
-/** 画面上の2方式（保存スキーマは既存スロット + 品質フラグへ写像） */
-type PipelinePreset = 'realtime_s2s' | 'quality_cascade';
+/** 画面上の3方式（保存スキーマは既存スロット + 品質フラグへ写像） */
+type PipelinePreset = 'realtime_s2s' | 'quality_cascade' | 'local_gemma';
 
 const PRESET_VALUES: Record<PipelinePreset, FormState> = {
   realtime_s2s: {
@@ -46,6 +46,16 @@ const PRESET_VALUES: Record<PipelinePreset, FormState> = {
     defaultMode: 'hybrid',
     enablePartialSubtitles: true,
     llmCorrectionEnabled: true,
+  },
+  // 方式3: 完全ローカル（Gemma ASR/MT・字幕のみ）。local TTS は差し替え口のみで未結線。
+  local_gemma: {
+    aiProvider: 'gpt4o_transcribe',
+    asrProvider: 'local',
+    mtProvider: 'local',
+    ttsProvider: 'none',
+    defaultMode: 'b',
+    enablePartialSubtitles: false,
+    llmCorrectionEnabled: false,
   },
 };
 
@@ -239,6 +249,9 @@ export function AiPipelineSettingsPage() {
           )}
           {isS2sPreset && (
             <p className="hint-text">{t('aiPipelineSettings.s2sSlotIgnored')}</p>
+          )}
+          {activePreset === 'local_gemma' && (
+            <p className="hint-text">{t('aiPipelineSettings.localHint')}</p>
           )}
           {activePreset === 'quality_cascade' && (
             <p className="hint-text">
