@@ -31,14 +31,35 @@ SAMPLE_RATE = 16000
 FRAME_SAMPLES = 320
 WAIT_SECONDS = 300
 STABLE_SECONDS = 15
-LOCAL_SETTINGS = {
-    "ai_provider": "gpt4o_transcribe",
-    "asr_provider": "local",
-    "mt_provider": "local",
-    "tts_provider": "none",
-    "default_mode": "b",
-    "enable_partial_subtitles": False,
-    "llm_correction_enabled": False,
+# 管理画面の3方式プリセットと同じ値（frontend/src/pages/AiPipelineSettingsPage.tsx）。
+PRESETS: dict[str, dict[str, object]] = {
+    "local": {
+        "ai_provider": "gpt4o_transcribe",
+        "asr_provider": "local",
+        "mt_provider": "local",
+        "tts_provider": "none",
+        "default_mode": "b",
+        "enable_partial_subtitles": False,
+        "llm_correction_enabled": False,
+    },
+    "cascade": {
+        "ai_provider": "gpt4o_transcribe",
+        "asr_provider": "auto",
+        "mt_provider": "auto",
+        "tts_provider": "auto",
+        "default_mode": "hybrid",
+        "enable_partial_subtitles": True,
+        "llm_correction_enabled": True,
+    },
+    "s2s": {
+        "ai_provider": "gpt_realtime",
+        "asr_provider": "auto",
+        "mt_provider": "auto",
+        "tts_provider": "auto",
+        "default_mode": "a",
+        "enable_partial_subtitles": False,
+        "llm_correction_enabled": False,
+    },
 }
 
 # subprocess 内の DB 処理。所有するテスト ID だけを stdin で受け取る。
@@ -202,14 +223,19 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
             report["settings_before"] = response.json()["effective"]
             if args.require_existing_settings:
                 assert all(
-                    report["settings_before"][k] == v for k, v in LOCAL_SETTINGS.items()
+                    report["settings_before"][k] == v
+                    for k, v in PRESETS[args.preset].items()
                 )
             response = await client.put(
-                "/api/admin/settings/ai-pipeline", headers=admin, json=LOCAL_SETTINGS
+                "/api/admin/settings/ai-pipeline",
+                headers=admin,
+                json=PRESETS[args.preset],
             )
             response.raise_for_status()
             report["settings"] = response.json()["effective"]
-            assert all(report["settings"][k] == v for k, v in LOCAL_SETTINGS.items())
+            assert all(
+                report["settings"][k] == v for k, v in PRESETS[args.preset].items()
+            )
             if args.configure_only:
                 report["configured"] = True
                 return
@@ -274,7 +300,7 @@ async def run(args: argparse.Namespace, report: dict[str, object]) -> None:
                 )
             await source.wait_for_playout()
             # 字幕のみ構成（tts=none）では翻訳音声を待たない。
-            need_audio = LOCAL_SETTINGS["tts_provider"] == "local"
+            need_audio = PRESETS[args.preset]["tts_provider"] != "none"
             while (need_audio and not has_voice(audio)) or not any(
                 s.get("translated_text") for s in subtitles
             ):
@@ -367,6 +393,7 @@ def main() -> int:
     parser.add_argument("--livekit", default="ws://localhost:7880")
     parser.add_argument("--wav", type=Path, required=True)
     # 話者（入力 WAV の言語）と聞き手（翻訳字幕の言語）。既定は従来の ja→en。
+    parser.add_argument("--preset", choices=tuple(PRESETS), default="local")
     parser.add_argument("--source", choices=("ja", "en", "zh", "vi"), default="ja")
     parser.add_argument("--target", choices=("ja", "en", "zh", "vi"), default="en")
     parser.add_argument("--output-dir", type=Path, required=True)

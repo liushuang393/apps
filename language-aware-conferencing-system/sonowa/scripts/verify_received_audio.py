@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import difflib
 import hashlib
 import json
 import wave
 from pathlib import Path
 
 import numpy as np
-from verify_local_livekit import complete_fixture
+from verify_local_pipeline import MIN_TRANSCRIPT_SIMILARITY, normalized
 
 from app.ai_pipeline.providers.local_multimodal import LocalMultimodalStage
 from app.audio.pcm import wrap_wav16
@@ -26,7 +27,9 @@ MIN_RMS = 0.001
 
 
 async def verify(path: Path) -> dict[str, object]:
-    """入力区間をそのまま認識し、既知文の時刻と否定の保持を確認する。"""
+    """入力区間をそのまま認識し、DB 記録の訳文と一致するかを確認する。"""
+    # 認識言語は verify_local_livekit.py の出力名 livekit-<target>.wav から得る。
+    language = path.stem.rsplit("-", 1)[-1]
     with wave.open(str(path)) as source:
         rate = source.getframerate()
         assert source.getsampwidth() == 2 and source.getnchannels() == 1
@@ -53,7 +56,7 @@ async def verify(path: Path) -> dict[str, object]:
         start = max(0, start - int(rate * PADDING_SECONDS))
         end = min(len(samples), end + int(rate * PADDING_SECONDS))
         chunk = pcm[start * 2 : end * 2]
-        text = await asr.transcribe_audio(wrap_wav16(chunk, rate), "en")
+        text = await asr.transcribe_audio(wrap_wav16(chunk, rate), language)
         assert text, "受信音声の認識結果が空です"
         cases.append(
             {
@@ -66,6 +69,11 @@ async def verify(path: Path) -> dict[str, object]:
     combined = " ".join(row["text"] for row in cases)
     source_hash = hashlib.sha256(path.read_bytes()).hexdigest()
     transport = json.loads((path.parent / "livekit.json").read_text(encoding="utf-8"))
+    # 受信音声は DB に記録された訳文の合成音声のはずなので、その一致度で内容を判定する。
+    expected = " ".join(row[1] for row in transport.get("db_translations", []))
+    similarity = difflib.SequenceMatcher(
+        None, normalized(expected), normalized(combined)
+    ).ratio()
     transport_ok = (
         (transport.get("transport_complete") or transport.get("passed"))
         and transport.get("cleanup") == "passed"
@@ -77,8 +85,10 @@ async def verify(path: Path) -> dict[str, object]:
         "tested_image": transport.get("tested_image"),
         "transport_verified": bool(transport_ok),
         "cases": cases,
-        "passed": bool(transport_ok) and complete_fixture(combined),
-        "note": "Known English fixture only; not a general speech-quality verdict",
+        "expected": expected,
+        "similarity": similarity,
+        "passed": bool(transport_ok) and similarity >= MIN_TRANSCRIPT_SIMILARITY,
+        "note": "受信音声の再認識と DB 記録の訳文の一致度。音声品質の総合判定ではない",
     }
 
 
