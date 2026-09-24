@@ -46,6 +46,8 @@ export default defineConfig({
   // ============================================================
   use: {
     baseURL,
+    // 本番構成は社内 LAN 向け自己署名証明書のため、HTTPS 入口ではその検証だけを外す。
+    ignoreHTTPSErrors: baseURL.startsWith("https://"),
     trace: traceOnPass ? "on" : "on-first-retry",
     screenshot: screenshotOnPass ? "on" : "only-on-failure",
     video: screenshotOnPass ? "on" : "retain-on-failure",

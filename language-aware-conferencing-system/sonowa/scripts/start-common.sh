@@ -100,6 +100,11 @@ detect_lan_ip() {
 
 show_access_urls() {
     local ip="$1"
+    if [[ "${ENV:-development}" == "production" ]]; then
+        ok "このマシン / LAN 内の他マシン: https://${ip}:${HTTPS_PORT:-443}"
+        info "各端末で certs/ca.crt を信頼済みルート証明書に一度だけ登録してください"
+        return
+    fi
     ok "このマシン: http://localhost:${FRONTEND_PORT}"
     ok "LAN 内の他マシン: http://${ip}:${FRONTEND_PORT}"
     info "API: http://${ip}:${BACKEND_PORT}/docs"

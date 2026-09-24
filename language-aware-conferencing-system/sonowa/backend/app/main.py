@@ -25,16 +25,29 @@ from app.translate.subtitle_routes import router as subtitle_router
 logger = logging.getLogger(__name__)
 
 DEFAULT_JWT_SECRET = "change-me-in-production"
+# 本番で拒否する既知の開発用値（config / docker-compose の既定値）。
+KNOWN_DEV_SECRETS = frozenset(
+    {
+        DEFAULT_JWT_SECRET,
+        "sonowa-jwt-secret-change-in-production",
+        "devsecret_change_in_production",
+    }
+)
+MIN_SECRET_LENGTH = 32
 
 
 def _validate_security_settings() -> None:
-    """本番環境で危険な認証設定を起動前に拒否する。"""
-    if settings.env.lower() == "production" and (
-        settings.jwt_secret == DEFAULT_JWT_SECRET or len(settings.jwt_secret) < 32
+    """本番環境で既知・短すぎる JWT / LiveKit シークレットを起動前に拒否する。"""
+    if settings.env.lower() != "production":
+        return
+    for name, value in (
+        ("JWT_SECRET", settings.jwt_secret),
+        ("LIVEKIT_API_SECRET", settings.livekit_api_secret),
     ):
-        raise RuntimeError(
-            "本番環境の JWT_SECRET には既定値以外の32文字以上の値が必要です"
-        )
+        if not value or value in KNOWN_DEV_SECRETS or len(value) < MIN_SECRET_LENGTH:
+            raise RuntimeError(
+                f"本番環境の {name} には既定値以外の{MIN_SECRET_LENGTH}文字以上の値が必要です"
+            )
 
 
 def _validate_api_keys() -> None:

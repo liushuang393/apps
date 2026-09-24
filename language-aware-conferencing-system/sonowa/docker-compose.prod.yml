@@ -1,0 +1,35 @@
+# 本番オーバーライド（社内 LAN・HTTPS）。ENV=production のとき start-docker.sh が自動で重ねる。
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.prod.yml up -d --build
+# - ブラウザの入口は nginx(443) の1つだけ。/ /api /rtc(LiveKit シグナリング) を TLS で中継する。
+#   HTTPS でないとブラウザがマイクを許可せず、HTTPS ページからは ws:// へ接続できない。
+# - backend / DB / Redis / LiveKit シグナリングは 127.0.0.1 のみに公開する（LAN から直接触らせない）。
+# - LiveKit メディア（UDP 50000-50019・TCP 7881）と TURN(3478) は WebRTC のため LAN へ公開のまま。
+# - 証明書は certs/tls.crt・certs/tls.key（scripts/generate-tls-cert.sh が自己署名で作成）。
+services:
+  frontend:
+    build:
+      target: production
+    # 開発用のソースマウントを外し、証明書だけを読み取り専用で渡す。
+    volumes: !override
+      - ./certs:/etc/nginx/certs:ro
+    ports: !override
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTP_PORT:-80}:80"
+    environment: !reset []
+  backend:
+    environment:
+      # ブラウザは nginx 経由の wss で LiveKit へ接続する（mixed content 回避）。
+      LIVEKIT_WS_URL: wss://${HOST_IP:-localhost}:${HTTPS_PORT:-443}
+    ports: !override
+      - "127.0.0.1:${BACKEND_PORT:-8090}:8000"
+  postgres:
+    ports: !override
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+  livekit:
+    ports: !override
+      - "127.0.0.1:${LIVEKIT_PORT:-7880}:7880"
+      - "${LIVEKIT_RTC_TCP_PORT:-7881}:7881"
+      - "50000-50019:50000-50019/udp"

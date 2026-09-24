@@ -35,9 +35,14 @@ validate_provider_key
 export HOST_IP="${explicit_ip:-$(detect_lan_ip)}"
 validate_ipv4 "$HOST_IP"
 
-args=(compose)
-# ローカル GPU 2モデル構成は GPU オーバーライドが無いと CUDA を使えない。
-[[ "${INSTALL_LOCAL:-0}" == "1" ]] && args+=(-f docker-compose.yml -f docker-compose.gpu.yml)
+args=(compose -f docker-compose.yml)
+# ローカル GPU 構成（方式3）は GPU オーバーライドが無いと CUDA を使えない。
+[[ "${INSTALL_LOCAL:-0}" == "1" ]] && args+=(-f docker-compose.gpu.yml)
+# 本番は HTTPS（自己署名）で nginx を入口にし、内部サービスを 127.0.0.1 に閉じる。
+if [[ "${ENV:-development}" == "production" ]]; then
+    "${PROJECT_ROOT}/scripts/generate-tls-cert.sh" "$HOST_IP"
+    args+=(-f docker-compose.prod.yml)
+fi
 args+=(up)
 $detach && args+=(-d)
 $build && args+=(--build)
