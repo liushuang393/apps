@@ -236,6 +236,59 @@ GPU オーバーライド（`docker-compose.gpu.yml`）は `VAD_BACKEND=silero` 
 
 ---
 
+## 会議を使うまでの手順（前提）
+
+会議は **ホスト 1 台**（Docker と GPU を動かす PC）と、**参加端末**（ブラウザだけの PC・スマートフォン）で行う。参加端末の設定は 1 台につき 1 回だけでよい。
+
+### 1. ホストの準備（1 回だけ）
+
+| 項目 | 内容 |
+|---|---|
+| ハードウェア | NVIDIA GPU 12GB 以上（RTX 3060 で検証）。本番は他のサービスと相乗りしない専用機を推奨（CPU を取り合うと遅延が大きく伸びる） |
+| ソフトウェア | Windows 11 + WSL2 + Docker Desktop（GPU 有効） |
+| `.env` | `cp .env.example .env` のうえで `ENV=production`、`INSTALL_LOCAL=1`、ランダムな `JWT_SECRET`・`LIVEKIT_API_KEY`・`LIVEKIT_API_SECRET`・`DB_PASSWORD` を設定する（§本番デプロイ）。方式3（ローカル）だけを使うなら API キーは不要 |
+| 起動 | `./start-with-keys.sh --build`。初回は `docker compose exec backend python /app/scripts/prepare_local_models.py --output-dir /models` でモデルを取得し、`docker compose restart backend` |
+| 証明書と Firewall | 管理者 PowerShell で `scripts\setup-windows.ps1 -CaPath certs\ca.crt` を実行する。社内 CA の信頼登録と、TCP 443 / 80 / 7881 / 3478・UDP 3478 / 50000-50039 の受信許可（同一サブネットからのみ）を行う |
+| 方式の選択 | 管理者で `https://<HOST_IP>` にログインし、`/admin/ai-pipeline` で方式を選ぶ（方式3 = 完全ローカル） |
+
+起動が終わると、画面に `https://<HOST_IP>:443` が表示される。この URL を参加者に伝える。
+
+### 2. 参加端末の準備（1 台につき 1 回だけ）
+
+1. ホストの `certs/ca.crt` を受け取る（USB・共有フォルダなど）。`certs/ca.key` は秘密鍵なので**絶対に配らない**
+2. `ca.crt` を「信頼されたルート証明機関」に登録する
+
+| 端末 | 登録方法 |
+|---|---|
+| Windows | 管理者 PowerShell で `.\setup-windows.ps1 -CaPath .\ca.crt -ClientOnly`（または `ca.crt` をダブルクリック →「証明書のインストール」→「ローカル コンピューター」→「信頼されたルート証明機関」） |
+| macOS | `ca.crt` をダブルクリックしてキーチェーンに追加 →「Sonowa Local CA」の「信頼」を「常に信頼」にする |
+| iPhone / iPad | プロファイルをインストール → 設定 → 一般 → 情報 → 証明書信頼設定で「Sonowa Local CA」をオンにする |
+| Android | 設定 → セキュリティ → 暗号化と認証情報 → 証明書のインストール →「CA 証明書」 |
+| Firefox | Windows とは別の証明書ストアのため、設定 → 証明書を表示 → 認証局証明書 → インポート |
+
+3. ブラウザ（Chrome / Edge 推奨）を再起動し、`https://<HOST_IP>` を開いて警告が出ないことを確かめる
+
+登録はホストの IP が変わっても不要（サーバー証明書だけが自動で作り直される）。`certs/ca.crt` を消すと全端末で登録し直しになるため消さない。
+
+### 3. 会議の流れ
+
+1. `https://<HOST_IP>` を開き、アカウントを登録してログインする（母語を選ぶ）
+2. 会議室を作る（作成者）か、会議室一覧から入る（参加者）
+3. 初回だけブラウザのマイク使用を「許可」する。画面のマイクボタンを **ON** にすると発言が相手に届く
+4. 左の設定パネルで聴き方を選ぶ: **原声**（話者の声）か **翻訳**（翻訳音声 + その言語の字幕）。翻訳では字幕・音声の言語も選ぶ
+5. 字幕欄に原文と訳文が会議記録として残る。終了は「退室」
+
+方式3 の目安（RTX 3060 実測）: 字幕は発話の区切りから数秒、翻訳音声は発話開始から約8〜22秒（逐次通訳に近い）。ベトナム語向けの翻訳音声は出ず字幕のみ。
+
+### 4. うまくいかないとき
+
+| 症状 | 確認すること |
+|---|---|
+| 「保護されていない通信」と出る・マイクボタンが押せない | その端末に `ca.crt` を登録したか。ブラウザを再起動したか。`http://` ではなく `https://` で開いているか |
+| 画面は開くが相手の声・字幕が届かない | ホストの Firewall（`setup-windows.ps1` を実行したか）、端末とホストが同じ LAN か |
+| 翻訳音声だけ来ない | 聴き方が「翻訳」か。聴く言語がベトナム語ではないか（方式3 は vi 音声なし） |
+| backend が起動しない | `docker compose logs backend`。本番で開発用・短すぎる `JWT_SECRET` / `LIVEKIT_API_SECRET` だと起動を拒否する |
+
 ## アーキテクチャ設計（本番想定）
 
 > 本章は設計仕様書 [`docs/改善.md`](./docs/改善.md)（全20章）を Sonowa 実装へマッピングした本番アーキテクチャである。
@@ -531,7 +584,7 @@ docker compose down
 - 方式1 を使う場合は `OPENAI_REALTIME_MODEL` に OpenAI のモデル名（例 `gpt-realtime-2025-08-28`）
 - 方式2 の LLM 補正を使う場合は有効な `GEMINI_API_KEY`
 
-参加端末の初回設定: `certs/ca.crt` を各端末の「信頼されたルート証明機関」に一度だけ登録する（Windows: ダブルクリック →「証明書のインストール」→ ローカルコンピューター →「信頼されたルート証明機関」）。HOST_IP が変わってもサーバー証明書だけが作り直されるため、再登録は不要。Windows Firewall は TCP 443 / 7881、UDP 50000-50039 / 3478 を開ける。
+ホストの証明書登録と Firewall、参加端末の設定は §会議を使うまでの手順（前提）を参照（`scripts/setup-windows.ps1`）。
 
 ## 複数マシンでの LAN 連動テスト
 
@@ -598,6 +651,8 @@ cd frontend && npm install
 # 単体テスト
 cd backend && pytest
 
+# 実ブラウザ2台の会議テスト（擬似マイク。本番相当スタック起動済みで実行）
+# E2E_BASE_URL=https://<HOST_IP> E2E_FAKE_MIC_WAV=<話者WAV> E2E_SILENT_WAV=<無音WAV> npx playwright test -c e2e/playwright.config.ts --project meeting
 # E2E テスト（frontend:5273 / API:8090 が起動済みであること）
 ./scripts/e2e_run_a_lane.sh   # A レーン: mock provider・外部 API キー不要
 ./scripts/e2e_run_b_lane.sh   # B レーン: 実 AI / LiveKit

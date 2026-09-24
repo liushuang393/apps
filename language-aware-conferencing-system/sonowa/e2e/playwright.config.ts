@@ -87,6 +87,13 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
+      // 実ブラウザ2台の会議（擬似マイク・GPU・本番相当スタックが必要）。明示指定時のみ実行する。
+      name: "meeting",
+      testDir: "./meeting",
+      use: { ...devices["Desktop Chrome"] },
+      timeout: 300_000,
+    },
+    {
       name: "visual",
       testDir: "./visual",
       use: { ...devices["Desktop Chrome"] },
