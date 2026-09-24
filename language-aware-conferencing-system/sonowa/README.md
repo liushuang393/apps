@@ -135,6 +135,18 @@ Mic → LiveKit → Segment → RealtimeRuntimePort
 
 #### 方式2: 品質カスケード（ASR→MT→TTS + 用語集）
 
+> **TODO（方式2 の将来形・現状は未実装）**: 方式1 と同じ音声→音声（S2S）を、クラウドではなく**ローカルモデル**で実現する。2026-09-24 時点では、商用利用可・ja/en/zh/vi 対応・12GB GPU に収まるローカル S2S モデルが無いため使えない。それまでは下記のクラウドのカスケードで運用する。
+>
+> 実装時に使える既存の枠組み:
+>
+> - `backend/app/ai_pipeline/runtime/port.py` の `RealtimeRuntimePort`（`open_session` / `run_turn` / `interrupt` / `close_session`）: 方式1 と同じ S2S の境界。ローカル S2S はこの契約を満たす実装を追加すればよい
+> - 実装例: `runtime/per_utterance.py`（発話単位）、`runtime/native_persistent.py`（持続接続）、`runtime/factory.py`（生成）、`providers/gpt_realtime.py` / `providers/gemini_live.py`（S2S provider）
+> - 登録と切替: `ai_pipeline/registry.py`（Provider Registry）、管理画面のプリセット（`frontend/src/pages/AiPipelineSettingsPage.tsx`）
+> - VRAM 調停・固定 revision・オフライン読込の型: `ai_pipeline/vram_broker.py`、`providers/local_multimodal.py` / `providers/local_tts.py`
+> - 実行基盤の検討資料: `docs/MiniCPM-V・TEN Framework分析に基づく最終改善設計.md`（TEN Framework を Mode A 実行基盤として条件付き PoC 採用）
+>
+> 候補モデル（**ライセンス・対応言語は未検証。採用前に要確認**）: Meta SeamlessM4T v2 / SeamlessStreaming（CC-BY-NC で商用不可と認識）、Kyutai Hibiki（仏→英のみと認識）、Qwen の Omni 系（音声出力あり、言語対応は要確認）、MiniCPM-o（ライセンス要確認）。
+
 認識・翻訳・合成をステージ分離し、**自社用語集**・並列・字幕最適化を品質パックとして載せる。既定運用。
 
 ```mermaid
