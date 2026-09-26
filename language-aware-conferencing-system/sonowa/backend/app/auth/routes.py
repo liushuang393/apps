@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,6 +82,20 @@ class HistoryItem(BaseModel):
     is_private: bool
     joined_at: str
     updated_at: str
+
+
+async def _revoke_sessions(db: AsyncSession, user: User) -> None:
+    """
+    トークン世代を +1 し、これまでに発行した JWT をすべて失効させる。
+    読んで書き戻すと同時更新で加算を取りこぼすため、DB 側で加算して新しい値を受け取る。
+    """
+    result = await db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(token_version=User.token_version + 1)
+        .returning(User.token_version)
+    )
+    user.token_version = result.scalar_one()
 
 
 def _build_auth_response(user: User) -> AuthResponse:
@@ -375,7 +389,7 @@ async def confirm_password_reset(
 
     # パスワード更新
     user.password_hash = hash_password(data.new_password)
-    user.token_version += 1  # 既存セッションをすべて失効
+    await _revoke_sessions(db, user)
     reset_token.used = True
 
     await db.commit()
@@ -399,6 +413,6 @@ async def change_my_password(
             detail="現在のパスワードが正しくありません",
         )
     user.password_hash = hash_password(data.new_password)
-    user.token_version += 1
+    await _revoke_sessions(db, user)
     await db.commit()
     return _build_auth_response(user)

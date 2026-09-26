@@ -11,6 +11,13 @@ from app.auth.routes import RESET_TOKEN_TTL, issue_reset_token
 from app.db.models import PasswordResetToken
 
 
+def _bumped(version: int) -> Mock:
+    """token_version 加算 UPDATE の RETURNING 結果。"""
+    result = Mock()
+    result.scalar_one.return_value = version
+    return result
+
+
 def _db(first_result: object) -> Mock:
     """execute の1回目に first_result、2回目に未使用トークン一覧を返す偽セッション。"""
     old = Mock(used=False)
@@ -86,7 +93,7 @@ async def test_change_own_password_requires_current_password() -> None:
         token_version=0,
         password_hash=hash_password("Current-Pass-1"),
     )
-    db = Mock(commit=AsyncMock())
+    db = Mock(execute=AsyncMock(return_value=_bumped(1)), commit=AsyncMock())
 
     with pytest.raises(HTTPException) as err:
         await change_my_password(
@@ -104,6 +111,9 @@ async def test_change_own_password_requires_current_password() -> None:
     )
     assert result.access_token
     assert verify_password("Brand-New-2", user.password_hash)
+    # 同時更新で取りこぼさないよう、世代は DB 側で加算する
+    stmt = str(db.execute.await_args.args[0])
+    assert "token_version=(users.token_version +" in stmt
     db.commit.assert_awaited_once()
 
 
@@ -214,7 +224,7 @@ async def test_password_change_revokes_old_tokens_and_reissues_one() -> None:
     result = await change_my_password(
         PasswordChange(current_password="Current-Pass-1", new_password="Brand-New-2"),
         user=user,
-        db=Mock(commit=AsyncMock()),
+        db=Mock(execute=AsyncMock(return_value=_bumped(1)), commit=AsyncMock()),
     )
 
     with pytest.raises(HTTPException) as err:
@@ -256,7 +266,8 @@ async def test_password_reset_revokes_old_tokens() -> None:
     user_found = Mock()
     user_found.scalar_one_or_none.return_value = user
     db = Mock(
-        execute=AsyncMock(side_effect=[token_found, user_found]), commit=AsyncMock()
+        execute=AsyncMock(side_effect=[token_found, user_found, _bumped(1)]),
+        commit=AsyncMock(),
     )
 
     await confirm_password_reset(
