@@ -81,7 +81,7 @@ history, settings forms are page-local. Don't add a third store for one page's d
   `roomStore` is not persisted.
 - Adding a server-cache library or context providers for data already handled by the pattern above.
 
-## Known Debt
+## Caps
 
-`roomStore.addSubtitle` caps history with a literal `.slice(-50)` (magic number vs CLAUDE.md);
-extract a named constant if you touch it.
+`roomStore.addSubtitle` keeps the latest `MAX_SUBTITLES` (module-level constant) confirmed
+subtitles; follow the same named-constant pattern for any new buffer limit.

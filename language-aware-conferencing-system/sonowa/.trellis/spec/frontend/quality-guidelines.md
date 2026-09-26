@@ -65,7 +65,7 @@ ESLint config (`frontend/.eslintrc.cjs`): `eslint:recommended`,
 
 | Pattern | Why / evidence |
 |---------|----------------|
-| `console.log` (and new `console.*`) | CLAUDE.md. Only one exists: `console.error` in `hooks/useLiveKit.ts` connect failure (debt). Surface errors via UI state (`setConnectionError`, `setError`). |
+| `console.log` (and new `console.*` without a reason comment) | CLAUDE.md bans `console.log`. The one `console.error` in `hooks/useLiveKit.ts` (connect failure) is a deliberate, commented exception: it keeps the raw error for diagnosis while the UI shows a formatted message. Otherwise surface errors via UI state (`setConnectionError`, `setError`). |
 | `any`, `@ts-ignore` | CLAUDE.md; zero occurrences today |
 | Magic numbers | CLAUDE.md; use named constants |
 | Hardcoded secrets / API URLs | API base is always relative `/api` via Vite proxy (`api/client.ts` `API_BASE`) |
@@ -87,7 +87,7 @@ CLAUDE.md: 500 lines recommended, hard limit 1000 (global) / 1500 (sonowa CLAUDE
 ## Code Review Checklist
 
 - [ ] `npm run lint` and `npm run type-check` clean
-- [ ] No `any` / `console.*` / magic numbers / new hardcoded UI strings
+- [ ] No `any` / `console.log` / uncommented `console.*` / magic numbers / new hardcoded UI strings
 - [ ] snake_case -> camelCase done in `api/client.ts`
 - [ ] Token-issuing responses go through `setAuth(token, user)`; 401-only logout
 - [ ] Existing `data-testid`s preserved; regression E2E added for bug fixes

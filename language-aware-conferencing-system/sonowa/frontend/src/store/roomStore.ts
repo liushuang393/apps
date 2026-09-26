@@ -11,6 +11,9 @@ import type {
   RoomMediaState,
 } from '../types';
 
+/** 画面に保持する確定字幕の最大件数（古いものから破棄） */
+const MAX_SUBTITLES = 50;
+
 /** 接続状態タイプ */
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
@@ -162,8 +165,8 @@ export const useRoomStore = create<RoomState>((set) => ({
         }
       }
 
-      // 新しい字幕を追加（最新50件を保持）
-      const newSubtitles = [...state.subtitles, subtitle].slice(-50);
+      // 新しい字幕を追加（最新 MAX_SUBTITLES 件を保持）
+      const newSubtitles = [...state.subtitles, subtitle].slice(-MAX_SUBTITLES);
 
       // シーケンス番号がある場合はソート（順序保証）
       if (subtitle.seq !== undefined) {
