@@ -301,3 +301,11 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* パスワード再設定リンク発行ボタン（編集モーダル内） */
+.form-group .btn-reset-link {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 0.5rem;
+}

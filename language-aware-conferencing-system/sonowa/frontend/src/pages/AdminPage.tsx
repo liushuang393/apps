@@ -291,7 +291,7 @@ export function AdminPage() {
               <label>パスワード再設定</label>
               <button
                 type="button"
-                className="btn-secondary"
+                className="btn-reset-link"
                 data-testid="admin-issue-reset-link"
                 onClick={() => void handleIssueResetLink(editingUser.id)}
               >

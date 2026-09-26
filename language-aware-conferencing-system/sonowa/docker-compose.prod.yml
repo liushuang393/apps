@@ -4,9 +4,11 @@
 #   HTTPS でないとブラウザがマイクを許可せず、HTTPS ページからは ws:// へ接続できない。
 # - backend / DB / Redis / LiveKit シグナリングは 127.0.0.1 のみに公開する（LAN から直接触らせない）。
 # - LiveKit メディア（UDP 50000-50019・TCP 7881）と TURN(3478) は WebRTC のため LAN へ公開のまま。
-# - 証明書は certs/tls.crt・certs/tls.key（scripts/generate-tls-cert.sh が自己署名で作成）。
+# - 証明書は certs/tls.crt・certs/tls.key（scripts/generate-tls-cert.sh が社内ローカル CA で署名して作成）。
 services:
   frontend:
+    # ホスト再起動・Docker Desktop 再起動後も自動で復帰する。
+    restart: unless-stopped
     build:
       target: production
     # 開発用のソースマウントを外し、証明書だけを読み取り専用で渡す。
@@ -17,15 +19,18 @@ services:
       - "${HTTP_PORT:-80}:80"
     environment: !reset []
   backend:
+    restart: unless-stopped
     environment:
       # ブラウザは nginx 経由の wss で LiveKit へ接続する（mixed content 回避）。
       LIVEKIT_WS_URL: wss://${HOST_IP:-localhost}:${HTTPS_PORT:-443}
     ports: !override
       - "127.0.0.1:${BACKEND_PORT:-8090}:8000"
   postgres:
+    restart: unless-stopped
     ports: !override
       - "127.0.0.1:${DB_PORT:-5433}:5432"
   redis:
+    restart: unless-stopped
     ports: !override
       - "127.0.0.1:${REDIS_PORT:-6380}:6379"
   livekit:
