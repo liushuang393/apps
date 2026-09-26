@@ -124,33 +124,39 @@
 }
 
 .token-display {
-  background: rgba(0, 0, 0, 0.3);
+  background: #f1f5f9;
   border-radius: var(--radius-md);
   padding: 1rem;
   margin: 1rem 0;
 }
 
 .token-display p {
-  color: rgba(255, 255, 255, 0.8);
+  color: #334155;
   font-size: 0.9rem;
 }
 
 .reset-token {
   display: block;
-  background: rgba(0, 0, 0, 0.4);
+  background: #e2e8f0;
   padding: 0.75rem;
   border-radius: var(--radius-sm);
   font-family: monospace;
   font-size: 0.85rem;
   word-break: break-all;
-  color: #60a5fa;
+  color: #1d4ed8;
   margin: 0.5rem 0;
 }
 
+/* 淡色カード上の補足文。白系の文字は読めないため濃い色にする */
 .token-hint {
-  color: rgba(255, 255, 255, 0.5) !important;
-  font-size: 0.8rem !important;
-  font-style: italic;
+  color: #475569 !important;
+  font-size: 0.85rem !important;
+  line-height: 1.6;
+}
+
+/* 認証画面の成功メッセージは淡い緑の上に置くため、濃い緑で十分なコントラストを取る */
+.auth-page .success-message p {
+  color: #166534;
 }
 
 .btn-link {

@@ -58,7 +58,8 @@
     "resetting": "更新中...",
     "resetButton": "パスワードを更新",
     "passwordMismatch": "パスワードが一致しません",
-    "askAdminForReset": "本番環境ではメールを送信しません。管理者に「パスワード再設定リンク」の発行を依頼してください。"
+    "askAdminForReset": "本番環境ではメールを送信しません。管理者に「パスワード再設定リンク」の発行を依頼してください。",
+    "resetRequested": "パスワード再設定の依頼を受け付けました"
   },
   "menu": {
     "communication": "コミュニケーション",
@@ -83,10 +84,15 @@
   },
   "profile": {
     "title": "プロフィール設定",
-    "subtitle": "表示名と母語を変更できます",
+    "subtitle": "表示名・母語・パスワードを変更できます",
     "role": "権限",
     "saveSuccess": "プロフィールを保存しました",
-    "saveFailed": "プロフィールの保存に失敗しました"
+    "saveFailed": "プロフィールの保存に失敗しました",
+    "passwordTitle": "パスワード変更",
+    "currentPassword": "現在のパスワード",
+    "passwordChangeSubmit": "パスワードを変更",
+    "passwordChanged": "パスワードを変更しました。次回から新しいパスワードでログインしてください",
+    "passwordChangeFailed": "パスワードの変更に失敗しました"
   },
   "history": {
     "title": "利用履歴",

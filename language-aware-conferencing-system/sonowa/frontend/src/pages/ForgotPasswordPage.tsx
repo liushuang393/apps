@@ -61,7 +61,7 @@ export function ForgotPasswordPage() {
 
         {success ? (
           <div className="success-message">
-            <p>✅ {t('auth.resetSuccess')}</p>
+            <p>✅ {t('auth.resetRequested')}</p>
             {resetToken && (
               <div className="token-display">
                 <p><strong>MVP版リセットトークン:</strong></p>

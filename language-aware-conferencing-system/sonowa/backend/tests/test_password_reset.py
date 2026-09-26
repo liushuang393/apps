@@ -68,3 +68,45 @@ async def test_admin_reset_for_unknown_user_is_404() -> None:
         await issue_user_password_reset("nope", _admin=Mock(), db=db)
     assert err.value.status_code == 404
     db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_change_own_password_requires_current_password() -> None:
+    """ログイン中の本人は、現在のパスワードが正しいときだけ変更できる。"""
+    from app.auth.jwt_handler import hash_password, verify_password
+    from app.auth.routes import PasswordChange, change_my_password
+
+    user = Mock(password_hash=hash_password("Current-Pass-1"))
+    db = Mock(commit=AsyncMock())
+
+    with pytest.raises(HTTPException) as err:
+        await change_my_password(
+            PasswordChange(current_password="wrong-pass", new_password="Brand-New-2"),
+            user=user,
+            db=db,
+        )
+    assert err.value.status_code == 400
+    db.commit.assert_not_awaited()
+
+    result = await change_my_password(
+        PasswordChange(current_password="Current-Pass-1", new_password="Brand-New-2"),
+        user=user,
+        db=db,
+    )
+    assert result.message
+    assert verify_password("Brand-New-2", user.password_hash)
+    db.commit.assert_awaited_once()
+
+
+def test_new_passwords_must_be_at_least_8_characters() -> None:
+    """登録・再設定・変更のいずれも 8 文字未満のパスワードを受け付けない。"""
+    from pydantic import ValidationError
+
+    from app.auth.routes import PasswordChange, PasswordResetConfirm, UserCreate
+
+    with pytest.raises(ValidationError):
+        PasswordChange(current_password="whatever", new_password="short")
+    with pytest.raises(ValidationError):
+        PasswordResetConfirm(token="t", new_password="short")
+    with pytest.raises(ValidationError):
+        UserCreate(email="a@example.com", password="short", display_name="A")

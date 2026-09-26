@@ -58,7 +58,8 @@
     "resetting": "更新中...",
     "resetButton": "更新密码",
     "passwordMismatch": "密码不匹配",
-    "askAdminForReset": "正式环境不发送邮件。请联系管理员发放“密码重设链接”。"
+    "askAdminForReset": "正式环境不发送邮件。请联系管理员发放“密码重设链接”。",
+    "resetRequested": "已受理密码重设请求"
   },
   "menu": {
     "communication": "沟通",
@@ -83,10 +84,15 @@
   },
   "profile": {
     "title": "个人设置",
-    "subtitle": "可修改显示名称和母语",
+    "subtitle": "可以修改显示名、母语和密码",
     "role": "权限",
     "saveSuccess": "个人资料已保存",
-    "saveFailed": "保存个人资料失败"
+    "saveFailed": "保存个人资料失败",
+    "passwordTitle": "修改密码",
+    "currentPassword": "当前密码",
+    "passwordChangeSubmit": "修改密码",
+    "passwordChanged": "密码已修改。下次请使用新密码登录",
+    "passwordChangeFailed": "密码修改失败"
   },
   "history": {
     "title": "使用记录",

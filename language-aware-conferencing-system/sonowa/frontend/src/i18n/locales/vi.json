@@ -58,7 +58,8 @@
     "resetting": "Đang cập nhật...",
     "resetButton": "Cập nhật mật khẩu",
     "passwordMismatch": "Mật khẩu không khớp",
-    "askAdminForReset": "Môi trường chính thức không gửi email. Hãy nhờ quản trị viên cấp liên kết đặt lại mật khẩu."
+    "askAdminForReset": "Môi trường chính thức không gửi email. Hãy nhờ quản trị viên cấp liên kết đặt lại mật khẩu.",
+    "resetRequested": "Đã nhận yêu cầu đặt lại mật khẩu"
   },
   "menu": {
     "communication": "Giao tiếp",
@@ -83,10 +84,15 @@
   },
   "profile": {
     "title": "Cài đặt hồ sơ",
-    "subtitle": "Đổi tên hiển thị và ngôn ngữ mẹ đẻ",
+    "subtitle": "Có thể đổi tên hiển thị, tiếng mẹ đẻ và mật khẩu",
     "role": "Quyền",
     "saveSuccess": "Đã lưu hồ sơ",
-    "saveFailed": "Lưu hồ sơ thất bại"
+    "saveFailed": "Lưu hồ sơ thất bại",
+    "passwordTitle": "Đổi mật khẩu",
+    "currentPassword": "Mật khẩu hiện tại",
+    "passwordChangeSubmit": "Đổi mật khẩu",
+    "passwordChanged": "Đã đổi mật khẩu. Lần sau hãy đăng nhập bằng mật khẩu mới",
+    "passwordChangeFailed": "Đổi mật khẩu thất bại"
   },
   "history": {
     "title": "Lịch sử sử dụng",

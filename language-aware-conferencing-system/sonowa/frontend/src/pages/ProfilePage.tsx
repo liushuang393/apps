@@ -6,6 +6,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { adminApi, authApi, ApiError } from '../api/client';
+import { PasswordChangeForm } from '../components/PasswordChangeForm';
 import { useAuthStore } from '../store/authStore';
 import { LANGUAGE_NAMES } from '../constants/languages';
 import type { SupportedLanguage } from '../types';
@@ -139,6 +140,7 @@ export function ProfilePage() {
           {loading ? t('common.saving') : t('common.save')}
         </button>
       </form>
+      <PasswordChangeForm />
     </div>
   );
 }

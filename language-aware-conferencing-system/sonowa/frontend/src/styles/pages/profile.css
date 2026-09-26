@@ -34,6 +34,11 @@
   color: #065f46;
 }
 
+/* プロフィールとパスワード変更の2枚のカードの間隔 */
+.profile-page form + form {
+  margin-top: 1.5rem;
+}
+
 .profile-page input:disabled {
   background: var(--bg-light);
   color: var(--text-secondary);

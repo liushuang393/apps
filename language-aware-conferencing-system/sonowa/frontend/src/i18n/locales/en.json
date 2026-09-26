@@ -58,7 +58,8 @@
     "resetting": "Updating...",
     "resetButton": "Update Password",
     "passwordMismatch": "Passwords do not match",
-    "askAdminForReset": "Email is not sent in production. Ask an administrator to issue a password reset link."
+    "askAdminForReset": "Email is not sent in production. Ask an administrator to issue a password reset link.",
+    "resetRequested": "Your password reset request has been received"
   },
   "menu": {
     "communication": "Communication",
@@ -83,10 +84,15 @@
   },
   "profile": {
     "title": "Profile Settings",
-    "subtitle": "Change your display name and native language",
+    "subtitle": "Change your display name, native language, and password",
     "role": "Role",
     "saveSuccess": "Profile saved",
-    "saveFailed": "Failed to save profile"
+    "saveFailed": "Failed to save profile",
+    "passwordTitle": "Change password",
+    "currentPassword": "Current password",
+    "passwordChangeSubmit": "Change password",
+    "passwordChanged": "Password changed. Use the new password next time you log in",
+    "passwordChangeFailed": "Failed to change password"
   },
   "history": {
     "title": "Usage History",

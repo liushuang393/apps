@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,12 +25,15 @@ from app.languages import ALL_SUPPORTED_LANGUAGES
 
 router = APIRouter()
 
+# 画面の入力欄（minLength=8・「8文字以上」表示）と揃える最小パスワード長。
+MIN_PASSWORD_LENGTH = 8
+
 
 class UserCreate(BaseModel):
     """ユーザー登録リクエスト"""
 
     email: EmailStr
-    password: str
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH)
     display_name: str
     native_language: str = "ja"
 
@@ -249,7 +252,14 @@ class PasswordResetConfirm(BaseModel):
     """パスワードリセット確認（トークンと新パスワード）"""
 
     token: str
-    new_password: str
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH)
+
+
+class PasswordChange(BaseModel):
+    """ログイン中の本人によるパスワード変更"""
+
+    current_password: str
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH)
 
 
 class PasswordResetResponse(BaseModel):
@@ -363,3 +373,23 @@ async def confirm_password_reset(
     await db.commit()
 
     return PasswordResetResponse(message="パスワードが正常に更新されました")
+
+
+@router.post("/me/password", response_model=PasswordResetResponse)
+async def change_my_password(
+    data: PasswordChange,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PasswordResetResponse:
+    """
+    本人がパスワードを変更する（現在のパスワードの確認が必須）。
+    忘れた場合は管理者が発行する再設定リンクを使う。
+    """
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="現在のパスワードが正しくありません",
+        )
+    user.password_hash = hash_password(data.new_password)
+    await db.commit()
+    return PasswordResetResponse(message="パスワードを変更しました")
