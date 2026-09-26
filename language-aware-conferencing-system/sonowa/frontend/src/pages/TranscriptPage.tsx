@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   adminApi,
   roomApi,
@@ -35,6 +36,7 @@ export function TranscriptPage() {
   const [rerunLoading, setRerunLoading] = useState(false);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
+  const { t } = useTranslation();
   const isAdmin = user?.role === 'admin';
   const activeSessionId = selectedSessionId || transcript?.selectedSessionId || '';
 
@@ -60,11 +62,11 @@ export function TranscriptPage() {
         navigate('/login');
         return;
       }
-      setError('会議記録の取得に失敗しました');
+      setError(t('transcript.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [roomId, selectedLang, selectedSessionId, logout, navigate]);
+  }, [roomId, selectedLang, selectedSessionId, logout, navigate, t]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -78,9 +80,13 @@ export function TranscriptPage() {
     if (!transcript) return;
 
     const lines: string[] = [];
-    lines.push(`会議記録: ${transcript.roomName}`);
-    lines.push(`エクスポート日時: ${new Date().toLocaleString('ja-JP')}`);
-    lines.push(`言語: ${selectedLang ? LANGUAGE_NAMES[selectedLang as SupportedLanguage] || selectedLang : '原文'}`);
+    lines.push(t('transcript.exportTitle', { name: transcript.roomName }));
+    lines.push(t('transcript.exportDate', { date: new Date().toLocaleString('ja-JP') }));
+    lines.push(t('transcript.exportLanguage', {
+      language: selectedLang
+        ? LANGUAGE_NAMES[selectedLang as SupportedLanguage] || selectedLang
+        : t('settings.originalText'),
+    }));
     lines.push('');
     lines.push('---');
     lines.push('');
@@ -110,7 +116,7 @@ export function TranscriptPage() {
     if (!roomId) return;
     if (!transcript?.subtitles.length) {
       setMinutes(null);
-      setMinutesError('会議記録が空のため議事録を生成できません');
+      setMinutesError(t('transcript.minutesEmpty'));
       return;
     }
     const lang = selectedLang || user?.nativeLanguage || 'ja';
@@ -127,11 +133,11 @@ export function TranscriptPage() {
         return;
       }
       if (err instanceof ApiError && err.status === 503) {
-        setMinutesError('議事録生成は現在無効です（LLM 未設定）');
+        setMinutesError(t('transcript.minutesDisabled'));
       } else if (err instanceof ApiError) {
         setMinutesError(err.message);
       } else {
-        setMinutesError('議事録の生成に失敗しました');
+        setMinutesError(t('transcript.minutesFailed'));
       }
       setMinutes(null);
     } finally {
@@ -144,7 +150,7 @@ export function TranscriptPage() {
    */
   const triggerRerun = async () => {
     if (!activeSessionId) {
-      setRerunError('会議回を選択してください');
+      setRerunError(t('transcript.selectSession'));
       return;
     }
     try {
@@ -158,11 +164,11 @@ export function TranscriptPage() {
         return;
       }
       if (err instanceof ApiError && err.status === 503) {
-        setRerunError('離線再処理に利用可能な本地モデルがありません');
+        setRerunError(t('transcript.rerunNoModel'));
       } else if (err instanceof ApiError) {
         setRerunError(err.message);
       } else {
-        setRerunError('離線再処理に失敗しました');
+        setRerunError(t('transcript.rerunFailed'));
       }
       setRerunSummary(null);
     } finally {
@@ -187,7 +193,7 @@ export function TranscriptPage() {
     return (
       <div className="transcript-page">
         <div className="empty-state">
-          <p>読み込み中...</p>
+          <p>{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -197,9 +203,9 @@ export function TranscriptPage() {
     return (
       <div className="transcript-page">
         <header>
-          <h1>📝 会議記録</h1>
+          <h1>📝 {t('transcript.name')}</h1>
           <div className="header-right">
-            <button className="back-btn" onClick={() => navigate(-1)}>← 戻る</button>
+            <button className="back-btn" onClick={() => navigate(-1)}>{t('common.backArrow')}</button>
           </div>
         </header>
         <div className="error">{error}</div>
@@ -210,21 +216,21 @@ export function TranscriptPage() {
   return (
     <div className="transcript-page" data-testid="transcript-page">
       <header>
-        <h1>📝 {transcript?.roomName || '会議記録'}</h1>
+        <h1>📝 {transcript?.roomName || t('transcript.name')}</h1>
         <div className="header-right">
           <span className="user-name">{user?.displayName}</span>
-          <button className="back-btn" onClick={() => navigate(-1)}>← 戻る</button>
+          <button className="back-btn" onClick={() => navigate(-1)}>{t('common.backArrow')}</button>
         </div>
       </header>
 
       <div className="transcript-controls">
         <div className="language-selector">
-          <label>表示言語:</label>
+          <label>{t('transcript.displayLanguage')}</label>
           <select
             value={selectedLang}
             onChange={(e) => setSelectedLang(e.target.value)}
           >
-            <option value="">原文</option>
+            <option value="">{t('settings.originalText')}</option>
             {availableLanguages.map((lang) => (
               <option key={lang} value={lang}>
                 {LANGUAGE_NAMES[lang]}
@@ -233,23 +239,24 @@ export function TranscriptPage() {
           </select>
         </div>
         <div className="language-selector">
-          <label>会議回:</label>
+          <label>{t('transcript.sessionLabel')}</label>
           <select
             value={selectedSessionId}
             onChange={(e) => setSelectedSessionId(e.target.value)}
           >
-            <option value="">最新 / 進行中</option>
+            <option value="">{t('transcript.latestSession')}</option>
             {transcript?.sessions.map((session) => (
               <option key={session.id} value={session.id}>
-                {new Date(session.startedAt).toLocaleString('ja-JP')}
-                {session.isActive ? '（進行中）' : ''}
+                {session.isActive
+                  ? t('transcript.sessionActive', { date: new Date(session.startedAt).toLocaleString('ja-JP') })
+                  : new Date(session.startedAt).toLocaleString('ja-JP')}
               </option>
             ))}
           </select>
         </div>
         <div className="export-buttons">
           <button onClick={exportAsText} disabled={!transcript?.subtitles.length}>
-            テキストでエクスポート
+            {t('transcript.exportText')}
           </button>
           <button
             type="button"
@@ -257,17 +264,17 @@ export function TranscriptPage() {
             onClick={() => void generateMinutes()}
             disabled={minutesLoading}
           >
-            {minutesLoading ? '生成中...' : '議事録を生成'}
+            {minutesLoading ? t('transcript.generating') : t('transcript.generateMinutes')}
           </button>
           {isAdmin && (
             <button
               type="button"
               data-testid="transcript-rerun-btn"
-              title={!activeSessionId ? '会議回を選択してください' : undefined}
+              title={!activeSessionId ? t('transcript.selectSession') : undefined}
               onClick={() => void triggerRerun()}
               disabled={rerunLoading || !activeSessionId}
             >
-              {rerunLoading ? '再処理中...' : '離線再処理'}
+              {rerunLoading ? t('transcript.rerunning') : t('transcript.rerun')}
             </button>
           )}
         </div>
@@ -275,7 +282,7 @@ export function TranscriptPage() {
 
       {(minutesError || minutes) && (
         <section className="minutes-panel">
-          <h2>議事録</h2>
+          <h2>{t('transcript.minutes')}</h2>
           {minutesError && (
             <div className="error" data-testid="transcript-minutes-error">
               {minutesError}
@@ -284,14 +291,14 @@ export function TranscriptPage() {
           {minutes && (
             <>
               <p className="minutes-meta">
-                発言数: {minutes.segmentCount} / 生成: {minutes.provider}
+                {t('transcript.minutesMeta', { segments: minutes.segmentCount, provider: minutes.provider })}
               </p>
-              <h3>要約</h3>
+              <h3>{t('transcript.summary')}</h3>
               <p>{minutes.summary}</p>
-              <h3>決定事項</h3>
+              <h3>{t('transcript.decisions')}</h3>
               <ul>
                 {minutes.decisions.length === 0 ? (
-                  <li>なし</li>
+                  <li>{t('transcript.none')}</li>
                 ) : (
                   minutes.decisions.map((item) => <li key={item}>{item}</li>)
                 )}
@@ -299,7 +306,7 @@ export function TranscriptPage() {
               <h3>ToDo</h3>
               <ul>
                 {minutes.actionItems.length === 0 ? (
-                  <li>なし</li>
+                  <li>{t('transcript.none')}</li>
                 ) : (
                   minutes.actionItems.map((item) => <li key={item}>{item}</li>)
                 )}
@@ -311,11 +318,16 @@ export function TranscriptPage() {
 
       {(rerunError || rerunSummary) && (
         <section className="minutes-panel">
-          <h2>離線再処理</h2>
+          <h2>{t('transcript.rerun')}</h2>
           {rerunError && <div className="error">{rerunError}</div>}
           {rerunSummary && (
             <p className="minutes-meta">
-              対象 {rerunSummary.total} / 完了 {rerunSummary.done} / スキップ {rerunSummary.skipped} / 失敗 {rerunSummary.failed}
+              {t('transcript.rerunSummary', {
+                total: rerunSummary.total,
+                done: rerunSummary.done,
+                skipped: rerunSummary.skipped,
+                failed: rerunSummary.failed,
+              })}
             </p>
           )}
         </section>
@@ -324,19 +336,21 @@ export function TranscriptPage() {
       <div className="transcript-content">
         {!transcript || transcript.subtitles.length === 0 ? (
           <div className="empty-state">
-            <p>会議記録がありません</p>
-            <p>会議中の発言が自動的に記録されます</p>
+            <p>{t('transcript.empty')}</p>
+            <p>{t('transcript.emptyHint')}</p>
           </div>
         ) : (
           <div className="transcript-list">
             <div className="transcript-summary">
-              <span>発言数: {transcript.total}</span>
+              <span>{t('transcript.total', { total: transcript.total })}</span>
               {transcript.selectedSessionId && (
                 <span>
-                  会議回: {new Date(
-                    transcript.sessions.find((session) => session.id === transcript.selectedSessionId)?.startedAt
-                    ?? Date.now()
-                  ).toLocaleString('ja-JP')}
+                  {t('transcript.sessionWithDate', {
+                    date: new Date(
+                      transcript.sessions.find((session) => session.id === transcript.selectedSessionId)?.startedAt
+                      ?? Date.now()
+                    ).toLocaleString('ja-JP'),
+                  })}
                 </span>
               )}
             </div>
@@ -347,7 +361,7 @@ export function TranscriptPage() {
                   <span className="timestamp">
                     {new Date(sub.timestamp).toLocaleTimeString('ja-JP')}
                   </span>
-                  <span className="original-lang" title="原文言語">
+                  <span className="original-lang" title={t('transcript.originalLanguageTitle')}>
                     {LANGUAGE_NAMES[sub.originalLanguage as SupportedLanguage] || sub.originalLanguage}
                   </span>
                 </div>
@@ -356,7 +370,7 @@ export function TranscriptPage() {
                 </div>
                 {selectedLang && selectedLang !== sub.originalLanguage && sub.translations[selectedLang] && (
                   <div className="transcript-original">
-                    <small>原文: {sub.originalText}</small>
+                    <small>{t('transcript.originalWithText', { text: sub.originalText })}</small>
                   </div>
                 )}
               </div>

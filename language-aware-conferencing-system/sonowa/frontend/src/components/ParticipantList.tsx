@@ -12,6 +12,7 @@
  * - React.memo でコンポーネントをメモ化
  */
 import { useMemo, useState, memo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { useRoomStore } from '../store/roomStore';
 
@@ -35,6 +36,7 @@ function ParticipantListInner() {
   const activeSpeaker = useRoomStore(selectActiveSpeaker);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const [isExpanded, setIsExpanded] = useState(true);
+  const { t } = useTranslation();
 
   // ★パフォーマンス最適化: トグル関数をメモ化★
   const toggleExpanded = useCallback(() => setIsExpanded((prev) => !prev), []);
@@ -59,7 +61,7 @@ function ParticipantListInner() {
       >
         <span className="panel-title">
           <span className="panel-icon">👥</span>
-          参加者 ({participants.size})
+          {t('participantList.title', { count: participants.size })}
         </span>
         <span className={`chevron ${isExpanded ? 'up' : 'down'}`}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -75,7 +77,7 @@ function ParticipantListInner() {
       </button>
       <div className="panel-content">
         {participants.size === 0 ? (
-          <p className="empty-message">参加者がいません</p>
+          <p className="empty-message">{t('participantList.empty')}</p>
         ) : (
           <ul>
             {sortedParticipants.map((p) => {
@@ -86,12 +88,15 @@ function ParticipantListInner() {
                   className={`${activeSpeaker === p.userId ? 'speaking' : ''} ${isMe ? 'is-me' : ''}`}
                 >
                   <span className="name">
-                    {p.displayName}（{LANGUAGE_CODES[p.nativeLanguage] ?? 'XX'}）
-                    {isMe && ' (自分)'}
+                    {t('participantList.nameWithLang', {
+                      name: p.displayName,
+                      code: LANGUAGE_CODES[p.nativeLanguage] ?? 'XX',
+                    })}
+                    {isMe && t('meeting.selfSuffix')}
                   </span>
                   {/* マイクON状態を表示（ユーザーがマイクをONにしている場合） */}
                   {p.isMicOn && (
-                    <span className="mic-indicator" title="マイクON">🎤</span>
+                    <span className="mic-indicator" title={t('participantList.micOn')}>🎤</span>
                   )}
                 </li>
               );

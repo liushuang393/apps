@@ -9,6 +9,7 @@
  * - useCallback で関数をメモ化
  */
 import { useCallback, useState, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LANGUAGE_NAMES_WITH_CODE } from '../constants/languages';
 import {
   applyPreferenceChange,
@@ -44,6 +45,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
   // ★パフォーマンス最適化: 個別セレクターで購読★
   const storePolicy = useRoomStore(selectPolicy);
   const myPreference = useRoomStore(selectMyPreference);
+  const { t } = useTranslation();
 
   // propsまたはstoreからpolicyを取得
   const policy = propPolicy ?? storePolicy;
@@ -84,11 +86,11 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
         <button className="panel-header" disabled>
           <span className="panel-title">
             <span className="panel-icon">⚙️</span>
-            設定
+            {t('settings.title')}
           </span>
         </button>
         <div className="panel-content">
-          <p className="loading-message">接続中...</p>
+          <p className="loading-message">{t('meeting.connecting')}</p>
         </div>
       </div>
     );
@@ -116,7 +118,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
       >
         <span className="panel-title">
           <span className="panel-icon">⚙️</span>
-          設定
+          {t('settings.title')}
         </span>
         <span className={`chevron ${isExpanded ? 'up' : 'down'}`}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -144,7 +146,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
 
         {/* 音声モード選択 */}
         <div className="setting-group">
-          <label className="setting-label">音声モード</label>
+          <label className="setting-label">{t('settings.audioMode')}</label>
           <div className="radio-group">
             <label className="radio-item">
               <input
@@ -156,7 +158,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
                 onChange={() => handleAudioModeChange('original')}
                 disabled={!canSwitchMode}
               />
-              <span className="radio-text">原音</span>
+              <span className="radio-text">{t('settings.originalAudio')}</span>
             </label>
             <label className="radio-item">
               <input
@@ -168,11 +170,11 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
                 onChange={() => handleAudioModeChange('translated')}
                 disabled={!canSwitchMode}
               />
-              <span className="radio-text">翻訳音声</span>
+              <span className="radio-text">{t('settings.translatedAudio')}</span>
             </label>
           </div>
           {!canSwitchMode && (
-            <p className="hint-text">※ 会議設定により切替が制限されています</p>
+            <p className="hint-text">{t('preference.modeSwitchLocked')}</p>
           )}
         </div>
 
@@ -184,13 +186,13 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
               checked={myPreference.subtitleEnabled}
               onChange={handleSubtitleToggle}
             />
-            <span>📝 字幕を表示</span>
+            <span>📝 {t('settings.subtitle')}</span>
           </label>
         </div>
 
         {/* 翻訳先言語（翻訳モード時のみ活性化） */}
         <div className="setting-group">
-          <label className="setting-label">翻訳先言語</label>
+          <label className="setting-label">{t('settings.targetLanguage')}</label>
           <select
             value={myPreference.targetLanguage}
             data-testid="target-language"
@@ -207,20 +209,27 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
             ))}
           </select>
           {!isTranslatedMode && (
-            <p className="hint-text">※ 翻訳モード選択時に設定可能</p>
+            <p className="hint-text">{t('settings.targetLanguageHint')}</p>
           )}
         </div>
 
         {/* 現在の設定表示 */}
         <div className="current-setting">
-          <p>🎧 音声：{isTranslatedMode ? `${targetLangDisplay}音声` : '原音'}</p>
           <p>
-            👁 字幕：
-            {myPreference.subtitleEnabled
-              ? isTranslatedMode
-                ? `${targetLangDisplay}字幕`
-                : '原文'
-              : 'なし'}
+            {t('preference.currentAudio', {
+              value: isTranslatedMode
+                ? t('preference.langAudio', { lang: targetLangDisplay })
+                : t('settings.originalAudio'),
+            })}
+          </p>
+          <p>
+            {t('preference.currentSubtitle', {
+              value: myPreference.subtitleEnabled
+                ? isTranslatedMode
+                  ? t('preference.langSubtitle', { lang: targetLangDisplay })
+                  : t('settings.originalText')
+                : t('settings.noSubtitle'),
+            })}
           </p>
         </div>
       </div>

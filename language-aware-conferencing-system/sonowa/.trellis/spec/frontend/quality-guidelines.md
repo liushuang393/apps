@@ -59,7 +59,7 @@ ESLint config (`frontend/.eslintrc.cjs`): `eslint:recommended`,
 - Named constants for numbers/strings with meaning (`QOE_STATS_INTERVAL_MS`, `STORAGE_KEY_MIC`,
   `LOSS_DEGRADE_RATIO` in `qoe/listenerLocalQoE.ts`).
 - New UI text via `t()` with keys added to all of `i18n/locales/{ja,en,zh,vi}.json`
-  (currently identical key sets, 218 keys each).
+  (identical key sets and `{{var}}` placeholders, enforced by `src/i18n/__tests__/locales.test.ts`).
 - Colors via `styles/_tokens.css` variables; light surfaces need dark text.
 
 ---

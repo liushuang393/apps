@@ -14,6 +14,8 @@
  * 目標: 母語で聞き、母語の字幕を見る
  */
 import { useEffect, useRef, useState, memo } from 'react';
+// react-i18next の useTranslation は翻訳 API フック（../hooks/useTranslation）と名前が衝突するため別名にする
+import { useTranslation as useI18n } from 'react-i18next';
 import { useRoomStore } from '../store/roomStore';
 import { useAuthStore } from '../store/authStore';
 import { useTranslation } from '../hooks/useTranslation';
@@ -45,6 +47,7 @@ function SubtitleDisplayInner() {
   const currentUserId = useAuthStore((s) => s.user?.id);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { translateText, getTranslationById, clearCache } = useTranslation();
+  const { t } = useI18n();
 
   // 翻訳済み字幕のローカルstate
   const [displaySubtitles, setDisplaySubtitles] = useState<DisplaySubtitle[]>([]);
@@ -145,9 +148,9 @@ function SubtitleDisplayInner() {
     return (
       <div className="subtitle-display" style={{ opacity: 0.5 }} data-testid="subtitle-display">
         {/* E2E: subtitle-display（オフ時） */}
-        <h4>📝 字幕</h4>
+        <h4>{t('subtitle.title')}</h4>
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
-          字幕表示はオフです
+          {t('meeting.subtitleOff')}
         </p>
       </div>
     );
@@ -156,12 +159,12 @@ function SubtitleDisplayInner() {
   return (
     <div className="subtitle-display" ref={scrollRef} data-testid="subtitle-display">
       {/* E2E: subtitle-display / subtitle-item */}
-      <h4>📝 字幕・会議記録</h4>
+      <h4>{t('subtitle.titleWithTranscript')}</h4>
       {displaySubtitles.length === 0 &&
       interimSubtitles.size === 0 &&
       partialSubtitles.length === 0 ? (
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
-          発言を待っています...
+          {t('meeting.waitingForSpeech')}
         </p>
       ) : (
         <>
@@ -169,7 +172,7 @@ function SubtitleDisplayInner() {
             const speaker = participants.get(sub.speakerId);
             const isMyMessage = sub.speakerId === currentUserId;
             // 話者が見つからない場合は「不明」と表示
-            const displayName = speaker?.displayName || '不明';
+            const displayName = speaker?.displayName || t('meeting.unknown');
             // React key は (id, 言語) 複合で安定化（改善点 D1: 同一 id でも言語別に
             // 別要素として扱い、キー衝突を避ける）。id 欠落時は従来フォールバック。
             const subtitleKey = sub.id
@@ -188,7 +191,7 @@ function SubtitleDisplayInner() {
               >
                 <span className="speaker-name">
                   {displayName}
-                  {isMyMessage && ' (自分)'}
+                  {isMyMessage && t('meeting.selfSuffix')}
                   {/* 話者分離ラベル（P4-A）: track 権威の名前を補う増強情報。
                       未有効時は null で非表示（後方互換）。 */}
                   {sub.speakerLabel && (
@@ -196,28 +199,28 @@ function SubtitleDisplayInner() {
                       className="speaker-label-tag"
                       style={{ marginLeft: '0.3rem', fontSize: '0.8em', color: '#9aa0b5' }}
                     >
-                      〔{sub.speakerLabel}〕
+                      {t('subtitle.speakerLabel', { label: sub.speakerLabel })}
                     </span>
                   )}
-                  ：
+                  {t('subtitle.separator')}
                 </span>
                 <span className="subtitle-text">
-                  {sub.isTranslating ? '翻訳中...' : sub.displayText}
+                  {sub.isTranslating ? t('subtitle.translating') : sub.displayText}
                 </span>
                 {sub.isTranslated && (
-                  <span className="translated-badge">翻訳</span>
+                  <span className="translated-badge">{t('meeting.translatedBadge')}</span>
                 )}
                 {isDegraded && (
                   <span
                     className="degraded-badge"
-                    title="全主線が失敗したため原文のみ表示（翻訳不可）"
+                    title={t('subtitle.degradedTitle')}
                     style={{
                       marginLeft: '0.5rem',
                       fontSize: '0.8em',
                       color: '#e0a020',
                     }}
                   >
-                    ⚠ 原文
+                    {t('subtitle.degradedBadge')}
                   </span>
                 )}
               </div>
@@ -226,17 +229,17 @@ function SubtitleDisplayInner() {
           {/* ★ストリーミング字幕（認識中） */}
           {Array.from(interimSubtitles.values()).map((interim) => {
             const speaker = participants.get(interim.speakerId);
-            const displayName = speaker?.displayName || '不明';
+            const displayName = speaker?.displayName || t('meeting.unknown');
             return (
               <div
                 key={`interim-${interim.id}`}
                 className="subtitle-item interim"
                 style={{ opacity: 0.7, fontStyle: 'italic' }}
               >
-                <span className="speaker-name">{displayName}：</span>
+                <span className="speaker-name">{displayName}{t('subtitle.separator')}</span>
                 <span className="subtitle-text">{interim.text}</span>
                 <span className="interim-badge" style={{ marginLeft: '0.5rem', fontSize: '0.8em', color: '#888' }}>
-                  認識中...
+                  {t('subtitle.recognizing')}
                 </span>
               </div>
             );
@@ -245,7 +248,7 @@ function SubtitleDisplayInner() {
               確定字幕と区別するため斜体＋不透明度↓＋末尾"…"で示す */}
           {partialSubtitles.map((partial) => {
             const speaker = participants.get(partial.speakerId);
-            const displayName = speaker?.displayName || '不明';
+            const displayName = speaker?.displayName || t('meeting.unknown');
             const isMyMessage = partial.speakerId === currentUserId;
             return (
               <div
@@ -255,7 +258,7 @@ function SubtitleDisplayInner() {
               >
                 <span className="speaker-name">
                   {displayName}
-                  {isMyMessage && ' (自分)'}：
+                  {isMyMessage && t('meeting.selfSuffix')}{t('subtitle.separator')}
                 </span>
                 <span className="subtitle-text">{partial.originalText}…</span>
               </div>

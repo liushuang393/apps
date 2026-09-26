@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { adminApi, roomApi, ApiError } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { Room, SupportedLanguage, AudioMode, MeetingMode } from '../types';
@@ -77,6 +78,7 @@ export function RoomListPage() {
   const [availableLanguages, setAvailableLanguages] = useState<SupportedLanguage[]>(DEFAULT_ENABLED_LANGUAGES);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
+  const { t } = useTranslation();
 
   /**
    * 会議室一覧を取得
@@ -118,11 +120,11 @@ export function RoomListPage() {
         return;
       }
       // その他のエラーの場合のみエラーメッセージを表示
-      setError('会議室一覧の取得に失敗しました');
+      setError(t('roomList.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [logout, navigate]);
+  }, [logout, navigate, t]);
 
   useEffect(() => {
     // hydration完了を待ってからデータ取得
@@ -167,7 +169,7 @@ export function RoomListPage() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('会議室の作成に失敗しました');
+        setError(t('roomList.createFailed'));
       }
     } finally {
       setCreating(false);
@@ -191,7 +193,7 @@ export function RoomListPage() {
     return (
       <div className="room-list-page" data-testid="room-list-page">
         <div className="empty-state">
-          <p>読み込み中...</p>
+          <p>{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -202,14 +204,14 @@ export function RoomListPage() {
       {/* E2E: room-list-page / room-create-open / room-create-form / room-create-submit / room-card */}
       <header>
         <div className="header-left">
-          <button className="back-btn" onClick={() => navigate('/menu')} title="メニューに戻る">
-            ← 戻る
+          <button className="back-btn" onClick={() => navigate('/menu')} title={t('roomList.backTitle')}>
+            {t('common.backArrow')}
           </button>
-          <h1>🌐 Sonowa 会議室</h1>
+          <h1>{t('roomList.title')}</h1>
         </div>
         <div className="user-info">
           <span className="user-name" title={user?.displayName}>{user?.displayName || '?'}</span>
-          <button onClick={handleLogout}>ログアウト</button>
+          <button onClick={handleLogout}>{t('common.logout')}</button>
         </div>
       </header>
 
@@ -219,7 +221,7 @@ export function RoomListPage() {
         onClick={() => setShowCreate(!showCreate)}
         data-testid="room-create-open"
       >
-        {showCreate ? 'キャンセル' : '新規会議室作成'}
+        {showCreate ? t('common.cancel') : t('room.create')}
       </button>
 
       {showCreate && (
@@ -228,14 +230,14 @@ export function RoomListPage() {
           className="create-form"
           data-testid="room-create-form"
         >
-          <h3>📋 新規会議室設定</h3>
+          <h3>{t('roomList.formTitle')}</h3>
 
           {/* 基本情報 */}
           <div className="form-group">
-            <label>会議室名 *</label>
+            <label>{t('roomList.nameLabel')}</label>
             <input
               type="text"
-              placeholder="例：定例ミーティング"
+              placeholder={t('roomList.namePlaceholder')}
               value={formState.name}
               onChange={(e) => setFormState((prev) => ({ ...prev, name: e.target.value }))}
               required
@@ -244,9 +246,9 @@ export function RoomListPage() {
 
           {/* 会議説明 */}
           <div className="form-group">
-            <label>会議説明</label>
+            <label>{t('roomList.descriptionLabel')}</label>
             <textarea
-              placeholder="例：週次進捗報告と課題共有"
+              placeholder={t('roomList.descriptionPlaceholder')}
               value={formState.description}
               onChange={(e) => setFormState((prev) => ({ ...prev, description: e.target.value }))}
               rows={2}
@@ -256,7 +258,7 @@ export function RoomListPage() {
 
           {/* 言語設定 */}
           <div className="form-group">
-            <label>対応言語 *（参加者が選択可能な翻訳先言語）</label>
+            <label>{t('roomList.languagesLabel')}</label>
             <div className="language-checkboxes">
               {availableLanguages.map((lang) => (
                 <label key={lang}>
@@ -274,7 +276,7 @@ export function RoomListPage() {
           {/* 音声モード設定 */}
           <div className="form-row">
             <div className="form-group">
-              <label>デフォルト受聴モード（原音/翻訳音声）</label>
+              <label>{t('roomList.defaultAudioModeLabel')}</label>
               <select
                 value={formState.defaultAudioMode}
                 onChange={(e) => setFormState((prev) => ({
@@ -282,12 +284,12 @@ export function RoomListPage() {
                   defaultAudioMode: e.target.value as AudioMode
                 }))}
               >
-                <option value="original">原音（オリジナル音声）</option>
-                <option value="translated">翻訳音声</option>
+                <option value="original">{t('roomList.audioOriginalOption')}</option>
+                <option value="translated">{t('settings.translatedAudio')}</option>
               </select>
             </div>
             <div className="form-group">
-              <label>会議AI主線の既定</label>
+              <label>{t('roomList.defaultModeLabel')}</label>
               <select
                 value={formState.defaultMode}
                 onChange={(e) => setFormState((prev) => ({
@@ -295,17 +297,17 @@ export function RoomListPage() {
                   defaultMode: e.target.value as MeetingMode
                 }))}
               >
-                <option value="a">a（聞く / 翻訳音声）</option>
-                <option value="b">b（読む / 字幕）</option>
-                <option value="hybrid">hybrid（両方）</option>
+                <option value="a">{t('roomList.modeA')}</option>
+                <option value="b">{t('roomList.modeB')}</option>
+                <option value="hybrid">{t('roomList.modeHybrid')}</option>
               </select>
-              <small>参加者の原音/翻訳切替とは別の、処理主線の設定です</small>
+              <small>{t('roomList.modeHint')}</small>
             </div>
           </div>
 
           {/* モード切替許可 */}
           <div className="toggle-group">
-            <label htmlFor="allow-mode-switch">参加者による音声モード切替を許可</label>
+            <label htmlFor="allow-mode-switch">{t('roomList.allowModeSwitchLabel')}</label>
             <button
               type="button"
               id="allow-mode-switch"
@@ -313,13 +315,13 @@ export function RoomListPage() {
               onClick={() => setFormState((prev) => ({ ...prev, allowModeSwitch: !prev.allowModeSwitch }))}
               aria-pressed={formState.allowModeSwitch}
             />
-            <span>{formState.allowModeSwitch ? '許可' : '禁止'}</span>
+            <span>{formState.allowModeSwitch ? t('roomList.allowed') : t('roomList.forbidden')}</span>
           </div>
 
           {/* 私有/公開設定 - 双方向切替式 */}
           <div className="toggle-group private-toggle">
             <span className={`toggle-label ${!formState.isPrivate ? 'toggle-label--active' : ''}`}>
-              🌐 公開
+              🌐 {t('history.public')}
             </span>
             <button
               type="button"
@@ -327,32 +329,32 @@ export function RoomListPage() {
               className={`toggle-switch ${formState.isPrivate ? 'active' : ''}`}
               onClick={() => setFormState((prev) => ({ ...prev, isPrivate: !prev.isPrivate }))}
               aria-pressed={formState.isPrivate}
-              aria-label="会議の公開設定を切り替え"
+              aria-label={t('roomList.visibilityToggleAria')}
             />
             <span className={`toggle-label ${formState.isPrivate ? 'toggle-label--active' : ''}`}>
-              🔒 私有
+              🔒 {t('history.private')}
             </span>
           </div>
           <div className="private-notice">
             <span>💡</span>
             <span>
               {formState.isPrivate
-                ? '私有会議：自分のみが一覧で確認・入室できます'
-                : '公開会議：全メンバーが一覧で確認・入室できます'}
+                ? t('roomList.privateNotice')
+                : t('roomList.publicNotice')}
             </span>
           </div>
 
           {/* ボタン */}
           <div className="form-actions">
             <button type="button" className="btn-secondary" onClick={handleCancel}>
-              キャンセル
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={creating || !formState.name.trim()}
               data-testid="room-create-submit"
             >
-              {creating ? '作成中...' : '会議室を作成'}
+              {creating ? t('roomList.creating') : t('roomList.submit')}
             </button>
           </div>
         </form>
@@ -362,9 +364,9 @@ export function RoomListPage() {
         {rooms.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">🏢</div>
-            <h2>会議室がありません</h2>
-            <p>まだ会議室が作成されていません</p>
-            <p className="empty-hint">上の「新規会議室作成」ボタンをクリックして、最初の会議室を作成しましょう</p>
+            <h2>{t('room.noRooms')}</h2>
+            <p>{t('roomList.emptyDesc')}</p>
+            <p className="empty-hint">{t('roomList.emptyHint')}</p>
           </div>
         ) : (
           rooms.map((room) => (
@@ -377,23 +379,23 @@ export function RoomListPage() {
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/room/${room.id}`); }}
               tabIndex={0}
               role="button"
-              aria-label={`${room.name}に参加${room.isPrivate ? '（私有会議）' : ''}`}
+              aria-label={t(room.isPrivate ? 'roomList.joinAriaPrivate' : 'roomList.joinAria', { name: room.name })}
             >
               {/* 私有/公開バッジ */}
               <div className="room-card-badge">
                 {room.isPrivate ? (
-                  <span className="badge badge--private" title="私有会議：自分のみ参加可能">
-                    🔒 私有
+                  <span className="badge badge--private" title={t('roomList.privateBadgeTitle')}>
+                    🔒 {t('history.private')}
                   </span>
                 ) : (
-                  <span className="badge badge--public" title="公開会議：全メンバー参加可能">
-                    🌐 公開
+                  <span className="badge badge--public" title={t('roomList.publicBadgeTitle')}>
+                    🌐 {t('history.public')}
                   </span>
                 )}
               </div>
 
               <h3>{room.name}</h3>
-              <p>{room.description || '会議概要なし'}</p>
+              <p>{room.description || t('room.noDescription')}</p>
               <div className="room-meta">
                 <span className="participant-count">
                   👥 {room.participantCount}

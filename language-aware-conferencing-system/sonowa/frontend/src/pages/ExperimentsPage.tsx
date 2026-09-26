@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   adminApi,
   ApiError,
@@ -27,6 +28,7 @@ export function ExperimentsPage() {
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
+  const { t } = useTranslation();
 
   /** 実験一覧を読み込む。 */
   const loadData = useCallback(async () => {
@@ -41,14 +43,14 @@ export function ExperimentsPage() {
         return;
       }
       if (err instanceof ApiError && err.status === 403) {
-        setError('管理者権限が必要です');
+        setError(t('glossary.adminRequired'));
         return;
       }
-      setError('データ読み込みに失敗しました');
+      setError(t('admin.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [logout, navigate]);
+  }, [logout, navigate, t]);
 
   useEffect(() => {
     if (hasHydrated) {
@@ -73,7 +75,7 @@ export function ExperimentsPage() {
   if (loading) {
     return (
       <div className="admin-page" data-testid="experiments-page">
-        <div className="empty-state">読み込み中...</div>
+        <div className="empty-state">{t('common.loading')}</div>
       </div>
     );
   }
@@ -82,8 +84,8 @@ export function ExperimentsPage() {
     <div className="admin-page" data-testid="experiments-page">
       <div className="admin-header">
         <div className="header-left">
-          <button onClick={() => navigate('/admin')}>戻る</button>
-          <h2>A/B 実験</h2>
+          <button onClick={() => navigate('/admin')}>{t('common.back')}</button>
+          <h2>{t('experiments.title')}</h2>
         </div>
         <div className="header-right">
           <span className="user-name">{user?.displayName}</span>
@@ -94,8 +96,7 @@ export function ExperimentsPage() {
 
       {experiments.length === 0 ? (
         <div className="empty-state">
-          設定済みの A/B 実験がありません（ENABLE_AB_TESTING と EXPERIMENTS_CONFIG を
-          設定してください）。
+          {t('experiments.empty')}
         </div>
       ) : (
         <section className="admin-experiments">
@@ -105,22 +106,22 @@ export function ExperimentsPage() {
                 <strong>{exp.key}</strong>
                 <span className="experiment-meta">
                   stage={exp.stage} / unit={exp.unit} /{' '}
-                  {exp.enabled ? '有効' : '無効'}
+                  {exp.enabled ? t('glossary.enabled') : t('glossary.disabled')}
                 </span>
                 <button
                   onClick={() => void loadSummary(exp.key)}
                   disabled={loadingKey === exp.key}
                 >
-                  {loadingKey === exp.key ? '集計中...' : '集計を表示'}
+                  {loadingKey === exp.key ? t('experiments.summarizing') : t('experiments.showSummary')}
                 </button>
               </div>
 
               <table className="experiment-variants">
                 <thead>
                   <tr>
-                    <th>群</th>
+                    <th>{t('experiments.variant')}</th>
                     <th>model_id</th>
-                    <th>重み</th>
+                    <th>{t('experiments.weight')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -147,9 +148,10 @@ export function ExperimentsPage() {
 
 /** 群×指標の集計テーブル（count / mean / min / max）。 */
 function SummaryTable({ summary }: { summary: ExperimentSummary }) {
+  const { t } = useTranslation();
   const variants = Object.keys(summary);
   if (variants.length === 0) {
-    return <p className="experiment-empty">まだ観測データがありません。</p>;
+    return <p className="experiment-empty">{t('experiments.noData')}</p>;
   }
   // 全群に現れる指標名の和集合（列見出し用）。
   const metrics = Array.from(
@@ -160,7 +162,7 @@ function SummaryTable({ summary }: { summary: ExperimentSummary }) {
     <table className="experiment-summary">
       <thead>
         <tr>
-          <th>群 \ 指標</th>
+          <th>{t('experiments.variantByMetric')}</th>
           {metrics.map((m) => (
             <th key={m}>{m}</th>
           ))}
@@ -175,7 +177,7 @@ function SummaryTable({ summary }: { summary: ExperimentSummary }) {
               return (
                 <td key={m}>
                   {stat
-                    ? `平均 ${fmt(stat.mean)} / n=${fmt(stat.count)}`
+                    ? t('experiments.cellStat', { mean: fmt(stat.mean), n: fmt(stat.count) })
                     : '-'}
                 </td>
               );

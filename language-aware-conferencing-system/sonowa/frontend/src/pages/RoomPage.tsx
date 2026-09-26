@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useLiveKit } from '../hooks/useLiveKit';
 import { useAudioDevices } from '../hooks/useAudioDevices';
 import { useAudioCapture } from '../hooks/useAudioCapture';
@@ -17,23 +18,25 @@ import { ParticipantList } from '../components/ParticipantList';
 import type { MeetingMode, Room, RoomMediaState } from '../types';
 import '../styles/pages/room.css';
 
-function qualityWarningMessage(
+/** 品質警告の i18n キーを返す（表示側で t() に通す） */
+function qualityWarningKey(
   mediaState: RoomMediaState,
   shouldFallbackToSubtitle: boolean
 ): string {
   if (mediaState === 'interrupted') {
-    return '新しい発話を検出したため、前の翻訳音声を停止しました。';
+    return 'room.warningInterrupted';
   }
   if (mediaState === 'degraded' || shouldFallbackToSubtitle) {
-    return '翻訳音声の品質が低下しています。字幕を優先して利用してください。';
+    return 'room.warningDegraded';
   }
-  return '字幕品質に関する警告が発生しています。';
+  return 'room.warningGeneric';
 }
 
 export function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { t } = useTranslation();
   const [roomMeta, setRoomMeta] = useState<Room | null>(null);
   const {
     connectionStatus,
@@ -149,7 +152,7 @@ export function RoomPage() {
     return (
       <div className="room-page" data-testid="room-page">
         <div className="empty-state">
-          <p>会議室IDが指定されていません</p>
+          <p>{t('room.noRoomId')}</p>
         </div>
       </div>
     );
@@ -160,25 +163,25 @@ export function RoomPage() {
       {/* E2E: room-page / connection-status / leave-btn（preference-panel / subtitle-display は子） */}
       <header>
         {/* LiveKit 未接続時も API メタの部屋名を表示する */}
-        <h1>🎤 {roomMeta?.name || roomName || '会議室'}</h1>
+        <h1>🎤 {roomMeta?.name || roomName || t('room.fallbackName')}</h1>
         <div className="header-right">
           <div className="connection-status" data-testid="connection-status">
             {connectionStatus === 'connected' && (
-              <span className="connected">接続中</span>
+              <span className="connected">{t('room.statusConnected')}</span>
             )}
             {connectionStatus === 'connecting' && (
-              <span className="connecting">接続中...</span>
+              <span className="connecting">{t('meeting.connecting')}</span>
             )}
             {connectionStatus === 'reconnecting' && (
-              <span className="reconnecting">再接続中...</span>
+              <span className="reconnecting">{t('meeting.reconnecting')}</span>
             )}
             {connectionStatus === 'disconnected' && (
-              <span className="disconnected">未接続</span>
+              <span className="disconnected">{t('room.statusDisconnected')}</span>
             )}
           </div>
           {/* デバイス選択（コンパクト） */}
           <div className="header-devices">
-            <div className="device-select" title="マイク選択">
+            <div className="device-select" title={t('room.micSelect')}>
               <span className="device-icon">🎤</span>
               <select
                 value={selectedMicId || ''}
@@ -192,7 +195,7 @@ export function RoomPage() {
                 ))}
               </select>
             </div>
-            <div className="device-select" title="スピーカー選択">
+            <div className="device-select" title={t('room.speakerSelect')}>
               <span className="device-icon">🔊</span>
               <select
                 value={selectedSpeakerId || ''}
@@ -210,16 +213,16 @@ export function RoomPage() {
           <button
             className="transcript-btn"
             onClick={() => navigate(`/room/${roomId}/transcript`)}
-            title="会議記録を表示"
+            title={t('room.transcriptTitle')}
           >
-            📝 記録
+            {t('room.transcriptButton')}
           </button>
           <button
             className="leave-btn"
             onClick={handleLeave}
             data-testid="leave-btn"
           >
-            退室
+            {t('room.leave')}
           </button>
         </div>
       </header>
@@ -231,15 +234,15 @@ export function RoomPage() {
       )}
       {(qosWarnings.length > 0 || mediaState !== 'healthy') && (
         <div className="warning" role="status">
-          {qualityWarningMessage(
+          {t(qualityWarningKey(
             mediaState,
             Boolean(qosWarnings[qosWarnings.length - 1]?.shouldFallbackToSubtitle)
-          )}
+          ))}
         </div>
       )}
       {!audioOutputSelectionSupported && (
         <div className="hint-text">
-          このブラウザではスピーカー切替に対応していないため、既定の出力先を使用します。
+          {t('room.speakerUnsupported')}
         </div>
       )}
 
@@ -276,7 +279,7 @@ export function RoomPage() {
             {isMicOn ? (
               <div className="audio-active-compact">
                 <span className="mic-status on">
-                  {isSpeaking ? '🎤 発話中' : '🎤 待機中'}
+                  {isSpeaking ? t('room.micSpeaking') : t('room.micIdle')}
                 </span>
                 <div className="volume-bar-compact">
                   <div
@@ -290,8 +293,8 @@ export function RoomPage() {
               </div>
             ) : (
               <div className="audio-inactive-compact">
-                <span className="mic-status off">🔇 マイクOFF</span>
-                <span className="hint-compact">左側の設定パネルでマイクをONにできます</span>
+                <span className="mic-status off">{t('room.micOff')}</span>
+                <span className="hint-compact">{t('room.micOffHint')}</span>
               </div>
             )}
           </div>

@@ -7,6 +7,7 @@
  * - props が変わらない限り再レンダリングしない
  */
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 /** セキュアコンテキストエラーかどうか判定 */
 const isSecureContextError = (err: string | null): boolean =>
@@ -32,22 +33,23 @@ interface AudioControlPanelProps {
  * HTTPS/localhostエラー時の簡潔な設定案内
  */
 function SecureContextErrorHint() {
+  const { t } = useTranslation();
   const origin = getCurrentOrigin();
   const isEdge = navigator.userAgent.includes('Edg');
 
   return (
     <div className="secure-context-error">
-      <p className="error-title">⚠️ マイク使用にはブラウザ設定が必要です</p>
+      <p className="error-title">{t('audioControl.secureTitle')}</p>
       <div className="error-steps">
         <p>
-          <strong>1.</strong> アドレスバーに入力:{' '}
+          <strong>1.</strong> {t('audioControl.step1')}{' '}
           <code>{isEdge ? 'edge' : 'chrome'}://flags/#unsafely-treat-insecure-origin-as-secure</code>
         </p>
         <p>
-          <strong>2.</strong> 入力欄に追加: <code>{origin}</code>
+          <strong>2.</strong> {t('audioControl.step2')} <code>{origin}</code>
         </p>
         <p>
-          <strong>3.</strong> 「Enabled」を選択 → 「Relaunch」で再起動
+          <strong>3.</strong> {t('audioControl.step3')}
         </p>
       </div>
     </div>
@@ -64,18 +66,19 @@ function AudioControlPanelInner({
   isSpeaking,
   error,
 }: AudioControlPanelProps) {
+  const { t } = useTranslation();
   const showSecureHint = isSecureContextError(error);
 
   return (
     <div className="audio-control-inline">
       {/* マイクボタン + 音量インジケーター */}
       <div className="setting-group">
-        <span className="setting-label">マイク状態</span>
+        <span className="setting-label">{t('audioControl.micStatus')}</span>
         <div className="mic-control-row">
           <button
             className={`mic-button ${isMicOn ? 'on' : 'off'}`}
             onClick={onMicToggle}
-            title={isMicOn ? 'マイクをOFFにする' : 'マイクをONにする'}
+            title={isMicOn ? t('audioControl.turnOff') : t('audioControl.turnOn')}
             disabled={showSecureHint}
           >
             {isMicOn ? '🎤 ON' : '🔇 OFF'}
@@ -83,7 +86,7 @@ function AudioControlPanelInner({
           <div className="volume-indicator">
             <div className="volume-bar" style={{ width: `${volumeLevel}%` }} />
           </div>
-          {isSpeaking && <span className="speaking-badge">発話中</span>}
+          {isSpeaking && <span className="speaking-badge">{t('meeting.speaking')}</span>}
         </div>
       </div>
 

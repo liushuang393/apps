@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { adminApi, ApiError, type AdminUser, type SystemStats } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
@@ -11,12 +12,8 @@ import type { SupportedLanguage } from '../types';
 import { LANGUAGE_NAMES } from '../constants/languages';
 import '../styles/pages/admin.css';
 
-/** ロール表示名マッピング */
-const ROLE_NAMES: Record<string, string> = {
-  admin: '管理者',
-  moderator: 'モデレーター',
-  user: '従業員',
-};
+/** 表示名を持つロール（それ以外はロール値をそのまま表示） */
+const KNOWN_ROLES = new Set(['admin', 'moderator', 'user']);
 
 export function AdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -28,6 +25,11 @@ export function AdminPage() {
   const [resetLink, setResetLink] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
+  const { t } = useTranslation();
+
+  /** ロール表示名（未知のロールは値をそのまま返す） */
+  const roleLabel = (role: string | undefined): string | undefined =>
+    role && KNOWN_ROLES.has(role) ? t(`role.${role}`) : role;
 
   /**
    * データ読み込み
@@ -51,25 +53,25 @@ export function AdminPage() {
       }
       // 権限エラー: 管理者専用ページのため適切なメッセージを表示
       if (err instanceof ApiError && err.status === 403) {
-        setError('管理者権限が必要です');
+        setError(t('glossary.adminRequired'));
         return;
       }
       // その他のエラー: 汎用メッセージを表示（内部エラー詳細は露出しない）
-      setError('データ読み込みに失敗しました');
+      setError(t('admin.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [logout, navigate]);
+  }, [logout, navigate, t]);
 
   useEffect(() => {
     if (!hasHydrated) return;
     if (user?.role !== 'admin') {
-      setError('管理者権限が必要です');
+      setError(t('glossary.adminRequired'));
       setLoading(false);
       return;
     }
     loadData();
-  }, [hasHydrated, user, loadData]);
+  }, [hasHydrated, user, loadData, t]);
 
   /**
    * ユーザー更新
@@ -82,7 +84,7 @@ export function AdminPage() {
         `${window.location.origin}/reset-password?token=${encodeURIComponent(resetToken)}`
       );
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '再設定リンクの発行に失敗しました');
+      setError(err instanceof ApiError ? err.message : t('admin.resetLinkFailed'));
     }
   };
 
@@ -112,7 +114,7 @@ export function AdminPage() {
     return (
       <div className="admin-page" data-testid="admin-page">
         <div className="empty-state">
-          <p>読み込み中...</p>
+          <p>{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -122,8 +124,8 @@ export function AdminPage() {
     return (
       <div className="admin-page">
         <header>
-          <button onClick={() => navigate('/menu')}>戻る</button>
-          <h1>管理者パネル</h1>
+          <button onClick={() => navigate('/menu')}>{t('common.back')}</button>
+          <h1>{t('menu.admin')}</h1>
         </header>
         <div className="error">{error}</div>
       </div>
@@ -134,8 +136,8 @@ export function AdminPage() {
     <div className="admin-page" data-testid="admin-page">
       <header>
         <div className="header-left">
-          <button onClick={() => navigate('/menu')}>戻る</button>
-          <h1>管理者パネル</h1>
+          <button onClick={() => navigate('/menu')}>{t('common.back')}</button>
+          <h1>{t('menu.admin')}</h1>
         </div>
         <div className="header-right">
           <span className="user-name">{user?.displayName}</span>
@@ -144,7 +146,7 @@ export function AdminPage() {
             data-testid="admin-user-role"
             data-role={user?.role ?? 'user'}
           >
-            {ROLE_NAMES[user?.role ?? 'user'] || user?.role}
+            {roleLabel(user?.role ?? 'user')}
           </span>
         </div>
       </header>
@@ -154,27 +156,27 @@ export function AdminPage() {
       {/* システム統計 */}
       {stats && (
         <section className="admin-stats">
-          <h2>システム統計</h2>
+          <h2>{t('admin.statsTitle')}</h2>
           <div className="stats-grid">
             <div className="stat-card">
               <div className="stat-value">{stats.totalUsers}</div>
-              <div className="stat-label">総ユーザー数</div>
+              <div className="stat-label">{t('admin.totalUsers')}</div>
             </div>
             <div className="stat-card">
               <div className="stat-value">{stats.activeUsers}</div>
-              <div className="stat-label">アクティブユーザー</div>
+              <div className="stat-label">{t('admin.activeUsers')}</div>
             </div>
             <div className="stat-card">
               <div className="stat-value">{stats.totalRooms}</div>
-              <div className="stat-label">総会議室数</div>
+              <div className="stat-label">{t('admin.totalRooms')}</div>
             </div>
             <div className="stat-card">
               <div className="stat-value">{stats.activeRooms}</div>
-              <div className="stat-label">アクティブ会議室</div>
+              <div className="stat-label">{t('admin.activeRooms')}</div>
             </div>
             <div className="stat-card">
               <div className="stat-value">{stats.totalSubtitles}</div>
-              <div className="stat-label">総発言記録数</div>
+              <div className="stat-label">{t('admin.totalSubtitles')}</div>
             </div>
           </div>
         </section>
@@ -182,18 +184,18 @@ export function AdminPage() {
 
       {/* ユーザー管理 */}
       <section className="admin-users">
-        <h2>ユーザー管理</h2>
+        <h2>{t('admin.usersTitle')}</h2>
         <div className="users-table-wrapper">
           <table className="users-table">
             <thead>
               <tr>
-                <th>表示名</th>
-                <th>メールアドレス</th>
-                <th>言語</th>
-                <th>ロール</th>
-                <th>状態</th>
-                <th>登録日</th>
-                <th>操作</th>
+                <th>{t('auth.displayName')}</th>
+                <th>{t('auth.email')}</th>
+                <th>{t('admin.language')}</th>
+                <th>{t('admin.role')}</th>
+                <th>{t('admin.status')}</th>
+                <th>{t('admin.registeredAt')}</th>
+                <th>{t('admin.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -204,12 +206,12 @@ export function AdminPage() {
                   <td>{LANGUAGE_NAMES[u.nativeLanguage as SupportedLanguage] || u.nativeLanguage}</td>
                   <td>
                     <span className={`role-badge role-${u.role}`}>
-                      {ROLE_NAMES[u.role] || u.role}
+                      {roleLabel(u.role)}
                     </span>
                   </td>
                   <td>
                     <span className={`status-badge ${u.isActive ? 'active' : 'inactive'}`}>
-                      {u.isActive ? '有効' : '無効'}
+                      {u.isActive ? t('glossary.enabled') : t('glossary.disabled')}
                     </span>
                   </td>
                   <td>{new Date(u.createdAt).toLocaleDateString('ja-JP')}</td>
@@ -223,7 +225,7 @@ export function AdminPage() {
                       }}
                       disabled={u.id === user?.id}
                     >
-                      編集
+                      {t('common.edit')}
                     </button>
                   </td>
                 </tr>
@@ -241,9 +243,9 @@ export function AdminPage() {
               data-testid="admin-user-edit-modal"
               onClick={(e) => e.stopPropagation()}
             >
-            <h3>ユーザー編集</h3>
+            <h3>{t('admin.editTitle')}</h3>
             <div className="form-group">
-              <label>表示名</label>
+              <label>{t('auth.displayName')}</label>
               <input
                 type="text"
                 value={editingUser.displayName}
@@ -251,7 +253,7 @@ export function AdminPage() {
               />
             </div>
             <div className="form-group">
-              <label>母語</label>
+              <label>{t('auth.nativeLanguage')}</label>
               <select
                 data-testid="admin-user-native-language"
                 value={editingUser.nativeLanguage}
@@ -267,35 +269,35 @@ export function AdminPage() {
               </select>
             </div>
             <div className="form-group">
-              <label>ロール</label>
+              <label>{t('admin.role')}</label>
               <select
                 value={editingUser.role}
                 onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
               >
-                <option value="user">一般ユーザー</option>
-                <option value="moderator">モデレーター</option>
-                <option value="admin">管理者</option>
+                <option value="user">{t('admin.roleOptionUser')}</option>
+                <option value="moderator">{t('role.moderator')}</option>
+                <option value="admin">{t('role.admin')}</option>
               </select>
             </div>
             <div className="form-group">
-              <label>状態</label>
+              <label>{t('admin.status')}</label>
               <select
                 value={editingUser.isActive ? 'active' : 'inactive'}
                 onChange={(e) => setEditingUser({ ...editingUser, isActive: e.target.value === 'active' })}
               >
-                <option value="active">有効</option>
-                <option value="inactive">無効</option>
+                <option value="active">{t('glossary.enabled')}</option>
+                <option value="inactive">{t('glossary.disabled')}</option>
               </select>
             </div>
             <div className="form-group">
-              <label>パスワード再設定</label>
+              <label>{t('admin.passwordReset')}</label>
               <button
                 type="button"
                 className="btn-reset-link"
                 data-testid="admin-issue-reset-link"
                 onClick={() => void handleIssueResetLink(editingUser.id)}
               >
-                再設定リンクを発行
+                {t('admin.issueResetLink')}
               </button>
               {resetLink && (
                 <>
@@ -307,17 +309,17 @@ export function AdminPage() {
                     onFocus={(e) => e.target.select()}
                   />
                   <p className="hint-text">
-                    このリンクを本人に渡してください（1時間有効・1回のみ使用可）。
+                    {t('admin.resetLinkHint')}
                   </p>
                 </>
               )}
             </div>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setEditingUser(null)}>
-                キャンセル
+                {t('common.cancel')}
               </button>
               <button onClick={handleUpdateUser} disabled={saving}>
-                {saving ? '保存中...' : '保存'}
+                {saving ? t('common.saving') : t('common.save')}
               </button>
             </div>
           </div>

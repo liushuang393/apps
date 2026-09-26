@@ -94,7 +94,10 @@ via `useParams`, the store via selectors, and call `xxxApi` directly (see `pages
 
 ## Known Debt
 
-Not yet i18n'd (hardcoded Japanese): `pages/AdminPage.tsx`, `ExperimentsPage.tsx`,
-`RoomListPage.tsx`, `RoomPage.tsx`, `TranscriptPage.tsx`, and components `AudioControlPanel`,
-`ParticipantList`, `PreferencePanel`, `SubtitleDisplay`. Don't mass-convert unless the task asks;
-do use `t()` for any new strings you add there.
+All pages and components use `t()` for UI text. Still Japanese in any UI language:
+- connection error messages set inside `hooks/useLiveKit.ts` (`setConnectionError('...')`) — hooks
+  are not i18n'd yet; return a key/code from the hook if you touch them.
+- `LANGUAGE_NAMES` (`constants/languages.ts`) and dates formatted with `toLocaleString('ja-JP')`.
+
+The ja locale text must stay byte-identical when migrating: Playwright E2E runs with
+`locale: ja-JP` and may match Japanese text.
