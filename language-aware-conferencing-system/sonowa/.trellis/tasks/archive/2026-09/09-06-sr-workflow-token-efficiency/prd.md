@@ -75,23 +75,23 @@
 
 ## 受入条件
 
-- [ ] AC1: 静的 budget command が全 9 entrypoint の phase-aware surface を
+- [x] AC1: 静的 budget command が全 9 entrypoint の phase-aware surface を
   text／JSON で再現し、実測と estimate を区別する。
-- [ ] AC2: `sr-plan`／`sr-build`／`sr-verify` の各 strict closure が現状比で減り、
+- [x] AC2: `sr-plan`／`sr-build`／`sr-verify` の各 strict closure が現状比で減り、
   3 invocation 合計で少なくとも 15,000 bytes 削減される。
-- [ ] AC3: `sr-route` の strict closure が少なくとも 6,000 bytes 削減され、
+- [x] AC3: `sr-route` の strict closure が少なくとも 6,000 bytes 削減され、
   classify→recommend→stop／no-write を維持する。
-- [ ] AC4: specialized workflow の非最終 phase で `closeout.md` を常時要求しない。
-- [ ] AC5: interruption／decision 詳細は on-demand module へ移り、scope-change、
+- [x] AC4: specialized workflow の非最終 phase で `closeout.md` を常時要求しない。
+- [x] AC5: interruption／decision 詳細は on-demand module へ移り、scope-change、
   stop/resume、question-vs-approval の保証を eval が検証する。
-- [ ] AC6: 同一 failure signature 2 回の circuit breaker と bounded dispatch
+- [x] AC6: 同一 failure signature 2 回の circuit breaker と bounded dispatch
   manifest のルールを eval が検証する。
-- [ ] AC7: installer／registry／guard／readiness／template の全自動テストが合格する。
-- [ ] AC8: instruction eval 36件の既存ケースを保持し、追加 token-efficiency eval と
+- [x] AC7: installer／registry／guard／readiness／template の全自動テストが合格する。
+- [x] AC8: instruction eval 36件の既存ケースを保持し、追加 token-efficiency eval と
   critical-invariant golden test が合格する。
-- [ ] AC9: throwaway repository への install／doctor／reinstall／ablate→restore が
+- [x] AC9: throwaway repository への install／doctor／reinstall／ablate→restore が
   合格し、custom local binding が保持される。
-- [ ] AC10: LAMS の `.agents` を直接変更せず、原始スイートからの更新手順と
+- [x] AC10: LAMS の `.agents` を直接変更せず、原始スイートからの更新手順と
   before/after budget report を提示する。
 
 ## 対象外
@@ -101,3 +101,10 @@
 - Trellis 内部実装や host の hidden context／dynamic tool catalog の変更。
 - LAMS アプリケーションの追加修正。
 - repository-owned `local/project.md` section 11 の自動分割・破壊的移行。
+
+## Closeout (2026-09-26)
+
+- 本タスクの成果は suite 5.3.0「phase context is selected, not inherited」として原始 repository に取り込み済み（sync コミット 2026-09-14 以降）。implement.md 記載の commit blocker は解消済み。
+- suite は以後 5.4.0 / 5.5.0 へ進んでおり、新しい版を正とする。現時点 full pytest 全件合格。
+- 注意: 5.4/5.5 の機能追加により strict budget は本タスク完了時より増加（例: sr-plan 34,637 → 45,969 bytes、sr-route 26,264 → 29,294 bytes）。AC2/AC3 は完了時点の値で達成。再削減が必要なら別タスクとする。
+- manual eval の実モデル実行は未実施のまま（既知の検証境界）。
