@@ -37,6 +37,8 @@ FIX_MODE=false
 FORMAT_ONLY=false
 CHECK_BACKEND=true
 CHECK_FRONTEND=true
+# 失敗したチェックがあれば 1（全チェック実行後に終了コードへ反映）
+FAILED=0
 
 # ヘルプ表示
 show_help() {
@@ -114,7 +116,7 @@ if [ "$CHECK_BACKEND" = true ]; then
         echo -e "${GREEN}✅ フォーマット完了${NC}"
     elif [ "$FIX_MODE" = true ]; then
         echo -e "${BLUE}▶ Lint チェック＋自動修正中...${NC}"
-        "$RUFF_BIN" check app/ --fix || true
+        "$RUFF_BIN" check app/ --fix || FAILED=1
         echo -e "${BLUE}▶ フォーマット実行中...${NC}"
         "$RUFF_BIN" format app/
         echo -e "${GREEN}✅ 自動修正完了${NC}"
@@ -124,12 +126,14 @@ if [ "$CHECK_BACKEND" = true ]; then
             echo -e "${GREEN}✅ Lint チェック OK${NC}"
         else
             echo -e "${RED}❌ Lint エラーあり（--fix で自動修正可能）${NC}"
+            FAILED=1
         fi
         echo -e "${BLUE}▶ フォーマットチェック中...${NC}"
         if "$RUFF_BIN" format app/ --check; then
             echo -e "${GREEN}✅ フォーマット OK${NC}"
         else
             echo -e "${RED}❌ フォーマットが必要（--fix で自動修正可能）${NC}"
+            FAILED=1
         fi
     fi
 
@@ -155,7 +159,7 @@ if [ "$CHECK_FRONTEND" = true ]; then
         echo -e "${GREEN}✅ フォーマット完了${NC}"
     elif [ "$FIX_MODE" = true ]; then
         echo -e "${BLUE}▶ ESLint --fix 実行中...${NC}"
-        npm run lint -- --fix || true
+        npm run lint -- --fix || FAILED=1
         echo -e "${GREEN}✅ 自動修正完了${NC}"
     else
         echo -e "${BLUE}▶ ESLint チェック中...${NC}"
@@ -163,6 +167,7 @@ if [ "$CHECK_FRONTEND" = true ]; then
             echo -e "${GREEN}✅ ESLint OK${NC}"
         else
             echo -e "${RED}❌ ESLint エラーあり（--fix で自動修正可能）${NC}"
+            FAILED=1
         fi
     fi
 
@@ -177,6 +182,12 @@ if [ "$CHECK_FRONTEND" = true ]; then
 fi
 
 # 完了
+if [ "$FAILED" -ne 0 ]; then
+    echo -e "${RED}========================================${NC}"
+    echo -e "${RED}  チェック失敗（上の ❌ を確認）${NC}"
+    echo -e "${RED}========================================${NC}"
+    exit 1
+fi
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  チェック完了${NC}"
 echo -e "${GREEN}========================================${NC}"
