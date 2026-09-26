@@ -47,7 +47,7 @@
     "forgotPassword": "Forgot your password?",
     "resetPassword": "Reset Password",
     "resetPasswordDesc": "Enter your registered email address",
-    "sendResetLink": "Send Reset Link",
+    "sendResetLink": "Continue to reset",
     "sending": "Sending...",
     "backToLogin": "Back to Login",
     "newPassword": "New Password",
@@ -58,8 +58,8 @@
     "resetting": "Updating...",
     "resetButton": "Update Password",
     "passwordMismatch": "Passwords do not match",
-    "askAdminForReset": "Email is not sent in production. Ask an administrator to issue a password reset link.",
-    "resetRequested": "Your password reset request has been received"
+    "resetRequested": "Your password reset request has been received",
+    "resetMailSent": "If the email address is registered, a reset link has been sent by email."
   },
   "menu": {
     "communication": "Communication",

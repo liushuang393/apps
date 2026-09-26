@@ -1,8 +1,8 @@
 /**
- * [AUTH-005] パスワードを忘れた利用者を、管理者の再設定リンクで復旧できる
+ * [AUTH-005] パスワードを忘れた利用者が再設定できる
  *
- * 本番はメール送信が無い。管理者が再設定リンクを発行し、本人がリンクを開くと
- * トークンが自動入力され、新しいパスワードでログインできる。
+ * メール送信が無いため、本人は「パスワードを忘れた」からその場で再設定画面へ進める。
+ * 管理者が発行した再設定リンクでも、トークンが自動入力されて再設定できる。
  */
 import { expect, test } from "@playwright/test";
 
@@ -49,13 +49,31 @@ test.describe("[AUTH-005] パスワード再設定", () => {
     await memberContext.close();
   });
 
-  test("[AUTH-005] forgot page without mail tells user to ask admin", async ({ page }) => {
+  test("[AUTH-005] forgot password lets the user reset it on the spot", async ({ page }) => {
+    const member = {
+      email: E2E_USERS.user.email(),
+      password: E2E_USERS.user.password(),
+      displayName: E2E_USERS.user.displayName(),
+    };
+    await registerUser(member);
+
+    // 未登録のアドレスは、その場でエラーとして伝える。
     await goto(page, "/forgot-password");
-    await page.locator("#forgot-email").fill(E2E_USERS.user.email());
+    await page.locator("#forgot-email").fill(`missing.${Date.now()}@example.com`);
     await page.locator("form button[type=submit]").click();
-    // 開発環境ではトークン付きリンク、本番では管理者への依頼案内のどちらかが出る。
-    await expect(
-      page.getByTestId("reset-password-link").or(page.getByTestId("reset-ask-admin")),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".error")).toContainText("登録されていません");
+
+    // 登録済みなら、トークン入力済みの再設定画面へそのまま進み、新しいパスワードを設定できる。
+    await page.locator("#forgot-email").fill(member.email);
+    await page.locator("form button[type=submit]").click();
+    await expect(page).toHaveURL(/\/reset-password\?token=/);
+    await expect(page.locator("#reset-token")).not.toHaveValue("");
+
+    const newPassword = "Forgot-Reset-789!";
+    await page.locator("#new-password").fill(newPassword);
+    await page.locator("#confirm-password").fill(newPassword);
+    await page.locator("form button[type=submit]").click();
+    await expect(page.locator(".success-message")).toBeVisible({ timeout: 15_000 });
+    await expect(loginViaApi({ email: member.email, password: newPassword })).resolves.toBeTruthy();
   });
 });

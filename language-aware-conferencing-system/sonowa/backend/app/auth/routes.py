@@ -310,17 +310,23 @@ async def request_password_reset(
     user = result.scalar_one_or_none()
 
     if not user:
-        # セキュリティ：ユーザーが存在しなくても成功を返す
+        if settings.password_reset_self_service:
+            # 本人がその場で再設定する方式では、入力ミスに気付けるよう未登録を伝える。
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="このメールアドレスは登録されていません",
+            )
+        # メールで届ける方式では、登録有無を明かさず成功を返す。
         return PasswordResetResponse(
             message="メールアドレスが登録されている場合、リセットリンクを送信しました"
         )
 
     token = await issue_reset_token(db, user)
 
-    # 開発環境だけは手動検証用に返す。本番では応答へ秘密値を含めない。
+    # 本人再設定方式（既定）はトークンを返し、画面が再設定ページへそのまま進む。
     return PasswordResetResponse(
         message="メールアドレスが登録されている場合、リセットリンクを送信しました",
-        reset_token=token if settings.env.lower() in {"development", "test"} else None,
+        reset_token=token if settings.password_reset_self_service else None,
     )
 
 

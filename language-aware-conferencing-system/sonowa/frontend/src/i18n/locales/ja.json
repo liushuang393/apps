@@ -47,7 +47,7 @@
     "forgotPassword": "パスワードをお忘れですか？",
     "resetPassword": "パスワードリセット",
     "resetPasswordDesc": "登録済みのメールアドレスを入力してください",
-    "sendResetLink": "リセットリンクを送信",
+    "sendResetLink": "再設定へ進む",
     "sending": "送信中...",
     "backToLogin": "ログインに戻る",
     "newPassword": "新しいパスワード",
@@ -58,8 +58,8 @@
     "resetting": "更新中...",
     "resetButton": "パスワードを更新",
     "passwordMismatch": "パスワードが一致しません",
-    "askAdminForReset": "本番環境ではメールを送信しません。管理者に「パスワード再設定リンク」の発行を依頼してください。",
-    "resetRequested": "パスワード再設定の依頼を受け付けました"
+    "resetRequested": "パスワード再設定の依頼を受け付けました",
+    "resetMailSent": "メールアドレスが登録されていれば、再設定用のリンクをメールで送信しました。"
   },
   "menu": {
     "communication": "コミュニケーション",

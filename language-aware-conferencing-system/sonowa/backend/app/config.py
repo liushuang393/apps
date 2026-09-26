@@ -127,6 +127,9 @@ class Settings(BaseSettings):
     # JWT認証設定
     # ===========================================
     jwt_secret: str = "change-me-in-production"
+    # パスワード忘れ時、本人がその場で再設定できるよう再設定トークンを画面へ返す。
+    # メール送信が無い社内 LAN 運用の既定。メール送信を導入したら False にしてメールで届ける。
+    password_reset_self_service: bool = True
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24時間
 

@@ -3,7 +3,7 @@
  * メールアドレスを入力してリセットトークンを発行
  */
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { authApi } from '../api/client';
 import { LANGUAGE_DISPLAY_NAMES, SUPPORTED_LANGUAGES, type UILanguage } from '../i18n';
@@ -11,11 +11,11 @@ import '../styles/pages/auth.css';
 
 export function ForgotPasswordPage() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [resetToken, setResetToken] = useState('');
 
   /** リセットリクエスト送信 */
   const handleSubmit = async (e: FormEvent) => {
@@ -25,11 +25,13 @@ export function ForgotPasswordPage() {
 
     try {
       const data = await authApi.requestPasswordReset(email);
-      setSuccess(true);
-      // MVP版：トークンを表示
       if (data.reset_token) {
-        setResetToken(data.reset_token);
+        // 本人がその場で再設定する: トークン入力済みの再設定画面へそのまま進む。
+        navigate(`/reset-password?token=${encodeURIComponent(data.reset_token)}`);
+        return;
       }
+      // メールで届ける方式（password_reset_self_service=False）のときだけ案内を出す。
+      setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed');
     } finally {
@@ -62,29 +64,9 @@ export function ForgotPasswordPage() {
         {success ? (
           <div className="success-message">
             <p>✅ {t('auth.resetRequested')}</p>
-            {resetToken && (
-              <div className="token-display">
-                <p><strong>MVP版リセットトークン:</strong></p>
-                <code className="reset-token">{resetToken}</code>
-                <p className="token-hint">
-                  ※ 本番環境ではメールで送信されます
-                </p>
-              </div>
-            )}
-            {resetToken ? (
-              <Link
-                to={`/reset-password?token=${encodeURIComponent(resetToken)}`}
-                className="btn-link"
-                data-testid="reset-password-link"
-              >
-                {t('auth.resetPassword')}へ進む
-              </Link>
-            ) : (
-              // 本番はメール送信が無いため、管理者が発行した再設定リンクを使う。
-              <p className="token-hint" data-testid="reset-ask-admin">
-                {t('auth.askAdminForReset')}
-              </p>
-            )}
+            <p className="token-hint" data-testid="reset-mail-sent">
+              {t('auth.resetMailSent')}
+            </p>
           </div>
         ) : (
           <>

@@ -110,3 +110,62 @@ def test_new_passwords_must_be_at_least_8_characters() -> None:
         PasswordResetConfirm(token="t", new_password="short")
     with pytest.raises(ValidationError):
         UserCreate(email="a@example.com", password="short", display_name="A")
+
+
+@pytest.mark.asyncio
+async def test_forgot_password_returns_token_in_production_for_self_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本番でも本人がその場で再設定できるよう、トークンを返す（メール送信が無いため）。"""
+    from app.auth.routes import PasswordResetRequest, request_password_reset
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "env", "production")
+    monkeypatch.setattr(settings, "password_reset_self_service", True)
+    found = Mock()
+    found.scalar_one_or_none.return_value = Mock(id="u1")
+    db = _db(found)
+
+    response = await request_password_reset(
+        PasswordResetRequest(email="a@example.com"), db=db
+    )
+
+    assert response.reset_token
+
+
+@pytest.mark.asyncio
+async def test_forgot_password_unknown_email_is_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本人がその場で再設定する方式では、未登録アドレスをはっきり伝える。"""
+    from app.auth.routes import PasswordResetRequest, request_password_reset
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "password_reset_self_service", True)
+    missing = Mock()
+    missing.scalar_one_or_none.return_value = None
+    db = _db(missing)
+
+    with pytest.raises(HTTPException) as err:
+        await request_password_reset(
+            PasswordResetRequest(email="no@example.com"), db=db
+        )
+    assert err.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_self_service_off_hides_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """メール送信を導入して本人再設定を止めた場合は、トークンを応答に含めない。"""
+    from app.auth.routes import PasswordResetRequest, request_password_reset
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "password_reset_self_service", False)
+    found = Mock()
+    found.scalar_one_or_none.return_value = Mock(id="u1")
+    db = _db(found)
+
+    response = await request_password_reset(
+        PasswordResetRequest(email="a@example.com"), db=db
+    )
+
+    assert response.reset_token is None

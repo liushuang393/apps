@@ -47,7 +47,7 @@
     "forgotPassword": "Quên mật khẩu?",
     "resetPassword": "Đặt lại mật khẩu",
     "resetPasswordDesc": "Nhập địa chỉ email đã đăng ký",
-    "sendResetLink": "Gửi liên kết đặt lại",
+    "sendResetLink": "Tiếp tục đặt lại",
     "sending": "Đang gửi...",
     "backToLogin": "Quay lại đăng nhập",
     "newPassword": "Mật khẩu mới",
@@ -58,8 +58,8 @@
     "resetting": "Đang cập nhật...",
     "resetButton": "Cập nhật mật khẩu",
     "passwordMismatch": "Mật khẩu không khớp",
-    "askAdminForReset": "Môi trường chính thức không gửi email. Hãy nhờ quản trị viên cấp liên kết đặt lại mật khẩu.",
-    "resetRequested": "Đã nhận yêu cầu đặt lại mật khẩu"
+    "resetRequested": "Đã nhận yêu cầu đặt lại mật khẩu",
+    "resetMailSent": "Nếu email đã đăng ký, liên kết đặt lại đã được gửi qua email."
   },
   "menu": {
     "communication": "Giao tiếp",
