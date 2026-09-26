@@ -40,6 +40,12 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="ユーザーが見つかりません"
         )
 
+    # パスワード変更・再設定より前に発行されたトークンは失効扱い
+    if token_data.token_version != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="無効なトークンです"
+        )
+
     # アカウントが無効化されている場合
     if not user.is_active:
         raise HTTPException(

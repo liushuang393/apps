@@ -90,6 +90,9 @@ class User(Base):
     # アカウント状態
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # トークン世代。パスワード変更・再設定で +1 し、それ以前の JWT を失効させる。
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )

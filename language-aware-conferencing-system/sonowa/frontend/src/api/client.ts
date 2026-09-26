@@ -224,12 +224,19 @@ export const authApi = {
     });
   },
 
-  /** ログイン中の本人によるパスワード変更（現在のパスワードが必要） */
-  changePassword: async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
-    return apiFetch('/auth/me/password', {
+  /** ログイン中の本人によるパスワード変更（現在のパスワードが必要）。他端末は失効し、新トークンが返る */
+  changePassword: async (
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ access_token: string; user: User }> => {
+    const res = await apiFetch<AuthApiResponse>('/auth/me/password', {
       method: 'POST',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     });
+    return {
+      access_token: res.access_token,
+      user: convertUser(res.user),
+    };
   },
 
   /** パスワードリセット確認 */

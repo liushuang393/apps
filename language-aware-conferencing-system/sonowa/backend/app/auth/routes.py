@@ -93,6 +93,7 @@ def _build_auth_response(user: User) -> AuthResponse:
                 "email": user.email,
                 "native_language": user.native_language,
                 "role": user.role,
+                "tv": user.token_version or 0,  # INSERT 前の新規ユーザーは None
             }
         ),
         user=UserResponse(
@@ -374,6 +375,7 @@ async def confirm_password_reset(
 
     # パスワード更新
     user.password_hash = hash_password(data.new_password)
+    user.token_version += 1  # 既存セッションをすべて失効
     reset_token.used = True
 
     await db.commit()
@@ -381,15 +383,15 @@ async def confirm_password_reset(
     return PasswordResetResponse(message="パスワードが正常に更新されました")
 
 
-@router.post("/me/password", response_model=PasswordResetResponse)
+@router.post("/me/password", response_model=AuthResponse)
 async def change_my_password(
     data: PasswordChange,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> PasswordResetResponse:
+) -> AuthResponse:
     """
     本人がパスワードを変更する（現在のパスワードの確認が必須）。
-    忘れた場合は管理者が発行する再設定リンクを使う。
+    他端末のセッションは失効させ、変更した端末には新しいトークンを返す。
     """
     if not verify_password(data.current_password, user.password_hash):
         raise HTTPException(
@@ -397,5 +399,6 @@ async def change_my_password(
             detail="現在のパスワードが正しくありません",
         )
     user.password_hash = hash_password(data.new_password)
+    user.token_version += 1
     await db.commit()
-    return PasswordResetResponse(message="パスワードを変更しました")
+    return _build_auth_response(user)

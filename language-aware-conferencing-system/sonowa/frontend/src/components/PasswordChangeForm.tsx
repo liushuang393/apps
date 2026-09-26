@@ -6,12 +6,14 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authApi, ApiError } from '../api/client';
+import { useAuthStore } from '../store/authStore';
 
 /** バックエンドの MIN_PASSWORD_LENGTH と揃える */
 const MIN_PASSWORD_LENGTH = 8;
 
 export function PasswordChangeForm() {
   const { t } = useTranslation();
+  const setAuth = useAuthStore((s) => s.setAuth);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -29,7 +31,9 @@ export function PasswordChangeForm() {
     }
     setLoading(true);
     try {
-      await authApi.changePassword(currentPassword, newPassword);
+      // 旧トークンはサーバー側で失効するため、この端末は新トークンへ差し替える
+      const res = await authApi.changePassword(currentPassword, newPassword);
+      setAuth(res.access_token, res.user);
       setSuccess(t('profile.passwordChanged'));
       setCurrentPassword('');
       setNewPassword('');

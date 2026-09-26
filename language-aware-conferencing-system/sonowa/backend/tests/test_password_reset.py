@@ -76,7 +76,16 @@ async def test_change_own_password_requires_current_password() -> None:
     from app.auth.jwt_handler import hash_password, verify_password
     from app.auth.routes import PasswordChange, change_my_password
 
-    user = Mock(password_hash=hash_password("Current-Pass-1"))
+    user = Mock(
+        id="u1",
+        email="a@example.com",
+        display_name="A",
+        native_language="ja",
+        role="user",
+        is_active=True,
+        token_version=0,
+        password_hash=hash_password("Current-Pass-1"),
+    )
     db = Mock(commit=AsyncMock())
 
     with pytest.raises(HTTPException) as err:
@@ -93,7 +102,7 @@ async def test_change_own_password_requires_current_password() -> None:
         user=user,
         db=db,
     )
-    assert result.message
+    assert result.access_token
     assert verify_password("Brand-New-2", user.password_hash)
     db.commit.assert_awaited_once()
 
@@ -169,3 +178,103 @@ async def test_self_service_off_hides_token(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     assert response.reset_token is None
+
+
+def _bearer(token: str) -> Mock:
+    """HTTPBearer が返す資格情報の代わり。"""
+    return Mock(credentials=token)
+
+
+def _db_returning(user: object) -> Mock:
+    """User 検索の結果として user を返す偽セッション。"""
+    found = Mock()
+    found.scalar_one_or_none.return_value = user
+    return Mock(execute=AsyncMock(return_value=found), commit=AsyncMock())
+
+
+@pytest.mark.asyncio
+async def test_password_change_revokes_old_tokens_and_reissues_one() -> None:
+    """変更前のトークンは失効し、変更した端末には新しいトークンが返る。"""
+    from app.auth.dependencies import get_current_user
+    from app.auth.jwt_handler import hash_password
+    from app.auth.routes import PasswordChange, _build_auth_response, change_my_password
+
+    user = Mock(
+        id="u1",
+        email="a@example.com",
+        display_name="A",
+        native_language="ja",
+        role="user",
+        is_active=True,
+        token_version=0,
+        password_hash=hash_password("Current-Pass-1"),
+    )
+    old_token = _build_auth_response(user).access_token
+
+    result = await change_my_password(
+        PasswordChange(current_password="Current-Pass-1", new_password="Brand-New-2"),
+        user=user,
+        db=Mock(commit=AsyncMock()),
+    )
+
+    with pytest.raises(HTTPException) as err:
+        await get_current_user(_bearer(old_token), db=_db_returning(user))
+    assert err.value.status_code == 401
+    assert (
+        await get_current_user(_bearer(result.access_token), db=_db_returning(user))
+        is user
+    )
+
+
+@pytest.mark.asyncio
+async def test_password_reset_revokes_old_tokens() -> None:
+    """再設定でパスワードを変えると、それ以前のトークンは使えなくなる。"""
+    from app.auth.dependencies import get_current_user
+    from app.auth.routes import (
+        PasswordResetConfirm,
+        _build_auth_response,
+        confirm_password_reset,
+    )
+
+    user = Mock(
+        id="u1",
+        email="a@example.com",
+        display_name="A",
+        native_language="ja",
+        role="user",
+        is_active=True,
+        token_version=0,
+    )
+    old_token = _build_auth_response(user).access_token
+    reset = Mock(
+        used=False,
+        user_id="u1",
+        expires_at=datetime.now(timezone.utc) + RESET_TOKEN_TTL,
+    )
+    token_found = Mock()
+    token_found.scalar_one_or_none.return_value = reset
+    user_found = Mock()
+    user_found.scalar_one_or_none.return_value = user
+    db = Mock(
+        execute=AsyncMock(side_effect=[token_found, user_found]), commit=AsyncMock()
+    )
+
+    await confirm_password_reset(
+        PasswordResetConfirm(token="t", new_password="Brand-New-2"), db=db
+    )
+
+    with pytest.raises(HTTPException) as err:
+        await get_current_user(_bearer(old_token), db=_db_returning(user))
+    assert err.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_token_without_version_claim_is_version_zero() -> None:
+    """デプロイ前に発行されたトークン（tv なし）は、未変更のユーザーなら有効のまま。"""
+    from app.auth.dependencies import get_current_user
+    from app.auth.jwt_handler import create_access_token
+
+    user = Mock(id="u1", is_active=True, token_version=0)
+    legacy = create_access_token({"user_id": "u1", "email": "a@example.com"})
+
+    assert await get_current_user(_bearer(legacy), db=_db_returning(user)) is user

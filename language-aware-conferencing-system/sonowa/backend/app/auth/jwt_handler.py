@@ -19,6 +19,8 @@ class TokenData(BaseModel):
     email: str
     native_language: str = "ja"
     role: str = "user"
+    # tv クレームが無い旧トークンは世代 0 とみなす
+    token_version: int = 0
 
 
 class Token(BaseModel):
@@ -52,7 +54,7 @@ def hash_password(password: str) -> str:
     return hashed.decode("utf-8")
 
 
-def create_access_token(data: dict[str, str]) -> str:
+def create_access_token(data: dict[str, str | int]) -> str:
     """
     JWTアクセストークン生成
     有効期限: settings.jwt_expire_minutes
@@ -77,6 +79,7 @@ def decode_token(token: str) -> TokenData | None:
             email=payload.get("email", ""),
             native_language=payload.get("native_language", "ja"),
             role=payload.get("role", "user"),
+            token_version=payload.get("tv", 0),
         )
     except JWTError:
         return None
