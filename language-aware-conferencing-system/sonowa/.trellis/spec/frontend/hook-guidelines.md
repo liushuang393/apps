@@ -88,7 +88,7 @@ Always gate first-load API calls on `hasHydrated` from `useAuthStore`.
   (UI strings). Pages/components use `react-i18next`; only `SubtitleDisplay` uses the local hook.
 - Calling `fetch` directly in a new hook. `hooks/useTranslation.ts` does this for legacy
   reasons (own `API_BASE_URL`, swallows errors and falls back to the original text); new code
-  should add a method to `api/client.ts` and use `apiFetch`.
+  should add a method to the matching `src/api/` domain module and use `apiFetch`.
 - Adding `// eslint-disable-next-line react-hooks/exhaustive-deps` casually. It exists in exactly
   three places (`App.tsx` AuthValidator, `useLiveKit.ts` connect effect, `useAudioCapture.ts`),
   each for a deliberate "run once per key" effect with a comment explaining why. Any new one

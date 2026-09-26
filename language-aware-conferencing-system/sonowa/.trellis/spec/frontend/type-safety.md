@@ -19,7 +19,7 @@ No runtime validation library (no zod/yup); runtime checks are hand-written type
 | Location | Contents |
 |----------|----------|
 | `src/types/index.ts` | shared domain types in camelCase: `User`, `Room`, `SupportedLanguage`, `AudioMode`, `MeetingMode`, `SubtitleData`, `QosWarningData`, `RoomMediaState` |
-| `src/api/client.ts` | API DTOs: private snake_case `XxxApiResponse` interfaces + exported camelCase result types (`TranscriptData`, `AdminUser`, `GlossaryTerm`) |
+| `src/api/*.ts` (domain modules) | API DTOs: private snake_case `XxxApiResponse` interfaces + exported camelCase result types (`TranscriptData`, `AdminUser`, `GlossaryTerm`) |
 | `src/api/pipelineSettings.ts` | split-out DTOs + `mapPipelineSettings` / `toPipelineSettingsPutBody` |
 | `src/contracts/liveEvent.generated.ts` | generated LiveKit event types (`LiveEvent`, `SubtitleEvent`, ...) — do not edit |
 | Component / hook file | its own `XxxProps`, `UseXxxReturn`, internal interfaces |
@@ -37,7 +37,7 @@ No runtime validation library (no zod/yup); runtime checks are hand-written type
 
 ## API Boundary (snake_case -> camelCase)
 
-Backend JSON is snake_case; the UI uses camelCase. Convert in `api/client.ts`, never in components:
+Backend JSON is snake_case; the UI uses camelCase. Convert in the `src/api/` domain module, never in components:
 
 ```ts
 interface UserApiResponse { id: string; display_name: string; native_language: string; role: string; ... }
@@ -88,6 +88,6 @@ export function decodeLiveEvent(value: unknown): LiveEvent | null { ... }
 
 ## Known Debt
 
-`api/client.ts` casts backend strings to unions without checking
+`src/api/` modules cast backend strings to unions without checking
 (`r.default_audio_mode as AudioMode`, `languageSettings.enabledLanguages as SupportedLanguage[]`
 in `RoomListPage.tsx`) — ~39 `as X` casts overall. Tolerated at the API boundary; don't spread it into UI code.

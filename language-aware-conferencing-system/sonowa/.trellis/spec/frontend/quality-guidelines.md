@@ -6,7 +6,7 @@
 
 ## Overview
 
-Quality gates are ESLint + `tsc` (no Prettier config, no frontend unit-test runner) plus
+Quality gates are ESLint + `tsc` (no Prettier config) + Vitest unit tests (`npm test`) plus
 Playwright E2E in the separate `e2e/` package. Both `npm run lint` and `npm run type-check`
 pass cleanly on the current tree — any new warning fails lint (`--max-warnings 0`).
 
@@ -34,7 +34,10 @@ ESLint config (`frontend/.eslintrc.cjs`): `eslint:recommended`,
 
 ## Testing
 
-- **No Vitest/Jest** in `frontend/`. Don't add a unit-test framework unless the task asks.
+- **Unit**: Vitest (`npm test` = `vitest run`, node environment, no jsdom). Tests live in
+  `__tests__/` next to the module (e.g. `src/api/__tests__/client.test.ts`, characterization tests
+  for the API layer). Mock `fetch` with `vi.stubGlobal`; import through the public barrel
+  (`../client`) so internal file moves don't break tests. Write these before refactoring/splitting.
 - **E2E**: Playwright in `e2e/` (`e2e/playwright.config.ts`, base URL `http://127.0.0.1:5273`,
   locale `ja-JP`, light color scheme). Suites: `smoke/`, `regression/`, `meeting/`,
   `certification/`, `visual/`. Before planning/running E2E, read `.testing-kit/AI-INSTRUCTIONS.md`
@@ -68,7 +71,7 @@ ESLint config (`frontend/.eslintrc.cjs`): `eslint:recommended`,
 | `console.log` (and new `console.*` without a reason comment) | CLAUDE.md bans `console.log`. The one `console.error` in `hooks/useLiveKit.ts` (connect failure) is a deliberate, commented exception: it keeps the raw error for diagnosis while the UI shows a formatted message. Otherwise surface errors via UI state (`setConnectionError`, `setError`). |
 | `any`, `@ts-ignore` | CLAUDE.md; zero occurrences today |
 | Magic numbers | CLAUDE.md; use named constants |
-| Hardcoded secrets / API URLs | API base is always relative `/api` via Vite proxy (`api/client.ts` `API_BASE`) |
+| Hardcoded secrets / API URLs | API base is always relative `/api` via Vite proxy (`api/http.ts` `API_BASE`) |
 | White/near-white text on light backgrounds | fixed in `styles/pages/auth.css` (33910cd) |
 | Logging out on non-401 errors | `App.tsx` AuthValidator, commit c8bd871 |
 | Unjustified `eslint-disable` | only 3 exist, each with an explanatory comment |
@@ -80,7 +83,7 @@ ESLint config (`frontend/.eslintrc.cjs`): `eslint:recommended`,
 
 CLAUDE.md: 500 lines recommended, hard limit 1000 (global) / 1500 (sonowa CLAUDE.md) — treat
 1000 as the limit. Current oversize files (debt, split when touching heavily):
-`api/client.ts` 902, `styles/pages/room.css` 916, `hooks/useLiveKit.ts` 597.
+`styles/pages/room.css` 916, `hooks/useLiveKit.ts` 597.
 
 ---
 
@@ -88,7 +91,7 @@ CLAUDE.md: 500 lines recommended, hard limit 1000 (global) / 1500 (sonowa CLAUDE
 
 - [ ] `npm run lint` and `npm run type-check` clean
 - [ ] No `any` / `console.log` / uncommented `console.*` / magic numbers / new hardcoded UI strings
-- [ ] snake_case -> camelCase done in `api/client.ts`
+- [ ] snake_case -> camelCase done in the `src/api/` domain module
 - [ ] Token-issuing responses go through `setAuth(token, user)`; 401-only logout
 - [ ] Existing `data-testid`s preserved; regression E2E added for bug fixes
 - [ ] Text contrast checked on light backgrounds

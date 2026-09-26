@@ -7,7 +7,7 @@
 ## Overview
 
 - **Global state**: Zustand v5, exactly two stores: `store/authStore.ts` and `store/roomStore.ts`.
-- **Server state**: no cache library; pages fetch via `api/client.ts` into local `useState`.
+- **Server state**: no cache library; pages fetch via `api/client` into local `useState`.
 - **Local UI state**: `useState` in the page/component.
 - **Persisted client prefs**: `localStorage` directly for small things
   (`useAudioDevices.ts` mic/speaker ids; i18next caches UI language under its own key).

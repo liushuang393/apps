@@ -7,7 +7,7 @@
 ## Overview
 
 Flat, type-based layout under `frontend/src/` (no feature folders). Routing is a single
-`<Routes>` table in `src/App.tsx`. All HTTP calls live in `src/api/client.ts`. Global state
+`<Routes>` table in `src/App.tsx`. All HTTP calls live in `src/api/` (domain modules re-exported by `client.ts`). Global state
 is two Zustand stores. Styles are plain CSS (no CSS modules / Tailwind), one file per page.
 
 ---
@@ -19,7 +19,10 @@ frontend/src/
 ├── App.tsx              # BrowserRouter, AuthValidator, PrivateRoute/AdminRoute, route table
 ├── main.tsx             # entry
 ├── api/
-│   ├── client.ts        # apiFetch, ApiError, authApi/roomApi/adminApi/glossaryApi/meetingsApi
+│   ├── client.ts        # re-export barrel (public names only; apiFetch stays internal)
+│   ├── http.ts          # API_BASE, ApiError, apiFetch
+│   ├── auth.ts / rooms.ts / admin.ts / glossary.ts / meetings.ts  # xxxApi + DTOs + convertXxx
+│   ├── __tests__/       # Vitest characterization tests (via ../client)
 │   └── pipelineSettings.ts  # snake_case <-> camelCase mapping for AI pipeline settings
 ├── components/          # reusable UI used by pages (AudioControlPanel, SubtitleDisplay, ...)
 ├── constants/languages.ts   # LANGUAGE_NAMES, ALL_LANGUAGE_CODES, DEFAULT_ENABLED_LANGUAGES
@@ -41,7 +44,13 @@ frontend/src/
 └── types/index.ts       # shared domain types (User, Room, SubtitleData, ...)
 ```
 
-E2E tests live outside the frontend package in `e2e/` (Playwright; see quality-guidelines.md).
+Unit tests live in `__tests__/` beside the module (Vitest). E2E tests live outside the frontend
+package in `e2e/` (Playwright; see quality-guidelines.md).
+
+`src/api/` is split by domain: `http.ts` (`API_BASE`, `ApiError`, `apiFetch`; imports no other api
+module), `auth.ts`, `rooms.ts`, `admin.ts`, `glossary.ts`, `meetings.ts`, `pipelineSettings.ts`.
+`client.ts` is a re-export barrel — pages keep importing from `../api/client`; add new endpoints to
+the domain module and re-export the public names from `client.ts`.
 
 ---
 
@@ -50,11 +59,11 @@ E2E tests live outside the frontend package in `e2e/` (Playwright; see quality-g
 - **New screen**: add `src/pages/XxxPage.tsx`, register it in `src/App.tsx` wrapped in
   `<PrivateRoute>` (and `<AdminRoute>` for `/admin/*`), add `src/styles/pages/xxx.css`
   and import it from the page: `import '../styles/pages/admin.css';` (see `pages/AdminPage.tsx`).
-- **New API call**: add a method to the matching `xxxApi` object in `src/api/client.ts`,
+- **New API call**: add a method to the matching `xxxApi` object in its domain module (`src/api/admin.ts` etc.),
   plus the snake_case response interface and a `convertXxx` mapper when needed.
 - **Non-React logic** (pure functions, classes) goes in a small domain folder like
   `src/qoe/` or `src/preferences/`, not in `hooks/`.
-- **Shared types** go in `src/types/index.ts`; API-only response types stay in `api/client.ts`.
+- **Shared types** go in `src/types/index.ts`; API-only response types stay in the `src/api/` domain module.
 - **Never hand-edit** `contracts/liveEvent.generated.ts`. It is regenerated from the backend
   (`python -m app.ai_pipeline.event_contract <out>`), and `backend/tests/test_events.py`
   fails if it drifts from the canonical schema.
@@ -81,8 +90,6 @@ files except `types/index.ts` and `i18n/index.ts`.
 
 ## Known Debt
 
-- `src/api/client.ts` is 902 lines (CLAUDE.md recommends <=500). When adding many endpoints,
-  consider splitting by domain (e.g. `api/admin.ts`) following the existing `pipelineSettings.ts` split.
 - `src/hooks/useLiveKit.ts` is 597 lines; `styles/pages/room.css` is 916 lines.
 - `useTranslation` exists both in `hooks/useTranslation.ts` (subtitle text translation API)
   and in `react-i18next` (UI strings). Check the import path — only
