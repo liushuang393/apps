@@ -249,9 +249,40 @@ GPU オーバーライド（`docker-compose.gpu.yml`）は `VAD_BACKEND=silero` 
 | `.env` | `cp .env.example .env` のうえで `ENV=production`、`INSTALL_LOCAL=1`、ランダムな `JWT_SECRET`・`LIVEKIT_API_KEY`・`LIVEKIT_API_SECRET`・`DB_PASSWORD` を設定する（§本番デプロイ）。方式3（ローカル）だけを使うなら API キーは不要 |
 | 起動 | `./start-with-keys.sh --build`。初回は `docker compose exec backend python /app/scripts/prepare_local_models.py --output-dir /models` でモデルを取得し、`docker compose restart backend` |
 | 証明書と Firewall | 管理者 PowerShell で `scripts\setup-windows.ps1 -CaPath certs\ca.crt` を実行する。社内 CA の信頼登録と、TCP 443 / 80 / 7881 / 3478・UDP 3478 / 50000-50039 の受信許可（同一サブネットからのみ）を行う |
+| 初期ユーザー | 起動と `alembic upgrade head` の後に `./scripts/seed-users.sh` を実行し、管理者 1 名と一般ユーザー 1 名を作る（下記「初期ユーザーの作成」）。**自動では作られない** |
 | 方式の選択 | 管理者で `https://<HOST_IP>` にログインし、`/admin/ai-pipeline` で方式を選ぶ（方式3 = 完全ローカル） |
 
 起動が終わると、画面に `https://<HOST_IP>:443` が表示される。この URL を参加者に伝える。
+
+#### 初期ユーザーの作成
+
+新規構築直後は管理者がいない（登録画面から作るユーザーは一般ユーザー）。DB のマイグレーション後に次を実行する。
+
+```bash
+# WSL / Linux（パスワード未指定なら乱数で生成し、その 1 回だけ表示する）
+./scripts/seed-users.sh
+
+# パスワードを自分で決める場合（8 文字以上）
+SEED_ADMIN_PASSWORD='<管理者パスワード>' SEED_USER_PASSWORD='<一般ユーザーパスワード>' ./scripts/seed-users.sh
+
+# 既存ユーザーのパスワードを設定し直す（既存セッションは失効する）
+SEED_ADMIN_PASSWORD='<新パスワード>' ./scripts/seed-users.sh --reset-password
+```
+
+```powershell
+# Windows PowerShell
+$env:SEED_ADMIN_PASSWORD = "<管理者パスワード>"; $env:SEED_USER_PASSWORD = "<一般ユーザーパスワード>"
+docker compose exec -T -e SEED_ADMIN_PASSWORD -e SEED_USER_PASSWORD backend python -m app.auth.seed_users
+```
+
+| アカウント | メール（ログイン ID・既定値） | ロール | 母語 | 変更する環境変数 |
+|---|---|---|---|---|
+| 管理者 | `demo.admin@example.com` | admin | 日本語 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` |
+| 一般ユーザー | `demo.user@example.com` | user | 英語 | `SEED_USER_EMAIL` / `SEED_USER_PASSWORD` |
+
+- 何度実行してもよい。既存ユーザーはロールと有効状態だけを補正し、`--reset-password` を付けない限りパスワードは変えない。
+- パスワードはリポジトリにも `.env` にも保存しない（DB にハッシュのみ）。生成されたパスワードは表示された時点で控える。
+- 本番運用では既定のメールアドレスを実在の管理者アドレスに変える（`SEED_ADMIN_EMAIL`）か、ログイン後にプロフィールでパスワードを変更する。
 
 **ホストの IP は固定すること。** DHCP のままだと再起動で IP が変わり（検証中に 192.168.210.2 → 192.168.210.15 を確認）、参加者に伝えた URL が使えなくなる。ルーターの DHCP 予約か、Windows の固定 IP 設定を使う。IP が変わった場合は入口スクリプトを再実行すれば証明書と LiveKit は新しい IP で作り直される（端末の再登録は不要）。サービスは `restart: unless-stopped` のため、ホストと Docker Desktop が起動すれば自動で復帰する（Docker Desktop は「ログイン時に起動」を有効にしておく）。
 
