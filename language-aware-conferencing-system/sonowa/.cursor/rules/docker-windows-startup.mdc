@@ -9,6 +9,8 @@ Docker / compose / Dockerfile / 起動スクリプトを毎回ゼロから探索
 
 ## 既知の構成
 - `docker-compose.yml`：postgres / redis / livekit / coturn / backend / frontend
+- 方式3（ローカル GPU）利用時は `docker-compose.gpu.yml` が必須。無いと backend が「Found no NVIDIA driver」でモデル準備に失敗する
+- `.env` が `ENV=production` なら `docker-compose.prod.yml` も重ね、入口は nginx の `https://<HOST_IP>`（5273 は公開されない）
 - `.env`：ユーザー管理（勝手に編集しない）
 - 既定ポート：フロント 5273、API 8090、LiveKit 7880
 - 起動後：`docker compose exec backend alembic upgrade head`
@@ -24,12 +26,24 @@ docker compose up -d --build
 docker compose exec backend alembic upgrade head
 ```
 
+方式3（GPU）では GPU override を重ねる:
+
+```powershell
+$env:INSTALL_LOCAL = "1"
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+本番構成（`-f docker-compose.prod.yml` 追加）は TLS 証明書（`certs/`）が前提。証明書生成は `scripts/generate-tls-cert.sh` が担うため、初回は WSL の `start-docker.sh` を使う。
+
 ローカルのみなら `HOST_IP` 省略可（`.env` の値を使用）。
 
 ## WSL2 / Linux のみ
 ```bash
-./scripts/start-docker.sh --build --host-ip <LAN_IP>
+INSTALL_LOCAL=1 ./scripts/start-docker.sh --build --host-ip <LAN_IP>
 ```
+
+`INSTALL_LOCAL=1` で GPU override、`ENV=production`（`.env`）で prod override を自動付与する。
+起動後は backend ログで `CUDA graph captured` / `Application startup complete` を確認。
 
 WSL の `bash` から Windows の Docker Desktop へ `docker info` が失敗することがある。その場合は探索せず PowerShell の `docker compose` に切り替える。
 
