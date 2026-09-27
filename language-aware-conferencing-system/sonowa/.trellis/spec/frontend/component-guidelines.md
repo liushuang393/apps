@@ -96,7 +96,20 @@ via `useParams`, the store via selectors, and call `xxxApi` directly (see `pages
 
 All pages and components use `t()` for UI text. Still Japanese in any UI language:
 - admin pipeline validation errors passed as `detail=str(e)` (not in the `apiError.*` dictionary).
-- `LANGUAGE_NAMES` (`constants/languages.ts`) and dates formatted with `toLocaleString('ja-JP')`.
 
 The ja locale text must stay byte-identical when migrating: Playwright E2E runs with
 `locale: ja-JP` and may match Japanese text.
+
+## Language Names, Dates, Lazy Routes
+
+- Language labels: `languageName(code, i18n.language)` / `languageNameWithCode(...)`
+  (`constants/languageNames.ts`, `Intl.DisplayNames` with `LANGUAGE_NAMES` fallback; ja output equals
+  the constants). Never render `LANGUAGE_NAMES[...]` directly in UI.
+- Dates: `toLocaleString(i18n.language)` (never a hardcoded `'ja-JP'`). Get `i18n` from
+  `useTranslation()` in the component so a language switch re-renders.
+- Pages are `React.lazy` in `App.tsx` (except `LoginPage` / `MenuPage`) under one `<Suspense>`.
+  Don't statically import a lazy page elsewhere (it defeats the split). Stale chunks after a
+  redeploy are recovered by `staleChunkReload.ts` (one guarded reload on `vite:preloadError`);
+  `frontend/nginx.conf` serves `index.html` with `Cache-Control: no-cache`.
+- `vite.config.ts` puts `livekit-client` in its own chunk; `chunkSizeWarningLimit: 550` exists only
+  because that single-module package is ~506 kB. Keep every other chunk under 500 kB.

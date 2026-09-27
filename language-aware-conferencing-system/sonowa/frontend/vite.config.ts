@@ -52,6 +52,17 @@ export default defineConfig(({ mode }) => {
     test: {
       setupFiles: ['./src/test/setup.ts'],
     },
+    // livekit-client を会議室ページから分離する（ページ更新時もベンダーキャッシュを維持）
+    build: {
+      // livekit-client は単一 ESM（dist/livekit-client.esm.mjs）で Rollup が内部分割できず、
+      // minify 後 約 506 kB になる（会議画面でのみ遅延読込）。それ以外は 500 kB 未満を維持する。
+      chunkSizeWarningLimit: 550,
+      rollupOptions: {
+        output: {
+          manualChunks: (id: string) => (id.includes('/node_modules/livekit-client/') ? 'livekit' : undefined),
+        },
+      },
+    },
     // クライアントコードに環境変数を注入（空の場合は相対パス使用）
     define: {
       'import.meta.env.VITE_API_URL': JSON.stringify(clientApiUrl),

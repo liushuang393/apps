@@ -9,7 +9,8 @@ import { adminApi, roomApi, ApiError } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import type { Room, SupportedLanguage, AudioMode, MeetingMode } from '../types';
 
-import { LANGUAGE_NAMES, DEFAULT_ENABLED_LANGUAGES } from '../constants/languages';
+import { DEFAULT_ENABLED_LANGUAGES } from '../constants/languages';
+import { languageName } from '../constants/languageNames';
 import '../styles/pages/room-list.css';
 
 /** 会議作成フォームの初期状態 */
@@ -78,7 +79,7 @@ export function RoomListPage() {
   const [availableLanguages, setAvailableLanguages] = useState<SupportedLanguage[]>(DEFAULT_ENABLED_LANGUAGES);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   /**
    * 会議室一覧を取得
@@ -267,7 +268,7 @@ export function RoomListPage() {
                     checked={formState.allowedLanguages.includes(lang)}
                     onChange={() => toggleLanguage(lang)}
                   />
-                  {LANGUAGE_NAMES[lang]}
+                  {languageName(lang, i18n.language)}
                 </label>
               ))}
             </div>
@@ -403,7 +404,7 @@ export function RoomListPage() {
                 <div className="languages">
                   {(room.allowedLanguages ?? []).slice(0, 3).map((lang) => (
                     <span key={lang} className="language-tag">
-                      {LANGUAGE_NAMES[lang] ?? lang}
+                      {languageName(lang, i18n.language)}
                     </span>
                   ))}
                   {(room.allowedLanguages?.length ?? 0) > 3 && (

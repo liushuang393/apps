@@ -2,25 +2,42 @@
  * Sonowa アプリケーションルート
  */
 import './styles/main.css';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { ApiError, authApi } from './api/client';
 import { LoginPage } from './pages/LoginPage';
-import { RegisterPage } from './pages/RegisterPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
-import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { MenuPage } from './pages/MenuPage';
-import { RoomListPage } from './pages/RoomListPage';
-import { RoomPage } from './pages/RoomPage';
-import { TranscriptPage } from './pages/TranscriptPage';
-import { AdminPage } from './pages/AdminPage';
-import { LanguageSettingsPage } from './pages/LanguageSettingsPage';
-import { AiPipelineSettingsPage } from './pages/AiPipelineSettingsPage';
-import { ExperimentsPage } from './pages/ExperimentsPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { HistoryPage } from './pages/HistoryPage';
-import { GlossaryPage } from './pages/GlossaryPage';
+
+/*
+ * ページの遅延読込（初期バンドル削減）
+ * ログイン・メニューは初期表示/認証リダイレクト先のため同期読込のまま。
+ * ページは named export のため default に詰め替える。
+ */
+const RegisterPage = lazy(() => import('./pages/RegisterPage').then((m) => ({ default: m.RegisterPage })));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const RoomListPage = lazy(() => import('./pages/RoomListPage').then((m) => ({ default: m.RoomListPage })));
+const RoomPage = lazy(() => import('./pages/RoomPage').then((m) => ({ default: m.RoomPage })));
+const TranscriptPage = lazy(() => import('./pages/TranscriptPage').then((m) => ({ default: m.TranscriptPage })));
+const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })));
+const LanguageSettingsPage = lazy(() => import('./pages/LanguageSettingsPage').then((m) => ({ default: m.LanguageSettingsPage })));
+const AiPipelineSettingsPage = lazy(() => import('./pages/AiPipelineSettingsPage').then((m) => ({ default: m.AiPipelineSettingsPage })));
+const ExperimentsPage = lazy(() => import('./pages/ExperimentsPage').then((m) => ({ default: m.ExperimentsPage })));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({ default: m.HistoryPage })));
+const GlossaryPage = lazy(() => import('./pages/GlossaryPage').then((m) => ({ default: m.GlossaryPage })));
+
+/** 遅延読込中の表示（既存ページの読込中表示と同じスタイル） */
+function PageLoading() {
+  const { t } = useTranslation();
+  return (
+    <div className="empty-state">
+      <p>{t('common.loading')}</p>
+    </div>
+  );
+}
 
 /**
  * アプリ起動時にトークン有効性をバックエンドで検証するコンポーネント
@@ -99,6 +116,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthValidator>
+      <Suspense fallback={<PageLoading />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
@@ -204,6 +222,7 @@ export function App() {
         />
         <Route path="/" element={<Navigate to="/menu" />} />
       </Routes>
+      </Suspense>
       </AuthValidator>
     </BrowserRouter>
   );

@@ -17,7 +17,7 @@ import {
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
-import { LANGUAGE_NAMES } from '../constants/languages';
+import { languageName } from '../constants/languageNames';
 import '../styles/pages/transcript.css';
 
 export function TranscriptPage() {
@@ -36,7 +36,7 @@ export function TranscriptPage() {
   const [rerunLoading, setRerunLoading] = useState(false);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isAdmin = user?.role === 'admin';
   const activeSessionId = selectedSessionId || transcript?.selectedSessionId || '';
 
@@ -81,10 +81,10 @@ export function TranscriptPage() {
 
     const lines: string[] = [];
     lines.push(t('transcript.exportTitle', { name: transcript.roomName }));
-    lines.push(t('transcript.exportDate', { date: new Date().toLocaleString('ja-JP') }));
+    lines.push(t('transcript.exportDate', { date: new Date().toLocaleString(i18n.language) }));
     lines.push(t('transcript.exportLanguage', {
       language: selectedLang
-        ? LANGUAGE_NAMES[selectedLang as SupportedLanguage] || selectedLang
+        ? languageName(selectedLang, i18n.language)
         : t('settings.originalText'),
     }));
     lines.push('');
@@ -92,7 +92,7 @@ export function TranscriptPage() {
     lines.push('');
 
     for (const sub of transcript.subtitles) {
-      const time = new Date(sub.timestamp).toLocaleTimeString('ja-JP');
+      const time = new Date(sub.timestamp).toLocaleTimeString(i18n.language);
       const text = selectedLang && sub.translations[selectedLang]
         ? sub.translations[selectedLang]
         : sub.originalText;
@@ -233,7 +233,7 @@ export function TranscriptPage() {
             <option value="">{t('settings.originalText')}</option>
             {availableLanguages.map((lang) => (
               <option key={lang} value={lang}>
-                {LANGUAGE_NAMES[lang]}
+                {languageName(lang, i18n.language)}
               </option>
             ))}
           </select>
@@ -248,8 +248,8 @@ export function TranscriptPage() {
             {transcript?.sessions.map((session) => (
               <option key={session.id} value={session.id}>
                 {session.isActive
-                  ? t('transcript.sessionActive', { date: new Date(session.startedAt).toLocaleString('ja-JP') })
-                  : new Date(session.startedAt).toLocaleString('ja-JP')}
+                  ? t('transcript.sessionActive', { date: new Date(session.startedAt).toLocaleString(i18n.language) })
+                  : new Date(session.startedAt).toLocaleString(i18n.language)}
               </option>
             ))}
           </select>
@@ -349,7 +349,7 @@ export function TranscriptPage() {
                     date: new Date(
                       transcript.sessions.find((session) => session.id === transcript.selectedSessionId)?.startedAt
                       ?? Date.now()
-                    ).toLocaleString('ja-JP'),
+                    ).toLocaleString(i18n.language),
                   })}
                 </span>
               )}
@@ -359,10 +359,10 @@ export function TranscriptPage() {
                 <div className="transcript-meta">
                   <span className="speaker-name">{sub.speakerName}</span>
                   <span className="timestamp">
-                    {new Date(sub.timestamp).toLocaleTimeString('ja-JP')}
+                    {new Date(sub.timestamp).toLocaleTimeString(i18n.language)}
                   </span>
                   <span className="original-lang" title={t('transcript.originalLanguageTitle')}>
-                    {LANGUAGE_NAMES[sub.originalLanguage as SupportedLanguage] || sub.originalLanguage}
+                    {languageName(sub.originalLanguage, i18n.language)}
                   </span>
                 </div>
                 <div className="transcript-text">

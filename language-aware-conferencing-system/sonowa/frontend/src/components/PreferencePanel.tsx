@@ -10,7 +10,7 @@
  */
 import { useCallback, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { LANGUAGE_NAMES_WITH_CODE } from '../constants/languages';
+import { languageNameWithCode } from '../constants/languageNames';
 import {
   applyPreferenceChange,
   type PreferencePatch,
@@ -18,9 +18,6 @@ import {
 import { useRoomStore } from '../store/roomStore';
 import type { AudioMode, SupportedLanguage, RoomPolicy } from '../types';
 import { AudioControlPanel } from './AudioControlPanel';
-
-/** 言語表示名（統一形式：言語名（コード）） */
-const LANGUAGE_NAMES = LANGUAGE_NAMES_WITH_CODE;
 
 interface Props {
   onPreferenceChange: (pref: PreferencePatch) => void;
@@ -45,7 +42,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
   // ★パフォーマンス最適化: 個別セレクターで購読★
   const storePolicy = useRoomStore(selectPolicy);
   const myPreference = useRoomStore(selectMyPreference);
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   // propsまたはstoreからpolicyを取得
   const policy = propPolicy ?? storePolicy;
@@ -103,7 +100,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
   // 翻訳モードかどうか
   const isTranslatedMode = myPreference.audioMode === 'translated';
   // 選択中の言語の表示名
-  const targetLangDisplay = LANGUAGE_NAMES[myPreference.targetLanguage] ?? myPreference.targetLanguage;
+  const targetLangDisplay = languageNameWithCode(myPreference.targetLanguage, i18n.language);
 
   return (
     <div
@@ -204,7 +201,7 @@ function PreferencePanelInner({ onPreferenceChange, policy: propPolicy, audioPro
           >
             {allowedLanguages.map((lang) => (
               <option key={lang} value={lang}>
-                {LANGUAGE_NAMES[lang as SupportedLanguage] ?? lang}
+                {languageNameWithCode(lang, i18n.language)}
               </option>
             ))}
           </select>

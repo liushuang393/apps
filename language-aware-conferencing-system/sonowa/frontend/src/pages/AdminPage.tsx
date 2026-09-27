@@ -7,9 +7,9 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { adminApi, ApiError, type AdminUser, type SystemStats } from '../api/client';
 import { useAuthStore } from '../store/authStore';
-import type { SupportedLanguage } from '../types';
 
-import { LANGUAGE_NAMES } from '../constants/languages';
+import { ALL_LANGUAGE_CODES } from '../constants/languages';
+import { languageName } from '../constants/languageNames';
 import '../styles/pages/admin.css';
 
 /** 表示名を持つロール（それ以外はロール値をそのまま表示） */
@@ -25,7 +25,7 @@ export function AdminPage() {
   const [resetLink, setResetLink] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   /** ロール表示名（未知のロールは値をそのまま返す） */
   const roleLabel = (role: string | undefined): string | undefined =>
@@ -203,7 +203,7 @@ export function AdminPage() {
                 <tr key={u.id} className={!u.isActive ? 'inactive' : ''}>
                   <td>{u.displayName}</td>
                   <td>{u.email}</td>
-                  <td>{LANGUAGE_NAMES[u.nativeLanguage as SupportedLanguage] || u.nativeLanguage}</td>
+                  <td>{languageName(u.nativeLanguage, i18n.language)}</td>
                   <td>
                     <span className={`role-badge role-${u.role}`}>
                       {roleLabel(u.role)}
@@ -214,7 +214,7 @@ export function AdminPage() {
                       {u.isActive ? t('glossary.enabled') : t('glossary.disabled')}
                     </span>
                   </td>
-                  <td>{new Date(u.createdAt).toLocaleDateString('ja-JP')}</td>
+                  <td>{new Date(u.createdAt).toLocaleDateString(i18n.language)}</td>
                   <td>
                     <button
                       className="edit-btn"
@@ -261,9 +261,9 @@ export function AdminPage() {
                   setEditingUser({ ...editingUser, nativeLanguage: e.target.value })
                 }
               >
-                {Object.entries(LANGUAGE_NAMES).map(([code, name]) => (
+                {ALL_LANGUAGE_CODES.map((code) => (
                   <option key={code} value={code}>
-                    {name}
+                    {languageName(code, i18n.language)}
                   </option>
                 ))}
               </select>

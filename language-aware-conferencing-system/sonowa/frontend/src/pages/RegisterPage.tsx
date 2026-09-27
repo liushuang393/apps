@@ -7,7 +7,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { authApi } from '../api/client';
 import { useAuthStore } from '../store/authStore';
-import { ALL_LANGUAGE_CODES, LANGUAGE_NAMES } from '../constants/languages';
+import { ALL_LANGUAGE_CODES } from '../constants/languages';
+import { languageName } from '../constants/languageNames';
 import { LANGUAGE_DISPLAY_NAMES, SUPPORTED_LANGUAGES, type UILanguage } from '../i18n';
 import type { SupportedLanguage } from '../types';
 import '../styles/pages/auth.css';
@@ -116,7 +117,7 @@ export function RegisterPage() {
           >
             {ALL_LANGUAGE_CODES.map((lang) => (
               <option key={lang} value={lang}>
-                {LANGUAGE_NAMES[lang] ?? lang}
+                {languageName(lang, i18n.language)}
               </option>
             ))}
           </select>

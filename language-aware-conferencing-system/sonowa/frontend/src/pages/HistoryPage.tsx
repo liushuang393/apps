@@ -11,7 +11,7 @@ import '../styles/pages/admin.css';
 import '../styles/pages/history.css';
 
 export function HistoryPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { logout, hasHydrated } = useAuthStore();
   const [items, setItems] = useState<ParticipationHistory[]>([]);
@@ -93,8 +93,8 @@ export function HistoryPage() {
                     <td>
                       {row.isPrivate ? t('history.private') : t('history.public')}
                     </td>
-                    <td>{new Date(row.joinedAt).toLocaleString()}</td>
-                    <td>{new Date(row.updatedAt).toLocaleString()}</td>
+                    <td>{new Date(row.joinedAt).toLocaleString(i18n.language)}</td>
+                    <td>{new Date(row.updatedAt).toLocaleString(i18n.language)}</td>
                   </tr>
                 ))}
               </tbody>

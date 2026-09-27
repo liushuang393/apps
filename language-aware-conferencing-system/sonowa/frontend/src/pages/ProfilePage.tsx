@@ -8,13 +8,13 @@ import { useTranslation } from 'react-i18next';
 import { adminApi, authApi, ApiError } from '../api/client';
 import { PasswordChangeForm } from '../components/PasswordChangeForm';
 import { useAuthStore } from '../store/authStore';
-import { LANGUAGE_NAMES } from '../constants/languages';
+import { languageName } from '../constants/languageNames';
 import type { SupportedLanguage } from '../types';
 import '../styles/pages/auth.css';
 import '../styles/pages/profile.css';
 
 export function ProfilePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { user, setAuth, logout } = useAuthStore();
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
@@ -126,7 +126,7 @@ export function ProfilePage() {
           >
             {enabledLanguages.map((lang) => (
               <option key={lang} value={lang}>
-                {LANGUAGE_NAMES[lang as SupportedLanguage] || lang}
+                {languageName(lang, i18n.language)}
               </option>
             ))}
           </select>

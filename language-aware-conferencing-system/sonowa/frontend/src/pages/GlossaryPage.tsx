@@ -13,8 +13,7 @@ import {
   type GlossaryTermInput,
 } from '../api/client';
 import { useAuthStore } from '../store/authStore';
-import { LANGUAGE_NAMES } from '../constants/languages';
-import type { SupportedLanguage } from '../types';
+import { languageName } from '../constants/languageNames';
 import '../styles/pages/admin.css';
 import '../styles/pages/glossary.css';
 
@@ -56,7 +55,7 @@ function toDraft(term: GlossaryTerm): TermDraft {
 }
 
 export function GlossaryPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
   const [terms, setTerms] = useState<GlossaryTerm[]>([]);
@@ -169,7 +168,7 @@ export function GlossaryPage() {
   };
 
   const langLabel = (code: string) =>
-    LANGUAGE_NAMES[code as SupportedLanguage] || code;
+    languageName(code, i18n.language);
 
   if (!hasHydrated || loading) {
     return (

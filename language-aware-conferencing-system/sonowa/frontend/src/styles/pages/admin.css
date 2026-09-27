@@ -33,6 +33,8 @@
   font-size: 1.25rem;
   font-weight: 600;
   color: white;
+  /* 英語等で長い見出しが右側の長い表示名に押されて折り返さないように */
+  white-space: nowrap;
 }
 
 .admin-page header .header-right {
