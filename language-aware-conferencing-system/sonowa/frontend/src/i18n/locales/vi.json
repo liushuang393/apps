@@ -20,7 +20,8 @@
     "confirm": "Xác nhận",
     "logout": "Đăng xuất",
     "guest": "Khách",
-    "backArrow": "← Quay lại"
+    "backArrow": "← Quay lại",
+    "retry": "Thử lại"
   },
   "role": {
     "user": "Nhân viên",
@@ -222,7 +223,9 @@
     "description": "Chọn ngôn ngữ sử dụng trong hệ thống. Các ngôn ngữ đã chọn sẽ có sẵn trong các phòng họp mới được tạo.",
     "selectionCount": "Đã chọn: {{current}} / {{max}} ngôn ngữ",
     "saveSuccess": "Đã lưu cài đặt ngôn ngữ",
-    "tierLabel": "Độ chính xác dịch"
+    "tierLabel": "Độ chính xác dịch",
+    "loadError": "Không thể tải cài đặt",
+    "saveError": "Lưu thất bại"
   },
   "aiPipelineSettings": {
     "title": "Cài đặt AI pipeline",
@@ -268,7 +271,8 @@
       "a": "a (nghe / S2S)",
       "b": "b (đọc / phụ đề)",
       "hybrid": "hybrid (cả hai)"
-    }
+    },
+    "mockOption": "mock (chỉ dành cho làn E2E A)"
   },
   "meetingMode": {
     "title": "Luồng AI cuộc họp",
@@ -449,6 +453,22 @@
     "glossaryTermNotFound": "Không tìm thấy thuật ngữ",
     "unsupportedLanguage": "Ngôn ngữ không được hỗ trợ: {{language}}",
     "localTranslationUnavailable": "Dịch vụ dịch cục bộ không khả dụng"
+  },
+  "pipelineWarning": {
+    "openaiKeyMissing": "Chưa thiết lập OPENAI_API_KEY.",
+    "deepgramKeyMissing": "Chưa thiết lập DEEPGRAM_API_KEY.",
+    "llmCorrectionNoKey": "Hiệu chỉnh LLM của phương thức 2 đang bật nhưng chưa thiết lập GEMINI_API_KEY nên sẽ bỏ qua hiệu chỉnh.",
+    "localMtNoGlossary": "MT cục bộ không hỗ trợ bảng thuật ngữ (Sonowa glossary). Với luồng chất lượng của phương thức 2, nên dùng mt_provider=openai (hoặc auto).",
+    "localSlotAdvanced": "Khe local là tùy chọn triển khai nâng cao (không phải một phương thức). Kể cả khi chưa cài runtime/mô hình cũng không chuyển sang đám mây: ASR/MT không dùng được, TTS giảm xuống chỉ phụ đề.",
+    "localTtsNoVi": "TTS cục bộ không hỗ trợ tiếng Việt (không có mô hình cục bộ dùng thương mại được). Tiếng Việt chỉ có phụ đề.",
+    "geminiLiveFallback": "gemini_live sẽ chuyển sang gpt4o_transcribe vì chưa có GEMINI_API_KEY/thư viện.",
+    "geminiLiveCheckFailed": "Kiểm tra khả dụng của gemini_live thất bại.",
+    "googleFallback": "google có thể chuyển sang gpt4o_transcribe vì chưa có xác thực Cloud/thư viện.",
+    "googleCheckFailed": "Kiểm tra khả dụng của google thất bại.",
+    "localTtsRuntimeMissing": "Chưa cài runtime TTS cục bộ ({{model}}). Không phát giọng dịch, chỉ có phụ đề.",
+    "localTtsCheckFailed": "Kiểm tra khả dụng của TTS cục bộ thất bại.",
+    "localMultimodalMissing": "ASR/MT cục bộ bị tắt vì chưa cài phụ thuộc Gemma 4 E2B. Hãy chạy pip install '.[local]' và chuẩn bị mô hình.",
+    "localAsrMtCheckFailed": "Kiểm tra khả dụng của ASR/MT cục bộ thất bại."
   },
   "errors": {
     "livekit": {

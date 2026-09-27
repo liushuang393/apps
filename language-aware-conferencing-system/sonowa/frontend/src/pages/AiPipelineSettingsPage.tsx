@@ -10,7 +10,9 @@ import {
   adminApi,
   type PipelineSettingsFields,
   type PipelineSettingsResponse,
+  translatePipelineWarning,
 } from '../api/client';
+import { LoadError } from '../components/LoadError';
 import { useAuthStore } from '../store/authStore';
 import '../styles/pages/language-settings.css';
 import '../styles/pages/ai-pipeline-settings.css';
@@ -113,6 +115,7 @@ export function AiPipelineSettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -122,23 +125,27 @@ export function AiPipelineSettingsPage() {
     }
   }, [user, navigate]);
 
+  /** 設定を取得する（失敗時は loadError を立て、再試行で再呼出しできる） */
+  const loadSettings = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const data = await adminApi.getAiPipelineSettings();
+      setSettings(data);
+      setForm(toForm(data.effective));
+    } catch {
+      setLoadError(t('aiPipelineSettings.loadError'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       return;
     }
-    const fetchSettings = async () => {
-      try {
-        const data = await adminApi.getAiPipelineSettings();
-        setSettings(data);
-        setForm(toForm(data.effective));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('aiPipelineSettings.loadError'));
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    void fetchSettings();
-  }, [user, t]);
+    void loadSettings();
+  }, [user, loadSettings]);
 
   const handleChange = useCallback((key: keyof FormState, value: string | boolean) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -184,7 +191,15 @@ export function AiPipelineSettingsPage() {
         className="language-settings-page ai-pipeline-settings-page"
         data-testid="ai-pipeline-page"
       >
-        <div className="loading">{t('common.loading')}</div>
+        {!isLoading && loadError ? (
+          <LoadError
+            message={loadError}
+            onRetry={() => void loadSettings()}
+            testIdPrefix="ai-pipeline"
+          />
+        ) : (
+          <div className="loading">{t('common.loading')}</div>
+        )}
       </div>
     );
   }
@@ -222,7 +237,7 @@ export function AiPipelineSettingsPage() {
             <p>{t('aiPipelineSettings.warningsTitle')}</p>
             <ul>
               {warnings.map((w) => (
-                <li key={w}>{w}</li>
+                <li key={w}>{translatePipelineWarning(w)}</li>
               ))}
             </ul>
           </div>
@@ -318,7 +333,7 @@ export function AiPipelineSettingsPage() {
                 >
                   {options.aiProvider.map((v) => (
                     <option key={v} value={v}>
-                      {v === 'mock' ? 'mock（E2E Aレーン専用）' : v}
+                      {v === 'mock' ? t('aiPipelineSettings.mockOption') : v}
                     </option>
                   ))}
                 </select>

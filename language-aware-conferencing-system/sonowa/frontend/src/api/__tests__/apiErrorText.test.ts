@@ -6,11 +6,13 @@
  * 注意: backend の .py は import.meta.glob(?raw) で読む（@types/node 不要）。
  *       抽出対象は `detail="..."` / `detail=f"..."` / 括弧内の隣接文字列連結 / 末尾の `+ 式`。
  *       `detail=str(e)` 等の変数渡しは対象外（原文表示のまま）。
+ *       ai-pipeline の warnings は `warnings.append("...")`（隣接連結・f-string 可）を抽出し
+ *       （effective_config.py のみ）ja 辞書 pipelineWarning.* と照合する。変数渡しの append は検出して失敗させる。
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import i18n from '../../i18n';
 import ja from '../../i18n/locales/ja.json';
-import { translateApiDetail } from '../apiErrorText';
+import { translateApiDetail, translatePipelineWarning } from '../apiErrorText';
 
 /** backend/app 配下の Python ソース（パス → 本文） */
 const BACKEND_SOURCES = import.meta.glob('../../../../backend/app/**/*.py', {
@@ -32,10 +34,7 @@ function extractBackendDetails(): Map<string, string> {
   const found = new Map<string, string>();
   for (const [path, src] of Object.entries(BACKEND_SOURCES)) {
     for (const m of src.matchAll(DETAIL_RE)) {
-      let text = '';
-      for (const p of m[1].matchAll(PIECE_RE)) {
-        text += p[1] ? p[2].replace(/\{[^{}]*\}/g, SLOT) : p[2];
-      }
+      let text = joinPieces(m[1]);
       if (m[2]) text += SLOT;
       found.set(text, path);
     }
@@ -43,10 +42,44 @@ function extractBackendDetails(): Map<string, string> {
   return found;
 }
 
+/** ai-pipeline warnings の生成元（collect_availability_warnings）。orchestrator 等の dict 警告は対象外 */
+const WARNING_SOURCE_SUFFIX = 'ai_pipeline/effective_config.py';
+/** `warnings.append(` の出現（リテラル以外の引数も数える） */
+const WARNING_CALL_RE = /\bwarnings\.append\(/g;
+/** `warnings.append(` に続く文字列リテラル群（隣接連結を許容） */
+const WARNING_RE = /\bwarnings\.append\(\s*((?:f?"(?:[^"\\\n]|\\.)*"\s*)+)\)/g;
+
+/** 文字列リテラル群を連結し、f-string の補間を SLOT にする */
+function joinPieces(literals: string): string {
+  let text = '';
+  for (const p of literals.matchAll(PIECE_RE)) {
+    text += p[1] ? p[2].replace(/\{[^{}]*\}/g, SLOT) : p[2];
+  }
+  return text;
+}
+
+/** backend から ai-pipeline warning テンプレートと、リテラルでない append の件数を抽出する */
+function extractBackendWarnings(): { found: Map<string, string>; nonLiteral: string[] } {
+  const found = new Map<string, string>();
+  const nonLiteral: string[] = [];
+  for (const [path, src] of Object.entries(BACKEND_SOURCES)) {
+    if (!path.endsWith(WARNING_SOURCE_SUFFIX)) continue;
+    const calls = [...src.matchAll(WARNING_CALL_RE)].length;
+    const literals = [...src.matchAll(WARNING_RE)];
+    for (const m of literals) found.set(joinPieces(m[1]), path);
+    if (calls !== literals.length) nonLiteral.push(`${path}: ${calls - literals.length}`);
+  }
+  return { found, nonLiteral };
+}
+
+/** ja 辞書の名前空間を比較用テンプレート集合にする */
+function toTemplates(entries: Record<string, string>): Set<string> {
+  return new Set(Object.values(entries).map((v) => v.replace(/\{\{\s*\w+\s*\}\}/g, SLOT)));
+}
+
 const jaApiError = ja.apiError as Record<string, string>;
-const jaTemplates = new Set(
-  Object.values(jaApiError).map((v) => v.replace(/\{\{\s*\w+\s*\}\}/g, SLOT))
-);
+const jaTemplates = toTemplates(jaApiError);
+const jaWarningTemplates = toTemplates(ja.pipelineWarning as Record<string, string>);
 
 describe('translateApiDetail', () => {
   beforeEach(async () => {
@@ -98,6 +131,47 @@ describe('backend detail と ja 辞書の整合（R3）', () => {
 
   it('全 literal / f-string detail に ja 辞書エントリがある', () => {
     const missing = [...details].filter(([t]) => !jaTemplates.has(t)).map(([t, p]) => `${p}: ${t}`);
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('translatePipelineWarning', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('ja');
+  });
+
+  it('英語 UI では backend warning を英訳し、補間値を保つ', async () => {
+    await i18n.changeLanguage('en');
+    expect(translatePipelineWarning('OPENAI_API_KEY が未設定です。')).toBe(
+      i18n.t('pipelineWarning.openaiKeyMissing')
+    );
+    const out = translatePipelineWarning(
+      'local TTS（Qwen3-TTS）のランタイムが未導入です。翻訳音声は出力せず字幕のみとなります。'
+    );
+    expect(out).toContain('Qwen3-TTS');
+    expect(out).not.toMatch(/[ぁ-んァ-ン]/);
+  });
+
+  it('未知の warning は原文のまま返す', async () => {
+    await i18n.changeLanguage('en');
+    expect(translatePipelineWarning('未知の警告です')).toBe('未知の警告です');
+  });
+});
+
+describe('backend ai-pipeline warnings と ja 辞書の整合（R3）', () => {
+  const { found, nonLiteral } = extractBackendWarnings();
+
+  it('backend の warnings を抽出できている', () => {
+    expect(Object.keys(BACKEND_SOURCES).some((p) => p.endsWith(WARNING_SOURCE_SUFFIX))).toBe(true);
+    expect(found.size).toBeGreaterThan(0);
+  });
+
+  it('warnings.append はすべて文字列リテラル（辞書照合できる形）', () => {
+    expect(nonLiteral).toEqual([]);
+  });
+
+  it('全 warning に ja 辞書 pipelineWarning.* のエントリがある', () => {
+    const missing = [...found].filter(([t]) => !jaWarningTemplates.has(t)).map(([t, p]) => `${p}: ${t}`);
     expect(missing).toEqual([]);
   });
 });

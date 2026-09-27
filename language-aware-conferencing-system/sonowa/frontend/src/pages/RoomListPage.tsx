@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { adminApi, roomApi, ApiError } from '../api/client';
+import { LoadError } from '../components/LoadError';
 import { useAuthStore } from '../store/authStore';
 import type { Room, SupportedLanguage, AudioMode, MeetingMode } from '../types';
 
@@ -76,6 +77,8 @@ export function RoomListPage() {
   );
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 一覧取得の失敗（作成失敗の error とは分ける） */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [availableLanguages, setAvailableLanguages] = useState<SupportedLanguage[]>(DEFAULT_ENABLED_LANGUAGES);
   const navigate = useNavigate();
   const { user, logout, hasHydrated } = useAuthStore();
@@ -91,6 +94,7 @@ export function RoomListPage() {
   const loadRooms = useCallback(async () => {
     try {
       setError(null);
+      setLoadError(null);
       const [res, languageSettings] = await Promise.all([
         roomApi.list(),
         adminApi.getLanguageSettings(),
@@ -121,7 +125,7 @@ export function RoomListPage() {
         return;
       }
       // その他のエラーの場合のみエラーメッセージを表示
-      setError(t('roomList.loadFailed'));
+      setLoadError(t('roomList.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -217,6 +221,8 @@ export function RoomListPage() {
       </header>
 
       {error && <div className="error">{error}</div>}
+      {/* 定期更新の失敗（一覧は表示済み）はバナーのみ */}
+      {loadError && rooms.length > 0 && <div className="error">{loadError}</div>}
 
       <button
         onClick={() => setShowCreate(!showCreate)}
@@ -362,7 +368,9 @@ export function RoomListPage() {
       )}
 
       <div className="room-grid">
-        {rooms.length === 0 ? (
+        {loadError && rooms.length === 0 ? (
+          <LoadError message={loadError} onRetry={() => void loadRooms()} testIdPrefix="room-list" />
+        ) : rooms.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">🏢</div>
             <h2>{t('room.noRooms')}</h2>

@@ -11,6 +11,8 @@ import {
   type LanguageOption,
   type LanguageSettings,
 } from '../api/client';
+import { LoadError } from '../components/LoadError';
+import { languageName } from '../constants/languageNames';
 import { useAuthStore } from '../store/authStore';
 import '../styles/pages/language-settings.css';
 
@@ -25,7 +27,7 @@ const TIER_LABELS: Record<number, string> = {
 };
 
 export function LanguageSettingsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [settings, setSettings] = useState<LanguageSettings | null>(null);
@@ -33,6 +35,7 @@ export function LanguageSettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // 管理者でない場合はリダイレクト
@@ -42,24 +45,28 @@ export function LanguageSettingsPage() {
     }
   }, [user, navigate]);
 
+  /** 設定を取得する（失敗時は loadError を立て、再試行で再呼出しできる） */
+  const loadSettings = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const data = await adminApi.getLanguageSettings();
+      setSettings(data);
+      setSelectedLanguages(data.enabledLanguages);
+    } catch {
+      setLoadError(t('languageSettings.loadError'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [t]);
+
   // 初期データ取得
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       return;
     }
-    const fetchSettings = async () => {
-      try {
-        const data = await adminApi.getLanguageSettings();
-        setSettings(data);
-        setSelectedLanguages(data.enabledLanguages);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '設定の取得に失敗しました');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    void fetchSettings();
-  }, [user]);
+    void loadSettings();
+  }, [user, loadSettings]);
 
   /** 言語選択/解除 */
   const handleToggleLanguage = useCallback((code: string) => {
@@ -85,16 +92,25 @@ export function LanguageSettingsPage() {
       await adminApi.updateLanguageSettings(selectedLanguages);
       setSuccessMessage(t('languageSettings.saveSuccess'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存に失敗しました');
+      setError(err instanceof Error ? err.message : t('languageSettings.saveError'));
     } finally {
       setIsSaving(false);
     }
   }, [selectedLanguages, t]);
 
-  if (isLoading) {
+  // 取得失敗時は空の一覧で保存させない（選択 0 件のまま保存される事故を防ぐ）
+  if (isLoading || !settings) {
     return (
       <div className="language-settings-page" data-testid="language-settings-page">
-        <div className="loading">{t('common.loading')}</div>
+        {!isLoading && loadError ? (
+          <LoadError
+            message={loadError}
+            onRetry={() => void loadSettings()}
+            testIdPrefix="language-settings"
+          />
+        ) : (
+          <div className="loading">{t('common.loading')}</div>
+        )}
       </div>
     );
   }
@@ -123,7 +139,7 @@ export function LanguageSettingsPage() {
         {successMessage && <div className="success-message">{successMessage}</div>}
 
         <div className="language-grid">
-          {settings?.allAvailableLanguages.map((lang: LanguageOption) => {
+          {settings.allAvailableLanguages.map((lang: LanguageOption) => {
             const isSelected = selectedLanguages.includes(lang.code);
             const isDisabled = !isSelected && selectedLanguages.length >= MAX_LANGUAGES;
             return (
@@ -133,11 +149,11 @@ export function LanguageSettingsPage() {
                 onClick={() => handleToggleLanguage(lang.code)}
                 disabled={isDisabled}
               >
-                <div className="lang-name">{lang.name}</div>
+                <div className="lang-name">{languageName(lang.code, i18n.language)}</div>
                 <div className="lang-code">{lang.code.toUpperCase()}</div>
                 <div className="lang-tier">{TIER_LABELS[lang.tier]}</div>
                 <span className={`status-badge ${isSelected ? 'active' : 'inactive'}`}>
-                  {isSelected ? '有効' : '無効'}
+                  {isSelected ? t('glossary.enabled') : t('glossary.disabled')}
                 </span>
               </button>
             );

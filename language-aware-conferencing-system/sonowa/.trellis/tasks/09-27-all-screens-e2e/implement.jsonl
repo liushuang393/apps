@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "E2E conventions"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Page patterns, i18n"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Backend error text dictionary contract"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Data fetching in pages"}

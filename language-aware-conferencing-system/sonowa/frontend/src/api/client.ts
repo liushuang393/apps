@@ -6,6 +6,7 @@
  * 注意: 内部用の apiFetch は従来どおり公開しない。
  */
 export { ApiError } from './http';
+export { translatePipelineWarning } from './apiErrorText';
 export { authApi } from './auth';
 export type { ParticipationHistory } from './auth';
 export { roomApi } from './rooms';

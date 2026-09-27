@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError, meetingsApi } from '../api/client';
 import type { MeetingMode, MeetingSessionInfo, User } from '../types';
+import { LoadError } from './LoadError';
 
 interface MeetingModePanelProps {
   roomId: string;
@@ -28,7 +29,11 @@ export function MeetingModePanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 取得失敗（再試行ボタンを出す）。操作失敗の error とは分ける */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  /** 再試行で取得 effect を再実行するためのカウンタ */
+  const [reloadKey, setReloadKey] = useState(0);
 
   const canManage =
     !!user &&
@@ -43,6 +48,7 @@ export function MeetingModePanel({
     const load = async () => {
       setLoading(true);
       setError(null);
+      setLoadError(null);
       try {
         let active = await meetingsApi.getActive(roomId);
         if (!active) {
@@ -56,7 +62,7 @@ export function MeetingModePanel({
         if (err instanceof ApiError && err.status === 403) {
           setError(null);
         } else {
-          setError(err instanceof Error ? err.message : t('meetingMode.loadError'));
+          setLoadError(t('meetingMode.loadError'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -66,7 +72,7 @@ export function MeetingModePanel({
     return () => {
       cancelled = true;
     };
-  }, [canManage, roomId, roomDefaultMode, t]);
+  }, [canManage, roomId, roomDefaultMode, t, reloadKey]);
 
   const handleChange = useCallback(
     async (next: MeetingMode) => {
@@ -93,11 +99,21 @@ export function MeetingModePanel({
   }
 
   return (
-    <section className="meeting-mode-panel" aria-label={t('meetingMode.title')}>
+    <section
+      className="meeting-mode-panel"
+      data-testid="meeting-mode-panel"
+      aria-label={t('meetingMode.title')}
+    >
       <h3>{t('meetingMode.title')}</h3>
       <p className="hint-text">{t('meetingMode.description')}</p>
       {loading ? (
         <p>{t('common.loading')}</p>
+      ) : loadError ? (
+        <LoadError
+          message={loadError}
+          onRetry={() => setReloadKey((k) => k + 1)}
+          testIdPrefix="meeting-mode"
+        />
       ) : (
         <div className="meeting-mode-options">
           {MODE_OPTIONS.map((opt) => (

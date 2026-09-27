@@ -20,7 +20,8 @@
     "confirm": "Confirm",
     "logout": "Logout",
     "guest": "Guest",
-    "backArrow": "← Back"
+    "backArrow": "← Back",
+    "retry": "Retry"
   },
   "role": {
     "user": "Employee",
@@ -222,7 +223,9 @@
     "description": "Select languages to use in the system. Selected languages will be available in newly created meeting rooms.",
     "selectionCount": "Selected: {{current}} / {{max}} languages",
     "saveSuccess": "Language settings saved",
-    "tierLabel": "Translation Accuracy"
+    "tierLabel": "Translation Accuracy",
+    "loadError": "Failed to load settings",
+    "saveError": "Failed to save"
   },
   "aiPipelineSettings": {
     "title": "AI Pipeline Settings",
@@ -268,7 +271,8 @@
       "a": "a (hearing / S2S)",
       "b": "b (reading / subtitles)",
       "hybrid": "hybrid (both)"
-    }
+    },
+    "mockOption": "mock (E2E lane A only)"
   },
   "meetingMode": {
     "title": "Meeting AI mainline",
@@ -449,6 +453,22 @@
     "glossaryTermNotFound": "Term not found",
     "unsupportedLanguage": "Unsupported language: {{language}}",
     "localTranslationUnavailable": "Local translation service is unavailable"
+  },
+  "pipelineWarning": {
+    "openaiKeyMissing": "OPENAI_API_KEY is not set.",
+    "deepgramKeyMissing": "DEEPGRAM_API_KEY is not set.",
+    "llmCorrectionNoKey": "LLM correction for mode 2 is enabled, but GEMINI_API_KEY is not set, so correction will be skipped.",
+    "localMtNoGlossary": "Local MT does not support the Sonowa glossary. For the mode 2 quality path, mt_provider=openai (or auto) is recommended.",
+    "localSlotAdvanced": "Local slots are an advanced implementation option (not a mode in themselves). They do not switch to the cloud even when the runtime/model is not installed: ASR/MT become unavailable and TTS falls back to subtitles only.",
+    "localTtsNoVi": "Local TTS does not support Vietnamese (no commercially usable local model). Vietnamese gets subtitles only.",
+    "geminiLiveFallback": "gemini_live falls back to gpt4o_transcribe because GEMINI_API_KEY or its library is not available.",
+    "geminiLiveCheckFailed": "Failed to check gemini_live availability.",
+    "googleFallback": "google may fall back to gpt4o_transcribe because Cloud credentials or its library are not available.",
+    "googleCheckFailed": "Failed to check google availability.",
+    "localTtsRuntimeMissing": "The local TTS ({{model}}) runtime is not installed. No translated audio will be output; subtitles only.",
+    "localTtsCheckFailed": "Failed to check local TTS availability.",
+    "localMultimodalMissing": "Local ASR/MT is disabled because Gemma 4 E2B dependencies are not installed. Run pip install '.[local]' and prepare the model.",
+    "localAsrMtCheckFailed": "Failed to check local ASR/MT availability."
   },
   "errors": {
     "livekit": {

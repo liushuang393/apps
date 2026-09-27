@@ -20,7 +20,8 @@
     "confirm": "確認",
     "logout": "ログアウト",
     "guest": "ゲスト",
-    "backArrow": "← 戻る"
+    "backArrow": "← 戻る",
+    "retry": "再試行"
   },
   "role": {
     "user": "従業員",
@@ -222,7 +223,9 @@
     "description": "システムで使用する言語を選択してください。選択した言語は新規作成される会議室で利用可能になります。",
     "selectionCount": "選択中: {{current}} / {{max}}言語",
     "saveSuccess": "言語設定を保存しました",
-    "tierLabel": "翻訳精度"
+    "tierLabel": "翻訳精度",
+    "loadError": "設定の取得に失敗しました",
+    "saveError": "保存に失敗しました"
   },
   "aiPipelineSettings": {
     "title": "AIパイプライン設定",
@@ -268,7 +271,8 @@
       "a": "a（聞く主線 / S2S）",
       "b": "b（読む主線 / 字幕）",
       "hybrid": "hybrid（両主線）"
-    }
+    },
+    "mockOption": "mock（E2E Aレーン専用）"
   },
   "meetingMode": {
     "title": "会議AI主線",
@@ -449,6 +453,22 @@
     "glossaryTermNotFound": "用語が見つかりません",
     "unsupportedLanguage": "未対応の言語: {{language}}",
     "localTranslationUnavailable": "ローカル翻訳サービスが利用できません"
+  },
+  "pipelineWarning": {
+    "openaiKeyMissing": "OPENAI_API_KEY が未設定です。",
+    "deepgramKeyMissing": "DEEPGRAM_API_KEY が未設定です。",
+    "llmCorrectionNoKey": "方式2の LLM 補正が有効ですが GEMINI_API_KEY 未設定のため補正はスキップされます。",
+    "localMtNoGlossary": "local MT は用語集（Sonowa glossary）非対応です。 方式2の品質経路では mt_provider=openai（または auto）を推奨します。",
+    "localSlotAdvanced": "local スロットは上級実装オプションです（方式そのものではありません）。 ランタイム/モデル未導入時もクラウドへ切り替えません。 ASR/MT は利用不可、TTS は字幕のみへ縮退します。",
+    "localTtsNoVi": "local TTS はベトナム語非対応です（商用可のローカルモデルが無いため）。vi 向けは字幕のみとなります。",
+    "geminiLiveFallback": "gemini_live は GEMINI_API_KEY/ライブラリ未整備のため gpt4o_transcribe へフォールバックします。",
+    "geminiLiveCheckFailed": "gemini_live の可用性判定に失敗しました。",
+    "googleFallback": "google は Cloud 認証/ライブラリ未整備のため gpt4o_transcribe へフォールバックする可能性があります。",
+    "googleCheckFailed": "google の可用性判定に失敗しました。",
+    "localTtsRuntimeMissing": "local TTS（{{model}}）のランタイムが未導入です。翻訳音声は出力せず字幕のみとなります。",
+    "localTtsCheckFailed": "local TTS の可用性判定に失敗しました。",
+    "localMultimodalMissing": "Gemma 4 E2B の依存未導入のため local ASR/MT は無効です。 pip install '.[local]' とモデル準備を実行してください。",
+    "localAsrMtCheckFailed": "local ASR/MT の可用性判定に失敗しました。"
   },
   "errors": {
     "livekit": {

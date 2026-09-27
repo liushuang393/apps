@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { adminApi, ApiError, type AdminUser, type SystemStats } from '../api/client';
+import { LoadError } from '../components/LoadError';
 import { useAuthStore } from '../store/authStore';
 
 import { ALL_LANGUAGE_CODES } from '../constants/languages';
@@ -122,12 +123,12 @@ export function AdminPage() {
 
   if (error && !users.length) {
     return (
-      <div className="admin-page">
+      <div className="admin-page" data-testid="admin-page">
         <header>
           <button onClick={() => navigate('/menu')}>{t('common.back')}</button>
           <h1>{t('menu.admin')}</h1>
         </header>
-        <div className="error">{error}</div>
+        <LoadError message={error} onRetry={() => void loadData()} testIdPrefix="admin" />
       </div>
     );
   }

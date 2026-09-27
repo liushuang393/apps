@@ -20,7 +20,8 @@
     "confirm": "确认",
     "logout": "退出登录",
     "guest": "访客",
-    "backArrow": "← 返回"
+    "backArrow": "← 返回",
+    "retry": "重试"
   },
   "role": {
     "user": "员工",
@@ -222,7 +223,9 @@
     "description": "选择系统使用的语言。所选语言将在新创建的会议室中可用。",
     "selectionCount": "已选择: {{current}} / {{max}} 种语言",
     "saveSuccess": "语言设置已保存",
-    "tierLabel": "翻译准确度"
+    "tierLabel": "翻译准确度",
+    "loadError": "获取设置失败",
+    "saveError": "保存失败"
   },
   "aiPipelineSettings": {
     "title": "AI 流水线设置",
@@ -268,7 +271,8 @@
       "a": "a（听主线 / S2S）",
       "b": "b（读主线 / 字幕）",
       "hybrid": "hybrid（双主线）"
-    }
+    },
+    "mockOption": "mock（仅限 E2E A 通道）"
   },
   "meetingMode": {
     "title": "会议 AI 主线",
@@ -449,6 +453,22 @@
     "glossaryTermNotFound": "未找到术语",
     "unsupportedLanguage": "不支持的语言：{{language}}",
     "localTranslationUnavailable": "本地翻译服务不可用"
+  },
+  "pipelineWarning": {
+    "openaiKeyMissing": "未设置 OPENAI_API_KEY。",
+    "deepgramKeyMissing": "未设置 DEEPGRAM_API_KEY。",
+    "llmCorrectionNoKey": "方式2的 LLM 校正已启用，但未设置 GEMINI_API_KEY，将跳过校正。",
+    "localMtNoGlossary": "local MT 不支持术语表（Sonowa glossary）。方式2的质量路径建议使用 mt_provider=openai（或 auto）。",
+    "localSlotAdvanced": "local 槽位是高级实现选项（并非方式本身）。即使未安装运行时/模型也不会切换到云端：ASR/MT 不可用，TTS 降级为仅字幕。",
+    "localTtsNoVi": "local TTS 不支持越南语（没有可商用的本地模型）。vi 仅提供字幕。",
+    "geminiLiveFallback": "由于 GEMINI_API_KEY/库未就绪，gemini_live 将回退到 gpt4o_transcribe。",
+    "geminiLiveCheckFailed": "gemini_live 可用性检查失败。",
+    "googleFallback": "由于 Cloud 认证/库未就绪，google 可能回退到 gpt4o_transcribe。",
+    "googleCheckFailed": "google 可用性检查失败。",
+    "localTtsRuntimeMissing": "未安装 local TTS（{{model}}）运行时。不输出翻译语音，仅提供字幕。",
+    "localTtsCheckFailed": "local TTS 可用性检查失败。",
+    "localMultimodalMissing": "由于未安装 Gemma 4 E2B 依赖，local ASR/MT 已禁用。请执行 pip install '.[local]' 并准备模型。",
+    "localAsrMtCheckFailed": "local ASR/MT 可用性检查失败。"
   },
   "errors": {
     "livekit": {

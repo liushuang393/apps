@@ -14,6 +14,7 @@ import {
   type SubtitleRecord,
   type TranscriptData,
 } from '../api/client';
+import { LoadError } from '../components/LoadError';
 import { useAuthStore } from '../store/authStore';
 import type { SupportedLanguage } from '../types';
 
@@ -201,14 +202,14 @@ export function TranscriptPage() {
 
   if (error) {
     return (
-      <div className="transcript-page">
+      <div className="transcript-page" data-testid="transcript-page">
         <header>
           <h1>📝 {t('transcript.name')}</h1>
           <div className="header-right">
             <button className="back-btn" onClick={() => navigate(-1)}>{t('common.backArrow')}</button>
           </div>
         </header>
-        <div className="error">{error}</div>
+        <LoadError message={error} onRetry={() => void loadTranscript()} testIdPrefix="transcript" />
       </div>
     );
   }

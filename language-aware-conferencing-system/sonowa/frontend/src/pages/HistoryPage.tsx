@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { authApi, ApiError, type ParticipationHistory } from '../api/client';
+import { LoadError } from '../components/LoadError';
 import { useAuthStore } from '../store/authStore';
 import '../styles/pages/admin.css';
 import '../styles/pages/history.css';
@@ -62,10 +63,10 @@ export function HistoryPage() {
         </div>
       </header>
 
-      {error && <div className="error">{error}</div>}
-
       <section className="admin-users">
-        {items.length === 0 ? (
+        {error ? (
+          <LoadError message={error} onRetry={() => void load()} testIdPrefix="history" />
+        ) : items.length === 0 ? (
           <div className="empty-state" data-testid="history-empty">
             <p>{t('history.empty')}</p>
             <p>{t('history.emptyHint')}</p>

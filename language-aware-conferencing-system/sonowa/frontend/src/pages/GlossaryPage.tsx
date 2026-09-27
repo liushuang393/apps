@@ -12,6 +12,7 @@ import {
   type GlossaryTerm,
   type GlossaryTermInput,
 } from '../api/client';
+import { LoadError } from '../components/LoadError';
 import { useAuthStore } from '../store/authStore';
 import { languageName } from '../constants/languageNames';
 import '../styles/pages/admin.css';
@@ -62,6 +63,7 @@ export function GlossaryPage() {
   const [languages, setLanguages] = useState<string[]>(['ja', 'en', 'zh', 'vi']);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TermDraft>(EMPTY_DRAFT);
   const [modalOpen, setModalOpen] = useState(false);
@@ -71,6 +73,7 @@ export function GlossaryPage() {
     try {
       setLoading(true);
       setError(null);
+      setLoadError(null);
       const [list, settings] = await Promise.all([
         glossaryApi.list(),
         adminApi.getLanguageSettings(),
@@ -84,10 +87,10 @@ export function GlossaryPage() {
         return;
       }
       if (err instanceof ApiError && err.status === 403) {
-        setError(t('glossary.adminRequired'));
+        setLoadError(t('glossary.adminRequired'));
         return;
       }
-      setError(t('glossary.loadFailed'));
+      setLoadError(t('glossary.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -205,7 +208,9 @@ export function GlossaryPage() {
 
       <section className="admin-users">
         <p className="glossary-hint">{t('glossary.description')}</p>
-        {terms.length === 0 ? (
+        {loadError ? (
+          <LoadError message={loadError} onRetry={() => void load()} testIdPrefix="glossary" />
+        ) : terms.length === 0 ? (
           <div className="empty-state">
             <p data-testid="glossary-empty">{t('glossary.empty')}</p>
           </div>

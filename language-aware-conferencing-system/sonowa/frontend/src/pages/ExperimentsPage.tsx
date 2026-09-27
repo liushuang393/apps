@@ -11,6 +11,7 @@ import {
   type ExperimentInfo,
   type ExperimentSummary,
 } from '../api/client';
+import { LoadError } from '../components/LoadError';
 import { useAuthStore } from '../store/authStore';
 import '../styles/pages/admin.css';
 
@@ -92,9 +93,9 @@ export function ExperimentsPage() {
         </div>
       </div>
 
-      {error && <div className="error">{error}</div>}
-
-      {experiments.length === 0 ? (
+      {error ? (
+        <LoadError message={error} onRetry={() => void loadData()} testIdPrefix="experiments" />
+      ) : experiments.length === 0 ? (
         <div className="empty-state">
           {t('experiments.empty')}
         </div>
