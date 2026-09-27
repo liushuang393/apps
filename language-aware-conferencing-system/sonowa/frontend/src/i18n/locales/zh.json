@@ -407,5 +407,70 @@
     "degradedTitle": "所有主线均失败，仅显示原文（无法翻译）",
     "degradedBadge": "⚠ 原文",
     "recognizing": "识别中..."
+  },
+  "apiError": {
+    "generic": "API 错误",
+    "userNotFound": "未找到用户",
+    "cannotChangeOwnRole": "不能更改自己的角色",
+    "cannotDeactivateSelf": "不能停用自己的账户",
+    "invalidRole": "无效的角色：{{role}}。有效角色：{{validRoles}}",
+    "localRerunUnavailable": "没有可用于离线重跑的本地模型（未安装 .[local]，或 ASR/MT 均不可用）。",
+    "invalidToken": "无效的令牌",
+    "accountDisabled": "该账户已被停用",
+    "adminRequired": "需要管理员权限",
+    "moderatorRequired": "需要主持人权限",
+    "permissionDenied": "您没有执行此操作的权限",
+    "emailAlreadyRegistered": "该邮箱地址已被注册",
+    "invalidCredentials": "邮箱地址或密码不正确",
+    "profileFieldRequired": "请指定 display_name 或 native_language",
+    "displayNameEmpty": "显示名称不能为空",
+    "invalidLanguage": "无效的语言：{{language}}",
+    "emailNotRegistered": "该邮箱地址尚未注册",
+    "invalidResetToken": "无效的重置令牌",
+    "tokenAlreadyUsed": "该令牌已被使用",
+    "tokenExpired": "令牌已过期",
+    "currentPasswordIncorrect": "当前密码不正确",
+    "roomNotFound": "未找到会议室",
+    "meetingSettingsForbidden": "您没有更改会议设置的权限",
+    "sessionNotFound": "未找到会话",
+    "participantSettingsForbidden": "您没有更改其他参与者设置的权限",
+    "modeSwitchNotAllowed": "此会议不允许切换模式",
+    "participantNotFound": "未找到参与者",
+    "roomLanguagesOutOfRange": "会议室允许的语言必须在系统已启用的语言范围内：{{languages}}",
+    "roomStateInitFailed": "会议室状态初始化失败。请稍后重试。",
+    "roomAccessDenied": "您无法访问此会议室",
+    "webrtcDisabled": "WebRTC（LiveKit）当前不可用（未配置密钥）",
+    "meetingSessionNotFound": "未找到指定的会议会话",
+    "minutesDisabled": "会议纪要生成当前不可用（未配置 LLM）",
+    "minutesGenerationFailed": "生成会议纪要失败",
+    "translationNotConfigured": "未配置翻译服务",
+    "translationError": "翻译错误：{{error}}",
+    "targetTermRequired": "do_not_translate=False 时必须填写 target_term",
+    "glossaryTermNotFound": "未找到术语",
+    "unsupportedLanguage": "不支持的语言：{{language}}",
+    "localTranslationUnavailable": "本地翻译服务不可用"
+  },
+  "errors": {
+    "livekit": {
+      "speakerSwitchUnsupported": "此浏览器不支持切换扬声器。",
+      "speakerSwitchFailed": "切换扬声器输出失败。",
+      "speakerApplyFailed": "应用扬声器输出失败。",
+      "autoplayBlocked": "由于浏览器的自动播放限制，无法开始播放音频。请操作页面后重试。",
+      "joinForbidden": "您没有加入此会议室的权限。",
+      "roomNotFound": "未找到会议室。",
+      "connectFailed": "连接会议室失败。请检查网络状态。"
+    },
+    "audio": {
+      "noMicSelected": "未选择麦克风",
+      "micPermissionDenied": "麦克风访问被拒绝",
+      "micStartFailed": "启动麦克风失败"
+    },
+    "devices": {
+      "insecureContext": "音频设备功能仅在 HTTPS 或 localhost 下可用（通过 IP 访问可能不受支持）。",
+      "micPermissionDenied": "麦克风访问被拒绝。请检查浏览器设置。",
+      "listFailed": "获取设备列表失败。",
+      "micFallbackLabel": "麦克风 {{id}}",
+      "speakerFallbackLabel": "扬声器 {{id}}"
+    }
   }
 }

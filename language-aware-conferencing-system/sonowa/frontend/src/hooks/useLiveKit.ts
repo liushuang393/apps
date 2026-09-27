@@ -15,6 +15,7 @@ import {
   type RemoteTrackPublication,
 } from 'livekit-client';
 import { ApiError, roomApi } from '../api/client';
+import i18n from '../i18n';
 import { decodeLiveEvent } from '../contracts/decodeLiveEvent';
 import type {
   LiveEvent,
@@ -326,11 +327,11 @@ export function useLiveKit(roomId: string | null) {
         const results = await Promise.all(entries.map((entry) => applyOutputDevice(entry, deviceId)));
         const supported = results.every(Boolean);
         if (!supported) {
-          setConnectionError('このブラウザはスピーカー切替に対応していません。');
+          setConnectionError(i18n.t('errors.livekit.speakerSwitchUnsupported'));
         }
         return supported;
       } catch {
-        setConnectionError('スピーカー出力先の切替に失敗しました。');
+        setConnectionError(i18n.t('errors.livekit.speakerSwitchFailed'));
         return false;
       }
     },
@@ -424,7 +425,7 @@ export function useLiveKit(roomId: string | null) {
           };
           audioEntriesRef.current.set(pub.trackSid, entry);
           void applyOutputDevice(entry, outputDeviceIdRef.current).catch(() => {
-            setConnectionError('スピーカー出力先の適用に失敗しました。');
+            setConnectionError(i18n.t('errors.livekit.speakerApplyFailed'));
           });
           applyAudioRouting();
         }
@@ -549,7 +550,7 @@ export function useLiveKit(roomId: string | null) {
             });
         }, QOE_STATS_INTERVAL_MS);
         void room.startAudio().catch(() => {
-          setConnectionError('ブラウザの自動再生制限により音声再生を開始できませんでした。画面を操作して再試行してください。');
+          setConnectionError(i18n.t('errors.livekit.autoplayBlocked'));
         });
       } catch (err) {
         // 障害解析用に生エラーを必ず出す（UI には整形メッセージのみ表示）
@@ -558,14 +559,14 @@ export function useLiveKit(roomId: string | null) {
           setConnectionStatus('disconnected');
           if (err instanceof ApiError) {
             if (err.status === 403) {
-              setConnectionError('この会議室へ参加する権限がありません。');
+              setConnectionError(i18n.t('errors.livekit.joinForbidden'));
             } else if (err.status === 404) {
-              setConnectionError('会議室が見つかりません。');
+              setConnectionError(i18n.t('errors.livekit.roomNotFound'));
             } else {
               setConnectionError(err.message);
             }
           } else {
-            setConnectionError('会議室への接続に失敗しました。ネットワーク状態を確認してください。');
+            setConnectionError(i18n.t('errors.livekit.connectFailed'));
           }
         }
       }

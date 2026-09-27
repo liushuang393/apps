@@ -407,5 +407,70 @@
     "degradedTitle": "All mainlines failed, so only the original is shown (translation unavailable)",
     "degradedBadge": "⚠ Original",
     "recognizing": "Recognizing..."
+  },
+  "apiError": {
+    "generic": "API error",
+    "userNotFound": "User not found",
+    "cannotChangeOwnRole": "You cannot change your own role",
+    "cannotDeactivateSelf": "You cannot deactivate yourself",
+    "invalidRole": "Invalid role: {{role}}. Valid roles: {{validRoles}}",
+    "localRerunUnavailable": "No local model is available for offline re-run (.[local] not installed, or neither ASR nor MT is available).",
+    "invalidToken": "Invalid token",
+    "accountDisabled": "This account has been disabled",
+    "adminRequired": "Admin access required",
+    "moderatorRequired": "Moderator access required",
+    "permissionDenied": "You do not have permission to perform this action",
+    "emailAlreadyRegistered": "This email address is already registered",
+    "invalidCredentials": "Incorrect email address or password",
+    "profileFieldRequired": "Specify display_name or native_language",
+    "displayNameEmpty": "Display name cannot be empty",
+    "invalidLanguage": "Invalid language: {{language}}",
+    "emailNotRegistered": "This email address is not registered",
+    "invalidResetToken": "Invalid reset token",
+    "tokenAlreadyUsed": "This token has already been used",
+    "tokenExpired": "The token has expired",
+    "currentPasswordIncorrect": "Current password is incorrect",
+    "roomNotFound": "Meeting room not found",
+    "meetingSettingsForbidden": "You do not have permission to change meeting settings",
+    "sessionNotFound": "Session not found",
+    "participantSettingsForbidden": "You do not have permission to change other participants' settings",
+    "modeSwitchNotAllowed": "Mode switching is not allowed in this meeting",
+    "participantNotFound": "Participant not found",
+    "roomLanguagesOutOfRange": "Room languages must be among the system's enabled languages: {{languages}}",
+    "roomStateInitFailed": "Failed to initialize the meeting room state. Please try again later.",
+    "roomAccessDenied": "You cannot access this meeting room",
+    "webrtcDisabled": "WebRTC (LiveKit) is currently disabled (keys not configured)",
+    "meetingSessionNotFound": "The specified meeting session was not found",
+    "minutesDisabled": "Minutes generation is currently disabled (LLM not configured)",
+    "minutesGenerationFailed": "Failed to generate minutes",
+    "translationNotConfigured": "Translation service is not configured",
+    "translationError": "Translation error: {{error}}",
+    "targetTermRequired": "target_term is required when do_not_translate=False",
+    "glossaryTermNotFound": "Term not found",
+    "unsupportedLanguage": "Unsupported language: {{language}}",
+    "localTranslationUnavailable": "Local translation service is unavailable"
+  },
+  "errors": {
+    "livekit": {
+      "speakerSwitchUnsupported": "This browser does not support switching speakers.",
+      "speakerSwitchFailed": "Failed to switch the speaker output.",
+      "speakerApplyFailed": "Failed to apply the speaker output.",
+      "autoplayBlocked": "Audio playback could not start because of the browser's autoplay restrictions. Interact with the page and try again.",
+      "joinForbidden": "You do not have permission to join this meeting room.",
+      "roomNotFound": "Meeting room not found.",
+      "connectFailed": "Failed to connect to the meeting room. Check your network connection."
+    },
+    "audio": {
+      "noMicSelected": "No microphone selected",
+      "micPermissionDenied": "Microphone access was denied",
+      "micStartFailed": "Failed to start the microphone"
+    },
+    "devices": {
+      "insecureContext": "Audio device features are available only over HTTPS or on localhost (access by IP address may not be supported).",
+      "micPermissionDenied": "Microphone access was denied. Check your browser settings.",
+      "listFailed": "Failed to get the device list.",
+      "micFallbackLabel": "Microphone {{id}}",
+      "speakerFallbackLabel": "Speaker {{id}}"
+    }
   }
 }

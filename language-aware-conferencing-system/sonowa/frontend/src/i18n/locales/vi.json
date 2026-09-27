@@ -407,5 +407,70 @@
     "degradedTitle": "Tất cả luồng chính đều lỗi nên chỉ hiển thị bản gốc (không dịch được)",
     "degradedBadge": "⚠ Bản gốc",
     "recognizing": "Đang nhận dạng..."
+  },
+  "apiError": {
+    "generic": "Lỗi API",
+    "userNotFound": "Không tìm thấy người dùng",
+    "cannotChangeOwnRole": "Không thể thay đổi vai trò của chính bạn",
+    "cannotDeactivateSelf": "Không thể vô hiệu hóa chính bạn",
+    "invalidRole": "Vai trò không hợp lệ: {{role}}. Vai trò hợp lệ: {{validRoles}}",
+    "localRerunUnavailable": "Không có mô hình cục bộ nào để chạy lại ngoại tuyến (chưa cài .[local] hoặc cả ASR/MT đều không khả dụng).",
+    "invalidToken": "Token không hợp lệ",
+    "accountDisabled": "Tài khoản đã bị vô hiệu hóa",
+    "adminRequired": "Cần quyền quản trị",
+    "moderatorRequired": "Cần quyền người điều phối",
+    "permissionDenied": "Bạn không có quyền thực hiện thao tác này",
+    "emailAlreadyRegistered": "Địa chỉ email này đã được đăng ký",
+    "invalidCredentials": "Địa chỉ email hoặc mật khẩu không đúng",
+    "profileFieldRequired": "Hãy chỉ định display_name hoặc native_language",
+    "displayNameEmpty": "Tên hiển thị không được để trống",
+    "invalidLanguage": "Ngôn ngữ không hợp lệ: {{language}}",
+    "emailNotRegistered": "Địa chỉ email này chưa được đăng ký",
+    "invalidResetToken": "Token đặt lại không hợp lệ",
+    "tokenAlreadyUsed": "Token này đã được sử dụng",
+    "tokenExpired": "Token đã hết hạn",
+    "currentPasswordIncorrect": "Mật khẩu hiện tại không đúng",
+    "roomNotFound": "Không tìm thấy phòng họp",
+    "meetingSettingsForbidden": "Bạn không có quyền thay đổi cài đặt cuộc họp",
+    "sessionNotFound": "Không tìm thấy phiên",
+    "participantSettingsForbidden": "Bạn không có quyền thay đổi cài đặt của người tham gia khác",
+    "modeSwitchNotAllowed": "Cuộc họp này không cho phép chuyển chế độ",
+    "participantNotFound": "Không tìm thấy người tham gia",
+    "roomLanguagesOutOfRange": "Ngôn ngữ cho phép của phòng họp phải nằm trong các ngôn ngữ hệ thống đã bật: {{languages}}",
+    "roomStateInitFailed": "Khởi tạo trạng thái phòng họp thất bại. Vui lòng thử lại sau.",
+    "roomAccessDenied": "Bạn không thể truy cập phòng họp này",
+    "webrtcDisabled": "WebRTC (LiveKit) hiện đang tắt (chưa cấu hình khóa)",
+    "meetingSessionNotFound": "Không tìm thấy phiên họp đã chỉ định",
+    "minutesDisabled": "Tính năng tạo biên bản tóm tắt đang tắt (chưa cấu hình LLM)",
+    "minutesGenerationFailed": "Không tạo được biên bản tóm tắt",
+    "translationNotConfigured": "Chưa cấu hình dịch vụ dịch",
+    "translationError": "Lỗi dịch: {{error}}",
+    "targetTermRequired": "target_term là bắt buộc khi do_not_translate=False",
+    "glossaryTermNotFound": "Không tìm thấy thuật ngữ",
+    "unsupportedLanguage": "Ngôn ngữ không được hỗ trợ: {{language}}",
+    "localTranslationUnavailable": "Dịch vụ dịch cục bộ không khả dụng"
+  },
+  "errors": {
+    "livekit": {
+      "speakerSwitchUnsupported": "Trình duyệt này không hỗ trợ chuyển loa.",
+      "speakerSwitchFailed": "Chuyển thiết bị loa đầu ra thất bại.",
+      "speakerApplyFailed": "Áp dụng thiết bị loa đầu ra thất bại.",
+      "autoplayBlocked": "Không thể bắt đầu phát âm thanh do giới hạn tự động phát của trình duyệt. Hãy thao tác trên trang và thử lại.",
+      "joinForbidden": "Bạn không có quyền tham gia phòng họp này.",
+      "roomNotFound": "Không tìm thấy phòng họp.",
+      "connectFailed": "Kết nối phòng họp thất bại. Hãy kiểm tra kết nối mạng."
+    },
+    "audio": {
+      "noMicSelected": "Chưa chọn micro",
+      "micPermissionDenied": "Quyền truy cập micro bị từ chối",
+      "micStartFailed": "Khởi động micro thất bại"
+    },
+    "devices": {
+      "insecureContext": "Tính năng thiết bị âm thanh chỉ dùng được qua HTTPS hoặc localhost (truy cập bằng địa chỉ IP có thể không được hỗ trợ).",
+      "micPermissionDenied": "Quyền truy cập micro bị từ chối. Hãy kiểm tra cài đặt trình duyệt.",
+      "listFailed": "Không lấy được danh sách thiết bị.",
+      "micFallbackLabel": "Micro {{id}}",
+      "speakerFallbackLabel": "Loa {{id}}"
+    }
   }
 }

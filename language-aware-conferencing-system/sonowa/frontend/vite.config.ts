@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -47,6 +48,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // Vitest: UI 言語を ja に固定する（src/test/setup.ts）
+    test: {
+      setupFiles: ['./src/test/setup.ts'],
+    },
     // クライアントコードに環境変数を注入（空の場合は相対パス使用）
     define: {
       'import.meta.env.VITE_API_URL': JSON.stringify(clientApiUrl),

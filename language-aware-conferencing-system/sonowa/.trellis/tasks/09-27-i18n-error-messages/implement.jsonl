@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Testing and i18n rules"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Hook deps and effect rules"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "API boundary"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Backend detail <-> frontend dictionary contract"}

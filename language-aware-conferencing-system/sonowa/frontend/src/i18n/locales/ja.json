@@ -407,5 +407,70 @@
     "degradedTitle": "全主線が失敗したため原文のみ表示（翻訳不可）",
     "degradedBadge": "⚠ 原文",
     "recognizing": "認識中..."
+  },
+  "apiError": {
+    "generic": "APIエラー",
+    "userNotFound": "ユーザーが見つかりません",
+    "cannotChangeOwnRole": "自分自身のロールは変更できません",
+    "cannotDeactivateSelf": "自分自身を無効化できません",
+    "invalidRole": "無効なロール: {{role}}。有効なロール: {{validRoles}}",
+    "localRerunUnavailable": "離線重跑に利用可能な本地モデルがありません（.[local] 未導入 または ASR/MT いずれも不可）。",
+    "invalidToken": "無効なトークンです",
+    "accountDisabled": "アカウントが無効化されています",
+    "adminRequired": "管理者権限が必要です",
+    "moderatorRequired": "モデレーター権限が必要です",
+    "permissionDenied": "このアクションを実行する権限がありません",
+    "emailAlreadyRegistered": "このメールアドレスは既に登録されています",
+    "invalidCredentials": "メールアドレスまたはパスワードが正しくありません",
+    "profileFieldRequired": "display_name または native_language を指定してください",
+    "displayNameEmpty": "表示名は空にできません",
+    "invalidLanguage": "無効な言語: {{language}}",
+    "emailNotRegistered": "このメールアドレスは登録されていません",
+    "invalidResetToken": "無効なリセットトークンです",
+    "tokenAlreadyUsed": "このトークンは既に使用されています",
+    "tokenExpired": "トークンの有効期限が切れています",
+    "currentPasswordIncorrect": "現在のパスワードが正しくありません",
+    "roomNotFound": "会議室が見つかりません",
+    "meetingSettingsForbidden": "会議設定を変更する権限がありません",
+    "sessionNotFound": "セッションが見つかりません",
+    "participantSettingsForbidden": "他の参加者の設定を変更する権限がありません",
+    "modeSwitchNotAllowed": "この会議ではモード切替が許可されていません",
+    "participantNotFound": "参加者が見つかりません",
+    "roomLanguagesOutOfRange": "会議室で許可する言語はシステム有効言語の範囲内で指定してください: {{languages}}",
+    "roomStateInitFailed": "会議室状態の初期化に失敗しました。時間をおいて再試行してください。",
+    "roomAccessDenied": "この会議室にはアクセスできません",
+    "webrtcDisabled": "WebRTC（LiveKit）は現在無効です（鍵未設定）",
+    "meetingSessionNotFound": "指定された会議セッションが見つかりません",
+    "minutesDisabled": "議事録生成は現在無効です（LLM 未設定）",
+    "minutesGenerationFailed": "議事録の生成に失敗しました",
+    "translationNotConfigured": "翻訳サービスが設定されていません",
+    "translationError": "翻訳エラー: {{error}}",
+    "targetTermRequired": "do_not_translate=False の場合 target_term は必須です",
+    "glossaryTermNotFound": "用語が見つかりません",
+    "unsupportedLanguage": "未対応の言語: {{language}}",
+    "localTranslationUnavailable": "ローカル翻訳サービスが利用できません"
+  },
+  "errors": {
+    "livekit": {
+      "speakerSwitchUnsupported": "このブラウザはスピーカー切替に対応していません。",
+      "speakerSwitchFailed": "スピーカー出力先の切替に失敗しました。",
+      "speakerApplyFailed": "スピーカー出力先の適用に失敗しました。",
+      "autoplayBlocked": "ブラウザの自動再生制限により音声再生を開始できませんでした。画面を操作して再試行してください。",
+      "joinForbidden": "この会議室へ参加する権限がありません。",
+      "roomNotFound": "会議室が見つかりません。",
+      "connectFailed": "会議室への接続に失敗しました。ネットワーク状態を確認してください。"
+    },
+    "audio": {
+      "noMicSelected": "マイクが選択されていません",
+      "micPermissionDenied": "マイクへのアクセスが拒否されました",
+      "micStartFailed": "マイクの起動に失敗しました"
+    },
+    "devices": {
+      "insecureContext": "音声デバイス機能は HTTPS または localhost でのみ利用できます（IPアクセスは非対応の場合があります）。",
+      "micPermissionDenied": "マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。",
+      "listFailed": "デバイス一覧の取得に失敗しました。",
+      "micFallbackLabel": "マイク {{id}}",
+      "speakerFallbackLabel": "スピーカー {{id}}"
+    }
   }
 }

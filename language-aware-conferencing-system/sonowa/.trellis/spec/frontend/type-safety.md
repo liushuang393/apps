@@ -91,3 +91,12 @@ export function decodeLiveEvent(value: unknown): LiveEvent | null { ... }
 `src/api/` modules cast backend strings to unions without checking
 (`r.default_audio_mode as AudioMode`, `languageSettings.enabledLanguages as SupportedLanguage[]`
 in `RoomListPage.tsx`) — ~39 `as X` casts overall. Tolerated at the API boundary; don't spread it into UI code.
+
+## Backend Error Text (cross-layer contract)
+
+Backend `HTTPException(detail="日本語")` stays Japanese (API contract unchanged). `api/http.ts`
+passes `detail` through `translateApiDetail()` (`api/apiErrorText.ts`): the `apiError.*` values in
+`ja.json` are the backend text byte-for-byte (f-strings become `{{name}}`), matched exactly or by
+template, then rendered in the UI language; unknown text is shown as-is, non-string detail becomes
+`apiError.generic`. **When you add or change a backend `detail`, add/update `apiError.*` in all four
+locales** — `src/api/__tests__/apiErrorText.test.ts` reads `backend/app/**/*.py` and fails otherwise.

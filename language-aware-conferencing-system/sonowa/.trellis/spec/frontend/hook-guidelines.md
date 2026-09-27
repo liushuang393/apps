@@ -84,6 +84,10 @@ Always gate first-load API calls on `hasHydrated` from `useAuthStore`.
 
 ## Common Mistakes / Forbidden
 
+- Using react-i18next `useTranslation()` inside a hook with effects: `t` in effect deps makes a
+  language switch reconnect LiveKit / re-enumerate devices. Hooks translate error text at error time
+  with the i18n instance instead: `import i18n from '../i18n'; setError(i18n.t('errors.audio.micDenied'))`
+  (see `useLiveKit.ts`, `useAudioCapture.ts`, `useAudioDevices.ts`).
 - Confusing `hooks/useTranslation` (translate API) with `react-i18next`'s `useTranslation`
   (UI strings). Pages/components use `react-i18next`; only `SubtitleDisplay` uses the local hook.
 - Calling `fetch` directly in a new hook. `hooks/useTranslation.ts` does this for legacy

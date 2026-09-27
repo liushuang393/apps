@@ -95,8 +95,7 @@ via `useParams`, the store via selectors, and call `xxxApi` directly (see `pages
 ## Known Debt
 
 All pages and components use `t()` for UI text. Still Japanese in any UI language:
-- connection error messages set inside `hooks/useLiveKit.ts` (`setConnectionError('...')`) — hooks
-  are not i18n'd yet; return a key/code from the hook if you touch them.
+- admin pipeline validation errors passed as `detail=str(e)` (not in the `apiError.*` dictionary).
 - `LANGUAGE_NAMES` (`constants/languages.ts`) and dates formatted with `toLocaleString('ja-JP')`.
 
 The ja locale text must stay byte-identical when migrating: Playwright E2E runs with

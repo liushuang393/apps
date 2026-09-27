@@ -1,9 +1,10 @@
 /**
  * API 共通 HTTP 層（ApiError / apiFetch）
  *
- * 注意: 他の api モジュールに依存しない（循環 import 防止）。
+ * 注意: apiErrorText 以外の api モジュールに依存しない（循環 import 防止）。
  */
 import { useAuthStore } from '../store/authStore';
+import { translateApiDetail } from './apiErrorText';
 
 // APIベースURL
 // 常に相対パス /api を使用し、Vite proxy経由でバックエンドにアクセス
@@ -14,7 +15,7 @@ const API_BASE = '/api';
 /**
  * APIエラー
  * status: HTTPステータスコード（401/403/404等）
- * message: バックエンドからの詳細メッセージ
+ * message: バックエンドの detail を UI 言語へ翻訳したメッセージ（未知の文言は原文）
  */
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -42,10 +43,7 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    const detail = data.detail;
-    const message =
-      typeof detail === 'string' ? detail : 'APIエラー';
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, translateApiDetail(data.detail));
   }
 
   if (res.status === 204) {

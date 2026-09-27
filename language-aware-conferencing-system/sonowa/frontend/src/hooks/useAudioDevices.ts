@@ -4,6 +4,7 @@
  * 耳机/USBデバイス優先の自動選択機能付き
  */
 import { useState, useEffect, useCallback } from 'react';
+import i18n from '../i18n';
 
 export interface AudioDevice {
   deviceId: string;
@@ -115,7 +116,7 @@ export function useAudioDevices(): UseAudioDevicesReturn {
     const mediaDevices = getMediaDevicesSafe();
     if (!mediaDevices?.getUserMedia || !mediaDevices.enumerateDevices) {
       // getUserMedia は https/localhost 等のセキュアコンテキストが必須。
-      setError('音声デバイス機能は HTTPS または localhost でのみ利用できます（IPアクセスは非対応の場合があります）。');
+      setError(i18n.t('errors.devices.insecureContext'));
       setLoading(false);
       return;
     }
@@ -133,7 +134,7 @@ export function useAudioDevices(): UseAudioDevicesReturn {
         .filter((d) => d.kind === 'audioinput')
         .map((d) => ({
           deviceId: d.deviceId,
-          label: d.label || `マイク ${d.deviceId.slice(0, 8)}`,
+          label: d.label || i18n.t('errors.devices.micFallbackLabel', { id: d.deviceId.slice(0, 8) }),
           kind: 'audioinput' as const,
           isPreferred: isPreferredDevice(d.label || ''),
         }));
@@ -142,7 +143,7 @@ export function useAudioDevices(): UseAudioDevicesReturn {
         .filter((d) => d.kind === 'audiooutput')
         .map((d) => ({
           deviceId: d.deviceId,
-          label: d.label || `スピーカー ${d.deviceId.slice(0, 8)}`,
+          label: d.label || i18n.t('errors.devices.speakerFallbackLabel', { id: d.deviceId.slice(0, 8) }),
           kind: 'audiooutput' as const,
           isPreferred: isPreferredDevice(d.label || ''),
         }));
@@ -174,9 +175,9 @@ export function useAudioDevices(): UseAudioDevicesReturn {
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'NotAllowedError') {
-        setError('マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。');
+        setError(i18n.t('errors.devices.micPermissionDenied'));
       } else {
-        setError('デバイス一覧の取得に失敗しました。');
+        setError(i18n.t('errors.devices.listFailed'));
       }
     } finally {
       setLoading(false);

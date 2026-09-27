@@ -11,6 +11,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { LocalAudioTrack, Track, type Room } from 'livekit-client';
+import i18n from '../i18n';
 
 interface UseAudioCaptureOptions {
   /** マイクデバイスID */
@@ -123,7 +124,7 @@ export function useAudioCapture({
   /** マイクストリーム開始 */
   const startCapture = useCallback(async () => {
     if (!deviceId) {
-      setError('マイクが選択されていません');
+      setError(i18n.t('errors.audio.noMicSelected'));
       return;
     }
 
@@ -253,9 +254,9 @@ export function useAudioCapture({
       updateAudioData();
     } catch (err) {
       if (err instanceof DOMException && err.name === 'NotAllowedError') {
-        setError('マイクへのアクセスが拒否されました');
+        setError(i18n.t('errors.audio.micPermissionDenied'));
       } else {
-        setError('マイクの起動に失敗しました');
+        setError(i18n.t('errors.audio.micStartFailed'));
       }
       setIsMicOn(false);
     }
